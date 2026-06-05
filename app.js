@@ -192,19 +192,21 @@ async function handleAuth(event, mode) {
     renderAuth(mode, "Please add a display name.");
     return;
   }
-  const { data, error } = await client.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { display_name: displayName, role },
-      emailRedirectTo: window.location.href.split("#")[0],
-    },
+  const { data: signupData, error: signupError } = await client.functions.invoke("create-jkcrew-account", {
+    body: { email, password, displayName, role, website: "" },
   });
-  if (error) {
-    renderAuth(mode, messageFrom(error));
+  if (signupError || signupData?.error) {
+    const signupMessage = signupData?.error || messageFrom(signupError);
+    renderAuth(mode, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
     return;
   }
-  if (!data.session) renderAuth("login", "Account created. Check your email to confirm it, then sign in.");
+
+  const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+  if (signInError) {
+    renderAuth("login", "Account created. Sign in with your new email and password.");
+    return;
+  }
+  notify("Welcome to JKCREW. Your account is ready.");
 }
 
 function renderShell() {
