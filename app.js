@@ -403,8 +403,8 @@ async function renderSession() {
   const attemptsHtml = state.attempts.length ? state.attempts.map((attempt) => `
     <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)} · ${formatTime(attempt.duration_seconds || 0)}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
   document.querySelector("#view").innerHTML = `
+    <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
-    <section class="session-hero"><div class="timer-label">Session time elapsed</div><div class="timer" id="trick-timer">00:00</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments, true)}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>`;
   document.querySelector("#end-session").addEventListener("click", endSession);
@@ -792,9 +792,21 @@ async function renderProfile() {
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     <div class="profile-grid">
       <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
-      <section class="panel"><div class="panel-head"><div class="panel-title">Account settings</div></div><form id="profile-form"><div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div><button class="primary-btn wide" type="submit">Save profile</button></form><div style="height:10px"></div><button class="danger-btn wide" id="sign-out">Sign out</button></section>
+      <section class="panel">
+        <div class="panel-head"><div class="panel-title">Account settings</div></div>
+        <form id="profile-form"><div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div><button class="primary-btn wide" type="submit">Save profile</button></form>
+        <div class="settings-divider"></div>
+        <form id="password-form">
+          <div class="field"><label for="new-password">New password</label><input id="new-password" name="password" type="password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters"></div>
+          <div class="field"><label for="confirm-password">Confirm password</label><input id="confirm-password" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="Type it again"></div>
+          <button class="secondary-btn wide" type="submit">Change password</button>
+        </form>
+        <div class="settings-divider"></div>
+        <button class="danger-btn wide" id="sign-out">Sign out</button>
+      </section>
     </div>`;
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
+  document.querySelector("#password-form").addEventListener("submit", updatePassword);
   document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
 }
 
@@ -807,6 +819,27 @@ async function updateProfile(event) {
   notify("Profile updated.");
   renderShell();
   navigate("profile");
+}
+
+async function updatePassword(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const password = form.get("password");
+  const confirmPassword = form.get("confirmPassword");
+  if (password !== confirmPassword) return notify("Passwords do not match.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Changing...";
+  const { error } = await client.auth.updateUser({ password });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Change password";
+    return notify(messageFrom(error), "error");
+  }
+  event.currentTarget.reset();
+  button.disabled = false;
+  button.textContent = "Change password";
+  notify("Password changed.");
 }
 
 init().catch((error) => {
