@@ -254,6 +254,11 @@ a { color: inherit; }
 .rank { width: 30px; color: var(--muted); font: 700 0.7rem var(--mono); }
 .leader-row { grid-template-columns: 30px minmax(0, 1fr) auto; }
 .leader-row.me { border-color: rgba(0,255,209,0.42); background: var(--aqua-soft); }
+.assignment-row { grid-template-columns: 30px minmax(0, 1fr); }
+.assignment-list { display: grid; gap: 7px; }
+.student-row { grid-template-columns: minmax(0, 1fr) auto; }
+.student-actions { display: flex; align-items: center; gap: 10px; }
+.quick-tricks { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
 .avatar {
   width: 38px;
   height: 38px;
@@ -355,6 +360,8 @@ a { color: inherit; }
   .stat-value { font-size: 2.8rem; }
   .panel { padding: 14px; border-radius: 11px; }
   .trick-form { grid-template-columns: 1fr; }
+  .student-row { grid-template-columns: 1fr; }
+  .student-actions { justify-content: space-between; }
   .timer { font-size: 6rem; }
   .bottom-nav {
     position: fixed;
