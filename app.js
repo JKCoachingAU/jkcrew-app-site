@@ -532,12 +532,17 @@ async function renderCrew() {
     </section>`;
   document.querySelector("#add-athlete-form")?.addEventListener("submit", addAthlete);
   document.querySelector("#create-student-form").addEventListener("submit", createStudent);
-  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
-    state.selectedAthleteId = button.dataset.openStudent;
-    navigate("student");
-  }));
   document.querySelectorAll(".student-chip").forEach((chip) => {
-    chip.addEventListener("dragstart", (event) => event.dataTransfer.setData("text/plain", chip.dataset.athleteId));
+    chip.addEventListener("dragstart", (event) => {
+      chip.dataset.dragging = "true";
+      event.dataTransfer.setData("text/plain", chip.dataset.athleteId);
+    });
+    chip.addEventListener("dragend", () => setTimeout(() => { chip.dataset.dragging = "false"; }, 0));
+    chip.addEventListener("click", () => {
+      if (chip.dataset.dragging === "true") return;
+      state.selectedAthleteId = chip.dataset.athleteId;
+      navigate("student");
+    });
   });
   document.querySelectorAll("[data-group]").forEach((group) => {
     group.addEventListener("dragover", (event) => { event.preventDefault(); group.classList.add("drag-over"); });
