@@ -41,6 +41,7 @@ const escapeHtml = (value = "") => String(value)
 const initials = (name = "JK") => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "JK";
 const dateLabel = (value) => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+const localDate = () => new Date().toLocaleDateString("en-CA");
 const weekStartIso = () => {
   const date = new Date();
   const day = (date.getDay() + 6) % 7;
@@ -54,6 +55,15 @@ const messageFrom = (error) => error?.message || "Something went wrong. Please t
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
+const avatarUrl = (profile = {}) => profile.avatar?.dataUrl || "";
+
+function avatarHtml(profile = {}, className = "") {
+  const image = avatarUrl(profile);
+  const safeName = escapeHtml(profile.display_name || "Athlete");
+  return image
+    ? `<div class="avatar image-avatar ${className}"><img src="${escapeHtml(image)}" alt="${safeName} profile picture"></div>`
+    : `<div class="avatar ${className}">${escapeHtml(initials(profile.display_name))}</div>`;
+}
 
 function notify(message, type = "ok") {
   toast.textContent = message;
@@ -264,32 +274,43 @@ async function getLeaderboard() {
 }
 
 async function getWeeklyAssignments(athleteId) {
-  const [{ data, error }, { data: progress, error: progressError }] = await Promise.all([
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }] = await Promise.all([
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStartDate()).order("sort_order", { ascending: true }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", weekStartIso()),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
+  if (awardsError) throw awardsError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
-  return (data || []).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null }));
+  return {
+    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null })),
+    awards: awards || [],
+  };
 }
 
 const categoryInfo = {
-  daily: { label: "Daily list", description: "Complete the full list within the first 20 minutes · 1 point per day" },
-  dialled: { label: "Dialled", description: "Land each trick 3 times in a row · 2 points each" },
-  one_bang: { label: "One Bangs", description: "Land once during the week · 2 points each" },
-  foam_pit: { label: "Foam Pit", description: "Weekly progression work · tracked, no points" },
-  line: { label: "Lines", description: "Complete the full line · tracked, no points" },
+  daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
+  dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
+  one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
 };
 
+const coachGroups = [
+  ["monday", "Monday Team"],
+  ["tuesday", "Tuesday Team"],
+  ["wednesday", "Wednesday Team"],
+  ["online", "Online Athletes"],
+];
+
+const dailyCompletionCount = (awards = []) => new Set(awards.filter((award) => award.award_key?.startsWith("daily:")).map((award) => award.award_key)).size;
+
 function isAssignmentComplete(assignment) {
-  if (assignment.category === "daily") return assignment.progress?.progress_date === new Date().toLocaleDateString("en-CA");
+  if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
   return Boolean(assignment.progress?.completed_at);
 }
 
 function assignmentStatus(assignment) {
   if (assignment.category === "daily") return isAssignmentComplete(assignment) ? "Done today" : "To do today";
-  if (assignment.category === "dialled") return `${assignment.progress?.streak_count || 0}/3 in a row`;
   return isAssignmentComplete(assignment) ? "Done this week" : "To do this week";
 }
 
@@ -297,9 +318,8 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
   if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
   return assignments.map((assignment, index) => `
     <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}">
-      <div class="assignment-check">${isAssignmentComplete(assignment) ? "✓" : index + 1}</div>
+      <button class="assignment-check" type="button" ${interactive && !isAssignmentComplete(assignment) ? `data-assignment-action="landed" data-assignment-id="${assignment.id}"` : "disabled"}>${isAssignmentComplete(assignment) ? "✓" : ""}</button>
       <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div>
-      ${interactive && !isAssignmentComplete(assignment) ? `<div class="assignment-actions"><button class="primary-btn compact-btn" data-assignment-action="landed" data-assignment-id="${assignment.id}">Landed</button>${assignment.category === "dialled" && (assignment.progress?.streak_count || 0) > 0 ? `<button class="danger-btn compact-btn" data-assignment-action="reset" data-assignment-id="${assignment.id}">Missed</button>` : ""}</div>` : ""}
     </div>`).join("");
 }
 
@@ -314,36 +334,33 @@ function assignmentGroups(assignments, interactive = false) {
 }
 
 async function renderAthleteHome() {
-  const [{ data: sessions, error }, leaderboard, assignments] = await Promise.all([
+  const [{ data: sessions, error }, leaderboard, schedule] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
   ]);
+  const { assignments, awards } = schedule;
   if (error) throw error;
   const weekly = sessions.filter((session) => new Date(session.started_at) >= new Date(weekStartIso()));
   const weeklyPoints = weekly.reduce((sum, session) => sum + session.total_points, 0);
   const totalPoints = sessions.reduce((sum, session) => sum + session.total_points, 0);
   const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
-  const recentHtml = sessions.length ? sessions.slice(0, 6).map((session) => `
-    <div class="list-row"><div><strong>${session.ended_at ? "Completed session" : "Session in progress"}</strong><small>${dateLabel(session.started_at)}</small></div><div class="points">+${session.total_points}</div></div>`).join("") : `<div class="empty">No sessions yet. Start your first one.</div>`;
-  const leadersHtml = leaderboard.length ? leaderboard.slice(0, 5).map((row, index) => leaderRow(row, index)) .join("") : `<div class="empty">The board is waiting for its first rider.</div>`;
+  const dailyDone = dailyCompletionCount(awards);
+  const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
+  const weeklyTargets = assignments.filter((assignment) => assignment.category !== "daily").length;
 
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Athlete dashboard</div><h1>Hey, <span>${escapeHtml(state.profile.display_name.split(" ")[0])}</span></h1><p>Your work lands here. Start a session, record tricks, and move up the crew board.</p></div><div class="actions"><button class="primary-btn" id="start-session-home">Start session</button></div></div>
-    <section class="stats-grid">
-      ${statCard("This week", weeklyPoints, "pts", `${weekly.length} sessions logged`)}
-      ${statCard("Crew rank", rank || "-", "", `${leaderboard.length || 0} riders on board`)}
-      ${statCard("Level", state.profile.level, "", "Keep stacking points")}
-      ${statCard("All time", totalPoints, "pts", `${sessions.length} recent sessions`)}
+    <section class="athlete-scoreboard panel">
+      <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your points and trick progress for this week.</p></div></div>
+      <div class="scoreboard-stats">
+        ${statCard("This week", weeklyPoints, "pts", `${weekly.length} sessions`)}
+        ${statCard("Daily Tricks", `${dailyDone}/7`, "", "Completed this week")}
+        ${statCard("Weekly tricks", `${completedWeekly}/${weeklyTargets}`, "", "Dialled + One Bangs")}
+        ${statCard("Crew rank", rank || "-", "", `${leaderboard.length || 0} riders`)}
+      </div>
     </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">My schedule</div><div class="panel-meta">Private · week starting ${escapeHtml(weekLabel())}</div></div><button class="secondary-btn" id="start-assigned-session">Start session</button></div>${assignmentGroups(assignments)}</section>
-    <div class="two-col">
-      <section class="panel"><div class="panel-head"><div class="panel-title">Recent sessions</div><div class="panel-meta">Latest activity</div></div><div class="session-list">${recentHtml}</div></section>
-      <section class="panel"><div class="panel-head"><div class="panel-title">Crew board</div><button class="secondary-btn" data-go-board>Full board</button></div><div class="leaderboard">${leadersHtml}</div></section>
-    </div>`;
-  document.querySelector("#start-session-home").addEventListener("click", () => navigate("session"));
-  document.querySelector("#start-assigned-session").addEventListener("click", () => navigate("session"));
-  document.querySelector("[data-go-board]").addEventListener("click", () => navigate("board"));
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">My trick list</div><div class="panel-meta">Private · week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments, true)}</section>`;
+  document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
 }
 
 function statCard(label, value, unit, foot) {
@@ -372,13 +389,13 @@ async function loadActiveSession() {
 }
 
 async function renderSession() {
-  const assignments = await getWeeklyAssignments(state.user.id);
+  const { assignments } = await getWeeklyAssignments(state.user.id);
   await loadActiveSession();
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
-      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily list resets each day. Finish the full Daily list within 20 minutes to earn its point.</p></div></div>
+      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Only you and your coach can see this</div></div></div>${assignmentGroups(assignments)}</section>
-      <section class="session-hero"><div class="timer-label">Daily list timer</div><div class="timer">20:00</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled 3 in a row = 2pt</span></div><div style="margin-top:24px"><button class="primary-btn" id="create-session">Start session</button></div></section>`;
+      <section class="session-hero"><div class="timer-label">Ready when you are</div><div class="timer">GO</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span></div><div style="margin-top:24px"><button class="primary-btn" id="create-session">Start session</button></div></section>`;
     document.querySelector("#create-session").addEventListener("click", startSession);
     return;
   }
@@ -386,8 +403,8 @@ async function renderSession() {
   const attemptsHtml = state.attempts.length ? state.attempts.map((attempt) => `
     <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)} · ${formatTime(attempt.duration_seconds || 0)}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap Landed as you complete each trick. Tap Missed to reset a Dialled streak.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
-    <section class="session-hero"><div class="timer-label">Daily list time elapsed · finish before 20:00</div><div class="timer" id="trick-timer">00:00</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled 3 in a row = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
+    <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
+    <section class="session-hero"><div class="timer-label">Session time elapsed</div><div class="timer" id="trick-timer">00:00</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments, true)}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>`;
   document.querySelector("#end-session").addEventListener("click", endSession);
@@ -421,7 +438,8 @@ async function recordAssignmentAction(event) {
   }
   const result = Array.isArray(data) ? data[0] : data;
   notify(`${result.message}${result.points_awarded ? ` · +${result.points_awarded} points` : ""}.`);
-  await renderSession();
+  if (state.view === "home") await renderAthleteHome();
+  else await renderSession();
 }
 
 async function recordTrick(event) {
@@ -462,7 +480,7 @@ async function renderBoard() {
 }
 
 async function getCoachRoster() {
-  const { data: links, error } = await client.from("coach_athletes").select("athlete_id").eq("coach_id", state.user.id);
+  const { data: links, error } = await client.from("coach_athletes").select("athlete_id, group_name").eq("coach_id", state.user.id);
   if (error) throw error;
   const ids = links.map((link) => link.athlete_id);
   if (!ids.length) return [];
@@ -472,9 +490,10 @@ async function getCoachRoster() {
   ]);
   if (athleteError) throw athleteError;
   if (sessionError) throw sessionError;
+  const groupByAthlete = new Map(links.map((link) => [link.athlete_id, link.group_name || "monday"]));
   return athletes.map((athlete) => {
     const athleteSessions = sessions.filter((session) => session.athlete_id === athlete.id);
-    return { ...athlete, weeklyPoints: athleteSessions.reduce((sum, session) => sum + session.total_points, 0), sessionCount: athleteSessions.length };
+    return { ...athlete, groupName: groupByAthlete.get(athlete.id) || "monday", weeklyPoints: athleteSessions.reduce((sum, session) => sum + session.total_points, 0), sessionCount: athleteSessions.length };
   });
 }
 
@@ -486,16 +505,20 @@ async function renderCrew() {
   if (error) throw error;
   const linkedIds = new Set(roster.map((athlete) => athlete.id));
   const available = (allAthletes || []).filter((athlete) => !linkedIds.has(athlete.id));
-  const rosterHtml = roster.length ? roster.map((athlete) => `
-    <div class="list-row student-row">
-      <div class="person"><div class="avatar">${escapeHtml(initials(athlete.display_name))}</div><div class="person-name"><strong>${escapeHtml(athlete.display_name)}</strong><small>Level ${athlete.level} · ${athlete.sessionCount} sessions this week</small></div></div>
-      <div class="student-actions"><div class="points">${athlete.weeklyPoints}<small> pts</small></div><button class="secondary-btn" data-open-student="${athlete.id}">Profile</button></div>
-    </div>`).join("") : `<div class="empty">No athletes linked yet. Add your first rider below.</div>`;
+  const groupsHtml = coachGroups.map(([groupId, label]) => {
+    const athletes = roster.filter((athlete) => athlete.groupName === groupId);
+    const students = athletes.length ? athletes.map((athlete) => `
+      <button class="student-chip" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
+        ${avatarHtml(athlete, "student-chip-avatar")}
+        <span>${escapeHtml(athlete.display_name)}</span>
+      </button>`).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
+    return `<section class="group-column" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
+  }).join("");
   const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach dashboard</div><h1>Your <span>students</span></h1><p>Open each student profile to set and edit their private weekly trick list.</p></div></div>
-    <section class="stats-grid">${statCard("Athletes", roster.length, "", "Linked to your crew")}${statCard("Weekly points", roster.reduce((sum, athlete) => sum + athlete.weeklyPoints, 0), "pts", "Across your athletes")}${statCard("Sessions", roster.reduce((sum, athlete) => sum + athlete.sessionCount, 0), "", "Logged this week")}${statCard("Active", roster.filter((athlete) => athlete.sessionCount > 0).length, "", "Riders this week")}</section>
-    <section class="panel"><div class="panel-head"><div class="panel-title">Crew roster</div><div class="panel-meta">${roster.length} athletes</div></div><div class="roster">${rosterHtml}</div></section>
+    <div class="page-head"><div><div class="eyebrow">Coach dashboard</div><h1>Training <span>groups</span></h1><p>Drag students between groups, or click a student to open their profile.</p></div></div>
+    <section class="stats-grid single-stat">${statCard("Total students", roster.length, "", "Assigned to your crew")}</section>
+    <section class="groups-grid">${groupsHtml}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">Add an athlete</div><div class="panel-meta">They need an account first</div></div>
       ${available.length ? `<form id="add-athlete-form" class="trick-form"><div class="field"><label for="athlete-id">Available athletes</label><select id="athlete-id" name="athleteId">${options}</select></div><button class="primary-btn" type="submit">Add to crew</button></form>` : `<div class="empty">Every available athlete is already linked.</div>`}
     </section>
@@ -513,6 +536,26 @@ async function renderCrew() {
     state.selectedAthleteId = button.dataset.openStudent;
     navigate("student");
   }));
+  document.querySelectorAll(".student-chip").forEach((chip) => {
+    chip.addEventListener("dragstart", (event) => event.dataTransfer.setData("text/plain", chip.dataset.athleteId));
+  });
+  document.querySelectorAll("[data-group]").forEach((group) => {
+    group.addEventListener("dragover", (event) => { event.preventDefault(); group.classList.add("drag-over"); });
+    group.addEventListener("dragleave", () => group.classList.remove("drag-over"));
+    group.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      group.classList.remove("drag-over");
+      const athleteId = event.dataTransfer.getData("text/plain");
+      if (athleteId) await moveAthleteGroup(athleteId, group.dataset.group);
+    });
+  });
+}
+
+async function moveAthleteGroup(athleteId, groupName) {
+  const { error } = await client.from("coach_athletes").update({ group_name: groupName }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Student moved.");
+  await renderCrew();
 }
 
 async function createStudent(event) {
@@ -559,10 +602,11 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [assignments, { data: templates, error: templateError }] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
   ]);
+  const { assignments, awards } = schedule;
   if (templateError) throw templateError;
   const template = templates?.[0] || null;
   const categoryEditor = Object.entries(categoryInfo).map(([category, info]) => {
@@ -575,17 +619,25 @@ async function renderStudentProfile() {
       <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea></div>
     </div>`;
   }).join("");
+  const dailyDone = dailyCompletionCount(awards);
 
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${athlete.level}</span></h1><p>Build this student's private weekly schedule. Daily resets each day; the other categories stay for the week.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" id="back-to-students">All students</button></div></div>
-    <section class="stats-grid">${statCard("Weekly points", athlete.weeklyPoints, "pts", "This week")}${statCard("Sessions", athlete.sessionCount, "", "This week")}${statCard("Tricks set", assignments.length, "", `Week of ${weekLabel()}`)}${statCard("Privacy", "1", "", "Only this student sees it")}</section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Current progress</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
+    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${athlete.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" id="back-to-students">All students</button></div></div>
+    <section class="panel athlete-profile-hero">
+      ${avatarHtml(athlete, "profile-avatar-large")}
+      <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${coachGroups.find(([id]) => id === athlete.groupName)?.[1] || "Monday Team"} · Daily Tricks completed this week: ${dailyDone}/7</div></div>
+      <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Current weekly tricks</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Edit this week's schedule</div><div class="panel-meta">One trick or line per row · notes after a dash</div></div></div>
       <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
     </section>`;
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
+  document.querySelector("#choose-avatar").addEventListener("click", () => document.querySelector("#avatar-file").click());
+  document.querySelector("#avatar-file").addEventListener("change", updateAthleteAvatar);
+  document.querySelector("#remove-avatar").addEventListener("click", () => saveAthleteAvatar(null));
 }
 
 function parseAssignmentLine(line, index, category) {
@@ -635,6 +687,49 @@ async function saveWeeklyAssignments(event) {
   }
 
   notify("Weekly schedule saved for this student.");
+  await renderStudentProfile();
+}
+
+function imageFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { image.src = reader.result; };
+    reader.onerror = reject;
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 360;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const scale = Math.max(size / image.width, size / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    image.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function updateAthleteAvatar(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) return notify("Choose an image under 8MB.", "error");
+  try {
+    const dataUrl = await imageFileToDataUrl(file);
+    await saveAthleteAvatar(dataUrl);
+  } catch (_error) {
+    notify("Could not read that image. Try another photo.", "error");
+  }
+}
+
+async function saveAthleteAvatar(dataUrl) {
+  const avatar = dataUrl ? { dataUrl, updatedAt: new Date().toISOString() } : {};
+  const { error } = await client.from("profiles").update({ avatar, updated_at: new Date().toISOString() }).eq("id", state.selectedAthleteId);
+  if (error) return notify(messageFrom(error), "error");
+  notify(dataUrl ? "Profile picture updated." : "Profile picture removed.");
   await renderStudentProfile();
 }
 
@@ -691,7 +786,7 @@ async function renderProfile() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     <div class="profile-grid">
-      <section class="panel profile-card"><div class="avatar profile-avatar">${escapeHtml(initials(state.profile.display_name))}</div><h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
+      <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
       <section class="panel"><div class="panel-head"><div class="panel-title">Account settings</div></div><form id="profile-form"><div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div><button class="primary-btn wide" type="submit">Save profile</button></form><div style="height:10px"></div><button class="danger-btn wide" id="sign-out">Sign out</button></section>
     </div>`;
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
