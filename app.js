@@ -513,7 +513,8 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      await navigator.serviceWorker.register("./sw.js");
+      const registration = await navigator.serviceWorker.register("./sw.js");
+      await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
     }

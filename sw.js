@@ -1,9 +1,9 @@
-const CACHE_NAME = "jkcrew-shell-v1.0.1";
+const CACHE_NAME = "jkcrew-shell-v1.0.2";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=1.0.1",
-  "./app.js?v=1.0.1",
+  "./styles.css?v=1.0.2",
+  "./app.js?v=1.0.2",
   "./manifest.webmanifest",
   "./icons/app-icon.svg",
   "./icons/app-icon-192.png",
@@ -21,7 +21,15 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then((clients) => clients.forEach((client) => {
+        const url = new URL(client.url);
+        if (url.origin === self.location.origin && !url.searchParams.has("jkcrew-updated")) {
+          url.searchParams.set("jkcrew-updated", "1");
+          client.navigate(url.href);
+        }
+      })),
   );
 });
 
@@ -43,10 +51,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-      return response;
-    })),
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request)),
   );
 });
