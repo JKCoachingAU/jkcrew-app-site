@@ -254,8 +254,44 @@ a { color: inherit; }
 .rank { width: 30px; color: var(--muted); font: 700 0.7rem var(--mono); }
 .leader-row { grid-template-columns: 30px minmax(0, 1fr) auto; }
 .leader-row.me { border-color: rgba(0,255,209,0.42); background: var(--aqua-soft); }
-.assignment-row { grid-template-columns: 30px minmax(0, 1fr); }
+.assignment-row { grid-template-columns: 30px minmax(0, 1fr) auto; }
+.assignment-row.complete { border-color: rgba(0,255,209,0.28); background: var(--aqua-soft); }
+.assignment-check {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font: 700 0.65rem var(--mono);
+}
+.assignment-row.complete .assignment-check { border-color: var(--aqua); background: var(--aqua); color: #001d18; }
+.assignment-actions { display: flex; gap: 6px; }
+.compact-btn { padding: 7px 10px; font-size: 0.65rem; }
 .assignment-list { display: grid; gap: 7px; }
+.assignment-group { padding: 16px 0; border-top: 1px solid var(--line); }
+.assignment-group:first-of-type { padding-top: 0; border-top: 0; }
+.assignment-group:last-child { padding-bottom: 0; }
+.assignment-group-head, .schedule-editor-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.category-count {
+  min-width: 40px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  color: var(--aqua);
+  background: var(--aqua-soft);
+  text-align: center;
+  font: 700 0.62rem var(--mono);
+}
+.schedule-editor { padding: 17px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.012); }
+.schedule-editor textarea { min-height: 150px; }
+.student-account-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; align-items: end; gap: 8px; }
 .student-row { grid-template-columns: minmax(0, 1fr) auto; }
 .student-actions { display: flex; align-items: center; gap: 10px; }
 .quick-tricks { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
@@ -360,7 +396,10 @@ a { color: inherit; }
   .stat-value { font-size: 2.8rem; }
   .panel { padding: 14px; border-radius: 11px; }
   .trick-form { grid-template-columns: 1fr; }
+  .student-account-form { grid-template-columns: 1fr; }
   .student-row { grid-template-columns: 1fr; }
+  .assignment-row { grid-template-columns: 30px minmax(0, 1fr); }
+  .assignment-actions { grid-column: 1 / -1; }
   .student-actions { justify-content: space-between; }
   .timer { font-size: 6rem; }
   .bottom-nav {
