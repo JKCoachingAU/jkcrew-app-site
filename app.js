@@ -4,6 +4,8 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
+const installButton = document.querySelector("#install-app");
+let deferredInstallPrompt = null;
 const state = {
   session: null,
   user: null,
@@ -47,12 +49,42 @@ const weekStartIso = () => {
   return date.toISOString();
 };
 const messageFrom = (error) => error?.message || "Something went wrong. Please try again.";
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
 
 function notify(message, type = "ok") {
   toast.textContent = message;
   toast.className = `toast show ${type === "error" ? "error" : ""}`;
   clearTimeout(notify.timeout);
   notify.timeout = setTimeout(() => { toast.className = "toast"; }, 3600);
+}
+
+function updateInstallButton() {
+  installButton.classList.toggle("hidden", isStandalone());
+}
+
+async function installApp() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    updateInstallButton();
+    if (outcome === "accepted") notify("JKCREW is being installed.");
+    return;
+  }
+
+  if (isIos()) {
+    window.alert("To install JKCREW: tap the Share button, then choose Add to Home Screen.");
+    return;
+  }
+
+  if (isSafari()) {
+    window.alert("To install JKCREW in Safari: choose File, then Add to Dock.");
+    return;
+  }
+
+  window.alert("To install JKCREW: open your browser menu and choose Install JKCREW or Add to Home Screen.");
 }
 
 function setLoading(label = "Loading") {
@@ -462,4 +494,26 @@ async function updateProfile(event) {
 init().catch((error) => {
   app.innerHTML = `<div class="boot-screen"><div class="brand-mark">JK<span>CREW</span></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
+});
+
+installButton.addEventListener("click", installApp);
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallButton();
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  updateInstallButton();
+  notify("JKCREW installed. You can launch it from your apps.");
+});
+window.addEventListener("load", async () => {
+  updateInstallButton();
+  if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.register("./sw.js");
+    } catch (error) {
+      console.warn("JKCREW app launcher could not be registered.", error);
+    }
+  }
 });
