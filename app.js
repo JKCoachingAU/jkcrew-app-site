@@ -141,11 +141,11 @@ function renderAuth(mode = "login", message = "") {
       <section class="auth-hero">
         <div class="auth-logo">JK<span>CREW</span></div>
         <div class="hero-copy">
-          <div class="eyebrow">BMX progression, made visible</div>
-          <h1>Ride.<br><em>Land.</em><br>Level up.</h1>
-          <p>Track every session, turn landed tricks into points, climb the crew board, and keep coach feedback in one place.</p>
+          <div class="eyebrow">JKCREW coaching academy</div>
+          <h1>Crafting <em>champions,</em><br>creating futures.</h1>
+          <p>Weekly trick plans, private progress tracking, and coach feedback built for serious BMX progression.</p>
         </div>
-        <div class="feature-strip"><span>Timed sessions</span><span>Live scoring</span><span>Coach notes</span><span>Crew leaderboard</span></div>
+        <div class="feature-strip"><span>Weekly plans</span><span>Private progress</span><span>Coach feedback</span><span>Future focused</span></div>
       </section>
       <section class="auth-panel">
         <div class="auth-card">
