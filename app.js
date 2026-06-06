@@ -84,6 +84,17 @@ const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
   if (items.length) return items.map((badge) => badgeChipHtml(badge)).join("");
   return emptyText ? `<span class="public-badge muted-badge">${escapeHtml(emptyText)}</span>` : "";
 };
+const motivationalQuotes = [
+  { quote: "It is hard to win, but it is harder to stay at the top.", by: "Elite athlete mindset" },
+  { quote: "Fall down seven times, get up eight.", by: "Training rule" },
+  { quote: "Pressure is a privilege.", by: "Billie Jean King" },
+  { quote: "You miss 100% of the shots you do not take.", by: "Wayne Gretzky" },
+  { quote: "Do not count the days. Make the days count.", by: "Muhammad Ali" },
+  { quote: "Champions keep playing until they get it right.", by: "Billie Jean King" },
+  { quote: "The only limit is the one you accept.", by: "Action sports mindset" },
+  { quote: "Small wins every session become big results.", by: "JKCoaching" },
+];
+const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
 
 function avatarHtml(profile = {}, className = "") {
   const image = avatarUrl(profile);
@@ -531,6 +542,44 @@ function goalsSection(profile = {}) {
   </section>`;
 }
 
+function showreelVideos(profile = {}) {
+  return Array.isArray(profile.showreel_videos) ? profile.showreel_videos.filter((video) => video?.dataUrl).slice(0, 3) : [];
+}
+
+function showreelHtml(profile = {}, editable = false) {
+  const videos = showreelVideos(profile);
+  const videoHtml = videos.length ? videos.map((video, index) => `
+    <div class="showreel-tile">
+      <video src="${escapeHtml(video.dataUrl)}" autoplay muted loop playsinline controls></video>
+      ${editable ? `<button class="danger-btn compact-btn" type="button" data-remove-showreel="${index}">Remove</button>` : ""}
+    </div>`).join("") : `<div class="empty compact-empty">No showreel videos yet.</div>`;
+  return `<section class="panel showreel-panel">
+    <div class="panel-head"><div><div class="panel-title">Showreel</div><div class="panel-meta">2-3 short BMX highlight clips</div></div></div>
+    <div class="showreel-grid">${videoHtml}</div>
+    ${editable ? `<div class="settings-divider"></div><form id="showreel-form" class="showreel-form"><input id="showreel-file" name="video" type="file" accept="video/*" hidden><button class="secondary-btn" type="button" id="choose-showreel">Upload showreel clip</button><small>${videos.length}/3 videos added</small></form>` : ""}
+  </section>`;
+}
+
+function socialLinks(profile = {}) {
+  const links = profile.social_links || {};
+  return ["instagram", "tiktok", "youtube", "other"].map((key) => ({ key, url: String(links[key] || "").trim() })).filter((item) => item.url);
+}
+
+function socialLinksHtml(profile = {}) {
+  const labels = { instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube", other: "Other" };
+  const links = socialLinks(profile);
+  if (!links.length) return "";
+  return `<section class="panel social-panel">
+    <div class="panel-head"><div><div class="panel-title">Social links</div><div class="panel-meta">Riding content and highlights</div></div></div>
+    <div class="social-links">${links.map((item) => `<a class="secondary-btn compact-btn" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(labels[item.key])}</a>`).join("")}</div>
+  </section>`;
+}
+
+function quoteSection() {
+  const item = randomQuote();
+  return `<section class="panel quote-panel"><div class="eyebrow">Rider mindset</div><blockquote>“${escapeHtml(item.quote)}”</blockquote><small>${escapeHtml(item.by)}</small></section>`;
+}
+
 function normalizedGoals() {
   return Array.isArray(state.profile?.goals) ? [...state.profile.goals] : [];
 }
@@ -632,6 +681,7 @@ async function renderAthleteHome() {
       </div>
     </section>
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily point needs 20:00 or less</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span></div></section>` : ""}
+    ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events & important tasks</div><div class="panel-meta">You and your coach can edit these</div></div></div>
       ${dashboardItemsHtml(dashboardItems)}
@@ -733,11 +783,16 @@ async function renderSession() {
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
-      <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Only you and your coach can see this</div></div></div>${assignmentGroups(assignments)}</section>
-      <section class="session-hero"><div class="timer-label">Ready when you are</div><div class="timer">GO</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span></div><div style="margin-top:24px"><button class="primary-btn" id="create-session">Start session</button></div></section>
+      <section class="session-start-card">
+        <div><div class="timer-label">Ready when you are</div><div class="go-mark">GO</div><p>Start the live timer when you are chasing Daily Tricks points.</p></div>
+        <button class="primary-btn start-session-btn" id="create-session">Start Session</button>
+      </section>
+      <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Tick progress any time · timed Daily points need a live session</div></div></div>${assignmentGroups(assignments, true)}</section>
       ${helpUploadSection(helpRequests)}`;
     document.querySelector("#create-session").addEventListener("click", startSession);
     document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
+    document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
+    document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     return;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
@@ -921,6 +976,8 @@ async function renderPublicAthleteProfile() {
         <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No earned badges yet</span>`}</div>
       </div>
     </section>
+    ${showreelHtml(profile)}
+    ${socialLinksHtml(profile)}
     <section class="stats-grid public-profile-stats">
       ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
       ${statCard("Weekly wins", profile.weekly_wins || 0, "", "Leaderboard wins")}
@@ -937,7 +994,8 @@ async function renderPublicAthleteProfile() {
 async function renderAthleteCrew() {
   const [leaderboard, feed] = await Promise.all([getLeaderboard(), getCrewFeed()]);
   const leader = leaderboard[0];
-  const feedHtml = feed.length ? feed.map((item) => `
+  const orderedFeed = [...feed].reverse();
+  const feedHtml = orderedFeed.length ? orderedFeed.map((item) => `
     <article class="feed-card chat-message ${item.author_id === state.user.id ? "mine" : ""} ${item.feed_type === "landed" ? "activity" : ""}">
       ${avatarHtml({ display_name: item.author_name, avatar: item.avatar })}
       <div class="chat-bubble"><strong>${escapeHtml(item.author_name || "JKCREW")}</strong><p>${escapeHtml(item.body)}${item.points ? ` · +${item.points} pts` : ""}</p><small>${dateLabel(item.created_at)}</small></div>
@@ -945,11 +1003,16 @@ async function renderAthleteCrew() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and see live notifications when someone moves up or lands a trick.</p></div></div>
     ${leader ? `<section class="panel leader-alert"><div class="live-dot"></div><div><div class="panel-title">Current leader: ${escapeHtml(leader.display_name)}</div><div class="panel-meta">${leader.weekly_points} points this week · new leaders show here</div></div></section>` : ""}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Keep it positive, useful, and progression-focused</div></div></div>
-      <form id="crew-post-form" class="crew-post-form"><div class="field"><label for="crew-message">Message</label><textarea id="crew-message" name="body" required maxlength="500" placeholder="Shout out a rider, share a win, or ask the crew something..."></textarea></div><button class="primary-btn wide" type="submit">Post to Crew</button></form>
-    </section>
-    <section class="panel crew-chat-panel"><div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages and landed tricks</div></div></div><div class="feed-list chat-list">${feedHtml}</div></section>`;
+    <section class="panel crew-chat-panel">
+      <div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages stay at the bottom</div></div></div>
+      <div class="feed-list chat-list" id="crew-chat-list">${feedHtml}</div>
+      <form id="crew-post-form" class="crew-post-form crew-chat-compose"><textarea id="crew-message" name="body" required maxlength="500" rows="1" placeholder="Message the crew..."></textarea><button class="primary-btn" type="submit">Send</button></form>
+    </section>`;
   document.querySelector("#crew-post-form").addEventListener("submit", submitCrewPost);
+  requestAnimationFrame(() => {
+    const list = document.querySelector("#crew-chat-list");
+    if (list) list.scrollTop = list.scrollHeight;
+  });
 }
 
 async function submitCrewPost(event) {
@@ -1414,6 +1477,7 @@ async function renderProfile() {
         <div class="panel-head"><div class="panel-title">Account settings</div></div>
         <form id="own-avatar-form" class="avatar-settings"><input id="own-avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-own-avatar">Upload / change my picture</button><button class="danger-btn" type="button" id="remove-own-avatar">Remove picture</button></form>
         <div class="settings-divider"></div>
+        ${state.profile.role === "athlete" ? `${showreelHtml(state.profile, true)}<div class="settings-divider"></div>` : ""}
         <form id="profile-form">
           <div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div>
           ${state.profile.role === "athlete" ? `
@@ -1423,6 +1487,14 @@ async function renderProfile() {
             </div>
             <div class="field"><label for="profile-sponsors">Sponsors</label><textarea id="profile-sponsors" name="sponsors" placeholder="One sponsor per line">${escapeHtml(state.profile.sponsors || "")}</textarea></div>
             <div class="field"><label for="profile-achievements">Achievements</label><textarea id="profile-achievements" name="achievements" placeholder="Competition wins, landed tricks, milestones...">${escapeHtml(state.profile.achievements || "")}</textarea></div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-instagram">Instagram</label><input id="profile-instagram" name="instagram" type="url" value="${escapeHtml(state.profile.social_links?.instagram || "")}" placeholder="https://instagram.com/..."></div>
+              <div class="field"><label for="profile-tiktok">TikTok</label><input id="profile-tiktok" name="tiktok" type="url" value="${escapeHtml(state.profile.social_links?.tiktok || "")}" placeholder="https://tiktok.com/@..."></div>
+            </div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-youtube">YouTube</label><input id="profile-youtube" name="youtube" type="url" value="${escapeHtml(state.profile.social_links?.youtube || "")}" placeholder="https://youtube.com/..."></div>
+              <div class="field"><label for="profile-other">Other link</label><input id="profile-other" name="other" type="url" value="${escapeHtml(state.profile.social_links?.other || "")}" placeholder="Website or sponsor profile"></div>
+            </div>
             <div class="badge-lock-note">Achievement badges are earned through training progress and cannot be edited by riders.</div>
           ` : ""}
           <button class="primary-btn wide" type="submit">Save profile</button>
@@ -1440,6 +1512,9 @@ async function renderProfile() {
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
   document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);
   document.querySelector("#remove-own-avatar").addEventListener("click", () => saveOwnAvatar(null));
+  document.querySelector("#choose-showreel")?.addEventListener("click", () => document.querySelector("#showreel-file").click());
+  document.querySelector("#showreel-file")?.addEventListener("change", addShowreelVideo);
+  document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
   document.querySelector("#password-form").addEventListener("submit", updatePassword);
   document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
@@ -1467,6 +1542,36 @@ async function saveOwnAvatar(dataUrl) {
   navigate("profile");
 }
 
+async function saveOwnProfileMedia(update, message) {
+  const { data, error } = await client.from("profiles").update({ ...update, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(message);
+  renderShell();
+  navigate("profile");
+}
+
+async function addShowreelVideo(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 18 * 1024 * 1024) return notify("Choose a short video under 18MB.", "error");
+  const current = showreelVideos(state.profile);
+  if (current.length >= 3) return notify("You can add up to 3 showreel videos.", "error");
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    current.push({ id: crypto.randomUUID(), dataUrl, name: file.name, addedAt: new Date().toISOString() });
+    await saveOwnProfileMedia({ showreel_videos: current }, "Showreel video added.");
+  } catch (_error) {
+    notify("Could not read that video. Try another short clip.", "error");
+  }
+}
+
+async function removeShowreelVideo(event) {
+  const index = Number(event.currentTarget.dataset.removeShowreel);
+  const videos = showreelVideos(state.profile).filter((_video, videoIndex) => videoIndex !== index);
+  await saveOwnProfileMedia({ showreel_videos: videos }, "Showreel video removed.");
+}
+
 async function updateProfile(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -1478,6 +1583,12 @@ async function updateProfile(event) {
     updates.age = Number.isFinite(age) && age > 0 ? age : null;
     updates.sponsors = String(form.get("sponsors") || "").trim();
     updates.achievements = String(form.get("achievements") || "").trim();
+    updates.social_links = {
+      instagram: String(form.get("instagram") || "").trim(),
+      tiktok: String(form.get("tiktok") || "").trim(),
+      youtube: String(form.get("youtube") || "").trim(),
+      other: String(form.get("other") || "").trim(),
+    };
   }
   const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select().single();
   if (error) return notify(messageFrom(error), "error");
