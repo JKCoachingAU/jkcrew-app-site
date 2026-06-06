@@ -622,16 +622,24 @@ function dashboardItemsHtml(items, editable = true) {
   if (!items.length) return `<div class="empty">No upcoming events or tasks yet.</div>`;
   return items.map((item) => `
     <div class="list-row dashboard-item ${item.completed ? "complete" : ""}">
-      <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.item_type)}${item.due_at ? ` · ${dateLabel(item.due_at)}` : ""}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div>
+      <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.item_type)}${dashboardDateLabel(item)}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div>
       ${editable ? `<div class="item-actions"><button class="secondary-btn compact-btn" data-toggle-item="${item.id}">${item.completed ? "Reopen" : "Done"}</button><button class="danger-btn compact-btn" data-delete-item="${item.id}">Delete</button></div>` : ""}
     </div>`).join("");
+}
+
+function dashboardDateLabel(item) {
+  if (item.due_at && item.end_at) return ` · ${dateLabel(item.due_at)} → ${dateLabel(item.end_at)}`;
+  if (item.due_at) return ` · Starts ${dateLabel(item.due_at)}`;
+  if (item.end_at) return ` · Finishes ${dateLabel(item.end_at)}`;
+  return "";
 }
 
 function dashboardItemForm(ownerId) {
   return `<form id="dashboard-item-form" class="dashboard-item-form" data-owner-id="${ownerId}">
     <div class="field"><label for="item-type">Type</label><select id="item-type" name="itemType"><option value="event">Event</option><option value="task">Important task</option></select></div>
     <div class="field"><label for="item-title">Title</label><input id="item-title" name="title" required placeholder="State titles, film homework, bike check..."></div>
-    <div class="field"><label for="item-due">Date / time</label><input id="item-due" name="dueAt" type="datetime-local"></div>
+    <div class="field"><label for="item-due">Start date / time</label><input id="item-due" name="dueAt" type="datetime-local"></div>
+    <div class="field"><label for="item-end">Finish date / time</label><input id="item-end" name="endAt" type="datetime-local"></div>
     <div class="field"><label for="item-details">Details</label><input id="item-details" name="details" placeholder="Optional short note"></div>
     <button class="primary-btn" type="submit">Add</button>
   </form>`;
@@ -872,6 +880,8 @@ async function saveDashboardItem(event, refresh) {
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
   const dueAt = form.get("dueAt");
+  const endAt = form.get("endAt");
+  if (dueAt && endAt && new Date(endAt) < new Date(dueAt)) return notify("Finish date must be after the start date.", "error");
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Adding...";
@@ -882,6 +892,7 @@ async function saveDashboardItem(event, refresh) {
     title: String(form.get("title") || "").trim(),
     details: String(form.get("details") || "").trim(),
     due_at: dueAt ? new Date(dueAt).toISOString() : null,
+    end_at: endAt ? new Date(endAt).toISOString() : null,
   });
   if (error) {
     button.disabled = false;

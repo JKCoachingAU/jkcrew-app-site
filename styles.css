@@ -538,7 +538,7 @@ img, video, canvas, svg { max-width: 100%; }
 .item-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: end; }
 .dashboard-item-form {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) 210px minmax(0, 1fr) auto;
+  grid-template-columns: 130px minmax(0, 1fr) 190px 190px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
 }
