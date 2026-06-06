@@ -1,9 +1,9 @@
-const CACHE_NAME = "jkcrew-shell-v2.1.0";
+const CACHE_NAME = "jkcrew-shell-v2.1.1";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.1.0",
-  "./app.js?v=2.1.0",
+  "./styles.css?v=2.1.1",
+  "./app.js?v=2.1.1",
   "./manifest.webmanifest",
   "./icons/jkc-logo.png",
   "./icons/app-icon.svg",

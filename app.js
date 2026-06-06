@@ -50,16 +50,26 @@ const escapeHtml = (value = "") => String(value)
 const initials = (name = "JK") => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "JK";
 const dateLabel = (value) => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-const localDate = () => new Date().toLocaleDateString("en-CA");
-const weekStartIso = () => {
-  const date = new Date();
-  const day = (date.getDay() + 6) % 7;
-  date.setDate(date.getDate() - day);
-  date.setHours(0, 0, 0, 0);
-  return date.toISOString();
+const brisbaneDateParts = (date = new Date()) => new Intl.DateTimeFormat("en-AU", {
+  timeZone: "Australia/Brisbane",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  weekday: "short",
+}).formatToParts(date).reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {});
+const localDate = () => {
+  const parts = brisbaneDateParts();
+  return `${parts.year}-${parts.month}-${parts.day}`;
 };
-const weekStartDate = () => weekStartIso().slice(0, 10);
-const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" }).format(new Date(weekStartIso()));
+const weekStartDate = () => {
+  const parts = brisbaneDateParts();
+  const date = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+  const day = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - day);
+  return date.toISOString().slice(0, 10);
+};
+const weekStartIso = () => `${weekStartDate()}T00:00:00.000Z`;
+const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" }).format(new Date(`${weekStartDate()}T00:00:00+10:00`));
 const messageFrom = (error) => error?.message || "Something went wrong. Please try again.";
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
