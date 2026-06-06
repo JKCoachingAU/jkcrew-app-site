@@ -1466,9 +1466,9 @@ function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance =
   </section>`;
 }
 
-function runLineColor(segmentIndex) {
-  if (segmentIndex >= 9) return "#ff4567";
-  if (segmentIndex >= 5) return "#f7d154";
+function runLineColor(destinationPointNumber) {
+  if (destinationPointNumber > 10) return "#ff4567";
+  if (destinationPointNumber > 6) return "#f7d154";
   return "#00ffd1";
 }
 
@@ -1477,7 +1477,7 @@ function runRouteSvg(points = []) {
   if (safePoints.length < 2) return "";
   const lines = safePoints.slice(1).map((point, index) => {
     const previous = safePoints[index];
-    return `<line x1="${previous.x}" y1="${previous.y}" x2="${point.x}" y2="${point.y}" stroke="${runLineColor(index)}" />`;
+    return `<line x1="${previous.x}" y1="${previous.y}" x2="${point.x}" y2="${point.y}" stroke="${runLineColor(index + 2)}" />`;
   }).join("");
   return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
 }
