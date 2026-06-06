@@ -392,11 +392,16 @@ function percentageClass(value) {
 
 function assignmentList(assignments, emptyText = "No tricks assigned for this week yet.", interactive = false) {
   if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
-  return assignments.map((assignment, index) => `
+  return assignments.map((assignment) => {
+    const complete = isAssignmentComplete(assignment);
+    const action = complete ? "unlanded" : "landed";
+    const label = complete ? "Untick trick" : "Tick trick complete";
+    return `
     <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}">
-      <button class="assignment-check" type="button" ${interactive && !isAssignmentComplete(assignment) ? `data-assignment-action="landed" data-assignment-id="${assignment.id}"` : "disabled"}>${isAssignmentComplete(assignment) ? "✓" : ""}</button>
+      <button class="assignment-check" type="button" aria-label="${label}" title="${label}" ${interactive ? `data-assignment-action="${action}" data-assignment-id="${assignment.id}"` : "disabled"}>${complete ? "✓" : ""}</button>
       <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks assigned.", interactive = false) {
@@ -435,8 +440,20 @@ function assignmentGroups(assignments, interactive = false) {
 function helpRequestsHtml(requests, mode = "athlete") {
   if (!requests.length) return `<div class="empty">No trick help videos yet.</div>`;
   return requests.map((request) => {
+    const riderVideo = request.video_data_url ? `
+      <video class="help-video" src="${escapeHtml(request.video_data_url)}" controls playsinline preload="metadata"></video>
+      <div class="video-actions">
+        <a class="secondary-btn compact-btn" href="${escapeHtml(request.video_data_url)}" target="_blank" rel="noopener">Open video</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(request.video_data_url)}" download="jkcrew-trick-video">Download</a>
+      </div>` : `<div class="empty compact-empty">No video attached.</div>`;
+    const coachVideo = request.coach_video_data_url ? `
+      <video class="help-video" src="${escapeHtml(request.coach_video_data_url)}" controls playsinline preload="metadata"></video>
+      <div class="video-actions">
+        <a class="secondary-btn compact-btn" href="${escapeHtml(request.coach_video_data_url)}" target="_blank" rel="noopener">Open coach video</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(request.coach_video_data_url)}" download="jkcrew-coach-reply">Download</a>
+      </div>` : "";
     const coachReply = request.coach_comment || request.coach_video_data_url
-      ? `<div class="coach-reply"><strong>Coach reply</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${request.coach_video_data_url ? `<video class="help-video" src="${escapeHtml(request.coach_video_data_url)}" controls></video>` : ""}</div>`
+      ? `<div class="coach-reply"><strong>Coach reply</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}</div>`
       : `<div class="panel-meta">Waiting for coach reply</div>`;
     const coachTools = mode === "coach" ? `
       <form class="reply-form" data-help-reply="${request.id}">
@@ -446,7 +463,7 @@ function helpRequestsHtml(requests, mode = "athlete") {
       </form>` : "";
     return `<article class="help-card">
       <div class="help-card-head"><div><strong>${escapeHtml(request.question || "Trick help request")}</strong><small>${dateLabel(request.created_at)} · ${escapeHtml(request.status)}</small></div></div>
-      ${request.video_data_url ? `<video class="help-video" src="${escapeHtml(request.video_data_url)}" controls></video>` : ""}
+      ${riderVideo}
       ${coachReply}
       ${coachTools}
     </article>`;
@@ -489,20 +506,12 @@ function dashboardItemForm(ownerId) {
 function weekSummaryHtml(assignments, awards) {
   const dailyDone = dailyCompletionCount(awards);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
-  const percentageItems = assignments.filter((assignment) => assignment.category === "percentage" && (assignment.percentageAttempts || []).length);
-  const percentageAverage = percentageItems.length
-    ? Math.round(percentageItems.reduce((sum, assignment) => sum + percentageSummary(assignment).percentage, 0) / percentageItems.length)
-    : 0;
   const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
   const weeklyTargets = assignments.filter((assignment) => assignment.category !== "daily").length;
-  return `<section class="panel">
-    <div class="panel-head"><div><div class="panel-title">This week's summary</div><div class="panel-meta">Simple progress snapshot</div></div></div>
-    <div class="summary-grid">
-      ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Overall program")}
-      ${statCard("Daily completions", `${dailyDone}/7`, "", "Full lists completed")}
-      ${statCard("Weekly tricks", `${completedWeekly}/${weeklyTargets}`, "", "Dialled + One Bangs + Percentage")}
-      ${statCard("Consistency", percentageItems.length ? `${percentageAverage}%` : "-", "", "Percentage Tricks avg")}
-    </div>
+  return `<section class="panel simple-summary">
+    <div class="panel-head"><div><div class="panel-title">This week</div><div class="panel-meta">Clean progress snapshot</div></div><strong>${weeklyPercent}%</strong></div>
+    <div class="progress-bar"><span style="width:${weeklyPercent}%"></span></div>
+    <p>Daily Tricks completed ${dailyDone}/7 days. Weekly tricks completed ${completedWeekly}/${weeklyTargets || 0}.</p>
   </section>`;
 }
 
@@ -533,13 +542,12 @@ async function renderAthleteHome() {
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats">
-        ${statCard("This week", weeklyPoints, "pts", `${weekly.length} sessions`)}
         ${statCard("World ranking", rank ? `#${rank}` : "-", "", `${leaderboard.length || 0} riders on board`)}
-        ${statCard("Weekly summary", `${weeklyPercent}%`, "", "Program complete")}
+        ${statCard("This week", `${weeklyPercent}%`, "", `${weeklyPoints} pts earned`)}
         ${statCard("Important tasks", openTasks, "", "Open right now")}
       </div>
     </section>
-    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily point needs 20:00 or less</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span></div></section>` : `<div class="actions home-actions"><button class="primary-btn" id="start-session-home">Start session</button></div>`}
+    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily point needs 20:00 or less</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span></div></section>` : ""}
     ${weekSummaryHtml(assignments, awards)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events & important tasks</div><div class="panel-meta">You and your coach can edit these</div></div></div>
       ${dashboardItemsHtml(dashboardItems)}
@@ -547,7 +555,6 @@ async function renderAthleteHome() {
       ${dashboardItemForm(state.user.id)}
     </section>
     ${helpUploadSection(helpRequests)}`;
-  document.querySelector("#start-session-home")?.addEventListener("click", startSession);
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   bindDashboardItemActions(renderAthleteHome);
   if (activeSession) {
@@ -680,7 +687,8 @@ async function recordAssignmentAction(event) {
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  const message = `${result.message}${result.points_awarded ? ` · +${result.points_awarded} points` : ""}.`;
+  const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
+  const message = `${result.message}${pointsNote}.`;
   if (result.category === "daily" && result.points_awarded > 0) celebrate(message);
   else notify(message);
   if (state.view === "home") await renderAthleteHome();

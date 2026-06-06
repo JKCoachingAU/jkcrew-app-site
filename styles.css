@@ -357,7 +357,7 @@ a { color: inherit; }
 .athlete-scoreboard { margin-bottom: 16px; }
 .athlete-scoreboard h1 { margin: 3px 0 4px; font: italic 900 clamp(2.5rem, 5vw, 4.8rem)/0.82 var(--display); letter-spacing: -0.045em; text-transform: uppercase; }
 .athlete-scoreboard p { margin: 0; color: var(--muted); }
-.scoreboard-stats { margin-top: 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.scoreboard-stats { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .groups-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
 .group-column { min-height: 260px; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(145deg, rgba(20,24,23,0.94), rgba(10,13,12,0.94)); }
 .group-column.drag-over { border-color: var(--aqua); box-shadow: 0 0 0 4px var(--aqua-soft); }
@@ -403,6 +403,12 @@ a { color: inherit; }
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #000;
+}
+.video-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
 .coach-reply {
   margin-top: 12px;
@@ -453,6 +459,21 @@ a { color: inherit; }
 .status-chip { display: inline-flex; margin-top: 10px; padding: 6px 9px; border-radius: 999px; color: var(--aqua); background: var(--aqua-soft); font: 600 0.6rem var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
 .settings-divider { height: 1px; margin: 18px 0; background: var(--line); }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.simple-summary strong { color: var(--aqua); font: 900 1.3rem var(--display); }
+.simple-summary p { margin: 10px 0 0; color: var(--muted); line-height: 1.45; }
+.progress-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.035);
+}
+.progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--aqua), var(--purple));
+}
 .dashboard-item.complete { opacity: 0.62; }
 .dashboard-item.complete strong { text-decoration: line-through; }
 .item-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: end; }
