@@ -16,6 +16,7 @@ const state = {
   trickStartedAt: Date.now(),
   timer: null,
   selectedAthleteId: null,
+  publicAthleteId: null,
 };
 
 const athleteNav = [
@@ -62,6 +63,15 @@ const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
 const avatarUrl = (profile = {}) => profile.avatar?.dataUrl || "";
 const firstName = (profile = {}) => String(profile.display_name || "This rider").split(/\s+/).filter(Boolean)[0] || "This rider";
+const linesHtml = (value = "", emptyText = "Not added yet") => {
+  const lines = String(value || "").split(/\n|,/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="subcopy">${escapeHtml(emptyText)}</p>`;
+};
+const medalForRank = (row, index, total) => {
+  if (index === 0 && Number(row.weekly_points || 0) > 0) return `<span class="rank-medal" title="Weekly leader">🏅</span>`;
+  if (total > 1 && index === total - 1) return `<span class="rank-medal last-place" title="Last place">💩</span>`;
+  return "";
+};
 
 function avatarHtml(profile = {}, className = "") {
   const image = avatarUrl(profile);
@@ -254,7 +264,8 @@ async function handleAuth(event, mode) {
 function renderShell() {
   const role = state.profile.role;
   const nav = role === "coach" ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}">${label}</button>`).join("");
+  const navIcons = { home: "⌂", session: "▶", crew: "✦", board: "#", profile: "●", notes: "✎" };
+  const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
@@ -286,6 +297,7 @@ async function navigate(view) {
     board: renderBoard,
     crew: state.profile?.role === "coach" ? renderCrew : renderAthleteCrew,
     student: renderStudentProfile,
+    publicProfile: renderPublicAthleteProfile,
     notes: renderNotes,
     profile: renderProfile,
   };
@@ -301,6 +313,12 @@ async function getLeaderboard() {
   const { data, error } = await client.rpc("get_weekly_leaderboard");
   if (error) throw error;
   return data || [];
+}
+
+async function getPublicAthleteProfile(athleteId) {
+  const { data, error } = await client.rpc("get_public_athlete_profile", { p_athlete_id: athleteId });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
 }
 
 async function getWeeklyAssignments(athleteId) {
@@ -610,12 +628,14 @@ async function renderParentHome() {
     ${cards.join("")}`;
 }
 
-function leaderRow(row, index) {
-  return `<div class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}">
+function leaderRow(row, index, rows = []) {
+  const total = rows.length;
+  const badge = medalForRank(row, index, total);
+  return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">
     <div class="rank">#${index + 1}</div>
-    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)}</strong><small>Level ${row.level} · ${row.session_count} sessions</small></div></div>
+    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><small>Level ${row.level} · ${row.session_count} sessions</small></div></div>
     <div class="points">${row.weekly_points}<small> pts</small></div>
-  </div>`;
+  </button>`;
 }
 
 async function loadActiveSession() {
@@ -796,15 +816,57 @@ async function renderBoard() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets its weekly view each Monday.</p></div></div>
     <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>`;
+  document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
+}
+
+function openPublicAthleteProfile(event) {
+  state.publicAthleteId = event.currentTarget.dataset.publicAthlete;
+  navigate("publicProfile");
+}
+
+async function renderPublicAthleteProfile() {
+  if (!state.publicAthleteId) return navigate("board");
+  const profile = await getPublicAthleteProfile(state.publicAthleteId);
+  if (!profile) {
+    document.querySelector("#view").innerHTML = `<div class="empty">Could not find that rider profile.</div>`;
+    return;
+  }
+  const badges = Array.isArray(profile.badges) ? profile.badges : [];
+  const badgeHtml = [
+    profile.is_weekly_winner ? "🏅 Weekly leader" : "",
+    profile.is_last_place ? "💩 Weekly last place" : "",
+    ...badges.map((badge) => String(badge || "").trim()).filter(Boolean),
+  ].filter(Boolean).map((badge) => `<span class="public-badge">${escapeHtml(badge)}</span>`).join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, medals, badges, and weekly points history.</p></div><button class="secondary-btn" id="back-to-board">Back to board</button></div>
+    <section class="panel public-profile-card">
+      ${avatarHtml(profile, "public-profile-avatar")}
+      <div>
+        <div class="eyebrow">Rider profile</div>
+        <h2>${escapeHtml(profile.display_name)}</h2>
+        <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No badges yet</span>`}</div>
+      </div>
+    </section>
+    <section class="stats-grid public-profile-stats">
+      ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
+      ${statCard("Weekly wins", profile.weekly_wins || 0, "", "Leaderboard wins")}
+      ${statCard("Stance", profile.stance || "-", "", "Goofy or regular")}
+      ${statCard("Age", profile.age || "-", "", "Rider age")}
+    </section>
+    <section class="panel public-profile-details">
+      <div class="public-detail"><div class="panel-title">Sponsors</div>${linesHtml(profile.sponsors, "No sponsors added yet.")}</div>
+      <div class="public-detail"><div class="panel-title">Achievements</div>${linesHtml(profile.achievements, "No achievements added yet.")}</div>
+    </section>`;
+  document.querySelector("#back-to-board").addEventListener("click", () => navigate("board"));
 }
 
 async function renderAthleteCrew() {
   const [leaderboard, feed] = await Promise.all([getLeaderboard(), getCrewFeed()]);
   const leader = leaderboard[0];
   const feedHtml = feed.length ? feed.map((item) => `
-    <article class="feed-card ${item.feed_type === "landed" ? "activity" : ""}">
+    <article class="feed-card chat-message ${item.author_id === state.user.id ? "mine" : ""} ${item.feed_type === "landed" ? "activity" : ""}">
       ${avatarHtml({ display_name: item.author_name, avatar: item.avatar })}
-      <div><strong>${escapeHtml(item.author_name || "JKCREW")}</strong><p>${escapeHtml(item.body)}${item.points ? ` · +${item.points} pts` : ""}</p><small>${dateLabel(item.created_at)}</small></div>
+      <div class="chat-bubble"><strong>${escapeHtml(item.author_name || "JKCREW")}</strong><p>${escapeHtml(item.body)}${item.points ? ` · +${item.points} pts` : ""}</p><small>${dateLabel(item.created_at)}</small></div>
     </article>`).join("") : `<div class="empty">No crew activity yet.</div>`;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and see live notifications when someone moves up or lands a trick.</p></div></div>
@@ -812,7 +874,7 @@ async function renderAthleteCrew() {
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Keep it positive, useful, and progression-focused</div></div></div>
       <form id="crew-post-form" class="crew-post-form"><div class="field"><label for="crew-message">Message</label><textarea id="crew-message" name="body" required maxlength="500" placeholder="Shout out a rider, share a win, or ask the crew something..."></textarea></div><button class="primary-btn wide" type="submit">Post to Crew</button></form>
     </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Live notifications</div><div class="panel-meta">Newest messages and landed tricks</div></div></div><div class="feed-list">${feedHtml}</div></section>`;
+    <section class="panel crew-chat-panel"><div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages and landed tricks</div></div></div><div class="feed-list chat-list">${feedHtml}</div></section>`;
   document.querySelector("#crew-post-form").addEventListener("submit", submitCrewPost);
 }
 
@@ -1270,6 +1332,7 @@ async function addNote(event) {
 }
 
 async function renderProfile() {
+  const badgeText = Array.isArray(state.profile.badges) ? state.profile.badges.join(", ") : "";
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     <div class="profile-grid">
@@ -1278,7 +1341,19 @@ async function renderProfile() {
         <div class="panel-head"><div class="panel-title">Account settings</div></div>
         <form id="own-avatar-form" class="avatar-settings"><input id="own-avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-own-avatar">Upload / change my picture</button><button class="danger-btn" type="button" id="remove-own-avatar">Remove picture</button></form>
         <div class="settings-divider"></div>
-        <form id="profile-form"><div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div><button class="primary-btn wide" type="submit">Save profile</button></form>
+        <form id="profile-form">
+          <div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div>
+          ${state.profile.role === "athlete" ? `
+            <div class="two-col-form">
+              <div class="field"><label for="profile-stance">Stance</label><select id="profile-stance" name="stance"><option value="">Not set</option><option value="regular" ${state.profile.stance === "regular" ? "selected" : ""}>Regular</option><option value="goofy" ${state.profile.stance === "goofy" ? "selected" : ""}>Goofy</option></select></div>
+              <div class="field"><label for="profile-age">Age</label><input id="profile-age" name="age" type="number" min="3" max="99" value="${state.profile.age || ""}" placeholder="Age"></div>
+            </div>
+            <div class="field"><label for="profile-sponsors">Sponsors</label><textarea id="profile-sponsors" name="sponsors" placeholder="One sponsor per line">${escapeHtml(state.profile.sponsors || "")}</textarea></div>
+            <div class="field"><label for="profile-achievements">Achievements</label><textarea id="profile-achievements" name="achievements" placeholder="Competition wins, landed tricks, milestones...">${escapeHtml(state.profile.achievements || "")}</textarea></div>
+            <div class="field"><label for="profile-badges">Badges</label><input id="profile-badges" name="badges" value="${escapeHtml(badgeText)}" placeholder="Fast learner, Big air, Style king"></div>
+          ` : ""}
+          <button class="primary-btn wide" type="submit">Save profile</button>
+        </form>
         <div class="settings-divider"></div>
         <form id="password-form">
           <div class="field"><label for="new-password">New password</label><input id="new-password" name="password" type="password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters"></div>
@@ -1321,8 +1396,18 @@ async function saveOwnAvatar(dataUrl) {
 
 async function updateProfile(event) {
   event.preventDefault();
-  const displayName = new FormData(event.currentTarget).get("displayName").trim();
-  const { data, error } = await client.from("profiles").update({ display_name: displayName, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const form = new FormData(event.currentTarget);
+  const displayName = form.get("displayName").trim();
+  const updates = { display_name: displayName, updated_at: new Date().toISOString() };
+  if (state.profile.role === "athlete") {
+    const age = Number(form.get("age"));
+    updates.stance = form.get("stance") || "";
+    updates.age = Number.isFinite(age) && age > 0 ? age : null;
+    updates.sponsors = String(form.get("sponsors") || "").trim();
+    updates.achievements = String(form.get("achievements") || "").trim();
+    updates.badges = String(form.get("badges") || "").split(",").map((badge) => badge.trim()).filter(Boolean).slice(0, 12);
+  }
+  const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select().single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify("Profile updated.");
