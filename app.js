@@ -137,11 +137,15 @@ async function handleSession(session) {
     renderAuth();
     return;
   }
-  const { data, error } = await client.from("profiles").select("*").eq("id", state.user.id).single();
-  if (error) {
-    renderAuth();
-    notify("Your profile is still being prepared. Try signing in again.", "error");
-    return;
+  let { data, error } = await client.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+  if (error || !data) {
+    const { data: recovered, error: recoveryError } = await client.rpc("ensure_current_profile");
+    if (recoveryError || !recovered) {
+      renderAuth();
+      notify("I could not load your JKCREW profile. Sign out and try once more.", "error");
+      return;
+    }
+    data = recovered;
   }
   state.profile = data;
   state.view = data.role === "coach" ? "crew" : "home";
