@@ -18,6 +18,7 @@ const state = {
   selectedAthleteId: null,
   publicAthleteId: null,
   selectedVenue: "",
+  runBuilder: null,
 };
 
 const athleteNav = [
@@ -28,6 +29,7 @@ const athleteNav = [
   ["profile", "Profile"],
 ];
 const coachNav = [
+  ["command", "Command"],
   ["crew", "Students"],
   ["board", "Board"],
   ["notes", "Notes"],
@@ -197,7 +199,7 @@ async function handleSession(session) {
     data = recovered;
   }
   state.profile = data;
-  state.view = data.role === "coach" ? "crew" : "home";
+  state.view = data.role === "coach" ? "command" : "home";
   renderShell();
   navigate(state.view);
 }
@@ -291,7 +293,7 @@ async function handleAuth(event, mode) {
 function renderShell() {
   const role = state.profile.role;
   const nav = role === "coach" ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "▶", crew: "✦", board: "#", profile: "●", notes: "✎" };
+  const navIcons = { home: "⌂", session: "▶", crew: "✦", command: "◇", board: "#", profile: "●", notes: "✎" };
   const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   app.innerHTML = `
     <div class="app-shell">
@@ -321,6 +323,7 @@ async function navigate(view) {
   const renders = {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
     session: renderSession,
+    command: renderCoachCommand,
     board: renderBoard,
     crew: state.profile?.role === "coach" ? renderCrew : renderAthleteCrew,
     student: renderStudentProfile,
@@ -391,6 +394,48 @@ async function getCoachVenues() {
   return data || [];
 }
 
+async function getCoachCommandData(roster = []) {
+  const ids = roster.map((athlete) => athlete.id);
+  const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions] = await Promise.all([
+    client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
+    ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
+    ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
+    ids.length ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
+    ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category").in("athlete_id", ids).eq("week_start", weekStartDate()) : { data: [], error: null },
+    ids.length ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
+    client.from("attendance_sessions").select("*, attendance_records(*)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
+  ]);
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions].forEach((result) => { if (result.error) throw result.error; });
+  return {
+    calendar: calendar.data || [],
+    statuses: statusRows.data || [],
+    dashboardItems: dashboardItems.data || [],
+    sessions: sessions.data || [],
+    scheduleRows: scheduleRows.data || [],
+    awards: awards.data || [],
+    attendanceSessions: attendanceSessions.data || [],
+  };
+}
+
+async function getStudentPrivateData(athleteId) {
+  const [record, documents, injuries, attendance, runs] = await Promise.all([
+    client.from("athlete_private_records").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).maybeSingle(),
+    client.from("athlete_documents").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }),
+    client.from("injury_reports").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("injured_at", { ascending: false }).limit(8),
+    client.from("attendance_records").select("*, attendance_sessions(*)").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(8),
+    client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(8),
+  ]);
+  [record, documents, injuries, attendance, runs].forEach((result) => { if (result.error) throw result.error; });
+  return {
+    record: record.data || {},
+    documents: documents.data || [],
+    injuries: injuries.data || [],
+    attendance: attendance.data || [],
+    runs: runs.data || [],
+  };
+}
+
 async function getCrewFeed() {
   const { data, error } = await client.rpc("get_crew_feed");
   if (error) throw error;
@@ -409,7 +454,18 @@ const coachGroups = [
   ["tuesday", "Tuesday Team"],
   ["wednesday", "Wednesday Team"],
   ["online", "Online Athletes"],
+  ["private", "Private Lessons"],
+  ["elite", "Elite Team"],
+  ["beginner", "Beginner Team"],
 ];
+const heatStatuses = {
+  on_track: { label: "On track", dot: "green", icon: "●" },
+  needs_help: { label: "Needs help", dot: "yellow", icon: "●" },
+  falling_behind: { label: "Falling behind", dot: "red", icon: "●" },
+  injured: { label: "Injured / modified", dot: "blue", icon: "●" },
+  competition_prep: { label: "Competition prep", dot: "purple", icon: "●" },
+};
+const heatOptions = () => Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}">${info.label}</option>`).join("");
 
 const dailyCompletionCount = (awards = []) => new Set(awards.filter((award) => award.award_key?.startsWith("daily:")).map((award) => String(award.award_key).slice(-10))).size;
 
@@ -566,6 +622,123 @@ function helpUploadSection(requests) {
     <div class="panel-title">My coach feedback</div>
     <div class="help-list">${helpRequestsHtml(requests)}</div>
   </section>`;
+}
+
+function heatChip(status = "on_track", extra = "") {
+  const info = heatStatuses[status] || heatStatuses.on_track;
+  return `<span class="heat-chip ${info.dot}">${info.icon} ${escapeHtml(info.label)}${extra ? ` · ${escapeHtml(extra)}` : ""}</span>`;
+}
+
+function statusByAthlete(statuses = []) {
+  return new Map(statuses.map((status) => [status.athlete_id, status]));
+}
+
+function coachGroupLabel(groupName = "monday") {
+  return coachGroups.find(([id]) => id === groupName)?.[1] || "Monday Team";
+}
+
+function athleteAttention(athlete, data = {}) {
+  const sessions = (data.sessions || []).filter((session) => session.athlete_id === athlete.id);
+  const lastSession = sessions[0];
+  const dailyAwards = (data.awards || []).filter((award) => award.athlete_id === athlete.id && award.award_key?.startsWith("daily:")).length;
+  const weeklyAssignments = (data.scheduleRows || []).filter((assignment) => assignment.athlete_id === athlete.id);
+  const weeklyNonDaily = weeklyAssignments.filter((assignment) => assignment.category !== "daily").length;
+  const flags = [];
+  if (!lastSession) flags.push("No training data for 21 days");
+  if (sessions.length === 0) flags.push("Not recording sessions");
+  if (dailyAwards === 0) flags.push("Daily Tricks not completed this week");
+  if (weeklyAssignments.length === 0) flags.push("Needs a weekly plan");
+  if (weeklyNonDaily >= 6 && sessions.length <= 1) flags.push("May be neglecting weekly tricks");
+  return { lastSession, flags };
+}
+
+function calendarItemsHtml(events = [], roster = []) {
+  if (!events.length) return `<div class="empty compact-empty">No coach calendar events yet.</div>`;
+  const athletes = new Map(roster.map((athlete) => [athlete.id, athlete.display_name]));
+  return events.slice(0, 10).map((event) => `
+    <article class="calendar-card">
+      <div class="calendar-date"><strong>${new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(event.starts_at))}</strong><span>${new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(event.starts_at))}</span></div>
+      <div><strong>${escapeHtml(event.title)}</strong><small>${dateLabel(event.starts_at)}${event.ends_at ? ` → ${dateLabel(event.ends_at)}` : ""} · ${escapeHtml(event.venue || "Venue TBC")}${event.attendance_status ? ` · ${escapeHtml(event.attendance_status)}` : ""}${event.payment_status ? ` · ${escapeHtml(event.payment_status)}` : ""}</small><p>${escapeHtml(event.athlete_id ? athletes.get(event.athlete_id) || "Rider" : event.group_name ? coachGroupLabel(event.group_name) : "Whole crew")}${event.notes ? ` · ${escapeHtml(event.notes)}` : ""}</p></div>
+    </article>`).join("");
+}
+
+function combinedCoachCalendarItems(commandData = {}) {
+  const calendarEvents = (commandData.calendar || []).map((event) => ({ ...event, source: "coach" }));
+  const riderItems = (commandData.dashboardItems || [])
+    .filter((item) => item.due_at)
+    .map((item) => ({
+      id: item.id,
+      athlete_id: item.owner_id,
+      group_name: "",
+      title: item.title,
+      starts_at: item.due_at,
+      ends_at: item.end_at,
+      venue: "",
+      notes: item.details,
+      source: item.item_type,
+    }));
+  return [...calendarEvents, ...riderItems].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+}
+
+function coachCalendarForm(roster = []) {
+  const athleteOptions = roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)}</option>`).join("");
+  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join("");
+  return `<form id="coach-calendar-form" class="coach-calendar-form">
+    <div class="field"><label for="calendar-title">Event name</label><input id="calendar-title" name="title" required placeholder="State titles, private lesson, group session..."></div>
+    <div class="field"><label for="calendar-start">Start</label><input id="calendar-start" name="startsAt" type="datetime-local" required></div>
+    <div class="field"><label for="calendar-end">Finish</label><input id="calendar-end" name="endsAt" type="datetime-local"></div>
+    <div class="field"><label for="calendar-venue">Venue</label><input id="calendar-venue" name="venue" placeholder="Pizzey, Beenleigh..."></div>
+    <div class="field"><label for="calendar-athlete">Rider</label><select id="calendar-athlete" name="athleteId"><option value="">Group / all riders</option>${athleteOptions}</select></div>
+    <div class="field"><label for="calendar-group">Group</label><select id="calendar-group" name="groupName"><option value="">Whole crew</option>${groupOptions}</select></div>
+    <div class="field"><label for="calendar-attendance">Attendance status</label><input id="calendar-attendance" name="attendanceStatus" placeholder="Confirmed, pending, absent..."></div>
+    <div class="field"><label for="calendar-payment">Payment status</label><input id="calendar-payment" name="paymentStatus" placeholder="Paid, owing, included..."></div>
+    <div class="field"><label for="calendar-notes">Notes</label><input id="calendar-notes" name="notes" placeholder="Payment, attendance, comp details..."></div>
+    <button class="primary-btn" type="submit">Add event</button>
+  </form>`;
+}
+
+function athleteOverviewHtml(roster = [], commandData = {}) {
+  const statuses = statusByAthlete(commandData.statuses);
+  return roster.map((athlete) => {
+    const status = statuses.get(athlete.id) || {};
+    const attention = athleteAttention(athlete, commandData);
+    const alert = status.coach_alert || attention.flags[0] || "No urgent alert";
+    return `<article class="overview-card">
+      <button class="student-chip overview-person" data-open-student="${athlete.id}">${avatarHtml(athlete, "student-chip-avatar")}<span>${escapeHtml(athlete.display_name)}</span></button>
+      <div>${heatChip(status.heat_status || "on_track")}<small>${escapeHtml(coachGroupLabel(athlete.groupName))} · ${escapeHtml(status.training_focus || "No focus set")}</small><p>${escapeHtml(alert)}</p></div>
+      <form class="heat-form" data-heat-athlete="${athlete.id}">
+        <select name="heatStatus">${Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}" ${(status.heat_status || "on_track") === value ? "selected" : ""}>${info.label}</option>`).join("")}</select>
+        <input name="trainingFocus" value="${escapeHtml(status.training_focus || "")}" placeholder="Current focus">
+        <button class="secondary-btn compact-btn" type="submit">Save</button>
+      </form>
+    </article>`;
+  }).join("");
+}
+
+function attendanceForm(roster = []) {
+  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join("");
+  const riderRows = roster.map((athlete) => `<label class="attendance-rider">${avatarHtml(athlete)}<span>${escapeHtml(athlete.display_name)}</span><select name="status:${athlete.id}"><option value="">Skip</option><option value="attended">Attended</option><option value="late">Late</option><option value="absent">Absent</option></select><label><input type="checkbox" name="owed:${athlete.id}"> Owes</label><label><input type="checkbox" name="paid:${athlete.id}"> Paid</label></label>`).join("");
+  return `<form id="attendance-form" class="attendance-form">
+    <div class="two-col-form">
+      <div class="field"><label for="attendance-date">Date</label><input id="attendance-date" name="sessionDate" type="date" value="${escapeHtml(localDate())}" required></div>
+      <div class="field"><label for="attendance-venue">Venue</label><input id="attendance-venue" name="venue" placeholder="Skate park"></div>
+      <div class="field"><label for="attendance-group">Group</label><select id="attendance-group" name="groupName">${groupOptions}</select></div>
+      <div class="field"><label for="attendance-total">Total entry cost paid</label><input id="attendance-total" name="totalEntryCost" type="number" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="field"><label for="attendance-cost">Cost per rider</label><input id="attendance-cost" name="costPerRider" type="number" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="field"><label for="attendance-notes">Session notes</label><input id="attendance-notes" name="notes" placeholder="Session notes"></div>
+    </div>
+    <div class="attendance-grid">${riderRows}</div>
+    <button class="primary-btn wide" type="submit">Save attendance & reimbursements</button>
+  </form>`;
+}
+
+function attendanceHistoryHtml(sessions = []) {
+  if (!sessions.length) return `<div class="empty compact-empty">No attendance sessions recorded yet.</div>`;
+  return sessions.map((session) => {
+    const records = session.attendance_records || [];
+    const owed = records.filter((record) => record.reimbursement_owed && !record.reimbursement_paid).length;
+    return `<div class="list-row"><div><strong>${escapeHtml(session.venue || "Session")} · ${escapeHtml(coachGroupLabel(session.group_name))}</strong><small>${escapeHtml(session.session_date)} · ${records.length} riders · $${Number(session.total_entry_cost || 0).toFixed(2)} paid · ${owed} outstanding</small></div><span class="points">${records.filter((record) => record.status === "attended").length}</span></div>`;
+  }).join("");
 }
 
 function goalsSection(profile = {}) {
@@ -1092,6 +1265,217 @@ async function submitCrewPost(event) {
   await renderAthleteCrew();
 }
 
+async function renderCoachCommand() {
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>No <span>riders</span></h1><p>Add students first, then this becomes your calendar, heat map, attendance, and parent-update hub.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  const commandData = await getCoachCommandData(roster);
+  const attentionCount = roster.filter((athlete) => athleteAttention(athlete, commandData).flags.length).length;
+  const injuredCount = commandData.statuses.filter((status) => status.heat_status === "injured").length;
+  const calendarFeed = combinedCoachCalendarItems(commandData);
+  const upcoming = calendarFeed.filter((event) => new Date(event.starts_at) >= new Date()).length;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>JKCoaching <span>HQ</span></h1><p>Calendar, rider heat map, attendance, reimbursements, and athlete alerts in one coach-only area.</p></div></div>
+    <section class="stats-grid">
+      ${statCard("Students", roster.length, "", "In your crew")}
+      ${statCard("Need attention", attentionCount, "", "Auto flags")}
+      ${statCard("Upcoming", upcoming, "", "Calendar items")}
+      ${statCard("Modified", injuredCount, "", "Injured / modified")}
+    </section>
+    <section class="coach-command-grid">
+      <section class="panel command-calendar"><div class="panel-head"><div><div class="panel-title">Coach calendar</div><div class="panel-meta">Events, comps, privates, groups and important dates</div></div></div>${calendarItemsHtml(calendarFeed, roster)}<div class="settings-divider"></div>${coachCalendarForm(roster)}</section>
+      <section class="panel command-overview"><div class="panel-head"><div><div class="panel-title">Athlete overview & heat map</div><div class="panel-meta">Quick scan for support, injuries and comp prep</div></div></div><div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div></section>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Attendance & private venue reimbursements</div><div class="panel-meta">Coach-only attendance, entry cost, who owes and who paid</div></div></div>${attendanceForm(roster)}<div class="settings-divider"></div>${attendanceHistoryHtml(commandData.attendanceSessions)}</section>`;
+  document.querySelector("#coach-calendar-form").addEventListener("submit", saveCoachCalendarEvent);
+  document.querySelector("#attendance-form").addEventListener("submit", saveAttendanceSession);
+  document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
+}
+
+async function saveCoachCalendarEvent(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const startsAt = form.get("startsAt");
+  const endsAt = form.get("endsAt");
+  if (endsAt && new Date(endsAt) < new Date(startsAt)) return notify("Finish date must be after start date.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Adding...";
+  const { error } = await client.from("coach_calendar_events").insert({
+    coach_id: state.user.id,
+    athlete_id: form.get("athleteId") || null,
+    group_name: form.get("groupName") || "",
+    title: String(form.get("title") || "").trim(),
+    starts_at: new Date(startsAt).toISOString(),
+    ends_at: endsAt ? new Date(endsAt).toISOString() : null,
+    venue: String(form.get("venue") || "").trim(),
+    notes: String(form.get("notes") || "").trim(),
+    attendance_status: String(form.get("attendanceStatus") || "").trim(),
+    payment_status: String(form.get("paymentStatus") || "").trim(),
+    event_type: "coach",
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Add event";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Coach calendar event added.");
+  await renderCoachCommand();
+}
+
+async function saveHeatStatus(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const athleteId = event.currentTarget.dataset.heatAthlete;
+  const { error } = await client.from("athlete_coach_status").upsert({
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    heat_status: form.get("heatStatus"),
+    training_focus: String(form.get("trainingFocus") || "").trim(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,athlete_id" });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Rider heat status saved.");
+  await renderCoachCommand();
+}
+
+async function saveAttendanceSession(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const rows = [];
+  [...form.entries()].forEach(([key, value]) => {
+    if (!key.startsWith("status:") || !value) return;
+    const athleteId = key.slice("status:".length);
+    rows.push({
+      coach_id: state.user.id,
+      athlete_id: athleteId,
+      status: value,
+      reimbursement_owed: form.get(`owed:${athleteId}`) === "on",
+      reimbursement_paid: form.get(`paid:${athleteId}`) === "on",
+    });
+  });
+  if (!rows.length) return notify("Choose at least one rider attendance status.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  const { data: session, error } = await client.from("attendance_sessions").insert({
+    coach_id: state.user.id,
+    session_date: form.get("sessionDate"),
+    venue: String(form.get("venue") || "").trim(),
+    group_name: form.get("groupName"),
+    notes: String(form.get("notes") || "").trim(),
+    total_entry_cost: Number(form.get("totalEntryCost") || 0),
+    cost_per_rider: Number(form.get("costPerRider") || 0),
+  }).select().single();
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Save attendance & reimbursements";
+    return notify(messageFrom(error), "error");
+  }
+  const { error: recordError } = await client.from("attendance_records").insert(rows.map((row) => ({ ...row, attendance_session_id: session.id })));
+  if (recordError) return notify(messageFrom(recordError), "error");
+  notify("Attendance and reimbursement tracker saved.");
+  await renderCoachCommand();
+}
+
+function privateRecordForm(record = {}) {
+  return `<form id="private-record-form" class="private-record-form">
+    <div class="two-col-form">
+      <div class="field"><label for="emergency-name">Emergency contact name</label><input id="emergency-name" name="emergencyContactName" value="${escapeHtml(record.emergency_contact_name || "")}" placeholder="Parent / guardian"></div>
+      <div class="field"><label for="emergency-phone">Emergency contact phone</label><input id="emergency-phone" name="emergencyContactPhone" value="${escapeHtml(record.emergency_contact_phone || "")}" placeholder="Phone number"></div>
+      <div class="field"><label for="guardian-details">Parent / guardian details</label><textarea id="guardian-details" name="guardianDetails" placeholder="Names, emails, extra contacts...">${escapeHtml(record.guardian_details || "")}</textarea></div>
+      <div class="field"><label for="medical-notes">Medical notes</label><textarea id="medical-notes" name="medicalNotes" placeholder="Allergies, conditions, medication...">${escapeHtml(record.medical_notes || "")}</textarea></div>
+      <div class="field"><label for="injury-notes">Injury / modified training notes</label><textarea id="injury-notes" name="injuryNotes" placeholder="Current injuries or modified training...">${escapeHtml(record.injury_notes || "")}</textarea></div>
+      <div class="field"><label for="waiver-notes">Waivers / permission notes</label><textarea id="waiver-notes" name="waiverNotes" placeholder="Waiver status, permission forms, reminders...">${escapeHtml(record.waiver_notes || "")}</textarea></div>
+    </div>
+    <button class="primary-btn wide" type="submit">Save private rider record</button>
+  </form>`;
+}
+
+function documentsHtml(documents = []) {
+  if (!documents.length) return `<div class="empty compact-empty">No waivers, forms or documents uploaded yet.</div>`;
+  return documents.map((doc) => `<div class="list-row"><div><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.document_type)} · ${escapeHtml(doc.file_name || "Saved file")} · ${dateLabel(doc.created_at)}${doc.notes ? ` · ${escapeHtml(doc.notes)}` : ""}</small></div><a class="secondary-btn compact-btn" href="${escapeHtml(doc.file_data_url)}" target="_blank" rel="noopener">Open</a></div>`).join("");
+}
+
+function documentUploadForm() {
+  return `<form id="document-form" class="coach-document-form">
+    <div class="field"><label for="document-title">Document title</label><input id="document-title" name="title" required placeholder="Signed waiver, permission form..."></div>
+    <div class="field"><label for="document-type">Type</label><select id="document-type" name="documentType"><option value="waiver">Waiver</option><option value="permission">Permission form</option><option value="medical">Medical form</option><option value="other">Other</option></select></div>
+    <div class="field"><label for="document-file">Upload PDF / image</label><input id="document-file" name="file" type="file" accept="application/pdf,image/*" required></div>
+    <div class="field"><label for="document-notes">Notes</label><input id="document-notes" name="notes" placeholder="Optional"></div>
+    <button class="primary-btn" type="submit">Save file</button>
+  </form>`;
+}
+
+function injuryReportsHtml(injuries = []) {
+  if (!injuries.length) return `<div class="empty compact-empty">No injury reports saved.</div>`;
+  return injuries.map((report) => `<article class="help-card"><div class="help-card-head"><div><strong>${escapeHtml(report.body_area || "Injury report")}</strong><small>${dateLabel(report.injured_at)} · ${escapeHtml(report.venue || "Venue not set")} · ${escapeHtml(report.severity || "Severity not set")}</small></div></div><p>${escapeHtml(report.what_happened || "No details added.")}</p><small>${report.guardian_contacted ? "Parent/guardian contacted" : "Parent/guardian not marked as contacted"} · Follow-up: ${escapeHtml(report.follow_up || "None added")}</small>${report.photo_data_url ? `<div class="video-actions"><a class="secondary-btn compact-btn" href="${escapeHtml(report.photo_data_url)}" target="_blank" rel="noopener">Open photo</a></div>` : ""}</article>`).join("");
+}
+
+function injuryReportForm(athlete = {}) {
+  return `<form id="injury-form" class="injury-form">
+    <div class="two-col-form">
+      <div class="field"><label for="injury-time">Date / time</label><input id="injury-time" name="injuredAt" type="datetime-local" required></div>
+      <div class="field"><label for="injury-venue">Venue</label><input id="injury-venue" name="venue" placeholder="Skate park"></div>
+      <div class="field"><label for="body-area">Body area</label><input id="body-area" name="bodyArea" placeholder="Wrist, ankle, shoulder..."></div>
+      <div class="field"><label for="severity">Severity</label><select id="severity" name="severity"><option value="minor">Minor</option><option value="moderate">Moderate</option><option value="serious">Serious</option></select></div>
+      <div class="field"><label for="what-happened">What happened</label><textarea id="what-happened" name="whatHappened" placeholder="${escapeHtml(firstName(athlete))} fell attempting..."></textarea></div>
+      <div class="field"><label for="first-aid">First aid given</label><textarea id="first-aid" name="firstAid" placeholder="Ice, rest, parent called..."></textarea></div>
+      <div class="field"><label for="witnesses">Who was present</label><input id="witnesses" name="witnesses" placeholder="Coach, riders, parent..."></div>
+      <div class="field"><label for="follow-up">Follow-up action</label><input id="follow-up" name="followUp" placeholder="Monitor, doctor, modified training..."></div>
+      <div class="field"><label for="injury-photo">Optional photo</label><input id="injury-photo" name="photo" type="file" accept="image/*"></div>
+      <label class="checkline"><input name="guardianContacted" type="checkbox"> Parent / guardian contacted</label>
+    </div>
+    <div class="field"><label for="injury-coach-notes">Coach notes</label><textarea id="injury-coach-notes" name="coachNotes" placeholder="Private coach notes..."></textarea></div>
+    <button class="danger-btn wide" type="submit">Save injury report</button>
+  </form>`;
+}
+
+function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance = []) {
+  return `<section class="panel parent-update-panel"><div class="panel-head"><div><div class="panel-title">Parent update button</div><div class="panel-meta">Generate, edit, then copy a parent message</div></div></div>
+    <div class="two-col-form">
+      <div class="field"><label for="parent-update-type">Message type</label><select id="parent-update-type"><option value="positive">Positive update</option><option value="progress">Progress update</option><option value="injury">Injury update</option><option value="behaviour">Behaviour update</option><option value="reminder">Reminder message</option><option value="term">Term report message</option></select></div>
+      <div class="field"><label for="parent-next-focus">Next focus</label><input id="parent-next-focus" placeholder="Keeping speed through the park"></div>
+    </div>
+    <textarea id="parent-update-draft" class="parent-update-draft" placeholder="Generate a message, then edit it here..."></textarea>
+    <div class="actions"><button class="primary-btn" id="generate-parent-update" type="button" data-athlete-name="${escapeHtml(athlete.display_name)}" data-completed="${schedule.assignments.filter(isAssignmentComplete).length}" data-total="${schedule.assignments.length}" data-attendance="${attendance[0]?.status || ""}">Generate update</button><button class="secondary-btn" id="copy-parent-update" type="button">Copy message</button></div>
+  </section>`;
+}
+
+function runPlansHtml(runs = []) {
+  if (!runs.length) return `<div class="empty compact-empty">No saved run plans yet.</div>`;
+  return runs.map((run) => `<article class="run-card"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)}</small></div>${run.image_data_url ? `<img src="${escapeHtml(run.image_data_url)}" alt="${escapeHtml(run.title)} run map">` : ""}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol></article>`).join("");
+}
+
+function runBuilderPanel(runs = []) {
+  const builder = state.runBuilder || { points: [] };
+  const points = builder.points || [];
+  const markers = builder.imageDataUrl ? points.map((point, index) => `<button type="button" class="run-marker" style="left:${point.x}%;top:${point.y}%">${index + 1}</button>`).join("") : "";
+  return `<section class="panel"><div class="panel-head"><div><div class="panel-title">Visual run builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, then save</div></div></div>
+    <form id="run-builder-form" class="run-builder-form">
+      <div class="two-col-form">
+        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required placeholder="Competition run, safe line..."></div>
+        <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" placeholder="Pizzey, Beenleigh..."></div>
+        <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training">Training line</option><option value="competition">Competition run</option><option value="safe">Safe run</option><option value="high-risk">High-risk run</option><option value="best-trick">Best trick plan</option></select></div>
+        <div class="field"><label for="run-photo">Park/course photo</label><input id="run-photo" name="photo" type="file" accept="image/*"></div>
+      </div>
+      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? `<img src="${escapeHtml(builder.imageDataUrl)}" alt="Run builder map">${markers}` : "Upload a photo, then tap the image to add start/trick points."}</div>
+      <div class="run-point-list">${points.length ? points.map((point, index) => `<span class="public-badge">${index + 1}. ${escapeHtml(point.label)}</span>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
+      <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing..."></textarea></div>
+      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">Save run plan</button></div>
+    </form>
+    <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>
+  </section>`;
+}
+
 async function getCoachRoster() {
   const { data: links, error } = await client.from("coach_athletes").select("athlete_id, group_name").eq("coach_id", state.user.id);
   if (error) throw error;
@@ -1116,15 +1500,20 @@ async function renderCrew() {
     client.from("profiles").select("id, display_name, level, avatar").eq("role", "athlete").order("display_name"),
   ]);
   if (error) throw error;
+  const commandData = roster.length ? await getCoachCommandData(roster) : { statuses: [] };
+  const statuses = statusByAthlete(commandData.statuses);
   const linkedIds = new Set(roster.map((athlete) => athlete.id));
   const available = (allAthletes || []).filter((athlete) => !linkedIds.has(athlete.id));
   const groupsHtml = coachGroups.map(([groupId, label]) => {
     const athletes = roster.filter((athlete) => athlete.groupName === groupId);
-    const students = athletes.length ? athletes.map((athlete) => `
+    const students = athletes.length ? athletes.map((athlete) => {
+      const status = statuses.get(athlete.id) || {};
+      return `
       <button class="student-chip" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
         ${avatarHtml(athlete, "student-chip-avatar")}
-        <span>${escapeHtml(athlete.display_name)}</span>
-      </button>`).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
+        <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small></span>
+      </button>`;
+    }).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
     return `<section class="group-column" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
   }).join("");
   const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
@@ -1220,7 +1609,7 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
@@ -1228,6 +1617,7 @@ async function renderStudentProfile() {
     getHelpRequests(athlete.id),
     getDashboardItems(athlete.id),
     getCoachVenues(),
+    getStudentPrivateData(athlete.id),
   ]);
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
@@ -1292,6 +1682,11 @@ async function renderStudentProfile() {
       <div class="parent-links">${linkedParentsHtml}</div>
       ${availableParents.length ? `<form id="link-parent-form" class="trick-form parent-link-form"><div class="field"><label for="parent-id">Available parent accounts</label><select id="parent-id" name="parentId">${parentOptions}</select></div><button class="primary-btn" type="submit">Link parent</button></form>` : `<div class="empty compact-empty">No unlinked parent accounts available. Parents can create one from the sign-up screen.</div>`}
     </section>
+    ${parentUpdatePanel(athlete, schedule, dashboardItems, privateData.attendance)}
+    <section class="panel coach-private-panel"><div class="panel-head"><div><div class="panel-title">Private rider records</div><div class="panel-meta">Coach/admin only · emergency contacts, medical notes, waivers and permissions</div></div></div>${privateRecordForm(privateData.record)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Waivers, forms & documents</div><div class="panel-meta">Private coach-only file area</div></div></div>${documentsHtml(privateData.documents)}<div class="settings-divider"></div>${documentUploadForm()}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Injury reports</div><div class="panel-meta">Quick phone-friendly report saved to the rider file</div></div></div>${injuryReportsHtml(privateData.injuries)}<div class="settings-divider"></div>${injuryReportForm(athlete)}</section>
+    ${runBuilderPanel(privateData.runs)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & important tasks</div><div class="panel-meta">Visible on this athlete's Home page</div></div></div>
       ${dashboardItemsHtml(dashboardItems)}
       <div class="settings-divider"></div>
@@ -1307,6 +1702,15 @@ async function renderStudentProfile() {
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
+  document.querySelector("#private-record-form").addEventListener("submit", savePrivateRecord);
+  document.querySelector("#document-form").addEventListener("submit", saveAthleteDocument);
+  document.querySelector("#injury-form").addEventListener("submit", saveInjuryReport);
+  document.querySelector("#generate-parent-update").addEventListener("click", generateParentUpdate);
+  document.querySelector("#copy-parent-update").addEventListener("click", copyParentUpdate);
+  document.querySelector("#run-photo").addEventListener("change", setRunBuilderPhoto);
+  document.querySelector("#run-map").addEventListener("click", addRunBuilderPoint);
+  document.querySelector("#clear-run-builder").addEventListener("click", clearRunBuilder);
+  document.querySelector("#run-builder-form").addEventListener("submit", saveRunPlan);
   document.querySelectorAll("[data-unlink-parent]").forEach((button) => button.addEventListener("click", unlinkParentAccount));
   document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
   bindDashboardItemActions(renderStudentProfile);
@@ -1501,6 +1905,163 @@ async function unlinkParentAccount(event) {
     .eq("parent_id", parentId);
   if (error) return notify(messageFrom(error), "error");
   notify("Parent viewer unlinked.");
+  await renderStudentProfile();
+}
+
+async function savePrivateRecord(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const { error } = await client.from("athlete_private_records").upsert({
+    coach_id: state.user.id,
+    athlete_id: state.selectedAthleteId,
+    emergency_contact_name: String(form.get("emergencyContactName") || "").trim(),
+    emergency_contact_phone: String(form.get("emergencyContactPhone") || "").trim(),
+    guardian_details: String(form.get("guardianDetails") || "").trim(),
+    medical_notes: String(form.get("medicalNotes") || "").trim(),
+    injury_notes: String(form.get("injuryNotes") || "").trim(),
+    waiver_notes: String(form.get("waiverNotes") || "").trim(),
+    permission_notes: String(form.get("waiverNotes") || "").trim(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,athlete_id" });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Private rider record saved.");
+  await renderStudentProfile();
+}
+
+async function saveAthleteDocument(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const file = form.get("file");
+  if (!file?.size) return notify("Choose a document or image first.", "error");
+  if (file.size > 12 * 1024 * 1024) return notify("Choose a file under 12MB.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const fileDataUrl = await fileToDataUrl(file);
+    const { error } = await client.from("athlete_documents").insert({
+      coach_id: state.user.id,
+      athlete_id: state.selectedAthleteId,
+      document_type: form.get("documentType"),
+      title: String(form.get("title") || "").trim(),
+      file_name: file.name,
+      file_data_url: fileDataUrl,
+      notes: String(form.get("notes") || "").trim(),
+    });
+    if (error) throw error;
+    notify("Private document saved.");
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Save file";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function saveInjuryReport(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const file = form.get("photo");
+  if (file?.size > 8 * 1024 * 1024) return notify("Choose an injury photo under 8MB.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const photo = file?.size ? await fileToDataUrl(file) : "";
+    const { error } = await client.from("injury_reports").insert({
+      coach_id: state.user.id,
+      athlete_id: state.selectedAthleteId,
+      injured_at: new Date(form.get("injuredAt")).toISOString(),
+      venue: String(form.get("venue") || "").trim(),
+      what_happened: String(form.get("whatHappened") || "").trim(),
+      body_area: String(form.get("bodyArea") || "").trim(),
+      severity: form.get("severity"),
+      first_aid: String(form.get("firstAid") || "").trim(),
+      witnesses: String(form.get("witnesses") || "").trim(),
+      guardian_contacted: form.get("guardianContacted") === "on",
+      follow_up: String(form.get("followUp") || "").trim(),
+      coach_notes: String(form.get("coachNotes") || "").trim(),
+      photo_data_url: photo,
+    });
+    if (error) throw error;
+    await client.from("athlete_coach_status").upsert({ coach_id: state.user.id, athlete_id: state.selectedAthleteId, heat_status: "injured", updated_at: new Date().toISOString() }, { onConflict: "coach_id,athlete_id" });
+    notify("Injury report saved and rider marked modified/injured.");
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Save injury report";
+    notify(messageFrom(error), "error");
+  }
+}
+
+function generateParentUpdate(event) {
+  const button = event.currentTarget;
+  const name = button.dataset.athleteName || "your rider";
+  const first = name.split(/\s+/)[0] || name;
+  const type = document.querySelector("#parent-update-type").value;
+  const focus = document.querySelector("#parent-next-focus").value.trim() || "keeping the next session focused and consistent";
+  const completed = button.dataset.completed || "0";
+  const total = button.dataset.total || "0";
+  const templates = {
+    positive: `Hey! ${first} had a solid session today. They completed ${completed}/${total} weekly items and brought good energy. Next focus is ${focus}. Super proud of the effort.`,
+    progress: `Hey! Quick progress update for ${first}: they are sitting at ${completed}/${total} completed items this week. The next focus is ${focus}. We will keep building this step by step.`,
+    injury: `Hey, just letting you know ${first} had an injury/modified training note added today. Current plan is ${focus}. I will keep monitoring and adjust training as needed.`,
+    behaviour: `Hey! Behaviour update for ${first}: today we focused on staying locked in, listening quickly, and keeping the session productive. Next focus is ${focus}.`,
+    reminder: `Hey! Reminder for ${first}: please check upcoming tasks/events in JKCREW. Next focus is ${focus}.`,
+    term: `Hey! Term report snapshot for ${first}: they completed ${completed}/${total} tracked weekly items recently. Main next focus is ${focus}. Thanks for supporting the process.`,
+  };
+  document.querySelector("#parent-update-draft").value = templates[type] || templates.positive;
+}
+
+async function copyParentUpdate() {
+  const text = document.querySelector("#parent-update-draft").value.trim();
+  if (!text) return notify("Generate or write a message first.", "error");
+  await navigator.clipboard.writeText(text);
+  notify("Parent update copied.");
+}
+
+async function setRunBuilderPhoto(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
+  state.runBuilder = { imageDataUrl: await fileToDataUrl(file), points: [] };
+  await renderStudentProfile();
+}
+
+async function addRunBuilderPoint(event) {
+  if (!state.runBuilder?.imageDataUrl || event.target.closest(".run-marker")) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10;
+  const y = Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10;
+  const label = window.prompt("Name this point or trick:", state.runBuilder.points.length ? `Trick ${state.runBuilder.points.length}` : "Start");
+  if (!label) return;
+  state.runBuilder.points.push({ x, y, label: label.slice(0, 80) });
+  await renderStudentProfile();
+}
+
+async function clearRunBuilder() {
+  state.runBuilder = null;
+  await renderStudentProfile();
+}
+
+async function saveRunPlan(event) {
+  event.preventDefault();
+  if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
+  const form = new FormData(event.currentTarget);
+  const { error } = await client.from("run_plans").insert({
+    coach_id: state.user.id,
+    athlete_id: state.selectedAthleteId,
+    title: String(form.get("title") || "").trim(),
+    venue: String(form.get("venue") || "").trim(),
+    plan_type: form.get("planType"),
+    image_data_url: state.runBuilder.imageDataUrl,
+    points: state.runBuilder.points || [],
+    notes: String(form.get("notes") || "").trim(),
+    created_by: state.user.id,
+  });
+  if (error) return notify(messageFrom(error), "error");
+  state.runBuilder = null;
+  notify("Run plan saved.");
   await renderStudentProfile();
 }
 
