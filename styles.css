@@ -485,6 +485,26 @@ img, video, canvas, svg { max-width: 100%; }
   background: linear-gradient(135deg, rgba(0,255,209,0.14), rgba(168,85,247,0.07), rgba(255,255,255,0.018));
   box-shadow: 0 18px 70px rgba(0,0,0,0.22);
 }
+.venue-panel { margin-bottom: 14px; }
+.venue-select-wrap select {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid rgba(0,255,209,0.28);
+  border-radius: 14px;
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: 800 1rem var(--display);
+  text-transform: uppercase;
+  outline: none;
+}
+.venue-select-wrap select:focus { border-color: var(--aqua); box-shadow: 0 0 0 3px var(--aqua-soft); }
+.venue-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.custom-venue-editor { border-color: rgba(168,85,247,0.28); }
 .session-start-card p { margin: 5px 0 0; color: var(--muted); line-height: 1.4; }
 .go-mark { margin-top: 2px; color: var(--text); font: italic 900 clamp(3.2rem, 10vw, 5.3rem)/0.82 var(--display); letter-spacing: -0.055em; }
 .start-session-btn { min-height: 58px; padding: 15px 24px; border-radius: 14px; font-size: 1rem; white-space: nowrap; }
@@ -857,6 +877,7 @@ img, video, canvas, svg { max-width: 100%; }
   .chat-bubble { max-width: min(290px, 84vw); }
   .timer { font-size: 6rem; }
   .session-start-card { grid-template-columns: 1fr; padding: 15px; }
+  .venue-editor-grid { grid-template-columns: 1fr; }
   .go-mark { font-size: 3.4rem; }
   .start-session-btn { width: 100%; min-height: 60px; }
   .showreel-grid { grid-template-columns: 1fr; }

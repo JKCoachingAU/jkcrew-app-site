@@ -17,6 +17,7 @@ const state = {
   timer: null,
   selectedAthleteId: null,
   publicAthleteId: null,
+  selectedVenue: "",
 };
 
 const athleteNav = [
@@ -95,6 +96,9 @@ const motivationalQuotes = [
   { quote: "Small wins every session become big results.", by: "JKCoaching" },
 ];
 const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
+const defaultVenues = ["Pizzey", "Beenleigh", "Elanora", "Nerang", "RampFest", "Other / Custom Venue"];
+const venueKey = (venue = "") => String(venue || "").trim();
+const venueLabel = (venue = "") => venueKey(venue) || "Default Daily List";
 
 function avatarHtml(profile = {}, className = "") {
   const image = avatarUrl(profile);
@@ -401,7 +405,7 @@ const coachGroups = [
   ["online", "Online Athletes"],
 ];
 
-const dailyCompletionCount = (awards = []) => new Set(awards.filter((award) => award.award_key?.startsWith("daily:")).map((award) => award.award_key)).size;
+const dailyCompletionCount = (awards = []) => new Set(awards.filter((award) => award.award_key?.startsWith("daily:")).map((award) => String(award.award_key).slice(-10))).size;
 
 function isAssignmentComplete(assignment) {
   if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
@@ -416,6 +420,39 @@ function assignmentStatus(assignment) {
     return `${summary.attempts}/10 attempts${summary.attempts ? ` · ${summary.percentage}% landed` : ""}`;
   }
   return isAssignmentComplete(assignment) ? "Done this week" : "To do this week";
+}
+
+function dailyVenues(assignments = []) {
+  const venues = [...new Set(assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueKey(assignment.venue)))];
+  return venues.length ? venues : [""];
+}
+
+function selectedVenueFor(assignments = []) {
+  const venues = dailyVenues(assignments);
+  if (!venues.includes(state.selectedVenue)) state.selectedVenue = venues[0] || "";
+  return state.selectedVenue;
+}
+
+function assignmentsForVenue(assignments = [], venue = "") {
+  const selected = venueKey(venue);
+  return assignments.filter((assignment) => assignment.category !== "daily" || venueKey(assignment.venue) === selected);
+}
+
+function venueSelectorHtml(assignments = []) {
+  const venues = dailyVenues(assignments);
+  const selected = selectedVenueFor(assignments);
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === selected ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  return `<section class="panel venue-panel">
+    <div class="panel-head"><div><div class="panel-title">Training venue</div><div class="panel-meta">Choose the skate park for today's Daily Tricks</div></div></div>
+    <div class="venue-select-wrap"><select id="session-venue">${options}</select></div>
+  </section>`;
+}
+
+function bindVenueSelector() {
+  document.querySelector("#session-venue")?.addEventListener("change", (event) => {
+    state.selectedVenue = event.target.value;
+    renderSession();
+  });
 }
 
 function percentageSummary(assignment) {
@@ -440,7 +477,7 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
     return `
     <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}">
       <button class="assignment-check" type="button" aria-label="${label}" title="${label}" ${interactive ? `data-assignment-action="${action}" data-assignment-id="${assignment.id}"` : "disabled"}>${complete ? "✓" : ""}</button>
-      <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div>
+      <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${assignment.category === "daily" ? `${escapeHtml(venueLabel(assignment.venue))} · ` : ""}${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div>
     </div>`;
   }).join("");
 }
@@ -787,16 +824,20 @@ async function renderSession() {
     getWeeklyAssignments(state.user.id),
     getHelpRequests(state.user.id),
   ]);
+  const selectedVenue = selectedVenueFor(assignments);
+  const sessionAssignments = assignmentsForVenue(assignments, selectedVenue);
   await loadActiveSession();
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
+      ${venueSelectorHtml(assignments)}
       <section class="session-start-card">
-        <div><div class="timer-label">Ready when you are</div><div class="go-mark">GO</div><p>Start the live timer when you are chasing Daily Tricks points.</p></div>
+        <div><div class="timer-label">Ready at ${escapeHtml(venueLabel(selectedVenue))}</div><div class="go-mark">GO</div><p>Start the live timer when you are chasing Daily Tricks points.</p></div>
         <button class="primary-btn start-session-btn" id="create-session">Start Session</button>
       </section>
-      <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Tick progress any time · timed Daily points need a live session</div></div></div>${assignmentGroups(assignments, true)}</section>
+      <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Showing ${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · timed Daily points need a live session</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
       ${helpUploadSection(helpRequests)}`;
+    bindVenueSelector();
     document.querySelector("#create-session").addEventListener("click", startSession);
     document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
     document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
@@ -809,9 +850,11 @@ async function renderSession() {
   document.querySelector("#view").innerHTML = `
     <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments, true)}</section>
+    ${venueSelectorHtml(assignments)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
+  bindVenueSelector();
   document.querySelector("#end-session").addEventListener("click", endSession);
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
@@ -1191,7 +1234,25 @@ async function renderStudentProfile() {
   const linkedParentsHtml = linkedParents.length ? linkedParents.map((parent) => `
     <div class="list-row parent-link-row"><div class="person">${avatarHtml(parent)}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>Read-only viewer</small></div></div><button class="danger-btn compact-btn" data-unlink-parent="${parent.id}">Unlink</button></div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
-  const categoryEditor = Object.entries(categoryInfo).map(([category, info]) => {
+  const venueNames = [...new Set([...defaultVenues, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
+  const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
+    const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
+      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+      return `${assignment.trick_name}${notes}`;
+    }).join("\n");
+    return `<div class="schedule-editor">
+      <div class="schedule-editor-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list for ${escapeHtml(venue)}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length}</div></div>
+      <div class="field"><label for="assignment-daily-${venueIndex}">One trick or line per row</label><textarea id="assignment-daily-${venueIndex}" name="daily:${escapeHtml(venue)}" placeholder="Add ${escapeHtml(venue)} daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
+    </div>`;
+  }).join("");
+  const customVenueEditor = `<div class="schedule-editor custom-venue-editor">
+    <div class="schedule-editor-head"><div><div class="panel-title">Custom Venue Daily Tricks</div><div class="panel-meta">Add another skate park if this rider trains somewhere else</div></div></div>
+    <div class="two-col-form">
+      <div class="field"><label for="custom-daily-venue">Venue name</label><input id="custom-daily-venue" name="customDailyVenue" placeholder="New skate park name"></div>
+      <div class="field"><label for="custom-daily-list">Daily tricks</label><textarea id="custom-daily-list" name="customDaily" placeholder="One trick per line"></textarea></div>
+    </div>
+  </div>`;
+  const otherCategoryEditor = Object.entries(categoryInfo).filter(([category]) => category !== "daily").map(([category, info]) => {
     const assignmentText = assignments.filter((assignment) => assignment.category === category).map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
@@ -1201,6 +1262,7 @@ async function renderStudentProfile() {
       <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea></div>
     </div>`;
   }).join("");
+  const categoryEditor = `<div class="venue-editor-grid">${dailyVenueEditors}${customVenueEditor}</div>${otherCategoryEditor}`;
   const dailyDone = dailyCompletionCount(awards);
 
   document.querySelector("#view").innerHTML = `
@@ -1241,7 +1303,7 @@ async function renderStudentProfile() {
   document.querySelector("#remove-avatar").addEventListener("click", () => saveAthleteAvatar(null));
 }
 
-function parseAssignmentLine(line, index, category) {
+function parseAssignmentLine(line, index, category, venue = "") {
   const [left, ...noteParts] = line.split(" - ");
   const note = noteParts.join(" - ").trim();
   const trickName = left.trim();
@@ -1253,6 +1315,7 @@ function parseAssignmentLine(line, index, category) {
     week_start: weekStartDate(),
     trick_name: trickName.slice(0, 120),
     category,
+    venue: category === "daily" ? venueKey(venue).slice(0, 80) : "",
     target_reps: targetReps,
     notes: note.slice(0, 500),
     sort_order: index,
@@ -1262,10 +1325,23 @@ function parseAssignmentLine(line, index, category) {
 async function saveWeeklyAssignments(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  const assignments = Object.keys(categoryInfo).flatMap((category, categoryIndex) => String(form.get(category) || "").split("\n")
+  const dailyAssignments = [...form.entries()]
+    .filter(([key]) => key.startsWith("daily:"))
+    .flatMap(([key, value], venueIndex) => {
+      const venue = key.slice("daily:".length);
+      return String(value || "").split("\n")
+        .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", venue))
+        .filter(Boolean);
+    });
+  const customVenue = String(form.get("customDailyVenue") || "").trim();
+  const customDailyAssignments = customVenue ? String(form.get("customDaily") || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), 900 + index, "daily", customVenue))
+    .filter(Boolean) : [];
+  const otherAssignments = Object.keys(categoryInfo).filter((category) => category !== "daily").flatMap((category, categoryIndex) => String(form.get(category) || "").split("\n")
     .slice(0, category === "percentage" ? 3 : undefined)
-    .map((line, index) => parseAssignmentLine(line.trim(), (categoryIndex * 100) + index, category))
+    .map((line, index) => parseAssignmentLine(line.trim(), 1000 + (categoryIndex * 100) + index, category))
     .filter(Boolean));
+  const assignments = [...dailyAssignments, ...customDailyAssignments, ...otherAssignments];
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Saving...";
