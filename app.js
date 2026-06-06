@@ -385,6 +385,12 @@ async function getDashboardItems(athleteId) {
   return data || [];
 }
 
+async function getCoachVenues() {
+  const { data, error } = await client.from("coach_venues").select("*").eq("coach_id", state.user.id).order("sort_order", { ascending: true }).order("name");
+  if (error) throw error;
+  return data || [];
+}
+
 async function getCrewFeed() {
   const { data, error } = await client.rpc("get_crew_feed");
   if (error) throw error;
@@ -1214,13 +1220,14 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
     client.from("profiles").select("id, display_name, avatar").eq("role", "parent").order("display_name"),
     getHelpRequests(athlete.id),
     getDashboardItems(athlete.id),
+    getCoachVenues(),
   ]);
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
@@ -1234,7 +1241,9 @@ async function renderStudentProfile() {
   const linkedParentsHtml = linkedParents.length ? linkedParents.map((parent) => `
     <div class="list-row parent-link-row"><div class="person">${avatarHtml(parent)}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>Read-only viewer</small></div></div><button class="danger-btn compact-btn" data-unlink-parent="${parent.id}">Unlink</button></div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
-  const venueNames = [...new Set([...defaultVenues, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
+  const savedVenueNames = coachVenues.map((venue) => venue.name).filter(Boolean);
+  const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
+  const venueNames = [...new Set([...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
   const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
     const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
@@ -1242,7 +1251,10 @@ async function renderStudentProfile() {
     }).join("\n");
     return `<div class="schedule-editor">
       <div class="schedule-editor-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list for ${escapeHtml(venue)}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length}</div></div>
-      <div class="field"><label for="assignment-daily-${venueIndex}">One trick or line per row</label><textarea id="assignment-daily-${venueIndex}" name="daily:${escapeHtml(venue)}" placeholder="Add ${escapeHtml(venue)} daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
+      <div class="two-col-form venue-name-row">
+        <div class="field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
+        <div class="field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
+      </div>
     </div>`;
   }).join("");
   const customVenueEditor = `<div class="schedule-editor custom-venue-editor">
@@ -1322,29 +1334,64 @@ function parseAssignmentLine(line, index, category, venue = "") {
   };
 }
 
+function dailyVenueRowsFromForm(form) {
+  const rows = [...form.entries()]
+    .filter(([key]) => key.startsWith("dailyVenueName:"))
+    .map(([key, value]) => {
+      const index = key.slice("dailyVenueName:".length);
+      return {
+        index,
+        name: String(value || "").trim().slice(0, 80),
+        tricks: String(form.get(`dailyVenueTricks:${index}`) || ""),
+      };
+    })
+    .filter((row) => row.name);
+  const customVenue = String(form.get("customDailyVenue") || "").trim().slice(0, 80);
+  if (customVenue) rows.push({ index: "custom", name: customVenue, tricks: String(form.get("customDaily") || "") });
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = row.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function saveCoachVenueNames(rows) {
+  const venues = rows.map((row, index) => ({
+    coach_id: state.user.id,
+    name: row.name,
+    sort_order: index,
+  }));
+  const { error: deleteError } = await client.from("coach_venues").delete().eq("coach_id", state.user.id);
+  if (deleteError) throw deleteError;
+  if (!venues.length) return;
+  const { error } = await client.from("coach_venues").insert(venues);
+  if (error) throw error;
+}
+
 async function saveWeeklyAssignments(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  const dailyAssignments = [...form.entries()]
-    .filter(([key]) => key.startsWith("daily:"))
-    .flatMap(([key, value], venueIndex) => {
-      const venue = key.slice("daily:".length);
-      return String(value || "").split("\n")
-        .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", venue))
-        .filter(Boolean);
-    });
-  const customVenue = String(form.get("customDailyVenue") || "").trim();
-  const customDailyAssignments = customVenue ? String(form.get("customDaily") || "").split("\n")
-    .map((line, index) => parseAssignmentLine(line.trim(), 900 + index, "daily", customVenue))
-    .filter(Boolean) : [];
+  const dailyVenueRows = dailyVenueRowsFromForm(form);
+  const dailyAssignments = dailyVenueRows.flatMap((row, venueIndex) => String(row.tricks || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", row.name))
+    .filter(Boolean));
   const otherAssignments = Object.keys(categoryInfo).filter((category) => category !== "daily").flatMap((category, categoryIndex) => String(form.get(category) || "").split("\n")
     .slice(0, category === "percentage" ? 3 : undefined)
     .map((line, index) => parseAssignmentLine(line.trim(), 1000 + (categoryIndex * 100) + index, category))
     .filter(Boolean));
-  const assignments = [...dailyAssignments, ...customDailyAssignments, ...otherAssignments];
+  const assignments = [...dailyAssignments, ...otherAssignments];
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Saving...";
+
+  try {
+    await saveCoachVenueNames(dailyVenueRows);
+  } catch (error) {
+    notify(messageFrom(error), "error");
+    return renderStudentProfile();
+  }
 
   const { error: deleteError } = await client
     .from("weekly_trick_assignments")
