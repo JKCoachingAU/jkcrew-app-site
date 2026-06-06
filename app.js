@@ -72,6 +72,18 @@ const medalForRank = (row, index, total) => {
   if (total > 1 && index === total - 1) return `<span class="rank-medal last-place" title="Last place">💩</span>`;
   return "";
 };
+const earnedBadges = (value) => Array.isArray(value) ? value : [];
+const badgeChipHtml = (badge, className = "") => {
+  if (!badge) return "";
+  const icon = badge.icon || "★";
+  const label = badge.label || badge;
+  return `<span class="public-badge ${className}" title="${escapeHtml(badge.description || label)}"><span>${escapeHtml(icon)}</span>${escapeHtml(label)}</span>`;
+};
+const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
+  const items = earnedBadges(badges);
+  if (items.length) return items.map((badge) => badgeChipHtml(badge)).join("");
+  return emptyText ? `<span class="public-badge muted-badge">${escapeHtml(emptyText)}</span>` : "";
+};
 
 function avatarHtml(profile = {}, className = "") {
   const image = avatarUrl(profile);
@@ -179,7 +191,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo">JK<span>CREW</span></div>
+        <div class="auth-logo-lockup"><img src="icons/jkc-logo.png" alt="JK Coaching logo"><span>JKCoaching</span></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>creating futures.</h1>
@@ -502,6 +514,61 @@ function helpUploadSection(requests) {
   </section>`;
 }
 
+function goalsSection(profile = {}) {
+  const goals = Array.isArray(profile.goals) ? profile.goals : [];
+  const openCount = goals.filter((goal) => !goal.completed).length;
+  const rows = goals.length ? goals.map((goal) => `
+    <div class="goal-row ${goal.completed ? "complete" : ""}" data-goal-id="${escapeHtml(goal.id)}">
+      <button class="assignment-check goal-toggle" type="button" data-goal-toggle="${escapeHtml(goal.id)}" aria-label="${goal.completed ? "Mark goal active" : "Mark goal complete"}">${goal.completed ? "✓" : ""}</button>
+      <input value="${escapeHtml(goal.title)}" data-goal-title="${escapeHtml(goal.id)}" aria-label="Goal title">
+      <button class="secondary-btn compact-btn" type="button" data-goal-save="${escapeHtml(goal.id)}">Save</button>
+      <button class="danger-btn compact-btn" type="button" data-goal-delete="${escapeHtml(goal.id)}">Delete</button>
+    </div>`).join("") : `<div class="empty compact-empty">No goals yet. Add one thing you want to chase this week.</div>`;
+  return `<section class="panel goals-panel">
+    <div class="panel-head"><div><div class="panel-title">My Goals</div><div class="panel-meta">${openCount} active goals · keep your why in front of you</div></div></div>
+    <form id="goal-form" class="goal-form"><input name="goal" required maxlength="120" placeholder="Land barspin clean, qualify for state titles..."><button class="primary-btn" type="submit">Add goal</button></form>
+    <div class="goal-list">${rows}</div>
+  </section>`;
+}
+
+function normalizedGoals() {
+  return Array.isArray(state.profile?.goals) ? [...state.profile.goals] : [];
+}
+
+async function saveGoals(goals, message = "Goals saved.") {
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(message);
+  await renderAthleteHome();
+}
+
+function bindGoalActions() {
+  document.querySelector("#goal-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const title = String(new FormData(event.currentTarget).get("goal") || "").trim();
+    if (!title) return;
+    const goals = normalizedGoals();
+    goals.unshift({ id: crypto.randomUUID(), title: title.slice(0, 120), completed: false, createdAt: new Date().toISOString() });
+    await saveGoals(goals, "Goal added.");
+  });
+  document.querySelectorAll("[data-goal-toggle]").forEach((button) => button.addEventListener("click", async () => {
+    const goals = normalizedGoals().map((goal) => goal.id === button.dataset.goalToggle ? { ...goal, completed: !goal.completed } : goal);
+    await saveGoals(goals, "Goal updated.");
+  }));
+  document.querySelectorAll("[data-goal-save]").forEach((button) => button.addEventListener("click", async () => {
+    const input = document.querySelector(`[data-goal-title="${CSS.escape(button.dataset.goalSave)}"]`);
+    const title = String(input?.value || "").trim();
+    if (!title) return notify("Write the goal first.", "error");
+    const goals = normalizedGoals().map((goal) => goal.id === button.dataset.goalSave ? { ...goal, title: title.slice(0, 120) } : goal);
+    await saveGoals(goals, "Goal saved.");
+  }));
+  document.querySelectorAll("[data-goal-delete]").forEach((button) => button.addEventListener("click", async () => {
+    const goals = normalizedGoals().filter((goal) => goal.id !== button.dataset.goalDelete);
+    await saveGoals(goals, "Goal deleted.");
+  }));
+}
+
 function dashboardItemsHtml(items, editable = true) {
   if (!items.length) return `<div class="empty">No upcoming events or tasks yet.</div>`;
   return items.map((item) => `
@@ -534,11 +601,10 @@ function weekSummaryHtml(assignments, awards) {
 }
 
 async function renderAthleteHome() {
-  const [{ data: sessions, error }, leaderboard, schedule, helpRequests, dashboardItems] = await Promise.all([
+  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
-    getHelpRequests(state.user.id),
     getDashboardItems(state.user.id),
   ]);
   const { assignments, awards } = schedule;
@@ -572,8 +638,8 @@ async function renderAthleteHome() {
       <div class="settings-divider"></div>
       ${dashboardItemForm(state.user.id)}
     </section>
-    ${helpUploadSection(helpRequests)}`;
-  document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
+    ${goalsSection(state.profile)}`;
+  bindGoalActions();
   bindDashboardItemActions(renderAthleteHome);
   if (activeSession) {
     updateTimer();
@@ -631,9 +697,10 @@ async function renderParentHome() {
 function leaderRow(row, index, rows = []) {
   const total = rows.length;
   const badge = medalForRank(row, index, total);
+  const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">
     <div class="rank">#${index + 1}</div>
-    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><small>Level ${row.level} · ${row.session_count} sessions</small></div></div>
+    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><small>Level ${row.level} · ${row.session_count} sessions</small>${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
     <div class="points">${row.weekly_points}<small> pts</small></div>
   </button>`;
 }
@@ -658,14 +725,19 @@ async function getActiveSession() {
 }
 
 async function renderSession() {
-  const { assignments } = await getWeeklyAssignments(state.user.id);
+  const [{ assignments }, helpRequests] = await Promise.all([
+    getWeeklyAssignments(state.user.id),
+    getHelpRequests(state.user.id),
+  ]);
   await loadActiveSession();
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Only you and your coach can see this</div></div></div>${assignmentGroups(assignments)}</section>
-      <section class="session-hero"><div class="timer-label">Ready when you are</div><div class="timer">GO</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span></div><div style="margin-top:24px"><button class="primary-btn" id="create-session">Start session</button></div></section>`;
+      <section class="session-hero"><div class="timer-label">Ready when you are</div><div class="timer">GO</div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span></div><div style="margin-top:24px"><button class="primary-btn" id="create-session">Start session</button></div></section>
+      ${helpUploadSection(helpRequests)}`;
     document.querySelector("#create-session").addEventListener("click", startSession);
+    document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
     return;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
@@ -675,8 +747,10 @@ async function renderSession() {
     <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments, true)}</section>
-    <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>`;
+    <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
+    ${helpUploadSection(helpRequests)}`;
   document.querySelector("#end-session").addEventListener("click", endSession);
+  document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
   document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   updateTimer();
@@ -831,12 +905,12 @@ async function renderPublicAthleteProfile() {
     document.querySelector("#view").innerHTML = `<div class="empty">Could not find that rider profile.</div>`;
     return;
   }
-  const badges = Array.isArray(profile.badges) ? profile.badges : [];
+  const badges = earnedBadges(profile.badges);
   const badgeHtml = [
-    profile.is_weekly_winner ? "🏅 Weekly leader" : "",
-    profile.is_last_place ? "💩 Weekly last place" : "",
-    ...badges.map((badge) => String(badge || "").trim()).filter(Boolean),
-  ].filter(Boolean).map((badge) => `<span class="public-badge">${escapeHtml(badge)}</span>`).join("");
+    profile.is_weekly_winner ? `<span class="public-badge"><span>🏅</span>Weekly leader</span>` : "",
+    profile.is_last_place ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
+    badgeStripHtml(badges, ""),
+  ].filter(Boolean).join("");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, medals, badges, and weekly points history.</p></div><button class="secondary-btn" id="back-to-board">Back to board</button></div>
     <section class="panel public-profile-card">
@@ -844,7 +918,7 @@ async function renderPublicAthleteProfile() {
       <div>
         <div class="eyebrow">Rider profile</div>
         <h2>${escapeHtml(profile.display_name)}</h2>
-        <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No badges yet</span>`}</div>
+        <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No earned badges yet</span>`}</div>
       </div>
     </section>
     <section class="stats-grid public-profile-stats">
@@ -1332,7 +1406,6 @@ async function addNote(event) {
 }
 
 async function renderProfile() {
-  const badgeText = Array.isArray(state.profile.badges) ? state.profile.badges.join(", ") : "";
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     <div class="profile-grid">
@@ -1350,7 +1423,7 @@ async function renderProfile() {
             </div>
             <div class="field"><label for="profile-sponsors">Sponsors</label><textarea id="profile-sponsors" name="sponsors" placeholder="One sponsor per line">${escapeHtml(state.profile.sponsors || "")}</textarea></div>
             <div class="field"><label for="profile-achievements">Achievements</label><textarea id="profile-achievements" name="achievements" placeholder="Competition wins, landed tricks, milestones...">${escapeHtml(state.profile.achievements || "")}</textarea></div>
-            <div class="field"><label for="profile-badges">Badges</label><input id="profile-badges" name="badges" value="${escapeHtml(badgeText)}" placeholder="Fast learner, Big air, Style king"></div>
+            <div class="badge-lock-note">Achievement badges are earned through training progress and cannot be edited by riders.</div>
           ` : ""}
           <button class="primary-btn wide" type="submit">Save profile</button>
         </form>
@@ -1405,7 +1478,6 @@ async function updateProfile(event) {
     updates.age = Number.isFinite(age) && age > 0 ? age : null;
     updates.sponsors = String(form.get("sponsors") || "").trim();
     updates.achievements = String(form.get("achievements") || "").trim();
-    updates.badges = String(form.get("badges") || "").split(",").map((badge) => badge.trim()).filter(Boolean).slice(0, 12);
   }
   const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select().single();
   if (error) return notify(messageFrom(error), "error");
