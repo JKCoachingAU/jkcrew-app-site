@@ -446,6 +446,12 @@ async function getStudentPrivateData(athleteId) {
   };
 }
 
+async function getRunPlans(athleteId) {
+  const { data, error } = await client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(12);
+  if (error) throw error;
+  return data || [];
+}
+
 async function getCrewFeed() {
   const { data, error } = await client.rpc("get_crew_feed");
   if (error) throw error;
@@ -1460,27 +1466,59 @@ function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance =
   </section>`;
 }
 
+function runLineColor(segmentIndex) {
+  if (segmentIndex >= 9) return "#ff4567";
+  if (segmentIndex >= 5) return "#f7d154";
+  return "#00ffd1";
+}
+
+function runRouteSvg(points = []) {
+  const safePoints = Array.isArray(points) ? points : [];
+  if (safePoints.length < 2) return "";
+  const lines = safePoints.slice(1).map((point, index) => {
+    const previous = safePoints[index];
+    return `<line x1="${previous.x}" y1="${previous.y}" x2="${point.x}" y2="${point.y}" stroke="${runLineColor(index)}" />`;
+  }).join("");
+  return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
+}
+
+function runMapHtml(imageDataUrl = "", points = [], title = "Run map") {
+  if (!imageDataUrl) return "";
+  const safePoints = Array.isArray(points) ? points : [];
+  const markers = safePoints.map((point, index) => `<button type="button" class="run-marker" style="left:${point.x}%;top:${point.y}%">${index + 1}</button>`).join("");
+  return `<div class="run-map-preview"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}</div>`;
+}
+
+function canEditRun(run = {}) {
+  if (state.profile?.role === "coach") return run.coach_id === state.user.id;
+  return run.created_by === state.user?.id;
+}
+
+function runBuilderRefreshView() {
+  return state.profile?.role === "coach" && state.view === "student" ? renderStudentProfile() : renderProfile();
+}
+
 function runPlansHtml(runs = []) {
   if (!runs.length) return `<div class="empty compact-empty">No saved run plans yet.</div>`;
-  return runs.map((run) => `<article class="run-card"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)}</small></div>${run.image_data_url ? `<img src="${escapeHtml(run.image_data_url)}" alt="${escapeHtml(run.title)} run map">` : ""}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol></article>`).join("");
+  return runs.map((run) => `<article class="run-card"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol>${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}</article>`).join("");
 }
 
 function runBuilderPanel(runs = []) {
   const builder = state.runBuilder || { points: [] };
   const points = builder.points || [];
-  const markers = builder.imageDataUrl ? points.map((point, index) => `<button type="button" class="run-marker" style="left:${point.x}%;top:${point.y}%">${index + 1}</button>`).join("") : "";
+  const submitLabel = builder.id ? "Save run changes" : "Save run plan";
   return `<section class="panel"><div class="panel-head"><div><div class="panel-title">Visual run builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, then save</div></div></div>
     <form id="run-builder-form" class="run-builder-form">
       <div class="two-col-form">
-        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required placeholder="Competition run, safe line..."></div>
-        <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" placeholder="Pizzey, Beenleigh..."></div>
-        <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training">Training line</option><option value="competition">Competition run</option><option value="safe">Safe run</option><option value="high-risk">High-risk run</option><option value="best-trick">Best trick plan</option></select></div>
+        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Competition run, safe line..."></div>
+        <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" value="${escapeHtml(builder.venue || "")}" placeholder="Pizzey, Beenleigh..."></div>
+        <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training" ${builder.planType === "training" ? "selected" : ""}>Training line</option><option value="competition" ${builder.planType === "competition" ? "selected" : ""}>Competition run</option><option value="safe" ${builder.planType === "safe" ? "selected" : ""}>Safe run</option><option value="high-risk" ${builder.planType === "high-risk" ? "selected" : ""}>High-risk run</option><option value="best-trick" ${builder.planType === "best-trick" ? "selected" : ""}>Best trick plan</option></select></div>
         <div class="field"><label for="run-photo">Park/course photo</label><input id="run-photo" name="photo" type="file" accept="image/*"></div>
       </div>
-      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? `<img src="${escapeHtml(builder.imageDataUrl)}" alt="Run builder map">${markers}` : "Upload a photo, then tap the image to add start/trick points."}</div>
+      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map") : "Upload a photo, then tap the image to add start/trick points."}</div>
       <div class="run-point-list">${points.length ? points.map((point, index) => `<span class="public-badge">${index + 1}. ${escapeHtml(point.label)}</span>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
-      <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing..."></textarea></div>
-      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">Save run plan</button></div>
+      <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
+      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">${submitLabel}</button></div>
     </form>
     <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>
   </section>`;
@@ -1717,10 +1755,7 @@ async function renderStudentProfile() {
   document.querySelector("#injury-form").addEventListener("submit", saveInjuryReport);
   document.querySelector("#generate-parent-update").addEventListener("click", generateParentUpdate);
   document.querySelector("#copy-parent-update").addEventListener("click", copyParentUpdate);
-  document.querySelector("#run-photo").addEventListener("change", setRunBuilderPhoto);
-  document.querySelector("#run-map").addEventListener("click", addRunBuilderPoint);
-  document.querySelector("#clear-run-builder").addEventListener("click", clearRunBuilder);
-  document.querySelector("#run-builder-form").addEventListener("submit", saveRunPlan);
+  bindRunBuilderActions();
   document.querySelectorAll("[data-unlink-parent]").forEach((button) => button.addEventListener("click", unlinkParentAccount));
   document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
   bindDashboardItemActions(renderStudentProfile);
@@ -2030,49 +2065,99 @@ async function copyParentUpdate() {
   notify("Parent update copied.");
 }
 
+function bindRunBuilderActions() {
+  document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
+  document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
+  document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
+  document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
+  document.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
+}
+
+function currentRunFormState() {
+  const form = document.querySelector("#run-builder-form");
+  if (!form) return {};
+  const data = new FormData(form);
+  return {
+    id: state.runBuilder?.id || null,
+    title: String(data.get("title") || state.runBuilder?.title || "").trim(),
+    venue: String(data.get("venue") || state.runBuilder?.venue || "").trim(),
+    planType: data.get("planType") || state.runBuilder?.planType || "training",
+    notes: String(data.get("notes") || state.runBuilder?.notes || "").trim(),
+    points: state.runBuilder?.points || [],
+    imageDataUrl: state.runBuilder?.imageDataUrl || "",
+  };
+}
+
 async function setRunBuilderPhoto(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
   if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
-  state.runBuilder = { imageDataUrl: await fileToDataUrl(file), points: [] };
-  await renderStudentProfile();
+  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await fileToDataUrl(file), points: state.runBuilder?.points || [] };
+  await runBuilderRefreshView();
 }
 
 async function addRunBuilderPoint(event) {
   if (!state.runBuilder?.imageDataUrl || event.target.closest(".run-marker")) return;
-  const rect = event.currentTarget.getBoundingClientRect();
+  const map = event.currentTarget.querySelector(".run-map-preview") || event.currentTarget;
+  const rect = map.getBoundingClientRect();
   const x = Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10;
   const y = Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10;
   const label = window.prompt("Name this point or trick:", state.runBuilder.points.length ? `Trick ${state.runBuilder.points.length}` : "Start");
   if (!label) return;
+  state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points || [] };
   state.runBuilder.points.push({ x, y, label: label.slice(0, 80) });
-  await renderStudentProfile();
+  await runBuilderRefreshView();
 }
 
 async function clearRunBuilder() {
   state.runBuilder = null;
-  await renderStudentProfile();
+  await runBuilderRefreshView();
+}
+
+async function editRunPlan(event) {
+  const runId = event.currentTarget.dataset.editRun;
+  const athleteId = state.profile.role === "coach" ? state.selectedAthleteId : state.user.id;
+  const runs = await getRunPlans(athleteId);
+  const run = runs.find((item) => item.id === runId);
+  if (!run || !canEditRun(run)) return notify("You can only edit runs you created.", "error");
+  state.runBuilder = {
+    id: run.id,
+    title: run.title,
+    venue: run.venue,
+    planType: run.plan_type,
+    notes: run.notes,
+    imageDataUrl: run.image_data_url,
+    points: Array.isArray(run.points) ? run.points : [],
+  };
+  await runBuilderRefreshView();
 }
 
 async function saveRunPlan(event) {
   event.preventDefault();
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
-  const { error } = await client.from("run_plans").insert({
-    coach_id: state.user.id,
-    athlete_id: state.selectedAthleteId,
+  const isCoach = state.profile.role === "coach";
+  const athleteId = isCoach ? state.selectedAthleteId : state.user.id;
+  const coachId = isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
+  const payload = {
+    coach_id: coachId,
+    athlete_id: athleteId,
     title: String(form.get("title") || "").trim(),
     venue: String(form.get("venue") || "").trim(),
     plan_type: form.get("planType"),
     image_data_url: state.runBuilder.imageDataUrl,
     points: state.runBuilder.points || [],
     notes: String(form.get("notes") || "").trim(),
-    created_by: state.user.id,
-  });
+    updated_at: new Date().toISOString(),
+  };
+  const query = state.runBuilder.id
+    ? client.from("run_plans").update(payload).eq("id", state.runBuilder.id)
+    : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
+  const { error } = await query;
   if (error) return notify(messageFrom(error), "error");
   state.runBuilder = null;
   notify("Run plan saved.");
-  await renderStudentProfile();
+  await runBuilderRefreshView();
 }
 
 async function getLinkedCoachIdForCurrentAthlete() {
@@ -2174,6 +2259,7 @@ async function addNote(event) {
 }
 
 async function renderProfile() {
+  const athleteRuns = state.profile.role === "athlete" ? await getRunPlans(state.user.id) : [];
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     <div class="profile-grid">
@@ -2213,13 +2299,15 @@ async function renderProfile() {
         <div class="settings-divider"></div>
         <button class="danger-btn wide" id="sign-out">Sign out</button>
       </section>
-    </div>`;
+    </div>
+    ${state.profile.role === "athlete" ? runBuilderPanel(athleteRuns) : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
   document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);
   document.querySelector("#remove-own-avatar").addEventListener("click", () => saveOwnAvatar(null));
   document.querySelector("#choose-showreel")?.addEventListener("click", () => document.querySelector("#showreel-file").click());
   document.querySelector("#showreel-file")?.addEventListener("change", addShowreelVideo);
   document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
+  if (state.profile.role === "athlete") bindRunBuilderActions();
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
   document.querySelector("#password-form").addEventListener("submit", updatePassword);
   document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
