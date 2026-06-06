@@ -21,6 +21,7 @@ const state = {
 const athleteNav = [
   ["home", "Home"],
   ["session", "Session"],
+  ["crew", "Crew"],
   ["board", "Board"],
   ["profile", "Profile"],
 ];
@@ -84,6 +85,17 @@ function notify(message, type = "ok") {
   toast.className = `toast show ${type === "error" ? "error" : ""}`;
   clearTimeout(notify.timeout);
   notify.timeout = setTimeout(() => { toast.className = "toast"; }, 3600);
+}
+
+function celebrate(message) {
+  notify(message);
+  const existing = document.querySelector(".success-burst");
+  existing?.remove();
+  const burst = document.createElement("div");
+  burst.className = "success-burst";
+  burst.innerHTML = `<strong>Daily Tricks Complete</strong><span>${escapeHtml(message)}</span>`;
+  document.body.appendChild(burst);
+  setTimeout(() => burst.remove(), 4200);
 }
 
 function updateInstallButton() {
@@ -169,7 +181,7 @@ function renderAuth(mode = "login", message = "") {
         <div class="auth-card">
           <div class="eyebrow">Welcome to JKCREW</div>
           <h2>${mode === "login" ? "Sign in" : "Join the crew"}</h2>
-          <p class="subcopy">${mode === "login" ? "Pick up where you left off." : "Create your athlete or coach account."}</p>
+          <p class="subcopy">${mode === "login" ? "Pick up where you left off." : "Create your athlete or parent account."}</p>
           <div class="auth-tabs">
             <button class="auth-tab ${mode === "login" ? "active" : ""}" data-auth-mode="login">Sign in</button>
             <button class="auth-tab ${mode === "signup" ? "active" : ""}" data-auth-mode="signup">Create account</button>
@@ -181,7 +193,7 @@ function renderAuth(mode = "login", message = "") {
             </div>
             <div class="field ${mode === "signup" ? "" : "hidden"}">
               <label for="role">Account type</label>
-              <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option><option value="coach">Coach</option></select>
+              <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option></select>
             </div>
             <div class="field">
               <label for="email">Email</label>
@@ -272,7 +284,7 @@ async function navigate(view) {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
     session: renderSession,
     board: renderBoard,
-    crew: renderCrew,
+    crew: state.profile?.role === "coach" ? renderCrew : renderAthleteCrew,
     student: renderStudentProfile,
     notes: renderNotes,
     profile: renderProfile,
@@ -318,6 +330,18 @@ async function getWeeklyAssignments(athleteId) {
 
 async function getHelpRequests(athleteId) {
   const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getDashboardItems(athleteId) {
+  const { data, error } = await client.from("dashboard_items").select("*").eq("owner_id", athleteId).order("completed", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getCrewFeed() {
+  const { data, error } = await client.rpc("get_crew_feed");
   if (error) throw error;
   return data || [];
 }
@@ -443,12 +467,52 @@ function helpUploadSection(requests) {
   </section>`;
 }
 
+function dashboardItemsHtml(items, editable = true) {
+  if (!items.length) return `<div class="empty">No upcoming events or tasks yet.</div>`;
+  return items.map((item) => `
+    <div class="list-row dashboard-item ${item.completed ? "complete" : ""}">
+      <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.item_type)}${item.due_at ? ` · ${dateLabel(item.due_at)}` : ""}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div>
+      ${editable ? `<div class="item-actions"><button class="secondary-btn compact-btn" data-toggle-item="${item.id}">${item.completed ? "Reopen" : "Done"}</button><button class="danger-btn compact-btn" data-delete-item="${item.id}">Delete</button></div>` : ""}
+    </div>`).join("");
+}
+
+function dashboardItemForm(ownerId) {
+  return `<form id="dashboard-item-form" class="dashboard-item-form" data-owner-id="${ownerId}">
+    <div class="field"><label for="item-type">Type</label><select id="item-type" name="itemType"><option value="event">Event</option><option value="task">Important task</option></select></div>
+    <div class="field"><label for="item-title">Title</label><input id="item-title" name="title" required placeholder="State titles, film homework, bike check..."></div>
+    <div class="field"><label for="item-due">Date / time</label><input id="item-due" name="dueAt" type="datetime-local"></div>
+    <div class="field"><label for="item-details">Details</label><input id="item-details" name="details" placeholder="Optional short note"></div>
+    <button class="primary-btn" type="submit">Add</button>
+  </form>`;
+}
+
+function weekSummaryHtml(assignments, awards) {
+  const dailyDone = dailyCompletionCount(awards);
+  const weeklyPercent = weeklyCompletionPercent(assignments, awards);
+  const percentageItems = assignments.filter((assignment) => assignment.category === "percentage" && (assignment.percentageAttempts || []).length);
+  const percentageAverage = percentageItems.length
+    ? Math.round(percentageItems.reduce((sum, assignment) => sum + percentageSummary(assignment).percentage, 0) / percentageItems.length)
+    : 0;
+  const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
+  const weeklyTargets = assignments.filter((assignment) => assignment.category !== "daily").length;
+  return `<section class="panel">
+    <div class="panel-head"><div><div class="panel-title">This week's summary</div><div class="panel-meta">Simple progress snapshot</div></div></div>
+    <div class="summary-grid">
+      ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Overall program")}
+      ${statCard("Daily completions", `${dailyDone}/7`, "", "Full lists completed")}
+      ${statCard("Weekly tricks", `${completedWeekly}/${weeklyTargets}`, "", "Dialled + One Bangs + Percentage")}
+      ${statCard("Consistency", percentageItems.length ? `${percentageAverage}%` : "-", "", "Percentage Tricks avg")}
+    </div>
+  </section>`;
+}
+
 async function renderAthleteHome() {
-  const [{ data: sessions, error }, leaderboard, schedule, helpRequests] = await Promise.all([
+  const [{ data: sessions, error }, leaderboard, schedule, helpRequests, dashboardItems] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
     getHelpRequests(state.user.id),
+    getDashboardItems(state.user.id),
   ]);
   const { assignments, awards } = schedule;
   if (error) throw error;
@@ -457,8 +521,8 @@ async function renderAthleteHome() {
   const totalPoints = sessions.reduce((sum, session) => sum + session.total_points, 0);
   const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
   const dailyDone = dailyCompletionCount(awards);
-  const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
-  const weeklyTargets = assignments.filter((assignment) => assignment.category !== "daily").length;
+  const weeklyPercent = weeklyCompletionPercent(assignments, awards);
+  const openTasks = dashboardItems.filter((item) => item.item_type === "task" && !item.completed).length;
   const activeSession = await getActiveSession();
   if (activeSession) {
     state.activeTraining = activeSession;
@@ -467,21 +531,25 @@ async function renderAthleteHome() {
 
   document.querySelector("#view").innerHTML = `
     <section class="athlete-scoreboard panel">
-      <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your points and trick progress for this week.</p></div></div>
+      <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats">
         ${statCard("This week", weeklyPoints, "pts", `${weekly.length} sessions`)}
-        ${statCard("Daily Tricks", `${dailyDone}/7`, "", "Completed this week")}
-        ${statCard("Weekly tricks", `${completedWeekly}/${weeklyTargets}`, "", "Dialled + One Bangs")}
-        ${statCard("Crew rank", rank || "-", "", `${leaderboard.length || 0} riders`)}
+        ${statCard("World ranking", rank ? `#${rank}` : "-", "", `${leaderboard.length || 0} riders on board`)}
+        ${statCard("Weekly summary", `${weeklyPercent}%`, "", "Program complete")}
+        ${statCard("Important tasks", openTasks, "", "Open right now")}
       </div>
     </section>
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily point needs 20:00 or less</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span></div></section>` : `<div class="actions home-actions"><button class="primary-btn" id="start-session-home">Start session</button></div>`}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">My trick list</div><div class="panel-meta">Private · week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments, true)}</section>
+    ${weekSummaryHtml(assignments, awards)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events & important tasks</div><div class="panel-meta">You and your coach can edit these</div></div></div>
+      ${dashboardItemsHtml(dashboardItems)}
+      <div class="settings-divider"></div>
+      ${dashboardItemForm(state.user.id)}
+    </section>
     ${helpUploadSection(helpRequests)}`;
-  document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
-  document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   document.querySelector("#start-session-home")?.addEventListener("click", startSession);
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
+  bindDashboardItemActions(renderAthleteHome);
   if (activeSession) {
     updateTimer();
     state.timer = setInterval(updateTimer, 1000);
@@ -612,7 +680,9 @@ async function recordAssignmentAction(event) {
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  notify(`${result.message}${result.points_awarded ? ` · +${result.points_awarded} points` : ""}.`);
+  const message = `${result.message}${result.points_awarded ? ` · +${result.points_awarded} points` : ""}.`;
+  if (result.category === "daily" && result.points_awarded > 0) celebrate(message);
+  else notify(message);
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
 }
@@ -632,6 +702,55 @@ async function recordPercentageAttempt(event) {
   notify(`Percentage attempt saved: ${result.percentage}%.`);
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
+}
+
+function bindDashboardItemActions(refresh) {
+  document.querySelector("#dashboard-item-form")?.addEventListener("submit", (event) => saveDashboardItem(event, refresh));
+  document.querySelectorAll("[data-toggle-item]").forEach((button) => button.addEventListener("click", (event) => toggleDashboardItem(event, refresh)));
+  document.querySelectorAll("[data-delete-item]").forEach((button) => button.addEventListener("click", (event) => deleteDashboardItem(event, refresh)));
+}
+
+async function saveDashboardItem(event, refresh) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const dueAt = form.get("dueAt");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Adding...";
+  const { error } = await client.from("dashboard_items").insert({
+    owner_id: formElement.dataset.ownerId,
+    created_by: state.user.id,
+    item_type: form.get("itemType"),
+    title: String(form.get("title") || "").trim(),
+    details: String(form.get("details") || "").trim(),
+    due_at: dueAt ? new Date(dueAt).toISOString() : null,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Add";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Event/task added.");
+  await refresh();
+}
+
+async function toggleDashboardItem(event, refresh) {
+  const id = event.currentTarget.dataset.toggleItem;
+  const row = event.currentTarget.closest(".dashboard-item");
+  const completed = !row?.classList.contains("complete");
+  const { error } = await client.from("dashboard_items").update({ completed, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) return notify(messageFrom(error), "error");
+  notify(completed ? "Marked complete." : "Reopened.");
+  await refresh();
+}
+
+async function deleteDashboardItem(event, refresh) {
+  const id = event.currentTarget.dataset.deleteItem;
+  const { error } = await client.from("dashboard_items").delete().eq("id", id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Event/task deleted.");
+  await refresh();
 }
 
 async function recordTrick(event) {
@@ -669,6 +788,41 @@ async function renderBoard() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets its weekly view each Monday.</p></div></div>
     <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>`;
+}
+
+async function renderAthleteCrew() {
+  const [leaderboard, feed] = await Promise.all([getLeaderboard(), getCrewFeed()]);
+  const leader = leaderboard[0];
+  const feedHtml = feed.length ? feed.map((item) => `
+    <article class="feed-card ${item.feed_type === "landed" ? "activity" : ""}">
+      ${avatarHtml({ display_name: item.author_name, avatar: item.avatar })}
+      <div><strong>${escapeHtml(item.author_name || "JKCREW")}</strong><p>${escapeHtml(item.body)}${item.points ? ` · +${item.points} pts` : ""}</p><small>${dateLabel(item.created_at)}</small></div>
+    </article>`).join("") : `<div class="empty">No crew activity yet.</div>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and see live notifications when someone moves up or lands a trick.</p></div></div>
+    ${leader ? `<section class="panel leader-alert"><div class="live-dot"></div><div><div class="panel-title">Current leader: ${escapeHtml(leader.display_name)}</div><div class="panel-meta">${leader.weekly_points} points this week · new leaders show here</div></div></section>` : ""}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Keep it positive, useful, and progression-focused</div></div></div>
+      <form id="crew-post-form" class="crew-post-form"><div class="field"><label for="crew-message">Message</label><textarea id="crew-message" name="body" required maxlength="500" placeholder="Shout out a rider, share a win, or ask the crew something..."></textarea></div><button class="primary-btn wide" type="submit">Post to Crew</button></form>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Live notifications</div><div class="panel-meta">Newest messages and landed tricks</div></div></div><div class="feed-list">${feedHtml}</div></section>`;
+  document.querySelector("#crew-post-form").addEventListener("submit", submitCrewPost);
+}
+
+async function submitCrewPost(event) {
+  event.preventDefault();
+  const body = String(new FormData(event.currentTarget).get("body") || "").trim();
+  if (!body) return notify("Write a message first.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Posting...";
+  const { error } = await client.from("crew_posts").insert({ author_id: state.user.id, body, post_type: "chat" });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Post to Crew";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Posted to Crew.");
+  await renderAthleteCrew();
 }
 
 async function getCoachRoster() {
@@ -799,12 +953,13 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
     client.from("profiles").select("id, display_name, avatar").eq("role", "parent").order("display_name"),
     getHelpRequests(athlete.id),
+    getDashboardItems(athlete.id),
   ]);
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
@@ -845,6 +1000,11 @@ async function renderStudentProfile() {
       <div class="parent-links">${linkedParentsHtml}</div>
       ${availableParents.length ? `<form id="link-parent-form" class="trick-form parent-link-form"><div class="field"><label for="parent-id">Available parent accounts</label><select id="parent-id" name="parentId">${parentOptions}</select></div><button class="primary-btn" type="submit">Link parent</button></form>` : `<div class="empty compact-empty">No unlinked parent accounts available. Parents can create one from the sign-up screen.</div>`}
     </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & important tasks</div><div class="panel-meta">Visible on this athlete's Home page</div></div></div>
+      ${dashboardItemsHtml(dashboardItems)}
+      <div class="settings-divider"></div>
+      ${dashboardItemForm(athlete.id)}
+    </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Completion history</div><div class="panel-meta">Daily Tricks: ${dailyDone}/7 this week · ${assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length} weekly tasks complete</div></div></div>
       ${assignmentGroups(assignments)}
     </section>
@@ -857,6 +1017,7 @@ async function renderStudentProfile() {
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
   document.querySelectorAll("[data-unlink-parent]").forEach((button) => button.addEventListener("click", unlinkParentAccount));
   document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
+  bindDashboardItemActions(renderStudentProfile);
   document.querySelector("#choose-avatar").addEventListener("click", () => document.querySelector("#avatar-file").click());
   document.querySelector("#avatar-file").addEventListener("change", updateAthleteAvatar);
   document.querySelector("#remove-avatar").addEventListener("click", () => saveAthleteAvatar(null));
