@@ -273,6 +273,48 @@ a { color: inherit; }
 .assignment-actions { display: flex; gap: 6px; }
 .compact-btn { padding: 7px 10px; font-size: 0.65rem; }
 .assignment-list { display: grid; gap: 7px; }
+.percentage-card, .help-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.018);
+}
+.percentage-card + .percentage-card, .help-card + .help-card { margin-top: 8px; }
+.percentage-card-head, .help-card-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.percentage-card-head strong, .help-card-head strong { display: block; font-weight: 800; }
+.percentage-card-head small, .help-card-head small { color: var(--muted); }
+.percentage-result {
+  min-width: 54px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--muted);
+  font: 900 0.86rem var(--display);
+}
+.result-red { background: rgba(255,69,103,0.14); color: #ff7a94; }
+.result-yellow { background: rgba(247,209,84,0.14); color: var(--yellow); }
+.result-green { background: rgba(0,255,209,0.14); color: var(--aqua); }
+.attempt-dots { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.attempt-dot {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font: 800 0.72rem var(--mono);
+}
+.attempt-dot.landed { border-color: var(--aqua); background: var(--aqua); color: #001d18; }
+.attempt-dot.missed { border-color: rgba(255,69,103,0.48); background: rgba(255,69,103,0.12); color: #ff8aa1; }
+.percentage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .assignment-group { padding: 16px 0; border-top: 1px solid var(--line); }
 .assignment-group:first-of-type { padding-top: 0; border-top: 0; }
 .assignment-group:last-child { padding-bottom: 0; }
@@ -340,8 +382,39 @@ a { color: inherit; }
 .athlete-profile-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; margin-bottom: 14px; }
 .profile-avatar-large { width: 96px; height: 96px; font-size: 2.8rem; }
 .avatar-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: end; }
+.avatar-settings, .parent-link-form { margin-bottom: 14px; }
 .person { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .person-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weekly-notification {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(0,255,209,0.24);
+  border-radius: 10px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font-weight: 700;
+}
+.help-section { margin-top: 14px; }
+.help-form { margin-bottom: 6px; }
+.help-list { display: grid; gap: 8px; margin-top: 12px; }
+.help-video {
+  width: 100%;
+  max-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #000;
+}
+.coach-reply {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--aqua-soft);
+  color: var(--text);
+}
+.coach-reply strong { color: var(--aqua); }
+.coach-reply p { margin: 8px 0; white-space: pre-wrap; line-height: 1.45; }
+.reply-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.parent-link-row { grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 8px; }
 
 .session-hero {
   padding: clamp(22px, 5vw, 52px);
