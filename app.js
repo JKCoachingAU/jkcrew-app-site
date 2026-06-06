@@ -653,10 +653,14 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
     const action = complete ? "unlanded" : "landed";
     const label = complete ? "Untick trick" : "Tick trick complete";
     const draggable = interactive && state.profile?.role === "athlete" && assignment.category === "daily";
+    const metaParts = assignment.category === "daily"
+      ? [assignment.notes].filter(Boolean)
+      : [assignmentStatus(assignment), assignment.notes].filter(Boolean);
+    const meta = metaParts.join(" · ");
     return `
     <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `draggable="true" data-daily-row="${assignment.id}"` : ""}>
       <button class="assignment-check" type="button" aria-label="${label}" title="${label}" ${interactive ? `data-assignment-action="${action}" data-assignment-id="${assignment.id}"` : "disabled"}>${complete ? "✓" : ""}</button>
-      <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${assignment.category === "daily" ? `${escapeHtml(venueLabel(assignment.venue))} · ` : ""}${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}${draggable ? " · drag to reorder" : ""}</small></div>
+      <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>
     </div>`;
   }).join("");
 }
