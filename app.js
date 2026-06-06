@@ -19,12 +19,15 @@ const state = {
   publicAthleteId: null,
   selectedVenue: "",
   runBuilder: null,
+  runPlaybackTimer: null,
+  draggedRunPoint: null,
+  draggedDailyId: null,
 };
 
 const athleteNav = [
   ["home", "Home"],
   ["session", "Session"],
-  ["crew", "Crew"],
+  ["contests", "Contests"],
   ["board", "Board"],
   ["profile", "Profile"],
 ];
@@ -98,14 +101,26 @@ const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
   return emptyText ? `<span class="public-badge muted-badge">${escapeHtml(emptyText)}</span>` : "";
 };
 const motivationalQuotes = [
-  { quote: "It is hard to win, but it is harder to stay at the top.", by: "Elite athlete mindset" },
-  { quote: "Fall down seven times, get up eight.", by: "Training rule" },
-  { quote: "Pressure is a privilege.", by: "Billie Jean King" },
-  { quote: "You miss 100% of the shots you do not take.", by: "Wayne Gretzky" },
-  { quote: "Do not count the days. Make the days count.", by: "Muhammad Ali" },
-  { quote: "Champions keep playing until they get it right.", by: "Billie Jean King" },
-  { quote: "The only limit is the one you accept.", by: "Action sports mindset" },
-  { quote: "Small wins every session become big results.", by: "JKCoaching" },
+  { quote: "Pressure is a privilege.", by: "Billie Jean King", role: "Tennis champion" },
+  { quote: "Do not count the days. Make the days count.", by: "Muhammad Ali", role: "Boxing champion" },
+  { quote: "You miss 100% of the shots you do not take.", by: "Wayne Gretzky", role: "Ice hockey champion" },
+  { quote: "Hard work beats talent when talent fails to work hard.", by: "Tim Notke", role: "Coach" },
+  { quote: "The more difficult the victory, the greater the happiness in winning.", by: "Pelé", role: "Football legend" },
+  { quote: "I am building a fire, and every day I train, I add more fuel.", by: "Mia Hamm", role: "Football champion" },
+  { quote: "I do not run away from a challenge because I am afraid.", by: "Nadia Comaneci", role: "Gymnastics champion" },
+  { quote: "The key is not the will to win. It is the will to prepare to win.", by: "Bobby Knight", role: "Basketball coach" },
+  { quote: "Excellence is the gradual result of always striving to do better.", by: "Pat Riley", role: "Basketball coach" },
+  { quote: "I have failed over and over again. That is why I succeed.", by: "Michael Jordan", role: "Basketball champion" },
+  { quote: "Everything negative is all an opportunity for me to rise.", by: "Kobe Bryant", role: "Basketball champion" },
+  { quote: "I really think a champion is defined by not giving up.", by: "Serena Williams", role: "Tennis champion" },
+  { quote: "I would like to be remembered as someone who was not afraid to do what she wanted.", by: "Simone Biles", role: "Gymnastics champion" },
+  { quote: "The biggest sin in the world would be if I lost my love for the ocean.", by: "Laird Hamilton", role: "Big-wave surfer" },
+  { quote: "Life is a lot like skateboarding.", by: "Tony Hawk", role: "Skateboarding legend" },
+  { quote: "Winning means you are willing to go longer, work harder, and give more.", by: "Vince Lombardi", role: "Football coach" },
+  { quote: "The difference between the impossible and the possible lies in determination.", by: "Tommy Lasorda", role: "Baseball coach" },
+  { quote: "The harder the battle, the sweeter the victory.", by: "Les Brown", role: "Coach and speaker" },
+  { quote: "A champion is afraid of losing. Everyone else is afraid of winning.", by: "Billie Jean King", role: "Tennis champion" },
+  { quote: "It is not whether you get knocked down. It is whether you get up.", by: "Vince Lombardi", role: "Football coach" },
 ];
 const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
 const defaultVenues = ["Pizzey", "Beenleigh", "Elanora", "Nerang", "RampFest", "Other / Custom Venue"];
@@ -303,7 +318,7 @@ async function handleAuth(event, mode) {
 function renderShell() {
   const role = state.profile.role;
   const nav = role === "coach" ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "▶", crew: "✦", command: "◇", board: "#", profile: "●", notes: "✎" };
+  const navIcons = { home: "⌂", session: "↗", contests: "🏆", crew: "✦", command: "◇", board: "#", profile: "●", notes: "✎" };
   const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   app.innerHTML = `
     <div class="app-shell">
@@ -336,6 +351,7 @@ async function navigate(view) {
     command: renderCoachCommand,
     board: renderBoard,
     crew: state.profile?.role === "coach" ? renderCrew : renderAthleteCrew,
+    contests: renderContests,
     student: renderStudentProfile,
     publicProfile: renderPublicAthleteProfile,
     notes: renderNotes,
@@ -463,6 +479,7 @@ const categoryInfo = {
   dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
   one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
   percentage: { label: "Percentage Tricks", description: "10 attempts · track landed percentage" },
+  foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
 };
 
 const coachGroups = [
@@ -484,6 +501,33 @@ const heatStatuses = {
 const heatOptions = () => Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}">${info.label}</option>`).join("");
 
 const dailyCompletionCount = (awards = []) => new Set(awards.filter((award) => award.award_key?.startsWith("daily:")).map((award) => String(award.award_key).slice(-10))).size;
+const spinDirectionLabels = {
+  "": "Not set",
+  left: "Left spin",
+  right: "Right spin",
+  both: "Both ways",
+  not_sure: "Not sure yet",
+};
+
+function dailyOrderKey(venue = "") {
+  return `${weekStartDate()}:${venueKey(venue) || "default"}`;
+}
+
+function orderedAssignments(assignments = []) {
+  if (state.profile?.role !== "athlete") return assignments;
+  const order = state.profile.daily_trick_order?.[dailyOrderKey(state.selectedVenue)] || [];
+  if (!Array.isArray(order) || !order.length) return assignments;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return [...assignments].sort((a, b) => {
+    const aRank = rank.has(a.id) ? rank.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const bRank = rank.has(b.id) ? rank.get(b.id) : Number.MAX_SAFE_INTEGER;
+    return aRank - bRank || a.sort_order - b.sort_order;
+  });
+}
+
+function extraTricks(profile = state.profile) {
+  return Array.isArray(profile?.rider_extra_tricks) ? profile.rider_extra_tricks : [];
+}
 
 function isAssignmentComplete(assignment) {
   if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
@@ -533,6 +577,61 @@ function bindVenueSelector() {
   });
 }
 
+function bindDailyReorder() {
+  let draggedId = "";
+  document.querySelectorAll("[data-daily-row]").forEach((row) => {
+    row.addEventListener("dragstart", (event) => {
+      draggedId = row.dataset.dailyRow;
+      event.dataTransfer.setData("text/plain", draggedId);
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      row.classList.add("drag-over-row");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over-row"));
+    row.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      row.classList.remove("drag-over-row");
+      const fromId = event.dataTransfer.getData("text/plain") || draggedId;
+      const toId = row.dataset.dailyRow;
+      if (!fromId || !toId || fromId === toId) return;
+      await saveDailyDisplayOrder(fromId, toId);
+    });
+    row.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button")) return;
+      state.draggedDailyId = row.dataset.dailyRow;
+      row.classList.add("dragging");
+      document.addEventListener("pointerup", finishDailyPointerReorder, { once: true });
+    });
+  });
+}
+
+async function finishDailyPointerReorder(event) {
+  const fromId = state.draggedDailyId;
+  document.querySelectorAll("[data-daily-row]").forEach((row) => row.classList.remove("dragging", "drag-over-row"));
+  state.draggedDailyId = null;
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-daily-row]");
+  const toId = target?.dataset.dailyRow;
+  if (!fromId || !toId || fromId === toId) return;
+  await saveDailyDisplayOrder(fromId, toId);
+}
+
+async function saveDailyDisplayOrder(fromId, toId) {
+  const rows = [...document.querySelectorAll("[data-daily-row]")].map((row) => row.dataset.dailyRow);
+  const fromIndex = rows.indexOf(fromId);
+  const toIndex = rows.indexOf(toId);
+  if (fromIndex < 0 || toIndex < 0) return;
+  rows.splice(toIndex, 0, rows.splice(fromIndex, 1)[0]);
+  const dailyOrder = { ...(state.profile.daily_trick_order || {}), [dailyOrderKey(state.selectedVenue)]: rows };
+  const { data, error } = await client.from("profiles").update({ daily_trick_order: dailyOrder, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify("Daily Tricks order saved.");
+  await renderSession();
+}
+
 function percentageSummary(assignment) {
   const attempts = assignment.percentageAttempts || [];
   const landed = attempts.filter((attempt) => attempt.landed).length;
@@ -548,14 +647,16 @@ function percentageClass(value) {
 
 function assignmentList(assignments, emptyText = "No tricks assigned for this week yet.", interactive = false) {
   if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
-  return assignments.map((assignment) => {
+  const ordered = assignments.some((assignment) => assignment.category === "daily") ? orderedAssignments(assignments) : assignments;
+  return ordered.map((assignment) => {
     const complete = isAssignmentComplete(assignment);
     const action = complete ? "unlanded" : "landed";
     const label = complete ? "Untick trick" : "Tick trick complete";
+    const draggable = interactive && state.profile?.role === "athlete" && assignment.category === "daily";
     return `
-    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}">
+    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `draggable="true" data-daily-row="${assignment.id}"` : ""}>
       <button class="assignment-check" type="button" aria-label="${label}" title="${label}" ${interactive ? `data-assignment-action="${action}" data-assignment-id="${assignment.id}"` : "disabled"}>${complete ? "✓" : ""}</button>
-      <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${assignment.category === "daily" ? `${escapeHtml(venueLabel(assignment.venue))} · ` : ""}${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div>
+      <div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${assignment.category === "daily" ? `${escapeHtml(venueLabel(assignment.venue))} · ` : ""}${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}${draggable ? " · drag to reorder" : ""}</small></div>
     </div>`;
   }).join("");
 }
@@ -809,7 +910,7 @@ function socialLinksHtml(profile = {}) {
 
 function quoteSection() {
   const item = randomQuote();
-  return `<section class="panel quote-panel"><div class="eyebrow">Rider mindset</div><blockquote>“${escapeHtml(item.quote)}”</blockquote><small>${escapeHtml(item.by)}</small></section>`;
+  return `<section class="panel quote-panel"><div class="eyebrow">Rider mindset</div><blockquote>“${escapeHtml(item.quote)}”</blockquote><small>${escapeHtml(item.by)}${item.role ? ` · ${escapeHtml(item.role)}` : ""}</small></section>`;
 }
 
 function normalizedGoals() {
@@ -847,6 +948,57 @@ function bindGoalActions() {
   document.querySelectorAll("[data-goal-delete]").forEach((button) => button.addEventListener("click", async () => {
     const goals = normalizedGoals().filter((goal) => goal.id !== button.dataset.goalDelete);
     await saveGoals(goals, "Goal deleted.");
+  }));
+}
+
+function extraTricksSection(profile = state.profile, editable = true) {
+  const tricks = extraTricks(profile);
+  const rows = tricks.length ? tricks.map((trick) => `
+    <div class="goal-row extra-trick-row ${trick.completed ? "complete" : ""}" data-extra-trick-id="${escapeHtml(trick.id)}">
+      <button class="assignment-check" type="button" ${editable ? `data-extra-toggle="${escapeHtml(trick.id)}"` : "disabled"} aria-label="${trick.completed ? "Mark extra trick active" : "Mark extra trick worked on"}">${trick.completed ? "✓" : ""}</button>
+      <div class="extra-trick-copy"><strong>${escapeHtml(trick.title)}</strong><small>${escapeHtml(trick.note || "Personal practice · no points")}</small></div>
+      ${editable ? `<button class="secondary-btn compact-btn" type="button" data-extra-edit="${escapeHtml(trick.id)}">Edit</button><button class="danger-btn compact-btn" type="button" data-extra-delete="${escapeHtml(trick.id)}">Delete</button>` : ""}
+    </div>`).join("") : `<div class="empty compact-empty">No extra tricks yet. Add something you are personally working on.</div>`;
+  return `<section class="panel extra-tricks-panel">
+    <div class="panel-head"><div><div class="panel-title">Working On</div><div class="panel-meta">Personal tricks · no points · coach can view</div></div></div>
+    ${editable ? `<form id="extra-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="New trick I am working on"><input name="note" maxlength="180" placeholder="Optional note"><button class="primary-btn" type="submit">Add</button></form>` : ""}
+    <div class="goal-list">${rows}</div>
+  </section>`;
+}
+
+async function saveExtraTricks(tricks, message = "Working On saved.") {
+  const { data, error } = await client.from("profiles").update({ rider_extra_tricks: tricks, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(message);
+  await renderSession();
+}
+
+function bindExtraTrickActions() {
+  document.querySelector("#extra-trick-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get("title") || "").trim();
+    if (!title) return;
+    const tricks = extraTricks();
+    tricks.unshift({ id: crypto.randomUUID(), title: title.slice(0, 120), note: String(form.get("note") || "").trim().slice(0, 180), completed: false, createdAt: new Date().toISOString() });
+    await saveExtraTricks(tricks, "Extra trick added.");
+  });
+  document.querySelectorAll("[data-extra-toggle]").forEach((button) => button.addEventListener("click", async () => {
+    const tricks = extraTricks().map((trick) => trick.id === button.dataset.extraToggle ? { ...trick, completed: !trick.completed } : trick);
+    await saveExtraTricks(tricks, "Extra trick updated.");
+  }));
+  document.querySelectorAll("[data-extra-edit]").forEach((button) => button.addEventListener("click", async () => {
+    const tricks = extraTricks();
+    const trick = tricks.find((item) => item.id === button.dataset.extraEdit);
+    if (!trick) return;
+    const title = window.prompt("Extra trick name:", trick.title);
+    if (!title) return;
+    const note = window.prompt("Short note:", trick.note || "") || "";
+    await saveExtraTricks(tricks.map((item) => item.id === trick.id ? { ...item, title: title.trim().slice(0, 120), note: note.trim().slice(0, 180) } : item), "Extra trick saved.");
+  }));
+  document.querySelectorAll("[data-extra-delete]").forEach((button) => button.addEventListener("click", async () => {
+    await saveExtraTricks(extraTricks().filter((trick) => trick.id !== button.dataset.extraDelete), "Extra trick removed.");
   }));
 }
 
@@ -1030,9 +1182,12 @@ async function renderSession() {
         <div><div class="timer-label">Ready at ${escapeHtml(venueLabel(selectedVenue))}</div><div class="go-mark">GO</div><p>Start the live timer when you are chasing Daily Tricks points.</p></div>
         <button class="primary-btn start-session-btn" id="create-session">Start Session</button>
       </section>
+      ${extraTricksSection(state.profile, true)}
       <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Showing ${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · timed Daily points need a live session</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
       ${helpUploadSection(helpRequests)}`;
     bindVenueSelector();
+    bindExtraTrickActions();
+    bindDailyReorder();
     document.querySelector("#create-session").addEventListener("click", startSession);
     document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
     document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
@@ -1046,10 +1201,13 @@ async function renderSession() {
     <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
     ${venueSelectorHtml(assignments)}
+    ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
   bindVenueSelector();
+  bindExtraTrickActions();
+  bindDailyReorder();
   document.querySelector("#end-session").addEventListener("click", endSession);
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
@@ -1231,6 +1389,8 @@ async function renderPublicAthleteProfile() {
       ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
       ${statCard("Weekly wins", profile.weekly_wins || 0, "", "Leaderboard wins")}
       ${statCard("Stance", profile.stance || "-", "", "Goofy or regular")}
+      ${statCard("Spin", spinDirectionLabels[profile.spin_direction] || "-", "", "Natural direction")}
+      ${statCard("Favourite trick", profile.favourite_trick || "-", "", "Rider pick")}
       ${statCard("Age", profile.age || "-", "", "Rider age")}
     </section>
     <section class="panel public-profile-details">
@@ -1279,6 +1439,26 @@ async function submitCrewPost(event) {
   }
   notify("Posted to Crew.");
   await renderAthleteCrew();
+}
+
+async function renderContests() {
+  const [items, runs] = await Promise.all([
+    getDashboardItems(state.user.id),
+    getRunPlans(state.user.id),
+  ]);
+  const events = items.filter((item) => item.item_type === "event");
+  const upcoming = events.filter((item) => !item.due_at || new Date(item.end_at || item.due_at) >= new Date());
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Contests</div><h1>Events & <span>runs</span></h1><p>Plan competition lines, view upcoming contests, and keep old runs archived for later.</p></div></div>
+    <section class="panel contests-overview">
+      <div class="panel-head"><div><div class="panel-title">Upcoming events & contests</div><div class="panel-meta">${upcoming.length} upcoming · dates can include start and finish</div></div></div>
+      ${dashboardItemsHtml(events, true)}
+      <div class="settings-divider"></div>
+      ${dashboardItemForm(state.user.id)}
+    </section>
+    ${runBuilderPanel(runs)}`;
+  bindDashboardItemActions(renderContests);
+  bindRunBuilderActions();
 }
 
 async function renderCoachCommand() {
@@ -1466,10 +1646,24 @@ function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance =
   </section>`;
 }
 
-function runLineColor(destinationPointNumber) {
-  if (destinationPointNumber > 10) return "#ff4567";
-  if (destinationPointNumber > 6) return "#f7d154";
-  return "#00ffd1";
+function runPointColor(pointNumber) {
+  if (pointNumber >= 15) return "#ff4567";
+  if (pointNumber >= 10) return "#25f68c";
+  if (pointNumber >= 5) return "#f7d154";
+  return "#39a7ff";
+}
+
+function runPathBetween(previous, point) {
+  const dx = point.x - previous.x;
+  const dy = point.y - previous.y;
+  const bend = Math.max(4, Math.min(12, Math.hypot(dx, dy) * 0.18));
+  const normalX = dy === 0 ? 0 : -dy / Math.hypot(dx, dy);
+  const normalY = dx === 0 ? 0 : dx / Math.hypot(dx, dy);
+  const c1x = previous.x + dx * 0.35 + normalX * bend;
+  const c1y = previous.y + dy * 0.35 + normalY * bend;
+  const c2x = previous.x + dx * 0.7 + normalX * bend;
+  const c2y = previous.y + dy * 0.7 + normalY * bend;
+  return `M ${previous.x} ${previous.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${point.x} ${point.y}`;
 }
 
 function runRouteSvg(points = []) {
@@ -1477,15 +1671,19 @@ function runRouteSvg(points = []) {
   if (safePoints.length < 2) return "";
   const lines = safePoints.slice(1).map((point, index) => {
     const previous = safePoints[index];
-    return `<line x1="${previous.x}" y1="${previous.y}" x2="${point.x}" y2="${point.y}" stroke="${runLineColor(index + 2)}" />`;
+    const pointNumber = index + 2;
+    return `<path data-run-segment="${pointNumber}" d="${runPathBetween(previous, point)}" stroke="${runPointColor(pointNumber)}" />`;
   }).join("");
   return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
 }
 
-function runMapHtml(imageDataUrl = "", points = [], title = "Run map") {
+function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable = false) {
   if (!imageDataUrl) return "";
   const safePoints = Array.isArray(points) ? points : [];
-  const markers = safePoints.map((point, index) => `<button type="button" class="run-marker" style="left:${point.x}%;top:${point.y}%">${index + 1}</button>`).join("");
+  const markers = safePoints.map((point, index) => {
+    const pointNumber = index + 1;
+    return `<button type="button" class="run-marker" ${editable ? `data-run-point-index="${index}"` : ""} style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
+  }).join("");
   return `<div class="run-map-preview"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}</div>`;
 }
 
@@ -1495,12 +1693,17 @@ function canEditRun(run = {}) {
 }
 
 function runBuilderRefreshView() {
-  return state.profile?.role === "coach" && state.view === "student" ? renderStudentProfile() : renderProfile();
+  if (state.profile?.role === "coach" && state.view === "student") return renderStudentProfile();
+  if (state.view === "contests") return renderContests();
+  return renderProfile();
 }
 
 function runPlansHtml(runs = []) {
   if (!runs.length) return `<div class="empty compact-empty">No saved run plans yet.</div>`;
-  return runs.map((run) => `<article class="run-card"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol>${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}</article>`).join("");
+  const activeRuns = runs.filter((run) => !run.archived_at);
+  const archivedRuns = runs.filter((run) => run.archived_at);
+  const card = (run) => `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${state.profile?.role === "coach" && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}<button class="secondary-btn compact-btn" type="button" data-play-run="${run.id}">Slow playback</button></div></article>`;
+  return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
 }
 
 function runBuilderPanel(runs = []) {
@@ -1515,8 +1718,9 @@ function runBuilderPanel(runs = []) {
         <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training" ${builder.planType === "training" ? "selected" : ""}>Training line</option><option value="competition" ${builder.planType === "competition" ? "selected" : ""}>Competition run</option><option value="safe" ${builder.planType === "safe" ? "selected" : ""}>Safe run</option><option value="high-risk" ${builder.planType === "high-risk" ? "selected" : ""}>High-risk run</option><option value="best-trick" ${builder.planType === "best-trick" ? "selected" : ""}>Best trick plan</option></select></div>
         <div class="field"><label for="run-photo">Park/course photo</label><input id="run-photo" name="photo" type="file" accept="image/*"></div>
       </div>
-      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map") : "Upload a photo, then tap the image to add start/trick points."}</div>
-      <div class="run-point-list">${points.length ? points.map((point, index) => `<span class="public-badge">${index + 1}. ${escapeHtml(point.label)}</span>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
+      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map", true) : "Upload a photo, then tap the image to add start/trick points."}</div>
+      <div class="run-builder-actions">${points.length ? `<button class="secondary-btn compact-btn" type="button" id="play-run-builder">Watch slow playback</button>` : ""}<span class="panel-meta">Drag numbers to move them. Edit labels below.</span></div>
+      <div class="run-point-list editable-run-points">${points.length ? points.map((point, index) => `<div class="run-point-editor"><span class="public-badge" style="--run-color:${runPointColor(index + 1)}">${index + 1}</span><input value="${escapeHtml(point.label || "")}" data-run-label="${index}" aria-label="Point ${index + 1} label"><button class="secondary-btn compact-btn" type="button" data-run-up="${index}">↑</button><button class="secondary-btn compact-btn" type="button" data-run-down="${index}">↓</button><button class="danger-btn compact-btn" type="button" data-run-delete="${index}">Delete</button></div>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
       <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
       <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">${submitLabel}</button></div>
     </form>
@@ -1719,10 +1923,18 @@ async function renderStudentProfile() {
     <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${athlete.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
-      <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${coachGroups.find(([id]) => id === athlete.groupName)?.[1] || "Monday Team"} · Daily Tricks completed this week: ${dailyDone}/7</div></div>
+      <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${coachGroups.find(([id]) => id === athlete.groupName)?.[1] || "Monday Team"} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
       <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
     </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
+      <form id="coach-athlete-profile-form" class="two-col-form">
+        <div class="field"><label for="coach-athlete-spin">Spin Direction</label><select id="coach-athlete-spin" name="spinDirection"><option value="" ${!athlete.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${athlete.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${athlete.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${athlete.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${athlete.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
+        <div class="field"><label for="coach-athlete-favourite">Favourite Trick</label><input id="coach-athlete-favourite" name="favouriteTrick" maxlength="120" value="${escapeHtml(athlete.favourite_trick || "")}" placeholder="Favourite BMX trick"></div>
+        <button class="primary-btn" type="submit">Save rider details</button>
+      </form>
+    </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Current weekly tricks</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
+    ${extraTricksSection(athlete, false)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Edit this week's schedule</div><div class="panel-meta">One trick or line per row · notes after a dash</div></div></div>
       <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
     </section>
@@ -1749,6 +1961,7 @@ async function renderStudentProfile() {
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
+  document.querySelector("#coach-athlete-profile-form").addEventListener("submit", saveCoachAthleteProfile);
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
   document.querySelector("#private-record-form").addEventListener("submit", savePrivateRecord);
   document.querySelector("#document-form").addEventListener("submit", saveAthleteDocument);
@@ -1862,6 +2075,19 @@ async function saveWeeklyAssignments(event) {
   }
 
   notify("Weekly schedule saved for this student.");
+  await renderStudentProfile();
+}
+
+async function saveCoachAthleteProfile(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const { error } = await client.from("profiles").update({
+    spin_direction: form.get("spinDirection") || "",
+    favourite_trick: String(form.get("favouriteTrick") || "").trim().slice(0, 120),
+    updated_at: new Date().toISOString(),
+  }).eq("id", state.selectedAthleteId);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Rider profile details saved.");
   await renderStudentProfile();
 }
 
@@ -2068,9 +2294,17 @@ async function copyParentUpdate() {
 function bindRunBuilderActions() {
   document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
   document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
+  document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
   document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
+  document.querySelector("#play-run-builder")?.addEventListener("click", () => playRunPreview(document.querySelector("#run-map .run-map-preview")));
   document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
+  document.querySelectorAll("[data-run-label]").forEach((input) => input.addEventListener("input", updateRunPointLabel));
+  document.querySelectorAll("[data-run-up]").forEach((button) => button.addEventListener("click", moveRunPoint));
+  document.querySelectorAll("[data-run-down]").forEach((button) => button.addEventListener("click", moveRunPoint));
+  document.querySelectorAll("[data-run-delete]").forEach((button) => button.addEventListener("click", deleteRunPoint));
   document.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
+  document.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
+  document.querySelectorAll("[data-play-run]").forEach((button) => button.addEventListener("click", () => playRunPreview(button.closest(".run-card")?.querySelector(".run-map-preview"))));
 }
 
 function currentRunFormState() {
@@ -2109,6 +2343,98 @@ async function addRunBuilderPoint(event) {
   await runBuilderRefreshView();
 }
 
+function updateRunBuilderMapDom() {
+  const preview = document.querySelector("#run-map .run-map-preview");
+  if (!preview || !state.runBuilder?.points) return;
+  const currentSvg = preview.querySelector(".run-line-overlay");
+  const nextSvg = runRouteSvg(state.runBuilder.points);
+  if (currentSvg) currentSvg.outerHTML = nextSvg;
+  else preview.insertAdjacentHTML("beforeend", nextSvg);
+  preview.querySelectorAll("[data-run-point-index]").forEach((marker) => {
+    const index = Number(marker.dataset.runPointIndex);
+    const point = state.runBuilder.points[index];
+    if (!point) return;
+    marker.style.left = `${point.x}%`;
+    marker.style.top = `${point.y}%`;
+    marker.style.setProperty("--run-color", runPointColor(index + 1));
+  });
+}
+
+function startRunPointDrag(event) {
+  if (!state.runBuilder?.points) return;
+  event.preventDefault();
+  event.stopPropagation();
+  state.draggedRunPoint = Number(event.currentTarget.dataset.runPointIndex);
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  document.addEventListener("pointermove", dragRunPoint);
+  document.addEventListener("pointerup", stopRunPointDrag, { once: true });
+}
+
+function dragRunPoint(event) {
+  const index = state.draggedRunPoint;
+  if (!Number.isInteger(index) || !state.runBuilder?.points?.[index]) return;
+  const map = document.querySelector("#run-map .run-map-preview");
+  if (!map) return;
+  const rect = map.getBoundingClientRect();
+  const x = Math.max(0, Math.min(100, Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10));
+  const y = Math.max(0, Math.min(100, Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10));
+  state.runBuilder.points[index] = { ...state.runBuilder.points[index], x, y };
+  updateRunBuilderMapDom();
+}
+
+function stopRunPointDrag() {
+  document.removeEventListener("pointermove", dragRunPoint);
+  state.draggedRunPoint = null;
+}
+
+function updateRunPointLabel(event) {
+  const index = Number(event.currentTarget.dataset.runLabel);
+  if (!state.runBuilder?.points?.[index]) return;
+  state.runBuilder.points[index] = { ...state.runBuilder.points[index], label: event.currentTarget.value.slice(0, 80) };
+}
+
+async function moveRunPoint(event) {
+  const up = event.currentTarget.dataset.runUp;
+  const down = event.currentTarget.dataset.runDown;
+  const index = Number(up ?? down);
+  const nextIndex = up !== undefined ? index - 1 : index + 1;
+  if (!state.runBuilder?.points?.[index] || !state.runBuilder.points[nextIndex]) return;
+  state.runBuilder = { ...currentRunFormState(), points: [...state.runBuilder.points] };
+  [state.runBuilder.points[index], state.runBuilder.points[nextIndex]] = [state.runBuilder.points[nextIndex], state.runBuilder.points[index]];
+  await runBuilderRefreshView();
+}
+
+async function deleteRunPoint(event) {
+  const index = Number(event.currentTarget.dataset.runDelete);
+  if (!state.runBuilder?.points?.[index]) return;
+  state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points.filter((_point, pointIndex) => pointIndex !== index) };
+  await runBuilderRefreshView();
+}
+
+function playRunPreview(preview) {
+  if (!preview) return;
+  clearTimeout(state.runPlaybackTimer);
+  const markers = [...preview.querySelectorAll(".run-marker")];
+  const segments = [...preview.querySelectorAll("[data-run-segment]")];
+  if (!markers.length) return;
+  markers.forEach((marker) => marker.classList.remove("play-active", "play-done"));
+  segments.forEach((segment) => segment.classList.remove("play-active", "play-done"));
+  let index = 0;
+  const step = () => {
+    markers.forEach((marker, markerIndex) => {
+      marker.classList.toggle("play-active", markerIndex === index);
+      marker.classList.toggle("play-done", markerIndex < index);
+    });
+    segments.forEach((segment, segmentIndex) => {
+      segment.classList.toggle("play-active", segmentIndex === index - 1);
+      segment.classList.toggle("play-done", segmentIndex < index - 1);
+    });
+    index += 1;
+    if (index <= markers.length) state.runPlaybackTimer = setTimeout(step, 850);
+  };
+  step();
+}
+
 async function clearRunBuilder() {
   state.runBuilder = null;
   await runBuilderRefreshView();
@@ -2129,6 +2455,14 @@ async function editRunPlan(event) {
     imageDataUrl: run.image_data_url,
     points: Array.isArray(run.points) ? run.points : [],
   };
+  await runBuilderRefreshView();
+}
+
+async function archiveRunPlan(event) {
+  const runId = event.currentTarget.dataset.archiveRun;
+  const { error } = await client.from("run_plans").update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", runId).eq("coach_id", state.user.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Run archived. It is saved for later.");
   await runBuilderRefreshView();
 }
 
@@ -2259,7 +2593,6 @@ async function addNote(event) {
 }
 
 async function renderProfile() {
-  const athleteRuns = state.profile.role === "athlete" ? await getRunPlans(state.user.id) : [];
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     <div class="profile-grid">
@@ -2275,6 +2608,10 @@ async function renderProfile() {
             <div class="two-col-form">
               <div class="field"><label for="profile-stance">Stance</label><select id="profile-stance" name="stance"><option value="">Not set</option><option value="regular" ${state.profile.stance === "regular" ? "selected" : ""}>Regular</option><option value="goofy" ${state.profile.stance === "goofy" ? "selected" : ""}>Goofy</option></select></div>
               <div class="field"><label for="profile-age">Age</label><input id="profile-age" name="age" type="number" min="3" max="99" value="${state.profile.age || ""}" placeholder="Age"></div>
+            </div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-spin-direction">Spin Direction</label><select id="profile-spin-direction" name="spinDirection"><option value="" ${!state.profile.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${state.profile.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${state.profile.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${state.profile.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${state.profile.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
+              <div class="field"><label for="profile-favourite-trick">Favourite Trick</label><input id="profile-favourite-trick" name="favouriteTrick" maxlength="120" value="${escapeHtml(state.profile.favourite_trick || "")}" placeholder="Barspin, flair, 360..."></div>
             </div>
             <div class="field"><label for="profile-sponsors">Sponsors</label><textarea id="profile-sponsors" name="sponsors" placeholder="One sponsor per line">${escapeHtml(state.profile.sponsors || "")}</textarea></div>
             <div class="field"><label for="profile-achievements">Achievements</label><textarea id="profile-achievements" name="achievements" placeholder="Competition wins, landed tricks, milestones...">${escapeHtml(state.profile.achievements || "")}</textarea></div>
@@ -2300,14 +2637,14 @@ async function renderProfile() {
         <button class="danger-btn wide" id="sign-out">Sign out</button>
       </section>
     </div>
-    ${state.profile.role === "athlete" ? runBuilderPanel(athleteRuns) : ""}`;
+    ${state.profile.role === "athlete" ? `<section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
   document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);
   document.querySelector("#remove-own-avatar").addEventListener("click", () => saveOwnAvatar(null));
   document.querySelector("#choose-showreel")?.addEventListener("click", () => document.querySelector("#showreel-file").click());
   document.querySelector("#showreel-file")?.addEventListener("change", addShowreelVideo);
   document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
-  if (state.profile.role === "athlete") bindRunBuilderActions();
+  document.querySelector("#open-contests-from-profile")?.addEventListener("click", () => navigate("contests"));
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
   document.querySelector("#password-form").addEventListener("submit", updatePassword);
   document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
@@ -2373,6 +2710,8 @@ async function updateProfile(event) {
   if (state.profile.role === "athlete") {
     const age = Number(form.get("age"));
     updates.stance = form.get("stance") || "";
+    updates.spin_direction = form.get("spinDirection") || "";
+    updates.favourite_trick = String(form.get("favouriteTrick") || "").trim().slice(0, 120);
     updates.age = Number.isFinite(age) && age > 0 ? age : null;
     updates.sponsors = String(form.get("sponsors") || "").trim();
     updates.achievements = String(form.get("achievements") || "").trim();
