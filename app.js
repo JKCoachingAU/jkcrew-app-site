@@ -245,7 +245,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.7" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.8" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -454,7 +454,7 @@ async function getCoachVenues() {
 async function getCoachCommandData(roster = []) {
   const ids = roster.map((athlete) => athlete.id);
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
-  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications] = await Promise.all([
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks] = await Promise.all([
     client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
@@ -465,8 +465,9 @@ async function getCoachCommandData(roster = []) {
     ids.length ? client.from("parent_athletes").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
     ids.length ? client.from("weekly_progress_notifications").select("*").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
+    client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
   ]);
-  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications].forEach((result) => { if (result.error) throw result.error; });
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks].forEach((result) => { if (result.error) throw result.error; });
   return {
     calendar: calendar.data || [],
     statuses: statusRows.data || [],
@@ -478,6 +479,7 @@ async function getCoachCommandData(roster = []) {
     parentLinks: parentLinks.data || [],
     weeklySettings: weeklySettings.data || null,
     weeklyNotifications: weeklyNotifications.data || [],
+    dismissedTasks: dismissedTasks.data || [],
   };
 }
 
@@ -1078,6 +1080,7 @@ function currentWeekEvents(events = []) {
 }
 
 function highPriorityTasks(roster = [], commandData = {}, groupedCalendar = []) {
+  const dismissedKeys = new Set((commandData.dismissedTasks || []).map((task) => task.task_key));
   const scheduleByAthlete = (commandData.scheduleRows || []).reduce((map, row) => {
     const rows = map.get(row.athlete_id) || [];
     rows.push(row);
@@ -1094,23 +1097,28 @@ function highPriorityTasks(roster = [], commandData = {}, groupedCalendar = []) 
   const sheetTasks = roster.flatMap((athlete) => {
     const rows = scheduleByAthlete.get(athlete.id) || [];
     const tasks = [];
-    if (!rows.length) tasks.push({ type: "sheet", label: `${athlete.display_name} — sheet not updated this week`, athleteId: athlete.id, priority: "high" });
-    else if (!rows.some((row) => row.category === "daily")) tasks.push({ type: "sheet", label: `${athlete.display_name} — needs new Daily Tricks`, athleteId: athlete.id, priority: "high" });
-    else if (!rows.some((row) => row.category === "dialled")) tasks.push({ type: "sheet", label: `${athlete.display_name} — Dialled tricks need review`, athleteId: athlete.id, priority: "medium" });
+    if (!rows.length) tasks.push({ key: `sheet:${athlete.id}:missing`, type: "sheet", label: `${athlete.display_name} — sheet not updated this week`, athleteId: athlete.id, priority: "high" });
+    else if (!rows.some((row) => row.category === "daily")) tasks.push({ key: `sheet:${athlete.id}:daily`, type: "sheet", label: `${athlete.display_name} — needs new Daily Tricks`, athleteId: athlete.id, priority: "high" });
+    else if (!rows.some((row) => row.category === "dialled")) tasks.push({ key: `sheet:${athlete.id}:dialled`, type: "sheet", label: `${athlete.display_name} — Dialled tricks need review`, athleteId: athlete.id, priority: "medium" });
     return tasks;
   });
   const parentTasks = roster
     .filter((athlete) => parentCounts.get(athlete.id) && !notificationsByAthlete.get(athlete.id)?.some((row) => row.status === "sent"))
-    .map((athlete) => ({ type: "parent", label: `${athlete.display_name}'s parent — weekly update not sent`, athleteId: athlete.id, priority: "medium" }));
-  const eventTasks = currentWeekEvents(groupedCalendar).slice(0, 5).map((event) => ({ type: "event", label: `${event.title} — ${event.riderCount || 0} rider${event.riderCount === 1 ? "" : "s"} attending`, target: "upcoming-events-section", priority: "low" }));
-  return [...sheetTasks.slice(0, 6), ...parentTasks.slice(0, 5), ...eventTasks].slice(0, 14);
+    .map((athlete) => ({ key: `parent:${athlete.id}:weekly-update`, type: "parent", label: `${athlete.display_name}'s parent — weekly update not sent`, athleteId: athlete.id, priority: "medium" }));
+  const eventTasks = currentWeekEvents(groupedCalendar).slice(0, 5).map((event) => ({ key: `event:${event.eventIds?.join(",") || event.id || event.title}:${event.starts_at}`, type: "event", label: `${event.title} — ${event.riderCount || 0} rider${event.riderCount === 1 ? "" : "s"} attending`, target: "upcoming-events-section", priority: "low" }));
+  return [...sheetTasks.slice(0, 6), ...parentTasks.slice(0, 5), ...eventTasks]
+    .filter((task) => !dismissedKeys.has(task.key))
+    .slice(0, 14);
 }
 
 function highPriorityTodoHtml(tasks = []) {
-  const rows = tasks.length ? tasks.map((task) => `<button class="priority-task ${task.priority}" type="button" ${task.athleteId ? `data-open-student="${task.athleteId}"` : ""} ${task.target ? `data-command-scroll="${task.target}"` : ""}>
-    <span>${task.priority === "high" ? "!" : task.priority === "medium" ? "•" : "→"}</span>
-    <strong>${escapeHtml(task.label)}</strong>
-  </button>`).join("") : `<div class="empty compact-empty">No urgent coach tasks right now.</div>`;
+  const rows = tasks.length ? tasks.map((task) => `<div class="priority-task-row">
+    <button class="priority-task ${task.priority}" type="button" ${task.athleteId ? `data-open-student="${task.athleteId}"` : ""} ${task.target ? `data-command-scroll="${task.target}"` : ""}>
+      <span>${task.priority === "high" ? "!" : task.priority === "medium" ? "•" : "→"}</span>
+      <strong>${escapeHtml(task.label)}</strong>
+    </button>
+    <button class="dismiss-task-btn" type="button" data-dismiss-task="${escapeHtml(task.key)}" aria-label="Remove ${escapeHtml(task.label)} from this week's to do list">×</button>
+  </div>`).join("") : `<div class="empty compact-empty">No urgent coach tasks right now.</div>`;
   return `<section class="panel high-priority-panel"><div class="panel-head"><div><div class="panel-title">High Priority To Do List</div><div class="panel-meta">Private coach actions for this week</div></div></div><div class="priority-list">${rows}</div></section>`;
 }
 
@@ -2018,6 +2026,7 @@ async function renderCoachCommand() {
   document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
   document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
   document.querySelector("#generate-weekly-previews")?.addEventListener("click", () => generateWeeklyNotificationPreviews(roster, commandData));
+  document.querySelectorAll("[data-dismiss-task]").forEach((button) => button.addEventListener("click", dismissCoachTask));
   document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
@@ -2362,6 +2371,27 @@ async function saveHeatStatus(event) {
   }, { onConflict: "coach_id,athlete_id" });
   if (error) return notify(messageFrom(error), "error");
   notify("Rider heat status saved.");
+  await renderCoachCommand();
+}
+
+async function dismissCoachTask(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can remove coach tasks.", "error");
+  const taskKey = event.currentTarget.dataset.dismissTask;
+  if (!taskKey) return;
+  event.currentTarget.disabled = true;
+  const { error } = await client.from("dismissed_coach_tasks").upsert({
+    coach_id: state.user.id,
+    task_key: taskKey,
+    week_start: weekStartDate(),
+    dismissed_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,task_key,week_start" });
+  if (error) {
+    event.currentTarget.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  notify("Removed from this week's to do list.");
   await renderCoachCommand();
 }
 

@@ -632,6 +632,12 @@ img, video, canvas, svg { max-width: 100%; }
   display: grid;
   gap: 8px;
 }
+.priority-task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 50px;
+  gap: 8px;
+  align-items: stretch;
+}
 .priority-task,
 .notification-card,
 .command-link-row {
@@ -680,6 +686,18 @@ img, video, canvas, svg { max-width: 100%; }
 .priority-task:hover,
 .notification-card:hover,
 .command-link-row:hover { border-color: var(--aqua); box-shadow: 0 0 0 3px var(--aqua-soft); }
+.dismiss-task-btn {
+  border: 1px solid rgba(255,69,103,0.34);
+  border-radius: 12px;
+  background: rgba(255,69,103,0.11);
+  color: #ff9aad;
+  cursor: pointer;
+  font: 900 1.05rem var(--mono);
+}
+.dismiss-task-btn:hover {
+  border-color: #ff6f8b;
+  background: rgba(255,69,103,0.2);
+}
 .command-accordion-stack {
   display: grid;
   gap: 10px;
