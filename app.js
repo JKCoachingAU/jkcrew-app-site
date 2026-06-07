@@ -22,6 +22,7 @@ const state = {
   sessionViewerVenue: "",
   sessionViewerSearch: "",
   sessionViewerOpenAthleteId: "",
+  sessionViewerActiveList: "daily",
   sessionViewerTimer: null,
   sessionViewerClock: null,
   sessionViewerRosterCache: [],
@@ -245,7 +246,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.9" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.0" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -597,29 +598,50 @@ async function getActiveCoachGroupSession() {
   return data?.[0] || null;
 }
 
-async function getSessionViewerDailyData(athleteIds = []) {
-  if (!athleteIds.length) return { assignmentsByAthlete: new Map() };
-  const [{ data: assignments, error }, { data: progress, error: progressError }] = await Promise.all([
+async function getSessionViewerPlanData(athleteIds = []) {
+  if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
+  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
     client.from("weekly_trick_assignments")
       .select("*")
       .in("athlete_id", athleteIds)
       .eq("week_start", weekStartDate())
-      .eq("category", "daily")
       .order("sort_order", { ascending: true }),
     client.from("assignment_progress")
+      .select("*")
+      .in("athlete_id", athleteIds),
+    client.from("run_plans")
+      .select("*")
+      .in("athlete_id", athleteIds)
+      .is("archived_at", null)
+      .order("updated_at", { ascending: false }),
+    client.from("run_checklist_progress")
       .select("*")
       .in("athlete_id", athleteIds),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
+  if (runsError) throw runsError;
+  if (runProgressError) throw runProgressError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const assignmentsByAthlete = new Map();
-  (assignments || []).forEach((assignment) => {
+  (assignments || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
     rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
   });
-  return { assignmentsByAthlete };
+  const runsByAthlete = new Map();
+  (runs || []).forEach((run) => {
+    const rows = runsByAthlete.get(run.athlete_id) || [];
+    rows.push(run);
+    runsByAthlete.set(run.athlete_id, rows);
+  });
+  const runProgressByPlan = new Map();
+  (runProgress || []).forEach((row) => {
+    const rows = runProgressByPlan.get(row.run_plan_id) || [];
+    rows.push(row);
+    runProgressByPlan.set(row.run_plan_id, rows);
+  });
+  return { assignmentsByAthlete, runsByAthlete, runProgressByPlan };
 }
 
 const categoryInfo = {
@@ -629,6 +651,15 @@ const categoryInfo = {
   percentage: { label: "Percentage Tricks", description: "10 attempts · track landed percentage" },
   foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
 };
+
+const sessionViewerListTabs = [
+  { id: "daily", label: "Daily Tricks" },
+  { id: "one_bang", label: "One Bangs" },
+  { id: "dialled", label: "Dialled" },
+  { id: "foam_pit", label: "Foam" },
+  { id: "goals", label: "Goals" },
+  { id: "contest_run", label: "Contest Run" },
+];
 
 const coachGroups = [
   ["monday", "Monday Team"],
@@ -2087,13 +2118,14 @@ async function renderSessionViewer() {
     state.sessionViewerOpenAthleteId = "";
   }
   const athleteIds = filteredRoster.map((athlete) => athlete.id);
-  const { assignmentsByAthlete } = await getSessionViewerDailyData(athleteIds);
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(athleteIds);
   const schedules = filteredRoster.map((athlete) => {
-    const allDaily = assignmentsByAthlete.get(athlete.id) || [];
+    const allAssignments = assignmentsByAthlete.get(athlete.id) || [];
+    const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
     const selectedVenue = state.sessionViewerVenue || dailyVenues(allDaily)[0] || "";
     const visibleDaily = assignmentsForVenue(allDaily, selectedVenue);
     const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
-    return { athlete, allDaily, daily: visibleDaily, venue: selectedVenue, participant };
+    return { athlete, assignments: allAssignments, allDaily, daily: visibleDaily, venue: selectedVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
   });
   if (state.view !== "sessionViewer") return;
   if (!state.sessionViewerVenue) {
@@ -2106,7 +2138,8 @@ async function renderSessionViewer() {
   }
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
   const started = Boolean(activeGroupSession);
-  const cards = schedules.length ? schedules.map(({ athlete, daily, venue }) => {
+  const cards = schedules.length ? schedules.map((entry) => {
+    const { athlete, daily, venue } = entry;
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
     const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
@@ -2116,7 +2149,7 @@ async function renderSessionViewer() {
         <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
         <div class="viewer-progress"><span style="width:${percent}%"></span></div>
       </button>
-      ${isOpen ? sessionViewerDailyList({ athlete, daily, venue }, activeGroupSession) : ""}
+      ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   const idleCount = schedules.filter((entry) => !entry.participant?.last_activity_at).length;
@@ -2180,19 +2213,89 @@ function updateGroupSessionTimerDom() {
   timerElement.textContent = formatTime(groupSessionElapsedSeconds(pseudoSession));
 }
 
-function sessionViewerDailyList(entry, activeGroupSession) {
-  const { athlete, daily, venue } = entry;
-  const complete = daily.filter(isAssignmentComplete).length;
+function activeSessionViewerList() {
+  return sessionViewerListTabs.some((tab) => tab.id === state.sessionViewerActiveList) ? state.sessionViewerActiveList : "daily";
+}
+
+function sessionViewerAssignmentsForList(entry, listId) {
+  if (listId === "daily") return assignmentsForVenue(entry.assignments.filter((assignment) => assignment.category === "daily"), entry.venue);
+  return entry.assignments.filter((assignment) => assignment.category === listId);
+}
+
+function sessionViewerPlanList(entry, activeGroupSession) {
+  const activeList = activeSessionViewerList();
+  const tabs = sessionViewerListTabs.map((tab) => {
+    const count = sessionViewerListCount(entry, tab.id);
+    return `<button class="viewer-list-tab ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
+  }).join("");
+  return `<div class="viewer-inline-list">
+    <div class="viewer-list-tabs" role="tablist" aria-label="Rider trick lists">${tabs}</div>
+    ${sessionViewerListContent(entry, activeGroupSession, activeList)}
+  </div>`;
+}
+
+function sessionViewerListCount(entry, listId) {
+  if (listId === "goals") return Array.isArray(entry.athlete.goals) ? entry.athlete.goals.length : 0;
+  if (listId === "contest_run") {
+    const run = sessionViewerActiveRun(entry);
+    return Array.isArray(run?.points) ? run.points.length : 0;
+  }
+  return sessionViewerAssignmentsForList(entry, listId).length;
+}
+
+function sessionViewerListContent(entry, activeGroupSession, listId) {
+  if (listId === "goals") return sessionViewerGoalsList(entry);
+  if (listId === "contest_run") return sessionViewerRunList(entry);
+  const assignments = sessionViewerAssignmentsForList(entry, listId);
+  const complete = assignments.filter(isAssignmentComplete).length;
   const isPaused = activeGroupSession?.status === "paused";
   const isActive = activeGroupSession?.status === "running";
-  const list = daily.length ? daily.map((assignment) => {
+  const info = categoryInfo[listId] || { label: "Tricks", description: "" };
+  const canTick = listId !== "daily" || isActive;
+  const lockedText = listId === "daily" && !isActive ? " · start timer to tick timed Daily Tricks" : "";
+  const list = assignments.length ? assignments.map((assignment) => {
     const done = isAssignmentComplete(assignment);
-    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" ${isActive ? `data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}"` : "disabled"}>
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" ${canTick ? `data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}"` : "disabled"}>
       <span class="assignment-check">${done ? "✓" : ""}</span>
-      <span><strong>${escapeHtml(assignment.trick_name)}</strong>${assignment.notes ? `<small>${escapeHtml(assignment.notes)}</small>` : ""}</span>
+      <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></span>
     </button>`;
-  }).join("") : `<div class="empty compact-empty">No Daily Tricks assigned for this venue.</div>`;
-  return `<div class="viewer-inline-list"><div class="panel-meta">${escapeHtml(venueLabel(venue))} Daily Tricks · ${complete}/${daily.length} complete today${isPaused ? " · timer paused" : ""}</div><div class="viewer-trick-list">${list}</div></div>`;
+  }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
+  const label = listId === "daily" ? `${venueLabel(entry.venue)} Daily Tricks` : info.label;
+  return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}${lockedText}</div><div class="viewer-trick-list">${list}</div>`;
+}
+
+function sessionViewerGoalsList(entry) {
+  const goals = Array.isArray(entry.athlete.goals) ? entry.athlete.goals : [];
+  const complete = goals.filter((goal) => goal.completed).length;
+  const list = goals.length ? goals.map((goal, index) => {
+    const done = Boolean(goal.completed);
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" data-viewer-goal-toggle="${escapeHtml(goal.id || "")}" data-goal-index="${index}" data-athlete-id="${entry.athlete.id}">
+      <span class="assignment-check">${done ? "✓" : ""}</span>
+      <span><strong>${escapeHtml(goal.title || "Goal")}</strong><small>${done ? "Completed" : "In progress"} · goals do not affect leaderboard points</small></span>
+    </button>`;
+  }).join("") : `<div class="empty compact-empty">No goals saved for this rider yet.</div>`;
+  return `<div class="panel-meta viewer-list-meta">Goals · ${complete}/${goals.length} complete</div><div class="viewer-trick-list">${list}</div>`;
+}
+
+function sessionViewerActiveRun(entry) {
+  return (entry.runs || []).find((run) => !run.archived_at && Array.isArray(run.points) && run.points.length) || (entry.runs || [])[0] || null;
+}
+
+function sessionViewerRunList(entry) {
+  const run = sessionViewerActiveRun(entry);
+  if (!run) return `<div class="panel-meta viewer-list-meta">Contest Run</div><div class="empty compact-empty">No saved contest run for this rider yet.</div>`;
+  const progressRows = entry.runProgressByPlan?.get(run.id) || [];
+  const completedIndexes = new Set(progressRows.filter((row) => row.completed).map((row) => Number(row.point_index)));
+  const points = Array.isArray(run.points) ? run.points : [];
+  const complete = points.filter((_point, index) => completedIndexes.has(index)).length;
+  const list = points.length ? points.map((point, index) => {
+    const done = completedIndexes.has(index);
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" data-viewer-run-toggle="${run.id}" data-athlete-id="${entry.athlete.id}" data-run-point-index="${index}" data-run-completed="${done ? "true" : "false"}">
+      <span class="assignment-check">${done ? "✓" : index + 1}</span>
+      <span><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong><small>${escapeHtml(run.title || "Contest run")} · no leaderboard points</small></span>
+    </button>`;
+  }).join("") : `<div class="empty compact-empty">This run has no tricks saved yet.</div>`;
+  return `<div class="panel-meta viewer-list-meta">${escapeHtml(run.title || "Contest Run")} · ${complete}/${points.length} complete</div><div class="viewer-trick-list">${list}</div>`;
 }
 
 function bindSessionViewerActions() {
@@ -2201,11 +2304,13 @@ function bindSessionViewerActions() {
     state.sessionViewerGroup = event.target.value;
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
+    state.sessionViewerActiveList = "daily";
     renderSessionViewer();
   });
   document.querySelector("#viewer-venue")?.addEventListener("change", (event) => {
     state.sessionViewerVenue = event.target.value;
     state.sessionViewerOpenAthleteId = "";
+    state.sessionViewerActiveList = "daily";
     renderSessionViewer();
   });
   document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
@@ -2222,6 +2327,9 @@ function bindSessionViewerActions() {
   document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
   document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
+  document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
+  document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
 }
 
 async function startViewerGroupSession() {
@@ -2295,7 +2403,51 @@ async function recordViewerAssignmentAction(event) {
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  notify(result.message || "Daily Tricks progress updated.");
+  notify(result.message || "Trick progress updated.");
+  await refreshSessionViewerLight();
+}
+
+function selectViewerListTab(event) {
+  state.sessionViewerActiveList = event.currentTarget.dataset.viewerListTab || "daily";
+  refreshSessionViewerLight();
+}
+
+async function toggleViewerGoal(event) {
+  const button = event.currentTarget;
+  const athleteId = button.dataset.athleteId;
+  const goalIndex = Number(button.dataset.goalIndex);
+  const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
+  const athlete = roster.find((entry) => entry.id === athleteId);
+  if (!athlete || !Array.isArray(athlete.goals) || !athlete.goals[goalIndex]) return notify("Could not find that goal.", "error");
+  button.disabled = true;
+  const goals = athlete.goals.map((goal, index) => index === goalIndex ? { ...goal, completed: !goal.completed, completedAt: !goal.completed ? new Date().toISOString() : null } : goal);
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", athleteId).select().single();
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  state.sessionViewerRosterCache = roster.map((entry) => entry.id === athleteId ? { ...entry, goals: data.goals || goals } : entry);
+  notify("Goal progress updated.");
+  await refreshSessionViewerLight();
+}
+
+async function toggleViewerRunPoint(event) {
+  const button = event.currentTarget;
+  const completed = button.dataset.runCompleted === "true";
+  const payload = {
+    athlete_id: button.dataset.athleteId,
+    run_plan_id: button.dataset.viewerRunToggle,
+    point_index: Number(button.dataset.runPointIndex),
+    completed: !completed,
+    updated_at: new Date().toISOString(),
+  };
+  button.disabled = true;
+  const { error } = await client.from("run_checklist_progress").upsert(payload, { onConflict: "athlete_id,run_plan_id,point_index" });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  notify("Contest run progress updated.");
   await refreshSessionViewerLight();
 }
 
@@ -2310,13 +2462,15 @@ async function refreshSessionViewerLight() {
   const filteredRoster = roster
     .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
     .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
-  const { assignmentsByAthlete } = await getSessionViewerDailyData(filteredRoster.map((athlete) => athlete.id));
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster.map((athlete) => athlete.id));
   const schedules = filteredRoster.map((athlete) => {
-    const allDaily = assignmentsByAthlete.get(athlete.id) || [];
+    const allAssignments = assignmentsByAthlete.get(athlete.id) || [];
+    const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
     const daily = assignmentsForVenue(allDaily, state.sessionViewerVenue);
-    return { athlete, allDaily, daily, venue: state.sessionViewerVenue };
+    return { athlete, assignments: allAssignments, allDaily, daily, venue: state.sessionViewerVenue, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
   });
-  rosterGrid.innerHTML = schedules.length ? schedules.map(({ athlete, daily, venue }) => {
+  rosterGrid.innerHTML = schedules.length ? schedules.map((entry) => {
+    const { athlete, daily, venue } = entry;
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
     const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
@@ -2326,7 +2480,7 @@ async function refreshSessionViewerLight() {
         <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
         <div class="viewer-progress"><span style="width:${percent}%"></span></div>
       </button>
-      ${isOpen ? sessionViewerDailyList({ athlete, daily, venue }, activeGroupSession) : ""}
+      ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   bindSessionViewerFastActions();
@@ -2338,6 +2492,9 @@ function bindSessionViewerFastActions() {
     refreshSessionViewerLight();
   }));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
+  document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
+  document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
 }
 
 async function saveCoachCalendarEvent(event) {
