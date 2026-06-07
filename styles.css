@@ -590,9 +590,10 @@ img, video, canvas, svg { max-width: 100%; }
   gap: 10px;
   margin-bottom: 14px;
 }
+.command-stats-grid { margin-bottom: 12px; }
 .coach-tool-card {
-  min-height: 88px;
-  padding: 16px;
+  min-height: 76px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: linear-gradient(145deg, rgba(0,255,209,0.08), rgba(255,255,255,0.02));
@@ -608,6 +609,42 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .coach-tool-card small { color: var(--muted); font: 700 0.62rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; }
 .coach-tool-card:hover { border-color: var(--aqua); box-shadow: 0 0 0 4px var(--aqua-soft); }
+.command-section-group {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.025), rgba(0,255,209,0.018));
+}
+.command-section-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.command-section-heading > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,255,209,0.22);
+  color: var(--aqua);
+  font: 900 0.7rem var(--mono);
+}
+.command-section-heading strong {
+  display: block;
+  font: 900 1.25rem var(--display);
+  text-transform: uppercase;
+}
+.command-section-heading small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font: 800 0.62rem var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
 .clean-command-grid { align-items: start; }
 .coach-tool-details {
   padding: 12px;
@@ -700,7 +737,7 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .command-accordion-stack {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 .command-accordion {
   border: 1px solid var(--line);
@@ -714,15 +751,15 @@ img, video, canvas, svg { max-width: 100%; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 64px;
-  padding: 16px 18px;
+  min-height: 52px;
+  padding: 12px 14px;
   cursor: pointer;
   list-style: none;
 }
 .command-accordion summary::-webkit-details-marker { display: none; }
 .command-accordion summary strong {
   display: block;
-  font: 900 1.1rem var(--display);
+  font: 900 1rem var(--display);
   text-transform: uppercase;
 }
 .command-accordion summary small {
@@ -731,7 +768,7 @@ img, video, canvas, svg { max-width: 100%; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.command-accordion-body { padding: 0 16px 16px; }
+.command-accordion-body { padding: 0 12px 12px; }
 .weekly-settings-form {
   display: grid;
   gap: 10px;

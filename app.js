@@ -245,7 +245,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.8" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.9" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -1987,15 +1987,18 @@ async function renderCoachCommand() {
     const athlete = roster.find((entry) => entry.id === session.athlete_id);
     return `<button class="list-row command-link-row" type="button" data-open-student="${escapeHtml(session.athlete_id)}"><div><strong>${escapeHtml(athlete?.display_name || "Rider")}</strong><small>${dateLabel(session.started_at)} · ${session.ended_at ? "finished" : "live"} · ${Number(session.total_points || 0)} pts</small></div><span class="points">${session.ended_at ? "done" : "live"}</span></button>`;
   }).join("") : `<div class="empty compact-empty">No recent sessions recorded.</div>`;
-  const commandSections = [
+  const liveSections = [
     commandAccordionSection("todays-sessions-section", "Today's Sessions", "Recent sessions and live coaching tools", `<div class="attempt-list">${sessionRows}</div><div class="settings-divider"></div><button class="secondary-btn" data-view="sessionViewer" type="button">Open Session Viewer</button>`, true),
+    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster)),
+    commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
+  ].join("");
+  const teamSections = [
     commandAccordionSection("athlete-overview-section", "Athlete Overview", "Profiles, sheet alerts and rider status", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`, true),
     commandAccordionSection("rider-heat-map-section", "Rider Heat Map", "On track, needs help, injured or competition prep", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`),
-    commandAccordionSection("notifications-section", "Notifications", "Clickable private coach alerts", commandNotificationsHtml(roster, commandData, groupedCalendar), true),
+    commandAccordionSection("notifications-section", "Notifications", "Clickable private coach alerts", commandNotificationsHtml(roster, commandData, groupedCalendar)),
     commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
-    commandAccordionSection("weekly-todo-section", "Weekly To Do List", "Sheet updates, parent updates and event reminders", highPriorityTodoHtml(priorityTasks)),
-    commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
-    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster)),
+  ].join("");
+  const adminSections = [
     commandAccordionSection("payments-section", "Payments / Reimbursements", "Attendance history and outstanding venue costs", attendanceHistoryHtml(commandData.attendanceSessions)),
     commandAccordionSection("injury-section", "Injury Reports", "Modified training and rider file shortcuts", `<div class="notification-list">${commandData.statuses.filter((status) => status.heat_status === "injured").map((status) => {
       const athlete = roster.find((entry) => entry.id === status.athlete_id);
@@ -2009,7 +2012,7 @@ async function renderCoachCommand() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>JKCoaching <span>HQ</span></h1><p>Calendar, rider heat map, attendance, reimbursements, and athlete alerts in one coach-only area.</p></div></div>
     ${highPriorityTodoHtml(priorityTasks)}
-    <section class="stats-grid">
+    <section class="stats-grid command-stats-grid">
       ${statCard("Students", roster.length, "", "In your crew")}
       ${statCard("Need attention", attentionCount, "", "Auto flags")}
       ${statCard("Upcoming", upcoming, "", "Grouped events")}
@@ -2021,7 +2024,18 @@ async function renderCoachCommand() {
       <button class="coach-tool-card" data-view="board"><strong>Leaderboard</strong><small>Rankings and rider chat</small></button>
       <button class="coach-tool-card" data-view="notes"><strong>Coach Notes</strong><small>Private records and planning</small></button>
     </section>
-    <section class="command-accordion-stack">${commandSections}</section>`;
+    <section class="command-section-group">
+      <div class="command-section-heading"><span>01</span><div><strong>Live Coaching</strong><small>Sessions, attendance, and upcoming sessions</small></div></div>
+      <div class="command-accordion-stack compact-command-stack">${liveSections}</div>
+    </section>
+    <section class="command-section-group">
+      <div class="command-section-heading"><span>02</span><div><strong>Team Management</strong><small>Rider overview, heat map, alerts, and parent updates</small></div></div>
+      <div class="command-accordion-stack compact-command-stack">${teamSections}</div>
+    </section>
+    <section class="command-section-group">
+      <div class="command-section-heading"><span>03</span><div><strong>Admin & Records</strong><small>Payments, injuries, records, notes, runs, and settings</small></div></div>
+      <div class="command-accordion-stack compact-command-stack">${adminSections}</div>
+    </section>`;
   document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
   document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
   document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
