@@ -1033,6 +1033,17 @@ function dashboardItemForm(ownerId) {
   </form>`;
 }
 
+function dashboardTaskForm(ownerId) {
+  return `<form id="dashboard-item-form" class="dashboard-item-form task-only-form" data-owner-id="${ownerId}">
+    <input type="hidden" name="itemType" value="task">
+    <div class="field"><label for="item-title">Task</label><input id="item-title" name="title" required placeholder="Bike check, film homework, message coach..."></div>
+    <div class="field"><label for="item-due">Start date / time</label><input id="item-due" name="dueAt" type="datetime-local"></div>
+    <div class="field"><label for="item-end">Finish date / time</label><input id="item-end" name="endAt" type="datetime-local"></div>
+    <div class="field"><label for="item-details">Details</label><input id="item-details" name="details" placeholder="Optional short note"></div>
+    <button class="primary-btn" type="submit">Add task</button>
+  </form>`;
+}
+
 function weekSummaryHtml(assignments, awards) {
   const dailyDone = dailyCompletionCount(awards);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
@@ -1061,6 +1072,7 @@ async function renderAthleteHome() {
   const dailyDone = dailyCompletionCount(awards);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
   const openTasks = dashboardItems.filter((item) => item.item_type === "task" && !item.completed).length;
+  const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const activeSession = await getActiveSession();
   if (activeSession) {
     state.activeTraining = activeSession;
@@ -1079,10 +1091,10 @@ async function renderAthleteHome() {
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily point needs 20:00 or less</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span></div></section>` : ""}
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events & important tasks</div><div class="panel-meta">You and your coach can edit these</div></div></div>
-      ${dashboardItemsHtml(dashboardItems)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Important tasks</div><div class="panel-meta">Events and run planner now live in Contests</div></div></div>
+      ${dashboardItemsHtml(taskItems)}
       <div class="settings-divider"></div>
-      ${dashboardItemForm(state.user.id)}
+      ${dashboardTaskForm(state.user.id)}
     </section>
     ${goalsSection(state.profile)}`;
   bindGoalActions();
@@ -1186,8 +1198,8 @@ async function renderSession() {
         <div><div class="timer-label">Ready at ${escapeHtml(venueLabel(selectedVenue))}</div><div class="go-mark">GO</div><p>Start the live timer when you are chasing Daily Tricks points.</p></div>
         <button class="primary-btn start-session-btn" id="create-session">Start Session</button>
       </section>
-      ${extraTricksSection(state.profile, true)}
       <section class="panel"><div class="panel-head"><div><div class="panel-title">This week's schedule</div><div class="panel-meta">Showing ${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · timed Daily points need a live session</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
+      ${extraTricksSection(state.profile, true)}
       ${helpUploadSection(helpRequests)}`;
     bindVenueSelector();
     bindExtraTrickActions();
@@ -1205,8 +1217,8 @@ async function renderSession() {
     <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
     ${venueSelectorHtml(assignments)}
-    ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
+    ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
   bindVenueSelector();

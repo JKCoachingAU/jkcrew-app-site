@@ -800,6 +800,9 @@ img, video, canvas, svg { max-width: 100%; }
   gap: 8px;
   align-items: end;
 }
+.dashboard-item-form.task-only-form {
+  grid-template-columns: minmax(0, 1fr) 190px 190px minmax(0, 1fr) auto;
+}
 .feed-list { display: grid; gap: 9px; }
 .feed-card {
   display: grid;
