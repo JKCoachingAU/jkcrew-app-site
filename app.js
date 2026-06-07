@@ -244,7 +244,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.0" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.1" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -517,6 +517,7 @@ async function getBoardChat() {
 }
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
+const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
 
 async function getActiveCoachGroupSession() {
   const { data, error } = await client.from("coach_group_sessions")
@@ -1544,13 +1545,14 @@ async function endSession() {
 
 async function renderBoard() {
   const [leaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
+  const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets its weekly view each Monday.</p></div></div>
     <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>
     <section class="panel board-chat-panel">
-      <div class="panel-head"><div><div class="panel-title">Rider chat</div><div class="panel-meta">Team-only text chat · no DMs, photos, videos or files</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team-only text chat · no DMs, photos, videos or files</div></div></div>
       <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No rider chat yet. Start with a positive message.</div>`}</div>
-      ${state.profile?.role === "athlete" ? `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose"><textarea id="board-message" name="body" required maxlength="300" rows="1" placeholder="Encourage the crew..."></textarea><button class="primary-btn" type="submit">Send</button></form>` : `<div class="empty compact-empty">Rider chat is read-only for coach/parent accounts.</div>`}
+      ${canPost ? `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose"><textarea id="board-message" name="body" required maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea><button class="primary-btn" type="submit">Send</button></form>` : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
@@ -1578,7 +1580,7 @@ function boardChatMessageHtml(post) {
 
 async function submitBoardChat(event) {
   event.preventDefault();
-  if (state.profile?.role !== "athlete") return notify("Only riders can post in rider chat.", "error");
+  if (!canPostBoardChat()) return notify("Only riders and coaches can post in crew chat.", "error");
   const formElement = event.currentTarget;
   const body = String(new FormData(formElement).get("body") || "").trim();
   if (!body) return notify("Write a message first.", "error");
