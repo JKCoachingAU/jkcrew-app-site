@@ -623,6 +623,143 @@ img, video, canvas, svg { max-width: 100%; }
   text-transform: uppercase;
 }
 .coach-tool-details[open] summary { margin-bottom: 12px; }
+.high-priority-panel {
+  border-color: rgba(255, 214, 10, 0.28);
+  background: linear-gradient(135deg, rgba(255,214,10,0.075), rgba(0,255,209,0.035)), var(--panel);
+}
+.priority-list,
+.notification-list {
+  display: grid;
+  gap: 8px;
+}
+.priority-task,
+.notification-card,
+.command-link-row {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.025);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.priority-task {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 52px;
+  padding: 11px 12px;
+}
+.priority-task span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font: 900 0.78rem var(--mono);
+}
+.priority-task.high span { background: rgba(255,69,103,0.18); color: #ff9aad; }
+.priority-task.medium span { background: rgba(255,214,10,0.14); color: var(--yellow); }
+.priority-task strong,
+.notification-card strong { overflow-wrap: anywhere; }
+.notification-card {
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  padding: 12px;
+}
+.notification-card span {
+  color: var(--aqua);
+  font: 800 0.62rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.priority-task:hover,
+.notification-card:hover,
+.command-link-row:hover { border-color: var(--aqua); box-shadow: 0 0 0 3px var(--aqua-soft); }
+.command-accordion-stack {
+  display: grid;
+  gap: 10px;
+}
+.command-accordion {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+  overflow: hidden;
+}
+.command-accordion[open] { border-color: rgba(0,255,209,0.22); }
+.command-accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+.command-accordion summary::-webkit-details-marker { display: none; }
+.command-accordion summary strong {
+  display: block;
+  font: 900 1.1rem var(--display);
+  text-transform: uppercase;
+}
+.command-accordion summary small {
+  color: var(--muted);
+  font: 800 0.62rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.command-accordion-body { padding: 0 16px 16px; }
+.weekly-settings-form {
+  display: grid;
+  gap: 10px;
+}
+.weekly-settings-form label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.018);
+}
+.settings-callout {
+  padding: 12px;
+  border: 1px solid rgba(0,255,209,0.2);
+  border-radius: 12px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font: 800 0.76rem var(--mono);
+  letter-spacing: 0.04em;
+}
+.weekly-notification-controls {
+  display: grid;
+  gap: 12px;
+}
+.weekly-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.weekly-preview-actions small {
+  color: var(--muted);
+  max-width: 720px;
+  line-height: 1.45;
+}
+.weekly-history-list .notification-card small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: 0;
+}
 .calendar-card {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
