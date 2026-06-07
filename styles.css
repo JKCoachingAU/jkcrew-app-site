@@ -1022,6 +1022,39 @@ img, video, canvas, svg { max-width: 100%; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.compact-venue-planner {
+  display: grid;
+  gap: 12px;
+}
+.compact-venue-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+.compact-venue-controls .field { margin: 0; }
+.compact-venue-controls select {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid rgba(0,255,209,0.32);
+  border-radius: 14px;
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: 900 1rem var(--display);
+  text-transform: uppercase;
+}
+.venue-edit-panels {
+  display: grid;
+  gap: 10px;
+}
+.venue-edit-panel { display: none; }
+.venue-edit-panel.active { display: block; }
+.venue-edit-panel textarea { min-height: 190px; }
+.compact-custom-venue {
+  margin: 0;
+  padding: 12px;
+}
 .custom-venue-editor { border-color: rgba(168,85,247,0.28); }
 .session-start-card p { margin: 5px 0 0; color: var(--muted); line-height: 1.4; }
 .go-mark { margin-top: 2px; color: var(--text); font: italic 900 clamp(3.2rem, 10vw, 5.3rem)/0.82 var(--display); letter-spacing: -0.055em; }
@@ -1792,6 +1825,7 @@ img, video, canvas, svg { max-width: 100%; }
   .public-profile-avatar { width: 104px; height: 104px; }
   .public-badges { justify-content: center; }
   .two-col-form { grid-template-columns: 1fr; gap: 0; }
+  .compact-venue-controls { grid-template-columns: 1fr; }
   .goal-form { grid-template-columns: 1fr; }
   .extra-trick-form { grid-template-columns: 1fr; }
   .goal-row { grid-template-columns: 40px minmax(0, 1fr); }

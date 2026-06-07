@@ -30,6 +30,7 @@ const state = {
   runPlaybackTimer: null,
   draggedRunPoint: null,
   draggedDailyId: null,
+  coachPlanVenue: "",
 };
 
 const athleteNav = [
@@ -244,7 +245,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.6" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.7" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -2953,12 +2954,17 @@ async function renderStudentProfile() {
   const savedVenueNames = coachVenues.map((venue) => venue.name).filter(Boolean);
   const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
   const venueNames = [...new Set([...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
+  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue) === venueKey(state.coachPlanVenue || "")));
+  const venueOptions = venueNames.map((venue, venueIndex) => {
+    const count = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
+    return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
+  }).join("");
   const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
     const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
-    return `<div class="schedule-editor">
+    return `<div class="schedule-editor compact-schedule-editor venue-edit-panel ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
       <div class="schedule-editor-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list for ${escapeHtml(venue)}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length}</div></div>
       <div class="two-col-form venue-name-row">
         <div class="field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
@@ -2966,13 +2972,13 @@ async function renderStudentProfile() {
       </div>
     </div>`;
   }).join("");
-  const customVenueEditor = `<div class="schedule-editor custom-venue-editor">
-    <div class="schedule-editor-head"><div><div class="panel-title">Custom Venue Daily Tricks</div><div class="panel-meta">Add another skate park if this rider trains somewhere else</div></div></div>
+  const customVenueEditor = `<details class="coach-tool-details custom-venue-editor compact-custom-venue">
+    <summary>Add another venue</summary>
     <div class="two-col-form">
       <div class="field"><label for="custom-daily-venue">Venue name</label><input id="custom-daily-venue" name="customDailyVenue" placeholder="New skate park name"></div>
       <div class="field"><label for="custom-daily-list">Daily tricks</label><textarea id="custom-daily-list" name="customDaily" placeholder="One trick per line"></textarea></div>
     </div>
-  </div>`;
+  </details>`;
   const otherCategoryEditor = Object.entries(categoryInfo).filter(([category]) => category !== "daily").map(([category, info]) => {
     const assignmentText = assignments.filter((assignment) => assignment.category === category).map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
@@ -2984,7 +2990,14 @@ async function renderStudentProfile() {
     </div>`, category === "one_bang" || category === "dialled");
   }).join("");
   const categoryEditor = `<div class="plan-accordion-stack">
-    ${planAccordionSection("Venue-Specific Daily Tricks", "Daily lists by skate park · full list inside 20 minutes earns points", `<div class="venue-editor-grid">${dailyVenueEditors}${customVenueEditor}</div>`, true)}
+    ${planAccordionSection("Venue-Specific Daily Tricks", "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
+      <div class="compact-venue-controls">
+        <div class="field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select><small>Only one location is shown at a time to keep this page clean.</small></div>
+        <div class="settings-callout">Pick where this rider is training, add the Daily Tricks for that location, then save the complete schedule.</div>
+      </div>
+      <div class="venue-edit-panels">${dailyVenueEditors}</div>
+      ${customVenueEditor}
+    </div>`, true)}
     ${otherCategoryEditor}
   </div>`;
   const dailyDone = dailyCompletionCount(awards);
@@ -3036,6 +3049,14 @@ async function renderStudentProfile() {
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
+  document.querySelector("#daily-venue-select")?.addEventListener("change", (event) => {
+    const selectedIndex = event.currentTarget.value;
+    const selectedPanel = document.querySelector(`[data-venue-panel="${selectedIndex}"]`);
+    state.coachPlanVenue = selectedPanel?.querySelector(`[name="dailyVenueName:${selectedIndex}"]`)?.value || "";
+    document.querySelectorAll("[data-venue-panel]").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.venuePanel === selectedIndex);
+    });
+  });
   document.querySelector("#coach-athlete-profile-form").addEventListener("submit", saveCoachAthleteProfile);
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
   document.querySelector("#private-record-form").addEventListener("submit", savePrivateRecord);
@@ -3118,6 +3139,8 @@ async function saveCoachVenueNames(rows) {
 async function saveWeeklyAssignments(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const selectedVenueIndex = String(form.get("selectedDailyVenueIndex") || "0");
+  state.coachPlanVenue = String(form.get(`dailyVenueName:${selectedVenueIndex}`) || "").trim();
   const dailyVenueRows = dailyVenueRowsFromForm(form);
   const dailyAssignments = dailyVenueRows.flatMap((row, venueIndex) => String(row.tricks || "").split("\n")
     .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", row.name))
