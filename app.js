@@ -233,10 +233,10 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup"><img src="icons/jkc-logo.png" alt="JK Coaching logo"><span>JKCoaching</span></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.2.5" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
-          <h1>Crafting <em>champions,</em><br>creating futures.</h1>
+          <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
           <p>Weekly trick plans, private progress tracking, and coach feedback built for serious BMX progression.</p>
         </div>
         <div class="feature-strip"><span>Weekly plans</span><span>Private progress</span><span>Coach feedback</span><span>Future focused</span></div>

@@ -122,6 +122,21 @@ img, video, canvas, svg { max-width: 100%; }
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
+.auth-logo-lockup.wordmark-lockup {
+  width: min(440px, 72vw);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.auth-logo-lockup.wordmark-lockup img {
+  width: 100%;
+  height: auto;
+  border-radius: 0;
+  filter: drop-shadow(0 18px 45px rgba(0,0,0,0.52));
+  box-shadow: none;
+}
 .eyebrow {
   color: var(--aqua);
   font: 600 0.68rem var(--mono);
@@ -131,8 +146,9 @@ img, video, canvas, svg { max-width: 100%; }
 .hero-copy { position: relative; z-index: 1; max-width: 750px; margin-inline: auto; }
 .hero-copy h1 {
   margin: 14px 0 18px;
-  font: italic 900 clamp(4rem, 10vw, 9rem)/0.78 var(--display);
-  letter-spacing: -0.055em;
+  font: italic 900 clamp(4rem, 10vw, 9rem)/0.84 var(--display);
+  letter-spacing: -0.028em;
+  word-spacing: 0.035em;
   text-transform: uppercase;
 }
 .hero-copy h1 em { color: var(--aqua); font-style: normal; }
@@ -1115,7 +1131,9 @@ img, video, canvas, svg { max-width: 100%; }
   .auth-hero { min-height: 46vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 28px 22px; }
   .auth-logo-lockup { margin: 0 auto; }
   .auth-logo-lockup img { width: 118px; height: 118px; border-radius: 24px; }
-  .hero-copy h1 { font-size: clamp(4.2rem, 22vw, 7rem); }
+  .auth-logo-lockup.wordmark-lockup { width: min(300px, 76vw); }
+  .auth-logo-lockup.wordmark-lockup img { width: 100%; height: auto; border-radius: 0; }
+  .hero-copy h1 { font-size: clamp(4.2rem, 21vw, 7rem); letter-spacing: -0.024em; line-height: 0.86; }
   .feature-strip { display: none; }
   .auth-panel { min-height: 54vh; padding: 30px 20px 70px; }
   .app-shell { display: block; }
