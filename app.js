@@ -235,7 +235,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.2.6" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.2.7" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -1935,7 +1935,7 @@ async function renderParents() {
       ${statCard("Parent links", links.length, "", "Parent to rider connections")}
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Link parent to rider</div><div class="panel-meta">Supports multiple children per parent and multiple parents per rider</div></div></div>
-      ${parents.length && roster.length ? `<form id="parent-admin-link-form" class="trick-form parent-link-form"><div class="field"><label for="admin-parent-id">Parent account</label><select id="admin-parent-id" name="parentId">${parentOptions}</select></div><div class="field"><label for="admin-athlete-id">Rider</label><select id="admin-athlete-id" name="athleteId">${athleteOptions}</select></div><div class="field"><label for="admin-relationship">Relationship</label><input id="admin-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link account</button></form>` : `<div class="empty compact-empty">Create at least one parent account and one rider first.</div>`}
+      ${parents.length && roster.length ? `<form id="parent-admin-link-form" class="trick-form parent-link-form"><div class="field"><label for="admin-parent-id">Parent account</label><select id="admin-parent-id" name="parentId" required>${parentOptions}</select></div><div class="field"><label for="admin-athlete-ids">Rider/s</label><select id="admin-athlete-ids" name="athleteIds" multiple size="${Math.min(Math.max(roster.length, 3), 7)}" required>${athleteOptions}</select><small>Hold Command on Mac to choose more than one rider.</small></div><div class="field"><label for="admin-relationship">Relationship</label><input id="admin-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link account</button></form>` : `<div class="empty compact-empty">Create at least one parent account and one rider first.</div>`}
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">All parent accounts</div><div class="panel-meta">Name, email, phone, linked riders, status and date joined</div></div></div><div class="parent-admin-list">${parentRows}</div></section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Parents by training group</div><div class="panel-meta">Quick scan by Monday, Tuesday, Wednesday and online groups</div></div></div><div class="groups-grid">${grouped}</div></section>`;
@@ -2316,28 +2316,43 @@ async function linkParentAccount(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const parentId = form.get("parentId");
-  const { error } = await client.from("parent_athletes").insert({
+  if (!parentId || !state.selectedAthleteId) return notify("Unable to link account. Please check the selected parent and rider.", "error");
+  const { error } = await client.from("parent_athletes").upsert({
     parent_id: parentId,
     athlete_id: state.selectedAthleteId,
     coach_id: state.user.id,
     relationship: String(form.get("relationship") || "").trim().slice(0, 80),
-  });
-  if (error) return notify(messageFrom(error), "error");
-  notify("Parent viewer linked to this athlete.");
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "parent_id,athlete_id" });
+  if (error) return notify(`Unable to link account. ${messageFrom(error)}`, "error");
+  notify("Parent account linked successfully.");
   await renderStudentProfile();
 }
 
 async function linkParentFromAdmin(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const { error } = await client.from("parent_athletes").insert({
-    parent_id: form.get("parentId"),
-    athlete_id: form.get("athleteId"),
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const parentId = String(form.get("parentId") || "");
+  const athleteIds = form.getAll("athleteIds").map((id) => String(id || "")).filter(Boolean);
+  const button = formElement.querySelector("button[type=submit]");
+  if (!parentId || !athleteIds.length) return notify("Unable to link account. Please check the selected parent and rider.", "error");
+  button.disabled = true;
+  button.textContent = "Linking...";
+  const rows = athleteIds.map((athleteId) => ({
+    parent_id: parentId,
+    athlete_id: athleteId,
     coach_id: state.user.id,
     relationship: String(form.get("relationship") || "").trim().slice(0, 80),
-  });
-  if (error) return notify(messageFrom(error), "error");
-  notify("Parent account linked.");
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await client.from("parent_athletes").upsert(rows, { onConflict: "parent_id,athlete_id" });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Link account";
+    return notify(`Unable to link account. ${messageFrom(error)}`, "error");
+  }
+  notify(athleteIds.length === 1 ? "Parent account linked successfully." : `Parent account linked successfully to ${athleteIds.length} riders.`);
   await renderParents();
 }
 
