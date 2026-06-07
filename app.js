@@ -244,7 +244,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.1" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.2" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -498,7 +498,7 @@ async function getCrewFeed() {
 async function getBoardChat() {
   const { data: posts, error } = await client.from("crew_posts")
     .select("*, profiles:author_id(display_name, avatar)")
-    .eq("post_type", "leaderboard")
+    .eq("post_type", "chat")
     .order("created_at", { ascending: true })
     .limit(60);
   if (error) throw error;
@@ -518,6 +518,55 @@ async function getBoardChat() {
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
 const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
+const countryOptions = [
+  ["", "Not set"],
+  ["AU", "Australia"],
+  ["NZ", "New Zealand"],
+  ["US", "United States"],
+  ["GB", "United Kingdom"],
+  ["CA", "Canada"],
+  ["JP", "Japan"],
+  ["FR", "France"],
+  ["DE", "Germany"],
+  ["NL", "Netherlands"],
+  ["BE", "Belgium"],
+  ["ES", "Spain"],
+  ["IT", "Italy"],
+  ["SE", "Sweden"],
+  ["NO", "Norway"],
+  ["DK", "Denmark"],
+  ["FI", "Finland"],
+  ["BR", "Brazil"],
+  ["AR", "Argentina"],
+  ["CL", "Chile"],
+  ["ZA", "South Africa"],
+  ["SG", "Singapore"],
+  ["MY", "Malaysia"],
+  ["TH", "Thailand"],
+  ["ID", "Indonesia"],
+  ["PH", "Philippines"],
+];
+
+function countryNameFromCode(code = "") {
+  return countryOptions.find(([value]) => value === code)?.[1] || "";
+}
+
+function countryFlag(code = "") {
+  const value = String(code || "").toUpperCase();
+  if (!/^[A-Z]{2}$/.test(value)) return "";
+  return value.split("").map((char) => String.fromCodePoint(127397 + char.charCodeAt(0))).join("");
+}
+
+function countryOptionsHtml(selectedCode = "") {
+  return countryOptions.map(([code, label]) => `<option value="${code}" ${selectedCode === code ? "selected" : ""}>${code ? `${countryFlag(code)} ${label}` : label}</option>`).join("");
+}
+
+function countryBadge(profile = {}) {
+  const flag = countryFlag(profile.country_code);
+  if (!flag) return "";
+  const label = profile.country_name || countryNameFromCode(profile.country_code) || profile.country_code;
+  return `<span class="country-flag" title="${escapeHtml(label)}">${flag}</span>`;
+}
 
 async function getActiveCoachGroupSession() {
   const { data, error } = await client.from("coach_group_sessions")
@@ -1333,14 +1382,42 @@ function goalsReadonlyHtml(profile = {}) {
 }
 
 function leaderRow(row, index, rows = []) {
-  const total = rows.length;
-  const badge = medalForRank(row, index, total);
+  const realRows = rows.filter((entry) => !entry.isBenchmarkBot);
+  const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
+  const badge = row.isBenchmarkBot ? "" : medalForRank(row, realIndex, realRows.length);
   const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
-  return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">
+  const country = countryBadge(row);
+  const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : `Level ${row.level} · ${row.session_count} sessions`;
+  const content = `
     <div class="rank">#${index + 1}</div>
-    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><small>Level ${row.level} · ${row.session_count} sessions</small>${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
-    <div class="points">${row.weekly_points}<small> pts</small></div>
-  </button>`;
+    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${country}${escapeHtml(row.display_name)} ${badge}</strong><small>${escapeHtml(meta)}</small>${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="points">${row.weekly_points}<small> pts</small></div>`;
+  if (row.isBenchmarkBot) return `<article class="list-row leader-row benchmark-row">${content}</article>`;
+  return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
+}
+
+function leaderboardWithBenchmark(rows = []) {
+  const realRows = rows.filter((row) => !row.isBenchmarkBot);
+  const topPoints = Number(realRows[0]?.weekly_points || 0);
+  const benchmarkPoints = topPoints > 2 ? Math.max(1, Math.min(topPoints - 1, Math.round(topPoints * 0.55))) : 0;
+  const bot = {
+    athlete_id: "__jkcrew_benchmark__",
+    display_name: "Benchmark Rider",
+    level: 1,
+    avatar: {},
+    country_code: "AU",
+    country_name: "Australia",
+    weekly_points: benchmarkPoints,
+    session_count: 3,
+    earned_badges: [{ icon: "🎯", label: "55% guide" }],
+    isBenchmarkBot: true,
+    benchmark_completion: 55,
+  };
+  if (!realRows.length) return [bot];
+  const output = [...realRows];
+  const insertAt = topPoints > 0 ? output.findIndex((row) => Number(row.weekly_points || 0) < benchmarkPoints) : output.length;
+  output.splice(insertAt === -1 ? output.length : Math.max(1, insertAt), 0, bot);
+  return output;
 }
 
 async function loadActiveSession() {
@@ -1544,14 +1621,15 @@ async function endSession() {
 }
 
 async function renderBoard() {
-  const [leaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
+  const [rawLeaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
+  const leaderboard = leaderboardWithBenchmark(rawLeaderboard);
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets its weekly view each Monday.</p></div></div>
     <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>
     <section class="panel board-chat-panel">
       <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team-only text chat · no DMs, photos, videos or files</div></div></div>
-      <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No rider chat yet. Start with a positive message.</div>`}</div>
+      <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Start with a positive message.</div>`}</div>
       ${canPost ? `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose"><textarea id="board-message" name="body" required maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea><button class="primary-btn" type="submit">Send</button></form>` : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
@@ -1587,7 +1665,7 @@ async function submitBoardChat(event) {
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Sending...";
-  const { error } = await client.from("crew_posts").insert({ author_id: state.user.id, body, post_type: "leaderboard" });
+  const { error } = await client.from("crew_posts").insert({ author_id: state.user.id, body, post_type: "chat" });
   if (error) {
     button.disabled = false;
     button.textContent = "Send";
@@ -1648,6 +1726,7 @@ async function renderPublicAthleteProfile() {
     <section class="stats-grid public-profile-stats">
       ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
       ${statCard("Weekly wins", profile.weekly_wins || 0, "", "Leaderboard wins")}
+      ${statCard("Country", profile.country_code ? `${countryFlag(profile.country_code)} ${profile.country_name || countryNameFromCode(profile.country_code)}` : "-", "", "Where they ride from")}
       ${statCard("Stance", profile.stance || "-", "", "Goofy or regular")}
       ${statCard("Spin", spinDirectionLabels[profile.spin_direction] || "-", "", "Natural direction")}
       ${statCard("Favourite trick", profile.favourite_trick || "-", "", "Rider pick")}
@@ -2622,6 +2701,7 @@ async function renderStudentProfile() {
       <form id="coach-athlete-profile-form" class="two-col-form">
         <div class="field"><label for="coach-athlete-spin">Spin Direction</label><select id="coach-athlete-spin" name="spinDirection"><option value="" ${!athlete.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${athlete.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${athlete.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${athlete.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${athlete.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
         <div class="field"><label for="coach-athlete-favourite">Favourite Trick</label><input id="coach-athlete-favourite" name="favouriteTrick" maxlength="120" value="${escapeHtml(athlete.favourite_trick || "")}" placeholder="Favourite BMX trick"></div>
+        <div class="field"><label for="coach-athlete-country">Country</label><select id="coach-athlete-country" name="countryCode">${countryOptionsHtml(athlete.country_code || "")}</select></div>
         <div class="field group-checkbox-field"><label>Training groups</label><div class="group-checkbox-grid">${groupCheckboxes}</div><small>Riders can be in more than one weekly group.</small></div>
         <button class="primary-btn" type="submit">Save rider details</button>
       </form>
@@ -2787,9 +2867,12 @@ async function saveCoachAthleteProfile(event) {
   const form = new FormData(event.currentTarget);
   const groupNames = form.getAll("groupNames").filter(Boolean);
   if (!groupNames.length) return notify("Choose at least one training group.", "error");
+  const countryCode = String(form.get("countryCode") || "");
   const { error } = await client.from("profiles").update({
     spin_direction: form.get("spinDirection") || "",
     favourite_trick: String(form.get("favouriteTrick") || "").trim().slice(0, 120),
+    country_code: countryCode,
+    country_name: countryNameFromCode(countryCode),
     updated_at: new Date().toISOString(),
   }).eq("id", state.selectedAthleteId);
   if (error) return notify(messageFrom(error), "error");
@@ -3371,6 +3454,7 @@ async function renderProfile() {
               <div class="field"><label for="profile-stance">Stance</label><select id="profile-stance" name="stance"><option value="">Not set</option><option value="regular" ${state.profile.stance === "regular" ? "selected" : ""}>Regular</option><option value="goofy" ${state.profile.stance === "goofy" ? "selected" : ""}>Goofy</option></select></div>
               <div class="field"><label for="profile-age">Age</label><input id="profile-age" name="age" type="number" min="3" max="99" value="${state.profile.age || ""}" placeholder="Age"></div>
             </div>
+            <div class="field"><label for="profile-country">Country</label><select id="profile-country" name="countryCode">${countryOptionsHtml(state.profile.country_code || "")}</select></div>
             <div class="two-col-form">
               <div class="field"><label for="profile-spin-direction">Spin Direction</label><select id="profile-spin-direction" name="spinDirection"><option value="" ${!state.profile.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${state.profile.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${state.profile.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${state.profile.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${state.profile.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
               <div class="field"><label for="profile-favourite-trick">Favourite Trick</label><input id="profile-favourite-trick" name="favouriteTrick" maxlength="120" value="${escapeHtml(state.profile.favourite_trick || "")}" placeholder="Barspin, flair, 360..."></div>
@@ -3475,10 +3559,13 @@ async function updateProfile(event) {
   };
   if (state.profile.role === "athlete") {
     const age = Number(form.get("age"));
+    const countryCode = String(form.get("countryCode") || "");
     updates.stance = form.get("stance") || "";
     updates.spin_direction = form.get("spinDirection") || "";
     updates.favourite_trick = String(form.get("favouriteTrick") || "").trim().slice(0, 120);
     updates.age = Number.isFinite(age) && age > 0 ? age : null;
+    updates.country_code = countryCode;
+    updates.country_name = countryNameFromCode(countryCode);
     updates.sponsors = String(form.get("sponsors") || "").trim();
     updates.achievements = String(form.get("achievements") || "").trim();
     updates.social_links = {

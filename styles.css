@@ -1045,10 +1045,11 @@ img, video, canvas, svg { max-width: 100%; }
 .crew-chat-compose textarea:focus { border-color: var(--aqua); box-shadow: 0 0 0 3px var(--aqua-soft); }
 .crew-chat-compose button { min-height: 44px; border-radius: 999px; }
 .board-chat-panel { overflow: hidden; }
+.board-chat-panel .empty.compact-empty { margin: 8px 0 0; }
 .board-chat-list {
   display: grid;
   gap: 10px;
-  max-height: 430px;
+  max-height: 360px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1093,6 +1094,36 @@ img, video, canvas, svg { max-width: 100%; }
   color: var(--aqua);
 }
 .reaction-btn span { font: 800 0.68rem var(--mono); }
+.board-chat-compose {
+  position: static;
+  z-index: 1;
+  align-items: end;
+  margin: 16px 0 0;
+  padding: 0;
+  background: none;
+}
+.board-chat-compose textarea {
+  min-height: 50px;
+  border-radius: 24px;
+  line-height: 1.25;
+}
+.board-chat-compose button {
+  min-width: 86px;
+  min-height: 50px;
+}
+.country-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 7px;
+  font-size: 1rem;
+  vertical-align: -0.08em;
+}
+.benchmark-row {
+  border-color: rgba(255, 214, 10, 0.34);
+  background: linear-gradient(135deg, rgba(255,214,10,0.08), rgba(255,255,255,0.02));
+}
+.benchmark-row .points { color: var(--yellow); }
 .group-session-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
