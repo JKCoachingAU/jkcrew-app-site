@@ -77,11 +77,11 @@ const localDate = () => {
 const weekStartDate = () => {
   const parts = brisbaneDateParts();
   const date = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
-  const day = (date.getUTCDay() + 6) % 7;
+  const day = date.getUTCDay();
   date.setUTCDate(date.getUTCDate() - day);
   return date.toISOString().slice(0, 10);
 };
-const weekStartIso = () => `${weekStartDate()}T00:00:00.000Z`;
+const weekStartIso = () => `${weekStartDate()}T00:00:00+10:00`;
 const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" }).format(new Date(`${weekStartDate()}T00:00:00+10:00`));
 const messageFrom = (error) => error?.message || "Something went wrong. Please try again.";
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -244,7 +244,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.2" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.3" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -1402,7 +1402,7 @@ function leaderboardWithBenchmark(rows = []) {
   const benchmarkPoints = topPoints > 2 ? Math.max(1, Math.min(topPoints - 1, Math.round(topPoints * 0.55))) : 0;
   const bot = {
     athlete_id: "__jkcrew_benchmark__",
-    display_name: "Benchmark Rider",
+    display_name: "Anonymous Rider",
     level: 1,
     avatar: {},
     country_code: "AU",
@@ -1418,6 +1418,25 @@ function leaderboardWithBenchmark(rows = []) {
   const insertAt = topPoints > 0 ? output.findIndex((row) => Number(row.weekly_points || 0) < benchmarkPoints) : output.length;
   output.splice(insertAt === -1 ? output.length : Math.max(1, insertAt), 0, bot);
   return output;
+}
+
+function scoreAdjustmentPanel(rows = []) {
+  if (!isCoachRole(state.profile?.role)) return "";
+  const options = rows
+    .filter((row) => !row.isBenchmarkBot)
+    .map((row) => `<option value="${row.athlete_id}">${escapeHtml(row.display_name)} · ${Number(row.weekly_points || 0)} pts</option>`)
+    .join("");
+  if (!options) return "";
+  return `<section class="panel score-adjust-panel">
+    <div class="panel-head"><div><div class="panel-title">Coach point control</div><div class="panel-meta">Add points or deduct points for behaviour, cheating, or coach corrections.</div></div></div>
+    <form id="score-adjust-form" class="score-adjust-form">
+      <div class="field"><label for="adjust-athlete">Rider</label><select id="adjust-athlete" name="athleteId" required>${options}</select></div>
+      <div class="field"><label for="adjust-action">Action</label><select id="adjust-action" name="action"><option value="add">Add points</option><option value="deduct">Deduct points</option></select></div>
+      <div class="field"><label for="adjust-points">Points</label><input id="adjust-points" name="points" type="number" min="1" max="999" required placeholder="5"></div>
+      <div class="field"><label for="adjust-reason">Reason</label><input id="adjust-reason" name="reason" maxlength="160" placeholder="Naughty, cheating, bonus effort..."></div>
+      <button class="primary-btn" type="submit">Apply score change</button>
+    </form>
+  </section>`;
 }
 
 async function loadActiveSession() {
@@ -1625,16 +1644,47 @@ async function renderBoard() {
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard);
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets its weekly view each Monday.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at midnight every Sunday.</p></div></div>
     <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>
+    ${scoreAdjustmentPanel(rawLeaderboard)}
     <section class="panel board-chat-panel">
       <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team-only text chat · no DMs, photos, videos or files</div></div></div>
       <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Start with a positive message.</div>`}</div>
       ${canPost ? `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose"><textarea id="board-message" name="body" required maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea><button class="primary-btn" type="submit">Send</button></form>` : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
+  document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
   document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
+}
+
+async function submitScoreAdjustment(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can change scores.", "error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const athleteId = String(form.get("athleteId") || "");
+  const action = String(form.get("action") || "add");
+  const amount = Math.abs(Number(form.get("points") || 0));
+  if (!athleteId || !amount) return notify("Choose a rider and points amount.", "error");
+  const signedPoints = action === "deduct" ? -amount : amount;
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Applying...";
+  const { error } = await client.from("leaderboard_point_adjustments").insert({
+    athlete_id: athleteId,
+    coach_id: state.user.id,
+    points: signedPoints,
+    reason: String(form.get("reason") || `${action === "deduct" ? "Deducted" : "Added"} by coach`).trim().slice(0, 160),
+    week_start: weekStartDate(),
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Apply score change";
+    return notify(messageFrom(error), "error");
+  }
+  notify(`${signedPoints > 0 ? "Added" : "Deducted"} ${amount} point${amount === 1 ? "" : "s"}.`);
+  await renderBoard();
 }
 
 function boardChatMessageHtml(post) {

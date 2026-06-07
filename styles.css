@@ -1124,6 +1124,14 @@ img, video, canvas, svg { max-width: 100%; }
   background: linear-gradient(135deg, rgba(255,214,10,0.08), rgba(255,255,255,0.02));
 }
 .benchmark-row .points { color: var(--yellow); }
+.score-adjust-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(130px, 0.8fr) minmax(90px, 0.55fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.score-adjust-form .field { margin: 0; }
+.score-adjust-form button { min-height: 48px; }
 .group-session-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1622,6 +1630,7 @@ img, video, canvas, svg { max-width: 100%; }
   .viewer-trick-row { min-height: 68px; grid-template-columns: 46px minmax(0, 1fr); }
   .viewer-trick-row .assignment-check { width: 40px; height: 40px; }
   .board-chat-list { max-height: 50vh; }
+  .score-adjust-form { grid-template-columns: 1fr; }
   .overview-card { grid-template-columns: 1fr; }
   .calendar-card { grid-template-columns: 46px minmax(0, 1fr); }
   .run-list { grid-template-columns: 1fr; }
