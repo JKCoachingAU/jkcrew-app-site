@@ -19,9 +19,11 @@ const state = {
   publicAthleteId: null,
   selectedVenue: "",
   sessionViewerGroup: "monday",
+  sessionViewerVenue: "",
   sessionViewerSearch: "",
   sessionViewerOpenAthleteId: "",
   sessionViewerTimer: null,
+  sessionViewerClock: null,
   runBuilder: null,
   runPlaybackTimer: null,
   draggedRunPoint: null,
@@ -240,7 +242,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.3.0" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.4.0" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -352,6 +354,10 @@ async function navigate(view) {
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
+  }
+  if (state.sessionViewerClock) {
+    clearInterval(state.sessionViewerClock);
+    state.sessionViewerClock = null;
   }
   state.view = view;
   document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -509,6 +515,17 @@ async function getBoardChat() {
 }
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
+
+async function getActiveCoachGroupSession() {
+  const { data, error } = await client.from("coach_group_sessions")
+    .select("*, coach_group_session_participants(*)")
+    .eq("coach_id", state.user.id)
+    .in("status", ["running", "paused"])
+    .order("started_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] || null;
+}
 
 const categoryInfo = {
   daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
@@ -1724,6 +1741,10 @@ async function renderSessionViewer() {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
   }
+  if (state.sessionViewerClock) {
+    clearInterval(state.sessionViewerClock);
+    state.sessionViewerClock = null;
+  }
   const roster = await getCoachRoster();
   if (state.view !== "sessionViewer") return;
   if (!isCoachRole(state.profile?.role)) return navigate("home");
@@ -1731,22 +1752,38 @@ async function renderSessionViewer() {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Add students first, then you can manage group Daily Tricks from here.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
+  const activeGroupSession = await getActiveCoachGroupSession();
+  if (activeGroupSession) {
+    state.sessionViewerGroup = activeGroupSession.group_name || state.sessionViewerGroup;
+    state.sessionViewerVenue = activeGroupSession.venue || state.sessionViewerVenue;
+  }
   const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}" ${state.sessionViewerGroup === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
   const search = state.sessionViewerSearch.toLowerCase().trim();
   const groupRoster = roster.filter((athlete) => athlete.groupName === state.sessionViewerGroup);
   const filteredRoster = groupRoster.filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
   if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
-    state.sessionViewerOpenAthleteId = filteredRoster[0]?.id || "";
+    state.sessionViewerOpenAthleteId = "";
   }
   const schedules = await Promise.all(filteredRoster.map(async (athlete) => {
     const { assignments } = await getWeeklyAssignments(athlete.id);
-    const daily = assignments.filter((assignment) => assignment.category === "daily");
-    const selectedVenue = dailyVenues(daily)[0] || "";
-    const visibleDaily = assignmentsForVenue(daily, selectedVenue);
-    return { athlete, daily: visibleDaily, venue: selectedVenue };
+    const allDaily = assignments.filter((assignment) => assignment.category === "daily");
+    const selectedVenue = state.sessionViewerVenue || dailyVenues(allDaily)[0] || "";
+    const visibleDaily = assignmentsForVenue(allDaily, selectedVenue);
+    const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
+    return { athlete, allDaily, daily: visibleDaily, venue: selectedVenue, participant };
   }));
   if (state.view !== "sessionViewer") return;
+  if (!state.sessionViewerVenue) {
+    const firstVenue = schedules.flatMap((entry) => dailyVenues(entry.allDaily)).find((venue) => venue !== undefined);
+    state.sessionViewerVenue = firstVenue || "";
+    schedules.forEach((entry) => {
+      entry.venue = state.sessionViewerVenue;
+      entry.daily = assignmentsForVenue(entry.allDaily, state.sessionViewerVenue);
+    });
+  }
   const openSchedule = schedules.find((entry) => entry.athlete.id === state.sessionViewerOpenAthleteId);
+  const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
+  const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map(({ athlete, daily, venue }) => {
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
@@ -1755,40 +1792,89 @@ async function renderSessionViewer() {
       <div class="viewer-progress"><span style="width:${percent}%"></span></div>
     </button>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
-  const openList = openSchedule ? sessionViewerDailyList(openSchedule) : `<div class="empty">Choose a rider to view their Daily Tricks.</div>`;
+  const idleCount = schedules.filter((entry) => !entry.participant?.last_activity_at).length;
+  const openList = openSchedule
+    ? sessionViewerDailyList(openSchedule, activeGroupSession)
+    : `<div class="viewer-group-empty"><div class="empty">${started ? "Ask a rider to tap their name to open their own Daily Trick sheet." : "Choose a group and venue, then start the session."}</div></div>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Open this on an iPad, choose a group, and tick Daily Tricks for multiple riders from one screen.</p></div><button class="secondary-btn" id="viewer-refresh">Refresh</button></div>
+    <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" id="viewer-refresh">Refresh</button></div>
+    <section class="panel group-session-control ${activeGroupSession?.status || "ready"}">
+      <div class="group-timer-block"><div class="timer-label">${started ? `${escapeHtml(coachGroupLabel(activeGroupSession.group_name))} · ${escapeHtml(venueLabel(activeGroupSession.venue))}` : "Ready for group session"}</div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? `${escapeHtml(activeGroupSession.status)} · ${schedules.length} riders · ${idleCount} not logged yet` : "Only coach/admin can start, pause, resume or end."}</small></div>
+      <div class="group-session-actions">
+        ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session</button>`}
+      </div>
+    </section>
     <section class="panel session-viewer-controls">
-      <div class="field"><label for="viewer-group">Group/session</label><select id="viewer-group">${groupOptions}</select></div>
+      <div class="field"><label for="viewer-group">Group/session</label><select id="viewer-group" ${started ? "disabled" : ""}>${groupOptions}</select></div>
+      <div class="field"><label for="viewer-venue">Venue/skate park</label><select id="viewer-venue" ${started ? "disabled" : ""}>${venueOptions}</select></div>
       <div class="field"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
     </section>
     <section class="session-viewer-layout">
-      <div class="viewer-rider-grid">${cards}</div>
+      <div><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid">${cards}</div></div>
       <section class="panel viewer-detail-panel">${openList}</section>
     </section>`;
   bindSessionViewerActions();
+  updateGroupSessionTimerDom();
+  state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
   state.sessionViewerTimer = setInterval(() => {
     if (state.view === "sessionViewer") renderSessionViewer();
   }, 7000);
 }
 
-function sessionViewerDailyList(entry) {
+function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
+  const venues = new Set();
+  if (state.sessionViewerVenue) venues.add(state.sessionViewerVenue);
+  schedules.forEach((entry) => entry.allDaily.forEach((assignment) => venues.add(venueKey(assignment.venue))));
+  groupRoster.forEach(() => {});
+  const values = [...venues].filter((venue) => venue !== undefined);
+  if (!values.length) values.push(state.sessionViewerVenue || "");
+  return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.sessionViewerVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+}
+
+function groupSessionElapsedSeconds(session) {
+  if (!session?.started_at) return 0;
+  const pausedBase = Number(session.total_paused_seconds || 0);
+  const pausedNow = session.status === "paused" && session.paused_at ? Math.max(0, Math.floor((Date.now() - new Date(session.paused_at).getTime()) / 1000)) : 0;
+  return Math.max(0, Math.floor((Date.now() - new Date(session.started_at).getTime()) / 1000) - pausedBase - pausedNow);
+}
+
+function updateGroupSessionTimerDom() {
+  const timerElement = document.querySelector("#group-session-timer");
+  if (!timerElement || !timerElement.dataset.startedAt) return;
+  const pseudoSession = {
+    started_at: timerElement.dataset.startedAt,
+    paused_at: timerElement.dataset.pausedAt,
+    total_paused_seconds: Number(timerElement.dataset.pausedSeconds || 0),
+    status: timerElement.dataset.status,
+  };
+  timerElement.textContent = formatTime(groupSessionElapsedSeconds(pseudoSession));
+}
+
+function sessionViewerDailyList(entry, activeGroupSession) {
   const { athlete, daily, venue } = entry;
   const complete = daily.filter(isAssignmentComplete).length;
+  const isPaused = activeGroupSession?.status === "paused";
+  const isActive = activeGroupSession?.status === "running";
   const list = daily.length ? daily.map((assignment) => {
     const done = isAssignmentComplete(assignment);
-    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}">
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" ${isActive ? `data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}"` : "disabled"}>
       <span class="assignment-check">${done ? "✓" : ""}</span>
       <span><strong>${escapeHtml(assignment.trick_name)}</strong>${assignment.notes ? `<small>${escapeHtml(assignment.notes)}</small>` : ""}</span>
     </button>`;
   }).join("") : `<div class="empty compact-empty">No Daily Tricks assigned for this venue.</div>`;
-  return `<div class="viewer-detail-head">${avatarHtml(athlete, "student-chip-avatar")}<div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(venueLabel(venue))} Daily Tricks · ${complete}/${daily.length} complete today</div></div></div><div class="viewer-trick-list">${list}</div>`;
+  return `<div class="viewer-detail-head">${avatarHtml(athlete, "student-chip-avatar")}<div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(venueLabel(venue))} Daily Tricks · ${complete}/${daily.length} complete today${isPaused ? " · timer paused" : ""}</div></div></div><button class="secondary-btn compact-btn back-to-riders" type="button" id="back-to-rider-grid">Back to group screen</button><div class="viewer-trick-list">${list}</div>`;
 }
 
 function bindSessionViewerActions() {
   document.querySelector("#viewer-refresh")?.addEventListener("click", () => renderSessionViewer());
   document.querySelector("#viewer-group")?.addEventListener("change", (event) => {
     state.sessionViewerGroup = event.target.value;
+    state.sessionViewerVenue = "";
+    state.sessionViewerOpenAthleteId = "";
+    renderSessionViewer();
+  });
+  document.querySelector("#viewer-venue")?.addEventListener("change", (event) => {
+    state.sessionViewerVenue = event.target.value;
     state.sessionViewerOpenAthleteId = "";
     renderSessionViewer();
   });
@@ -1801,7 +1887,50 @@ function bindSessionViewerActions() {
     state.sessionViewerOpenAthleteId = button.dataset.viewerAthlete;
     renderSessionViewer();
   }));
+  document.querySelector("#back-to-rider-grid")?.addEventListener("click", () => {
+    state.sessionViewerOpenAthleteId = "";
+    renderSessionViewer();
+  });
+  document.querySelector("#start-group-session")?.addEventListener("click", startViewerGroupSession);
+  document.querySelector("#pause-group-session")?.addEventListener("click", toggleViewerGroupSessionPause);
+  document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+}
+
+async function startViewerGroupSession() {
+  const roster = await getCoachRoster();
+  const athleteIds = roster.filter((athlete) => athlete.groupName === state.sessionViewerGroup).map((athlete) => athlete.id);
+  if (!athleteIds.length) return notify("No riders in this group yet.", "error");
+  const { data, error } = await client.rpc("start_coach_group_session", {
+    p_group_name: state.sessionViewerGroup,
+    p_venue: state.sessionViewerVenue || "",
+    p_athlete_ids: athleteIds,
+  });
+  if (error) return notify(messageFrom(error), "error");
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(`Group session started for ${result.participant_count || athleteIds.length} riders.`);
+  state.sessionViewerOpenAthleteId = "";
+  await renderSessionViewer();
+}
+
+async function toggleViewerGroupSessionPause() {
+  const session = await getActiveCoachGroupSession();
+  if (!session) return notify("No live group session to pause.", "error");
+  const action = session.status === "paused" ? "resume" : "pause";
+  const { error } = await client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: action });
+  if (error) return notify(messageFrom(error), "error");
+  notify(action === "pause" ? "Group session paused." : "Group session resumed.");
+  await renderSessionViewer();
+}
+
+async function endViewerGroupSession() {
+  const session = await getActiveCoachGroupSession();
+  if (!session) return notify("No live group session to end.", "error");
+  const { error } = await client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: "end" });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Group session ended and saved.");
+  state.sessionViewerOpenAthleteId = "";
+  await renderSessionViewer();
 }
 
 async function recordViewerAssignmentAction(event) {

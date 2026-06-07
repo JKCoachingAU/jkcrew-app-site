@@ -1065,9 +1065,49 @@ img, video, canvas, svg { max-width: 100%; }
   color: var(--aqua);
 }
 .reaction-btn span { font: 800 0.68rem var(--mono); }
+.group-session-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 14px;
+  border-color: rgba(0,255,209,0.26);
+  background:
+    radial-gradient(circle at top left, rgba(0,255,209,0.14), transparent 34%),
+    linear-gradient(145deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+}
+.group-session-control.paused {
+  border-color: rgba(255,209,102,0.44);
+  background:
+    radial-gradient(circle at top left, rgba(255,209,102,0.12), transparent 34%),
+    rgba(255,255,255,0.018);
+}
+.group-timer-block small {
+  display: block;
+  color: var(--muted);
+  font: 700 0.68rem var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.group-session-timer {
+  margin: 2px 0 6px;
+  color: var(--aqua);
+  font: 900 clamp(3.4rem, 8vw, 6.8rem)/0.86 var(--display);
+  letter-spacing: -0.04em;
+}
+.group-session-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.group-session-actions button {
+  min-width: 144px;
+  min-height: 54px;
+}
 .session-viewer-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 0.4fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(190px, 0.34fr) minmax(190px, 0.34fr) minmax(260px, 1fr);
   gap: 12px;
   align-items: end;
   margin-bottom: 14px;
@@ -1084,14 +1124,26 @@ img, video, canvas, svg { max-width: 100%; }
   gap: 10px;
 }
 .viewer-rider-card {
-  min-height: 112px;
-  padding: 13px;
+  min-height: 124px;
+  padding: 15px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(255,255,255,0.018);
   color: var(--text);
   text-align: left;
   cursor: pointer;
+}
+.viewer-rider-card:disabled,
+.viewer-trick-row:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+.viewer-roster-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 10px;
 }
 .viewer-rider-card.active {
   border-color: var(--aqua);
@@ -1122,6 +1174,8 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .viewer-detail-panel { position: sticky; top: 88px; }
 .viewer-detail-head { margin-bottom: 14px; }
+.back-to-riders { margin: 0 0 12px; }
+.viewer-group-empty { min-height: 240px; display: grid; place-items: center; }
 .viewer-trick-list { display: grid; gap: 9px; }
 .viewer-trick-row {
   display: grid;
@@ -1349,6 +1403,8 @@ img, video, canvas, svg { max-width: 100%; }
   .coach-tools-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .session-viewer-layout { grid-template-columns: 1fr; }
   .viewer-detail-panel { position: static; }
+  .group-session-control { grid-template-columns: 1fr; }
+  .group-session-actions { justify-content: flex-start; }
   .attendance-grid { grid-template-columns: 1fr; }
   .coach-document-form { grid-template-columns: 1fr 1fr; }
   .two-col, .profile-grid { grid-template-columns: 1fr; }
@@ -1387,6 +1443,9 @@ img, video, canvas, svg { max-width: 100%; }
   .session-viewer-controls,
   .viewer-rider-grid { grid-template-columns: 1fr; }
   .coach-tool-card { min-height: 76px; }
+  .group-session-actions button { width: 100%; }
+  .group-session-timer { font-size: clamp(3.3rem, 18vw, 5.6rem); }
+  .viewer-roster-head { align-items: start; flex-direction: column; }
   .viewer-rider-card { min-height: 96px; }
   .viewer-trick-row { min-height: 68px; grid-template-columns: 46px minmax(0, 1fr); }
   .viewer-trick-row .assignment-check { width: 40px; height: 40px; }
