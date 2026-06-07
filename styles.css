@@ -75,6 +75,8 @@ img, video, canvas, svg { max-width: 100%; }
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  align-items: center;
+  text-align: center;
   border-right: 1px solid var(--line);
   overflow: hidden;
   position: relative;
@@ -94,16 +96,25 @@ img, video, canvas, svg { max-width: 100%; }
   width: fit-content;
   display: grid;
   justify-items: center;
-  gap: 10px;
+  gap: 12px;
   position: relative;
   z-index: 1;
+  margin-inline: auto;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 34px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.025)),
+    radial-gradient(circle at 50% 10%, rgba(255,255,255,0.18), transparent 42%),
+    #090b0a;
+  box-shadow: 0 22px 90px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.12);
 }
 .auth-logo-lockup img {
-  width: 104px;
-  height: 104px;
+  width: 148px;
+  height: 148px;
   object-fit: contain;
-  border-radius: 24px;
-  box-shadow: 0 18px 70px rgba(0,0,0,0.38), 0 0 0 1px rgba(255,255,255,0.08);
+  border-radius: 28px;
+  box-shadow: 0 18px 58px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
 }
 .auth-logo-lockup span {
   color: #e8eeeb;
@@ -117,7 +128,7 @@ img, video, canvas, svg { max-width: 100%; }
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-.hero-copy { position: relative; z-index: 1; max-width: 750px; }
+.hero-copy { position: relative; z-index: 1; max-width: 750px; margin-inline: auto; }
 .hero-copy h1 {
   margin: 14px 0 18px;
   font: italic 900 clamp(4rem, 10vw, 9rem)/0.78 var(--display);
@@ -126,7 +137,7 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .hero-copy h1 em { color: var(--aqua); font-style: normal; }
 .hero-copy p { max-width: 520px; margin: 0; color: #aab2ae; font-size: 1.06rem; line-height: 1.65; }
-.feature-strip { display: flex; flex-wrap: wrap; gap: 9px; position: relative; z-index: 1; }
+.feature-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; position: relative; z-index: 1; }
 .feature-strip span {
   padding: 8px 12px;
   border: 1px solid var(--line);
@@ -801,7 +812,17 @@ img, video, canvas, svg { max-width: 100%; }
   align-items: end;
 }
 .dashboard-item-form.task-only-form {
-  grid-template-columns: minmax(0, 1fr) 190px 190px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(160px, 0.8fr) minmax(160px, 0.8fr);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.018);
+}
+.dashboard-item-form.task-only-form .field:nth-of-type(4) {
+  grid-column: 1 / span 2;
+}
+.dashboard-item-form.task-only-form button {
+  min-height: 48px;
 }
 .feed-list { display: grid; gap: 9px; }
 .feed-card {
@@ -1066,6 +1087,14 @@ img, video, canvas, svg { max-width: 100%; }
 .install-app:hover { background: var(--aqua); color: #001d18; }
 .bottom-nav { display: none; }
 
+.danger-zone {
+  border-color: rgba(255,69,103,0.38);
+  background:
+    linear-gradient(135deg, rgba(255,69,103,0.08), rgba(255,255,255,0.018)),
+    var(--surface);
+}
+.danger-zone .panel-meta { color: #ff9aad; }
+
 @media (display-mode: standalone) {
   .auth-hero, .auth-panel { padding-top: max(28px, env(safe-area-inset-top)); }
   .topbar { padding-top: env(safe-area-inset-top); height: calc(74px + env(safe-area-inset-top)); }
@@ -1085,7 +1114,7 @@ img, video, canvas, svg { max-width: 100%; }
   .auth-page { grid-template-columns: 1fr; }
   .auth-hero { min-height: 46vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 28px 22px; }
   .auth-logo-lockup { margin: 0 auto; }
-  .auth-logo-lockup img { width: 88px; height: 88px; border-radius: 20px; }
+  .auth-logo-lockup img { width: 118px; height: 118px; border-radius: 24px; }
   .hero-copy h1 { font-size: clamp(4.2rem, 22vw, 7rem); }
   .feature-strip { display: none; }
   .auth-panel { min-height: 54vh; padding: 30px 20px 70px; }
@@ -1115,6 +1144,9 @@ img, video, canvas, svg { max-width: 100%; }
   .run-point-editor { grid-template-columns: 34px minmax(0, 1fr) 42px 42px; }
   .run-point-editor [data-run-delete] { grid-column: 2 / -1; }
   .dashboard-item-form { grid-template-columns: 1fr; }
+  .dashboard-item-form.task-only-form { grid-template-columns: 1fr; padding: 12px; }
+  .dashboard-item-form.task-only-form .field:nth-of-type(4),
+  .dashboard-item-form.task-only-form button { grid-column: auto; }
   .student-row { grid-template-columns: 1fr; }
   .assignment-row { grid-template-columns: 42px minmax(0, 1fr); }
   .assignment-check { width: 38px; height: 38px; font-size: 1rem; }

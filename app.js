@@ -1869,6 +1869,26 @@ async function addAthlete(event) {
   await renderCrew();
 }
 
+async function deleteSelectedAthlete(athlete) {
+  if (!state.selectedAthleteId || !athlete?.display_name) return;
+  const confirmed = window.prompt(`This permanently deletes ${athlete.display_name}'s JKCREW account and saved app data.\n\nType DELETE to confirm.`);
+  if (confirmed !== "DELETE") return notify("Delete cancelled.");
+  const button = document.querySelector("#delete-student-account");
+  button.disabled = true;
+  button.textContent = "Deleting...";
+  const { data, error } = await client.functions.invoke("delete-jkcrew-user", {
+    body: { userId: state.selectedAthleteId },
+  });
+  if (error || data?.error) {
+    button.disabled = false;
+    button.textContent = `Delete ${athlete.display_name}`;
+    return notify(data?.error || messageFrom(error), "error");
+  }
+  notify(`${athlete.display_name} was deleted.`);
+  state.selectedAthleteId = null;
+  await navigate("crew");
+}
+
 async function renderStudentProfile() {
   const roster = await getCoachRoster();
   if (!roster.length) {
@@ -1973,6 +1993,9 @@ async function renderStudentProfile() {
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Trick help videos</div><div class="panel-meta">Open rider submissions and reply with written or video feedback</div></div></div>
       <div class="help-list">${helpRequestsHtml(helpRequests, "coach")}</div>
+    </section>
+    <section class="panel danger-zone"><div class="panel-head"><div><div class="panel-title">Delete student account</div><div class="panel-meta">Removes this rider from JKCREW, including their login and saved app data.</div></div></div>
+      <button class="danger-btn wide" id="delete-student-account" type="button">Delete ${escapeHtml(athlete.display_name)}</button>
     </section>`;
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
@@ -1991,6 +2014,7 @@ async function renderStudentProfile() {
   document.querySelector("#choose-avatar").addEventListener("click", () => document.querySelector("#avatar-file").click());
   document.querySelector("#avatar-file").addEventListener("change", updateAthleteAvatar);
   document.querySelector("#remove-avatar").addEventListener("click", () => saveAthleteAvatar(null));
+  document.querySelector("#delete-student-account").addEventListener("click", () => deleteSelectedAthlete(athlete));
 }
 
 function parseAssignmentLine(line, index, category, venue = "") {
