@@ -244,7 +244,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.4" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.5" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -399,6 +399,15 @@ async function getPublicAthleteProfile(athleteId) {
 }
 
 async function getWeeklyAssignments(athleteId) {
+  if (state.user?.id) {
+    const { error: rolloverError } = await client.rpc("ensure_current_week_assignments", {
+      p_athlete_id: athleteId,
+      p_week_start: weekStartDate(),
+    });
+    if (rolloverError && !/not allowed/i.test(rolloverError.message || "")) {
+      throw rolloverError;
+    }
+  }
   const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }] = await Promise.all([
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStartDate()).order("sort_order", { ascending: true }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
