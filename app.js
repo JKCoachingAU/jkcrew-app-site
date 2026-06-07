@@ -18,6 +18,10 @@ const state = {
   selectedAthleteId: null,
   publicAthleteId: null,
   selectedVenue: "",
+  sessionViewerGroup: "monday",
+  sessionViewerSearch: "",
+  sessionViewerOpenAthleteId: "",
+  sessionViewerTimer: null,
   runBuilder: null,
   runPlaybackTimer: null,
   draggedRunPoint: null,
@@ -33,6 +37,7 @@ const athleteNav = [
 ];
 const coachNav = [
   ["command", "Command"],
+  ["sessionViewer", "Session Viewer"],
   ["crew", "Students"],
   ["parents", "Parents"],
   ["board", "Board"],
@@ -235,7 +240,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.2.7" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.3.0" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -344,6 +349,10 @@ function renderShell() {
 
 async function navigate(view) {
   clearInterval(state.timer);
+  if (state.sessionViewerTimer) {
+    clearInterval(state.sessionViewerTimer);
+    state.sessionViewerTimer = null;
+  }
   state.view = view;
   document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   setLoading();
@@ -351,6 +360,7 @@ async function navigate(view) {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
     session: renderSession,
     command: renderCoachCommand,
+    sessionViewer: renderSessionViewer,
     parents: renderParents,
     board: renderBoard,
     crew: isCoachRole(state.profile?.role) ? renderCrew : renderAthleteCrew,
@@ -476,6 +486,29 @@ async function getCrewFeed() {
   if (error) throw error;
   return data || [];
 }
+
+async function getBoardChat() {
+  const { data: posts, error } = await client.from("crew_posts")
+    .select("*, profiles:author_id(display_name, avatar)")
+    .eq("post_type", "leaderboard")
+    .order("created_at", { ascending: true })
+    .limit(60);
+  if (error) throw error;
+  const postIds = (posts || []).map((post) => post.id);
+  const { data: reactions, error: reactionError } = postIds.length
+    ? await client.from("crew_post_reactions").select("*").in("post_id", postIds)
+    : { data: [], error: null };
+  if (reactionError) throw reactionError;
+  const reactionsByPost = (reactions || []).reduce((map, reaction) => {
+    const list = map.get(reaction.post_id) || [];
+    list.push(reaction);
+    map.set(reaction.post_id, list);
+    return map;
+  }, new Map());
+  return (posts || []).map((post) => ({ ...post, reactions: reactionsByPost.get(post.id) || [] }));
+}
+
+const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
 
 const categoryInfo = {
   daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
@@ -776,13 +809,60 @@ function athleteAttention(athlete, data = {}) {
   return { lastSession, flags };
 }
 
+function daysAwayLabel(value) {
+  const start = new Date(value);
+  const today = new Date(`${localDate()}T00:00:00+10:00`);
+  const target = new Date(start);
+  target.setHours(0, 0, 0, 0);
+  const days = Math.round((target - today) / (1000 * 60 * 60 * 24));
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days < 0) return `${Math.abs(days)} days ago`;
+  return `${days} days away`;
+}
+
+function eventGroupKey(event = {}) {
+  const title = String(event.title || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const venue = String(event.venue || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const date = event.starts_at ? new Date(event.starts_at).toISOString().slice(0, 10) : "";
+  return `${title}|${date}|${venue}`;
+}
+
+function groupCoachCalendarItems(events = [], roster = []) {
+  const athletes = new Map(roster.map((athlete) => [athlete.id, athlete.display_name]));
+  const grouped = new Map();
+  events.forEach((event) => {
+    const key = eventGroupKey(event);
+    const entry = grouped.get(key) || {
+      ...event,
+      riderNames: [],
+      riderIds: new Set(),
+      eventIds: [],
+      count: 0,
+    };
+    const riderName = event.athlete_id ? athletes.get(event.athlete_id) || "Rider" : "";
+    if (riderName && !entry.riderIds.has(event.athlete_id)) {
+      entry.riderNames.push(riderName);
+      entry.riderIds.add(event.athlete_id);
+    }
+    entry.eventIds.push(event.id);
+    entry.count += 1;
+    if (!entry.ends_at && event.ends_at) entry.ends_at = event.ends_at;
+    if (!entry.notes && event.notes) entry.notes = event.notes;
+    grouped.set(key, entry);
+  });
+  return [...grouped.values()]
+    .map((event) => ({ ...event, riderCount: event.riderNames.length || event.count, riderIds: undefined }))
+    .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+}
+
 function calendarItemsHtml(events = [], roster = []) {
   if (!events.length) return `<div class="empty compact-empty">No coach calendar events yet.</div>`;
   const athletes = new Map(roster.map((athlete) => [athlete.id, athlete.display_name]));
   return events.slice(0, 10).map((event) => `
     <article class="calendar-card">
       <div class="calendar-date"><strong>${new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(event.starts_at))}</strong><span>${new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(event.starts_at))}</span></div>
-      <div><strong>${escapeHtml(event.title)}</strong><small>${dateLabel(event.starts_at)}${event.ends_at ? ` → ${dateLabel(event.ends_at)}` : ""} · ${escapeHtml(event.venue || "Venue TBC")}${event.attendance_status ? ` · ${escapeHtml(event.attendance_status)}` : ""}${event.payment_status ? ` · ${escapeHtml(event.payment_status)}` : ""}</small><p>${escapeHtml(event.athlete_id ? athletes.get(event.athlete_id) || "Rider" : event.group_name ? coachGroupLabel(event.group_name) : "Whole crew")}${event.notes ? ` · ${escapeHtml(event.notes)}` : ""}</p></div>
+      <div><strong>${escapeHtml(event.title)}</strong><small>${dateLabel(event.starts_at)}${event.ends_at ? ` → ${dateLabel(event.ends_at)}` : ""} · ${daysAwayLabel(event.starts_at)} · ${escapeHtml(event.venue || "Venue TBC")}${event.attendance_status ? ` · ${escapeHtml(event.attendance_status)}` : ""}${event.payment_status ? ` · ${escapeHtml(event.payment_status)}` : ""}</small><p>${event.riderNames ? `${event.riderCount} rider${event.riderCount === 1 ? "" : "s"}: ${escapeHtml(event.riderNames.join(", ") || "Whole crew")}` : `${escapeHtml(event.athlete_id ? athletes.get(event.athlete_id) || "Rider" : event.group_name ? coachGroupLabel(event.group_name) : "Whole crew")}`}${event.notes ? ` · ${escapeHtml(event.notes)}` : ""}</p></div>
     </article>`).join("");
 }
 
@@ -1414,11 +1494,74 @@ async function endSession() {
 }
 
 async function renderBoard() {
-  const leaderboard = await getLeaderboard();
+  const [leaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets its weekly view each Monday.</p></div></div>
-    <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>`;
+    <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>
+    <section class="panel board-chat-panel">
+      <div class="panel-head"><div><div class="panel-title">Rider chat</div><div class="panel-meta">Team-only text chat · no DMs, photos, videos or files</div></div></div>
+      <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No rider chat yet. Start with a positive message.</div>`}</div>
+      ${state.profile?.role === "athlete" ? `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose"><textarea id="board-message" name="body" required maxlength="300" rows="1" placeholder="Encourage the crew..."></textarea><button class="primary-btn" type="submit">Send</button></form>` : `<div class="empty compact-empty">Rider chat is read-only for coach/parent accounts.</div>`}
+    </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
+  document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
+  document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
+}
+
+function boardChatMessageHtml(post) {
+  const author = post.profiles || {};
+  const reactionsByEmoji = post.reactions.reduce((map, reaction) => {
+    const list = map.get(reaction.reaction) || [];
+    list.push(reaction.user_id);
+    map.set(reaction.reaction, list);
+    return map;
+  }, new Map());
+  const reactionHtml = boardReactionEmojis.map((emoji) => {
+    const users = reactionsByEmoji.get(emoji) || [];
+    const active = users.includes(state.user?.id);
+    return `<button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${users.length ? `<span>${users.length}</span>` : ""}</button>`;
+  }).join("");
+  return `<article class="board-chat-message">
+    ${avatarHtml({ display_name: author.display_name || "Rider", avatar: author.avatar })}
+    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(author.display_name || "Rider")}</strong><small>${dateLabel(post.created_at)}</small></div><p>${escapeHtml(post.body)}</p><div class="reaction-row">${reactionHtml}</div></div>
+  </article>`;
+}
+
+async function submitBoardChat(event) {
+  event.preventDefault();
+  if (state.profile?.role !== "athlete") return notify("Only riders can post in rider chat.", "error");
+  const formElement = event.currentTarget;
+  const body = String(new FormData(formElement).get("body") || "").trim();
+  if (!body) return notify("Write a message first.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Sending...";
+  const { error } = await client.from("crew_posts").insert({ author_id: state.user.id, body, post_type: "leaderboard" });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Send";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Message posted.");
+  await renderBoard();
+}
+
+async function toggleBoardReaction(event) {
+  const button = event.currentTarget;
+  const postId = button.dataset.postId;
+  const reaction = button.dataset.boardReaction;
+  if (!postId || !reaction) return;
+  const active = button.classList.contains("active");
+  button.disabled = true;
+  const query = client.from("crew_post_reactions").delete().eq("post_id", postId).eq("user_id", state.user.id).eq("reaction", reaction);
+  const { error } = active
+    ? await query
+    : await client.from("crew_post_reactions").insert({ post_id: postId, user_id: state.user.id, reaction });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  await renderBoard();
 }
 
 function openPublicAthleteProfile(event) {
@@ -1537,27 +1680,144 @@ async function renderCoachCommand() {
   const attentionCount = roster.filter((athlete) => athleteAttention(athlete, commandData).flags.length).length;
   const injuredCount = commandData.statuses.filter((status) => status.heat_status === "injured").length;
   const calendarFeed = combinedCoachCalendarItems(commandData);
-  const upcoming = calendarFeed.filter((event) => new Date(event.starts_at) >= new Date()).length;
+  const groupedCalendar = groupCoachCalendarItems(calendarFeed, roster);
+  const upcoming = groupedCalendar.filter((event) => new Date(event.starts_at) >= new Date()).length;
+  const recentSessions = commandData.sessions.slice(0, 5);
+  const sessionRows = recentSessions.length ? recentSessions.map((session) => {
+    const athlete = roster.find((entry) => entry.id === session.athlete_id);
+    return `<div class="list-row"><div><strong>${escapeHtml(athlete?.display_name || "Rider")}</strong><small>${dateLabel(session.started_at)} · ${session.ended_at ? "finished" : "live"} · ${Number(session.total_points || 0)} pts</small></div><span class="points">${session.ended_at ? "done" : "live"}</span></div>`;
+  }).join("") : `<div class="empty compact-empty">No recent sessions recorded.</div>`;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>JKCoaching <span>HQ</span></h1><p>Calendar, rider heat map, attendance, reimbursements, and athlete alerts in one coach-only area.</p></div></div>
     <section class="stats-grid">
       ${statCard("Students", roster.length, "", "In your crew")}
       ${statCard("Need attention", attentionCount, "", "Auto flags")}
-      ${statCard("Upcoming", upcoming, "", "Calendar items")}
+      ${statCard("Upcoming", upcoming, "", "Grouped events")}
       ${statCard("Modified", injuredCount, "", "Injured / modified")}
     </section>
-    <section class="coach-command-grid">
-      <section class="panel command-calendar"><div class="panel-head"><div><div class="panel-title">Coach calendar</div><div class="panel-meta">Events, comps, privates, groups and important dates</div></div></div>${calendarItemsHtml(calendarFeed, roster)}<div class="settings-divider"></div>${coachCalendarForm(roster)}</section>
-      <section class="panel command-overview"><div class="panel-head"><div><div class="panel-title">Athlete overview & heat map</div><div class="panel-meta">Quick scan for support, injuries and comp prep</div></div></div><div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div></section>
+    <section class="coach-tools-row">
+      <button class="coach-tool-card" data-view="sessionViewer"><strong>Session Viewer</strong><small>Open iPad group checklist</small></button>
+      <button class="coach-tool-card" data-view="crew"><strong>Students</strong><small>Groups, profiles, programs</small></button>
+      <button class="coach-tool-card" data-view="board"><strong>Leaderboard</strong><small>Rankings and rider chat</small></button>
+      <button class="coach-tool-card" data-view="notes"><strong>Coach Notes</strong><small>Private records and planning</small></button>
     </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Attendance & private venue reimbursements</div><div class="panel-meta">Coach-only attendance, entry cost, who owes and who paid</div></div></div>${attendanceForm(roster)}<div class="settings-divider"></div>${attendanceHistoryHtml(commandData.attendanceSessions)}</section>`;
+    <section class="coach-command-grid clean-command-grid">
+      <section class="panel command-calendar"><div class="panel-head"><div><div class="panel-title">Upcoming events & contests</div><div class="panel-meta">Grouped by event, date and venue</div></div></div>${calendarItemsHtml(groupedCalendar, roster)}</section>
+      <section class="panel command-overview"><div class="panel-head"><div><div class="panel-title">Athlete activity & heat map</div><div class="panel-meta">Quick scan for support, injuries and comp prep</div></div></div><div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div></section>
+    </section>
+    <section class="coach-command-grid clean-command-grid">
+      <section class="panel"><div class="panel-head"><div><div class="panel-title">Session management</div><div class="panel-meta">Recent activity plus the live group viewer</div></div><button class="secondary-btn compact-btn" data-view="sessionViewer">Open viewer</button></div><div class="attempt-list">${sessionRows}</div></section>
+      <section class="panel"><div class="panel-head"><div><div class="panel-title">Coach tools</div><div class="panel-meta">Add events and save attendance when needed</div></div></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details><details class="coach-tool-details"><summary>Attendance & reimbursements</summary>${attendanceForm(roster)}<div class="settings-divider"></div>${attendanceHistoryHtml(commandData.attendanceSessions)}</details></section>
+    </section>`;
   document.querySelector("#coach-calendar-form").addEventListener("submit", saveCoachCalendarEvent);
-  document.querySelector("#attendance-form").addEventListener("submit", saveAttendanceSession);
+  document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
   document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
+  document.querySelectorAll(".coach-tool-card[data-view], .panel-head [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
     state.selectedAthleteId = button.dataset.openStudent;
     navigate("student");
   }));
+}
+
+async function renderSessionViewer() {
+  if (state.sessionViewerTimer) {
+    clearInterval(state.sessionViewerTimer);
+    state.sessionViewerTimer = null;
+  }
+  const roster = await getCoachRoster();
+  if (state.view !== "sessionViewer") return;
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Add students first, then you can manage group Daily Tricks from here.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}" ${state.sessionViewerGroup === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+  const search = state.sessionViewerSearch.toLowerCase().trim();
+  const groupRoster = roster.filter((athlete) => athlete.groupName === state.sessionViewerGroup);
+  const filteredRoster = groupRoster.filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
+  if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
+    state.sessionViewerOpenAthleteId = filteredRoster[0]?.id || "";
+  }
+  const schedules = await Promise.all(filteredRoster.map(async (athlete) => {
+    const { assignments } = await getWeeklyAssignments(athlete.id);
+    const daily = assignments.filter((assignment) => assignment.category === "daily");
+    const selectedVenue = dailyVenues(daily)[0] || "";
+    const visibleDaily = assignmentsForVenue(daily, selectedVenue);
+    return { athlete, daily: visibleDaily, venue: selectedVenue };
+  }));
+  if (state.view !== "sessionViewer") return;
+  const openSchedule = schedules.find((entry) => entry.athlete.id === state.sessionViewerOpenAthleteId);
+  const cards = schedules.length ? schedules.map(({ athlete, daily, venue }) => {
+    const complete = daily.filter(isAssignmentComplete).length;
+    const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
+    return `<button class="viewer-rider-card ${athlete.id === state.sessionViewerOpenAthleteId ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}">
+      <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
+      <div class="viewer-progress"><span style="width:${percent}%"></span></div>
+    </button>`;
+  }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
+  const openList = openSchedule ? sessionViewerDailyList(openSchedule) : `<div class="empty">Choose a rider to view their Daily Tricks.</div>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Open this on an iPad, choose a group, and tick Daily Tricks for multiple riders from one screen.</p></div><button class="secondary-btn" id="viewer-refresh">Refresh</button></div>
+    <section class="panel session-viewer-controls">
+      <div class="field"><label for="viewer-group">Group/session</label><select id="viewer-group">${groupOptions}</select></div>
+      <div class="field"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
+    </section>
+    <section class="session-viewer-layout">
+      <div class="viewer-rider-grid">${cards}</div>
+      <section class="panel viewer-detail-panel">${openList}</section>
+    </section>`;
+  bindSessionViewerActions();
+  state.sessionViewerTimer = setInterval(() => {
+    if (state.view === "sessionViewer") renderSessionViewer();
+  }, 7000);
+}
+
+function sessionViewerDailyList(entry) {
+  const { athlete, daily, venue } = entry;
+  const complete = daily.filter(isAssignmentComplete).length;
+  const list = daily.length ? daily.map((assignment) => {
+    const done = isAssignmentComplete(assignment);
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}">
+      <span class="assignment-check">${done ? "✓" : ""}</span>
+      <span><strong>${escapeHtml(assignment.trick_name)}</strong>${assignment.notes ? `<small>${escapeHtml(assignment.notes)}</small>` : ""}</span>
+    </button>`;
+  }).join("") : `<div class="empty compact-empty">No Daily Tricks assigned for this venue.</div>`;
+  return `<div class="viewer-detail-head">${avatarHtml(athlete, "student-chip-avatar")}<div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(venueLabel(venue))} Daily Tricks · ${complete}/${daily.length} complete today</div></div></div><div class="viewer-trick-list">${list}</div>`;
+}
+
+function bindSessionViewerActions() {
+  document.querySelector("#viewer-refresh")?.addEventListener("click", () => renderSessionViewer());
+  document.querySelector("#viewer-group")?.addEventListener("change", (event) => {
+    state.sessionViewerGroup = event.target.value;
+    state.sessionViewerOpenAthleteId = "";
+    renderSessionViewer();
+  });
+  document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
+    state.sessionViewerSearch = event.target.value;
+    clearTimeout(state.sessionViewerSearchTimer);
+    state.sessionViewerSearchTimer = setTimeout(() => renderSessionViewer(), 250);
+  });
+  document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.sessionViewerOpenAthleteId = button.dataset.viewerAthlete;
+    renderSessionViewer();
+  }));
+  document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+}
+
+async function recordViewerAssignmentAction(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  const { data, error } = await client.rpc("record_assignment_action", {
+    p_assignment_id: button.dataset.assignmentId,
+    p_action: button.dataset.viewerAssignmentAction,
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(result.message || "Daily Tricks progress updated.");
+  await renderSessionViewer();
 }
 
 async function saveCoachCalendarEvent(event) {
