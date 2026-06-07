@@ -34,6 +34,7 @@ const athleteNav = [
 const coachNav = [
   ["command", "Command"],
   ["crew", "Students"],
+  ["parents", "Parents"],
   ["board", "Board"],
   ["notes", "Notes"],
   ["profile", "Profile"],
@@ -79,6 +80,7 @@ const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
 const avatarUrl = (profile = {}) => profile.avatar?.dataUrl || "";
 const firstName = (profile = {}) => String(profile.display_name || "This rider").split(/\s+/).filter(Boolean)[0] || "This rider";
+const isCoachRole = (role) => ["coach", "admin"].includes(role);
 const linesHtml = (value = "", emptyText = "Not added yet") => {
   const lines = String(value || "").split(/\n|,/).map((line) => line.trim()).filter(Boolean);
   return lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="subcopy">${escapeHtml(emptyText)}</p>`;
@@ -224,7 +226,7 @@ async function handleSession(session) {
     data = recovered;
   }
   state.profile = data;
-  state.view = data.role === "coach" ? "command" : "home";
+  state.view = isCoachRole(data.role) ? "command" : "home";
   renderShell();
   navigate(state.view);
 }
@@ -233,7 +235,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.2.5" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.2.6" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -317,8 +319,8 @@ async function handleAuth(event, mode) {
 
 function renderShell() {
   const role = state.profile.role;
-  const nav = role === "coach" ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", contests: "🏆", crew: "✦", command: "◇", board: "#", profile: "●", notes: "✎" };
+  const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
+  const navIcons = { home: "⌂", session: "↗", contests: "🏆", crew: "✦", command: "◇", parents: "P", board: "#", profile: "●", notes: "✎" };
   const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   app.innerHTML = `
     <div class="app-shell">
@@ -349,8 +351,9 @@ async function navigate(view) {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
     session: renderSession,
     command: renderCoachCommand,
+    parents: renderParents,
     board: renderBoard,
-    crew: state.profile?.role === "coach" ? renderCrew : renderAthleteCrew,
+    crew: isCoachRole(state.profile?.role) ? renderCrew : renderAthleteCrew,
     contests: renderContests,
     student: renderStudentProfile,
     publicProfile: renderPublicAthleteProfile,
@@ -1120,36 +1123,83 @@ function weeklyCompletionPercent(assignments, awards) {
 }
 
 async function renderParentHome() {
-  const { data: links, error } = await client.from("parent_athletes").select("athlete_id").eq("parent_id", state.user.id);
+  const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
   if (error) throw error;
   const ids = (links || []).map((link) => link.athlete_id);
   if (!ids.length) {
     document.querySelector("#view").innerHTML = `
-      <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Linked <span>athletes</span></h1><p>Your coach has not linked a rider to this parent account yet.</p></div></div>
-      <div class="empty">Ask the coach to link your parent account to your child's athlete profile.</div>`;
+      <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your parent account is ready, but it is not connected to a rider yet.</p></div></div>
+      <section class="panel parent-waiting-card">
+        ${avatarHtml(state.profile, "profile-avatar")}
+        <div>
+          <div class="panel-title">Your account is waiting to be linked to your child's rider profile.</div>
+          <p class="subcopy">Once your coach links your account, you'll be able to view your child's progress, goals, training plan, points, badges, and session history.</p>
+        </div>
+      </section>`;
     return;
   }
   const { data: athletes, error: athleteError } = await client.from("profiles").select("*").in("id", ids).order("display_name");
   if (athleteError) throw athleteError;
+  const leaderboard = await getLeaderboard();
+  const linkByAthlete = new Map((links || []).map((link) => [link.athlete_id, link]));
   const cards = await Promise.all((athletes || []).map(async (athlete) => {
-    const [{ assignments, awards }, helpRequests] = await Promise.all([
+    const [{ assignments, awards }, helpRequests, dashboardItems, sessions, runs] = await Promise.all([
       getWeeklyAssignments(athlete.id),
       getHelpRequests(athlete.id),
+      getDashboardItems(athlete.id),
+      client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5).then((result) => {
+        if (result.error) throw result.error;
+        return result.data || [];
+      }),
+      getRunPlans(athlete.id),
     ]);
+    const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
+    const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
     const percent = weeklyCompletionPercent(assignments, awards);
+    const weeklyItems = assignments.filter((assignment) => assignment.category !== "daily");
+    const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+    const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
+    const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
+    const relationship = linkByAthlete.get(athlete.id)?.relationship;
     return `<section class="panel parent-child-card">
-      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(athlete.display_name.split(" ")[0])} completed ${percent}% of this week's BMX program.</p></div></div>
-      <div class="scoreboard-stats">${statCard("Weekly completion", `${percent}%`, "", "Program complete")}${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}</div>
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view${relationship ? ` · ${escapeHtml(relationship)}` : ""}</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</p></div></div>
+      <div class="scoreboard-stats">
+        ${statCard("Weekly completion", `${percent}%`, "", "Program complete")}
+        ${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}
+        ${statCard("Leaderboard", rank ? `#${rank}` : "-", "", `${weeklyRow?.weekly_points || 0} pts`)}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Dialled, One Bangs, Percentage")}
+      </div>
       <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</div>
+      ${goalsReadonlyHtml(athlete)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Badges & achievements</div>
+      <div class="public-badges">${badgeStripHtml(athlete.badges)}</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Training plan</div>
       <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
       <div class="settings-divider"></div>
+      <div class="panel-title">Events & tasks</div>
+      ${dashboardItemsHtml(dashboardItems, false)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Session progress</div>
+      ${sessionRows}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Run plans</div>
+      ${runPlansHtml(runs)}
+      <div class="settings-divider"></div>
       <div class="panel-title">Coach feedback</div>
-      <div class="help-list">${helpRequestsHtml(helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url), "parent")}</div>
+      <div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div>
     </section>`;
   }));
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Weekly <span>program</span></h1><p>Read-only progress for your linked athlete.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Linked <span>riders</span></h1><p>Read-only progress for the riders your coach has linked to this parent account.</p></div></div>
     ${cards.join("")}`;
+}
+
+function goalsReadonlyHtml(profile = {}) {
+  const goals = Array.isArray(profile.goals) ? profile.goals : [];
+  const rows = goals.length ? goals.map((goal) => `<div class="goal-row ${goal.completed ? "complete" : ""}"><span class="assignment-check">${goal.completed ? "✓" : ""}</span><div><strong>${escapeHtml(goal.title)}</strong><small>${goal.completed ? "Completed" : "In progress"}</small></div></div>`).join("") : `<div class="empty compact-empty">No goals added yet.</div>`;
+  return `<section class="parent-readonly-section"><div class="panel-title">Goals</div><div class="goal-list">${rows}</div></section>`;
 }
 
 function leaderRow(row, index, rows = []) {
@@ -1704,12 +1754,12 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
 }
 
 function canEditRun(run = {}) {
-  if (state.profile?.role === "coach") return run.coach_id === state.user.id;
+  if (isCoachRole(state.profile?.role)) return run.coach_id === state.user.id;
   return run.created_by === state.user?.id;
 }
 
 function runBuilderRefreshView() {
-  if (state.profile?.role === "coach" && state.view === "student") return renderStudentProfile();
+  if (isCoachRole(state.profile?.role) && state.view === "student") return renderStudentProfile();
   if (state.view === "contests") return renderContests();
   return renderProfile();
 }
@@ -1718,7 +1768,7 @@ function runPlansHtml(runs = []) {
   if (!runs.length) return `<div class="empty compact-empty">No saved run plans yet.</div>`;
   const activeRuns = runs.filter((run) => !run.archived_at);
   const archivedRuns = runs.filter((run) => run.archived_at);
-  const card = (run) => `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${state.profile?.role === "coach" && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}<button class="secondary-btn compact-btn" type="button" data-play-run="${run.id}">Slow playback</button></div></article>`;
+  const card = (run) => `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}<button class="secondary-btn compact-btn" type="button" data-play-run="${run.id}">Slow playback</button></div></article>`;
   return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
 }
 
@@ -1833,6 +1883,70 @@ async function moveAthleteGroup(athleteId, groupName) {
   await renderCrew();
 }
 
+async function renderParents() {
+  const [roster, parentResult, linkResult] = await Promise.all([
+    getCoachRoster(),
+    client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
+    client.from("parent_athletes").select("*").eq("coach_id", state.user.id).order("created_at", { ascending: false }),
+  ]);
+  if (parentResult.error) throw parentResult.error;
+  if (linkResult.error) throw linkResult.error;
+  const parents = parentResult.data || [];
+  const links = linkResult.data || [];
+  const athleteById = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  const linksByParent = links.reduce((map, link) => {
+    const rows = map.get(link.parent_id) || [];
+    rows.push(link);
+    map.set(link.parent_id, rows);
+    return map;
+  }, new Map());
+  const parentOptions = parents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.display_name)}${parent.email ? ` · ${escapeHtml(parent.email)}` : ""}</option>`).join("");
+  const athleteOptions = roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(coachGroupLabel(athlete.groupName))}</option>`).join("");
+  const grouped = coachGroups.map(([groupId, label]) => {
+    const athletes = roster.filter((athlete) => athlete.groupName === groupId);
+    const rows = athletes.length ? athletes.map((athlete) => {
+      const athleteLinks = links.filter((link) => link.athlete_id === athlete.id);
+      const parentNames = athleteLinks.length ? athleteLinks.map((link) => {
+        const parent = parents.find((entry) => entry.id === link.parent_id);
+        return parent ? `${parent.display_name}${link.relationship ? ` (${link.relationship})` : ""}` : "Parent";
+      }).join(", ") : "No linked parents";
+      return `<div class="list-row"><button class="student-chip compact-student-chip" data-open-student="${athlete.id}">${avatarHtml(athlete)}<span>${escapeHtml(athlete.display_name)}</span></button><small>${escapeHtml(parentNames)}</small></div>`;
+    }).join("") : `<div class="empty compact-empty">No riders in this group.</div>`;
+    return `<section class="group-column parent-group-column"><div class="group-head"><div><div class="panel-title">${escapeHtml(label)}</div><div class="panel-meta">${athletes.length} rider${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${rows}</div></section>`;
+  }).join("");
+  const parentRows = parents.length ? parents.map((parent) => {
+    const parentLinks = linksByParent.get(parent.id) || [];
+    const linkedChildren = parentLinks.length ? parentLinks.map((link) => {
+      const athlete = athleteById.get(link.athlete_id);
+      if (!athlete) return "";
+      return `<span class="public-badge">${escapeHtml(athlete.display_name)}${link.relationship ? ` · ${escapeHtml(link.relationship)}` : ""}<button class="inline-remove" type="button" data-unlink-parent-global="${parent.id}" data-unlink-athlete-global="${athlete.id}" aria-label="Unlink ${escapeHtml(parent.display_name)} from ${escapeHtml(athlete.display_name)}">×</button></span>`;
+    }).filter(Boolean).join("") : `<span class="public-badge muted-badge">Unlinked</span>`;
+    return `<article class="parent-admin-card ${parentLinks.length ? "linked" : "unlinked"}">
+      <div class="person">${avatarHtml(parent, "student-chip-avatar")}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}${parent.phone ? ` · ${escapeHtml(parent.phone)}` : ""}</small><small>Joined ${dateLabel(parent.created_at)}</small></div></div>
+      <div class="parent-status-row"><span class="status-chip">${parentLinks.length ? "linked" : "unlinked"}</span><div class="parent-child-badges">${linkedChildren}</div></div>
+    </article>`;
+  }).join("") : `<div class="empty">No parent accounts yet. Parents can create their own account from the sign-up screen.</div>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach admin</div><h1>Parent <span>accounts</span></h1><p>Parents are read-only viewer accounts. Link them to one or more riders when they are ready.</p></div></div>
+    <section class="stats-grid">
+      ${statCard("Parent accounts", parents.length, "", "Separate from athletes")}
+      ${statCard("Linked", parents.filter((parent) => (linksByParent.get(parent.id) || []).length).length, "", "Ready to view")}
+      ${statCard("Unlinked", parents.filter((parent) => !(linksByParent.get(parent.id) || []).length).length, "", "Waiting for coach")}
+      ${statCard("Parent links", links.length, "", "Parent to rider connections")}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Link parent to rider</div><div class="panel-meta">Supports multiple children per parent and multiple parents per rider</div></div></div>
+      ${parents.length && roster.length ? `<form id="parent-admin-link-form" class="trick-form parent-link-form"><div class="field"><label for="admin-parent-id">Parent account</label><select id="admin-parent-id" name="parentId">${parentOptions}</select></div><div class="field"><label for="admin-athlete-id">Rider</label><select id="admin-athlete-id" name="athleteId">${athleteOptions}</select></div><div class="field"><label for="admin-relationship">Relationship</label><input id="admin-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link account</button></form>` : `<div class="empty compact-empty">Create at least one parent account and one rider first.</div>`}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">All parent accounts</div><div class="panel-meta">Name, email, phone, linked riders, status and date joined</div></div></div><div class="parent-admin-list">${parentRows}</div></section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Parents by training group</div><div class="panel-meta">Quick scan by Monday, Tuesday, Wednesday and online groups</div></div></div><div class="groups-grid">${grouped}</div></section>`;
+  document.querySelector("#parent-admin-link-form")?.addEventListener("submit", linkParentFromAdmin);
+  document.querySelectorAll("[data-unlink-parent-global]").forEach((button) => button.addEventListener("click", unlinkParentFromAdmin));
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
+}
+
 async function createStudent(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -1900,8 +2014,8 @@ async function renderStudentProfile() {
   const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
-    client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
-    client.from("profiles").select("id, display_name, avatar").eq("role", "parent").order("display_name"),
+    client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
+    client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
     getHelpRequests(athlete.id),
     getDashboardItems(athlete.id),
     getCoachVenues(),
@@ -1912,12 +2026,16 @@ async function renderStudentProfile() {
   if (parentLinkError) throw parentLinkError;
   if (parentProfileError) throw parentProfileError;
   const template = templates?.[0] || null;
+  const linkByParent = new Map((parentLinks || []).map((link) => [link.parent_id, link]));
   const linkedParentIds = new Set((parentLinks || []).map((link) => link.parent_id));
   const linkedParents = (parentProfiles || []).filter((parent) => linkedParentIds.has(parent.id));
   const availableParents = (parentProfiles || []).filter((parent) => !linkedParentIds.has(parent.id));
-  const parentOptions = availableParents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.display_name)}</option>`).join("");
+  const parentOptions = availableParents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.display_name)}${parent.email ? ` · ${escapeHtml(parent.email)}` : ""}</option>`).join("");
   const linkedParentsHtml = linkedParents.length ? linkedParents.map((parent) => `
-    <div class="list-row parent-link-row"><div class="person">${avatarHtml(parent)}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>Read-only viewer</small></div></div><button class="danger-btn compact-btn" data-unlink-parent="${parent.id}">Unlink</button></div>
+    <div class="list-row parent-link-row">
+      <div class="person">${avatarHtml(parent)}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}${parent.phone ? ` · ${escapeHtml(parent.phone)}` : ""} · ${escapeHtml(linkByParent.get(parent.id)?.relationship || "Guardian")} · Linked</small></div></div>
+      <button class="danger-btn compact-btn" data-unlink-parent="${parent.id}">Unlink</button>
+    </div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
   const savedVenueNames = coachVenues.map((venue) => venue.name).filter(Boolean);
   const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
@@ -1974,9 +2092,9 @@ async function renderStudentProfile() {
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Edit this week's schedule</div><div class="panel-meta">One trick or line per row · notes after a dash</div></div></div>
       <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
     </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Parent viewer accounts</div><div class="panel-meta">Parents are read-only linked viewers, not athlete accounts</div></div></div>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Linked Parents / Guardians</div><div class="panel-meta">Parents are read-only linked viewers, not athlete accounts</div></div></div>
       <div class="parent-links">${linkedParentsHtml}</div>
-      ${availableParents.length ? `<form id="link-parent-form" class="trick-form parent-link-form"><div class="field"><label for="parent-id">Available parent accounts</label><select id="parent-id" name="parentId">${parentOptions}</select></div><button class="primary-btn" type="submit">Link parent</button></form>` : `<div class="empty compact-empty">No unlinked parent accounts available. Parents can create one from the sign-up screen.</div>`}
+      ${availableParents.length ? `<form id="link-parent-form" class="trick-form parent-link-form"><div class="field"><label for="parent-id">Available parent accounts</label><select id="parent-id" name="parentId">${parentOptions}</select></div><div class="field"><label for="parent-relationship">Relationship</label><input id="parent-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link parent</button></form>` : `<div class="empty compact-empty">No unlinked parent accounts available. Parents can create one from the sign-up screen.</div>`}
     </section>
     ${parentUpdatePanel(athlete, schedule, dashboardItems, privateData.attendance)}
     <section class="panel coach-private-panel"><div class="panel-head"><div><div class="panel-title">Private rider records</div><div class="panel-meta">Coach/admin only · emergency contacts, medical notes, waivers and permissions</div></div></div>${privateRecordForm(privateData.record)}</section>
@@ -2196,15 +2314,31 @@ async function importScheduleTemplate(template) {
 
 async function linkParentAccount(event) {
   event.preventDefault();
-  const parentId = new FormData(event.currentTarget).get("parentId");
+  const form = new FormData(event.currentTarget);
+  const parentId = form.get("parentId");
   const { error } = await client.from("parent_athletes").insert({
     parent_id: parentId,
     athlete_id: state.selectedAthleteId,
     coach_id: state.user.id,
+    relationship: String(form.get("relationship") || "").trim().slice(0, 80),
   });
   if (error) return notify(messageFrom(error), "error");
   notify("Parent viewer linked to this athlete.");
   await renderStudentProfile();
+}
+
+async function linkParentFromAdmin(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const { error } = await client.from("parent_athletes").insert({
+    parent_id: form.get("parentId"),
+    athlete_id: form.get("athleteId"),
+    coach_id: state.user.id,
+    relationship: String(form.get("relationship") || "").trim().slice(0, 80),
+  });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Parent account linked.");
+  await renderParents();
 }
 
 async function unlinkParentAccount(event) {
@@ -2217,6 +2351,19 @@ async function unlinkParentAccount(event) {
   if (error) return notify(messageFrom(error), "error");
   notify("Parent viewer unlinked.");
   await renderStudentProfile();
+}
+
+async function unlinkParentFromAdmin(event) {
+  const parentId = event.currentTarget.dataset.unlinkParentGlobal;
+  const athleteId = event.currentTarget.dataset.unlinkAthleteGlobal;
+  const { error } = await client.from("parent_athletes")
+    .delete()
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .eq("parent_id", parentId);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Parent account unlinked.");
+  await renderParents();
 }
 
 async function savePrivateRecord(event) {
@@ -2482,7 +2629,7 @@ async function clearRunBuilder() {
 
 async function editRunPlan(event) {
   const runId = event.currentTarget.dataset.editRun;
-  const athleteId = state.profile.role === "coach" ? state.selectedAthleteId : state.user.id;
+  const athleteId = isCoachRole(state.profile.role) ? state.selectedAthleteId : state.user.id;
   const runs = await getRunPlans(athleteId);
   const run = runs.find((item) => item.id === runId);
   if (!run || !canEditRun(run)) return notify("You can only edit runs you created.", "error");
@@ -2510,7 +2657,7 @@ async function saveRunPlan(event) {
   event.preventDefault();
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
-  const isCoach = state.profile.role === "coach";
+  const isCoach = isCoachRole(state.profile.role);
   const athleteId = isCoach ? state.selectedAthleteId : state.user.id;
   const coachId = isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
   const payload = {
@@ -2644,6 +2791,7 @@ async function renderProfile() {
         ${state.profile.role === "athlete" ? `${showreelHtml(state.profile, true)}<div class="settings-divider"></div>` : ""}
         <form id="profile-form">
           <div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div>
+          <div class="field"><label for="profile-phone">Phone number</label><input id="profile-phone" name="phone" type="tel" value="${escapeHtml(state.profile.phone || "")}" placeholder="Optional"></div>
           ${state.profile.role === "athlete" ? `
             <div class="two-col-form">
               <div class="field"><label for="profile-stance">Stance</label><select id="profile-stance" name="stance"><option value="">Not set</option><option value="regular" ${state.profile.stance === "regular" ? "selected" : ""}>Regular</option><option value="goofy" ${state.profile.stance === "goofy" ? "selected" : ""}>Goofy</option></select></div>
@@ -2746,7 +2894,11 @@ async function updateProfile(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const displayName = form.get("displayName").trim();
-  const updates = { display_name: displayName, updated_at: new Date().toISOString() };
+  const updates = {
+    display_name: displayName,
+    phone: String(form.get("phone") || "").trim().slice(0, 40),
+    updated_at: new Date().toISOString(),
+  };
   if (state.profile.role === "athlete") {
     const age = Number(form.get("age"));
     updates.stance = form.get("stance") || "";

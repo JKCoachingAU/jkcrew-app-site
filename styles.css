@@ -497,6 +497,59 @@ img, video, canvas, svg { max-width: 100%; }
 .coach-reply p { margin: 8px 0; white-space: pre-wrap; line-height: 1.45; }
 .reply-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .parent-link-row { grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 8px; }
+.parent-waiting-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.parent-admin-list {
+  display: grid;
+  gap: 10px;
+}
+.parent-admin-card {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.025);
+}
+.parent-status-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.parent-child-badges {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.parent-readonly-section { margin-top: 16px; }
+.parent-group-column .list-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+.compact-student-chip {
+  width: 100%;
+  justify-content: flex-start;
+}
+.inline-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border: 1px solid rgba(255,69,103,0.45);
+  border-radius: 999px;
+  background: rgba(255,69,103,0.12);
+  color: #ff9aad;
+  font: 900 0.75rem var(--display);
+  cursor: pointer;
+}
 .coach-command-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
@@ -1147,6 +1200,7 @@ img, video, canvas, svg { max-width: 100%; }
   .scoreboard-stats, .groups-grid, .summary-grid { grid-template-columns: 1fr; gap: 8px; }
   .scoreboard-person { align-items: start; }
   .athlete-profile-hero { grid-template-columns: 1fr; }
+  .parent-waiting-card { grid-template-columns: 1fr; text-align: center; justify-items: center; }
   .avatar-form { justify-content: start; }
   .stat-card { min-height: 120px; padding: 14px; }
   .stat-value { font-size: 2.8rem; }
