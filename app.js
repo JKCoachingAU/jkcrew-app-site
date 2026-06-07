@@ -246,7 +246,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.0" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.1" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -1839,6 +1839,9 @@ async function submitScoreAdjustment(event) {
 
 function boardChatMessageHtml(post) {
   const author = post.profiles || {};
+  const metadata = post.metadata || {};
+  const authorName = metadata.author_name || author.display_name || (post.author_id === state.user?.id ? state.profile?.display_name : "") || "Crew member";
+  const authorAvatar = metadata.avatar || author.avatar || null;
   const reactionsByEmoji = post.reactions.reduce((map, reaction) => {
     const list = map.get(reaction.reaction) || [];
     list.push(reaction.user_id);
@@ -1851,8 +1854,8 @@ function boardChatMessageHtml(post) {
     return `<button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${users.length ? `<span>${users.length}</span>` : ""}</button>`;
   }).join("");
   return `<article class="board-chat-message">
-    ${avatarHtml({ display_name: author.display_name || "Rider", avatar: author.avatar })}
-    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(author.display_name || "Rider")}</strong><small>${dateLabel(post.created_at)}</small></div><p>${escapeHtml(post.body)}</p><div class="reaction-row">${reactionHtml}</div></div>
+    ${avatarHtml({ display_name: authorName, avatar: authorAvatar })}
+    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div><p>${escapeHtml(post.body)}</p><div class="reaction-row">${reactionHtml}</div></div>
   </article>`;
 }
 
@@ -1865,7 +1868,16 @@ async function submitBoardChat(event) {
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Sending...";
-  const { error } = await client.from("crew_posts").insert({ author_id: state.user.id, body, post_type: "chat" });
+  const { error } = await client.from("crew_posts").insert({
+    author_id: state.user.id,
+    body,
+    post_type: "chat",
+    metadata: {
+      author_name: state.profile?.display_name || state.user?.email || "Crew member",
+      author_role: state.profile?.role || "member",
+      avatar: state.profile?.avatar || null,
+    },
+  });
   if (error) {
     button.disabled = false;
     button.textContent = "Send";
@@ -1970,7 +1982,16 @@ async function submitCrewPost(event) {
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Posting...";
-  const { error } = await client.from("crew_posts").insert({ author_id: state.user.id, body, post_type: "chat" });
+  const { error } = await client.from("crew_posts").insert({
+    author_id: state.user.id,
+    body,
+    post_type: "chat",
+    metadata: {
+      author_name: state.profile?.display_name || state.user?.email || "Crew member",
+      author_role: state.profile?.role || "member",
+      avatar: state.profile?.avatar || null,
+    },
+  });
   if (error) {
     button.disabled = false;
     button.textContent = "Post to Crew";
