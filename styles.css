@@ -437,6 +437,12 @@ img, video, canvas, svg { max-width: 100%; }
 .group-column.drag-over { border-color: var(--aqua); box-shadow: 0 0 0 4px var(--aqua-soft); }
 .group-head { margin-bottom: 12px; }
 .group-list { display: grid; gap: 8px; }
+.student-chip-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: stretch;
+}
 .student-chip {
   width: 100%;
   display: flex;
@@ -454,6 +460,28 @@ img, video, canvas, svg { max-width: 100%; }
 .student-chip span strong, .student-chip span small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .student-chip span small { margin-top: 2px; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
 .student-chip-avatar { flex: 0 0 auto; }
+.remove-group-btn,
+.inline-remove {
+  border: 1px solid rgba(255,69,103,0.3);
+  border-radius: 10px;
+  background: rgba(255,69,103,0.09);
+  color: #ff9aad;
+  font: 900 1rem var(--display);
+}
+.remove-group-btn { width: 38px; }
+.group-checkbox-field { grid-column: 1 / -1; }
+.group-checkbox-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.group-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.018);
+  color: var(--text);
+}
+.group-checkbox input { width: auto; accent-color: var(--aqua); }
 .compact-empty { padding: 18px 10px; font-size: 0.85rem; }
 .athlete-profile-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; margin-bottom: 14px; }
 .profile-avatar-large { width: 96px; height: 96px; font-size: 2.8rem; }
@@ -1112,22 +1140,29 @@ img, video, canvas, svg { max-width: 100%; }
   align-items: end;
   margin-bottom: 14px;
 }
-.session-viewer-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.35fr);
-  gap: 14px;
-  align-items: start;
-}
+.session-viewer-layout { display: block; }
 .viewer-rider-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.viewer-accordion-list { align-items: start; }
+.viewer-rider-accordion {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.012);
+}
+.viewer-rider-accordion.open {
+  border-color: rgba(0,255,209,0.45);
+  box-shadow: 0 0 0 3px rgba(0,255,209,0.08);
+}
 .viewer-rider-card {
+  width: 100%;
   min-height: 124px;
   padding: 15px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 0;
   background: rgba(255,255,255,0.018);
   color: var(--text);
   text-align: left;
@@ -1159,6 +1194,20 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .viewer-card-head strong { display: block; font: 900 1rem var(--display); text-transform: uppercase; }
 .viewer-card-head small { color: var(--muted); }
+.accordion-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  margin-top: 10px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--aqua);
+  font: 800 0.58rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .viewer-progress {
   height: 8px;
   margin-top: 14px;
@@ -1172,10 +1221,12 @@ img, video, canvas, svg { max-width: 100%; }
   border-radius: inherit;
   background: var(--aqua);
 }
-.viewer-detail-panel { position: sticky; top: 88px; }
-.viewer-detail-head { margin-bottom: 14px; }
-.back-to-riders { margin: 0 0 12px; }
 .viewer-group-empty { min-height: 240px; display: grid; place-items: center; }
+.viewer-inline-list {
+  padding: 0 12px 14px;
+  border-top: 1px solid var(--line);
+}
+.viewer-inline-list .panel-meta { margin: 12px 0 10px; }
 .viewer-trick-list { display: grid; gap: 9px; }
 .viewer-trick-row {
   display: grid;
@@ -1203,6 +1254,41 @@ img, video, canvas, svg { max-width: 100%; }
   border-color: rgba(0,255,209,0.55);
   background: rgba(0,255,209,0.12);
 }
+.extra-session-rider-panel { margin-bottom: 14px; }
+.plan-accordion-stack { display: grid; gap: 10px; margin-bottom: 14px; }
+.plan-accordion {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.014);
+  overflow: hidden;
+}
+.plan-accordion[open] { border-color: rgba(0,255,209,0.25); background: rgba(0,255,209,0.035); }
+.plan-accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.plan-accordion summary::-webkit-details-marker { display: none; }
+.plan-accordion summary strong {
+  display: block;
+  font: 900 1.2rem var(--display);
+  text-transform: uppercase;
+}
+.plan-accordion summary small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font: 700 0.58rem var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.plan-accordion[open] summary .accordion-caret { background: var(--aqua); color: #001d18; border-color: var(--aqua); }
+.plan-accordion-body { padding: 0 14px 14px; }
+.compact-schedule-editor { margin-bottom: 0; }
 .public-profile-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1402,7 +1488,6 @@ img, video, canvas, svg { max-width: 100%; }
   .coach-command-grid { grid-template-columns: 1fr; }
   .coach-tools-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .session-viewer-layout { grid-template-columns: 1fr; }
-  .viewer-detail-panel { position: static; }
   .group-session-control { grid-template-columns: 1fr; }
   .group-session-actions { justify-content: flex-start; }
   .attendance-grid { grid-template-columns: 1fr; }

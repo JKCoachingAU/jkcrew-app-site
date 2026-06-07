@@ -244,7 +244,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.4.2" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.5.0" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -838,6 +838,11 @@ function coachGroupLabel(groupName = "monday") {
   return coachGroups.find(([id]) => id === groupName)?.[1] || "Monday Team";
 }
 
+function groupLabelList(groupNames = []) {
+  const labels = [...new Set(groupNames.filter(Boolean))].map((groupName) => coachGroupLabel(groupName));
+  return labels.length ? labels.join(", ") : "No group set";
+}
+
 function athleteAttention(athlete, data = {}) {
   const sessions = (data.sessions || []).filter((session) => session.athlete_id === athlete.id);
   const lastSession = sessions[0];
@@ -953,7 +958,7 @@ function athleteOverviewHtml(roster = [], commandData = {}) {
     const alert = status.coach_alert || attention.flags[0] || "No urgent alert";
     return `<article class="overview-card">
       <button class="student-chip overview-person" data-open-student="${athlete.id}">${avatarHtml(athlete, "student-chip-avatar")}<span>${escapeHtml(athlete.display_name)}</span></button>
-      <div>${heatChip(status.heat_status || "on_track")}<small>${escapeHtml(coachGroupLabel(athlete.groupName))} · ${escapeHtml(status.training_focus || "No focus set")}</small><p>${escapeHtml(alert)}</p></div>
+      <div>${heatChip(status.heat_status || "on_track")}<small>${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))} · ${escapeHtml(status.training_focus || "No focus set")}</small><p>${escapeHtml(alert)}</p></div>
       <form class="heat-form" data-heat-athlete="${athlete.id}">
         <select name="heatStatus">${Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}" ${(status.heat_status || "on_track") === value ? "selected" : ""}>${info.label}</option>`).join("")}</select>
         <input name="trainingFocus" value="${escapeHtml(status.training_focus || "")}" placeholder="Current focus">
@@ -1788,7 +1793,8 @@ async function renderSessionViewer() {
   }
   const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}" ${state.sessionViewerGroup === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
   const search = state.sessionViewerSearch.toLowerCase().trim();
-  const groupRoster = roster.filter((athlete) => athlete.groupName === state.sessionViewerGroup);
+  const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
+  const groupRoster = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id));
   const filteredRoster = groupRoster.filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
   if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
     state.sessionViewerOpenAthleteId = "";
@@ -1811,21 +1817,31 @@ async function renderSessionViewer() {
       entry.daily = assignmentsForVenue(entry.allDaily, state.sessionViewerVenue);
     });
   }
-  const openSchedule = schedules.find((entry) => entry.athlete.id === state.sessionViewerOpenAthleteId);
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map(({ athlete, daily, venue }) => {
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
-    return `<button class="viewer-rider-card ${athlete.id === state.sessionViewerOpenAthleteId ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}">
-      <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
-      <div class="viewer-progress"><span style="width:${percent}%"></span></div>
-    </button>`;
+    const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+    return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
+      <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
+        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
+        <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
+        <div class="viewer-progress"><span style="width:${percent}%"></span></div>
+      </button>
+      ${isOpen ? sessionViewerDailyList({ athlete, daily, venue }, activeGroupSession) : ""}
+    </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   const idleCount = schedules.filter((entry) => !entry.participant?.last_activity_at).length;
-  const openList = openSchedule
-    ? sessionViewerDailyList(openSchedule, activeGroupSession)
-    : `<div class="viewer-group-empty"><div class="empty">${started ? "Ask a rider to tap their name to open their own Daily Trick sheet." : "Choose a group and venue, then start the session."}</div></div>`;
+  const availableExtras = started ? roster.filter((athlete) => !activeParticipantIds.has(athlete.id)) : [];
+  const extraOptions = availableExtras.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</option>`).join("");
+  const extraRiderForm = started && availableExtras.length ? `
+    <section class="panel extra-session-rider-panel">
+      <form id="add-session-rider-form" class="trick-form">
+        <div class="field"><label for="session-extra-athlete">One-off extra rider</label><select id="session-extra-athlete" name="athleteId">${extraOptions}</select></div>
+        <button class="secondary-btn" type="submit">Add to this session</button>
+      </form>
+    </section>` : "";
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" id="viewer-refresh">Refresh</button></div>
     <section class="panel group-session-control ${activeGroupSession?.status || "ready"}">
@@ -1839,9 +1855,9 @@ async function renderSessionViewer() {
       <div class="field"><label for="viewer-venue">Venue/skate park</label><select id="viewer-venue" ${started ? "disabled" : ""}>${venueOptions}</select></div>
       <div class="field"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
     </section>
+    ${extraRiderForm}
     <section class="session-viewer-layout">
-      <div><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid">${cards}</div></div>
-      <section class="panel viewer-detail-panel">${openList}</section>
+      <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>`;
   bindSessionViewerActions();
   updateGroupSessionTimerDom();
@@ -1889,7 +1905,7 @@ function sessionViewerDailyList(entry, activeGroupSession) {
       <span><strong>${escapeHtml(assignment.trick_name)}</strong>${assignment.notes ? `<small>${escapeHtml(assignment.notes)}</small>` : ""}</span>
     </button>`;
   }).join("") : `<div class="empty compact-empty">No Daily Tricks assigned for this venue.</div>`;
-  return `<div class="viewer-detail-head">${avatarHtml(athlete, "student-chip-avatar")}<div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(venueLabel(venue))} Daily Tricks · ${complete}/${daily.length} complete today${isPaused ? " · timer paused" : ""}</div></div></div><button class="secondary-btn compact-btn back-to-riders" type="button" id="back-to-rider-grid">Back to group screen</button><div class="viewer-trick-list">${list}</div>`;
+  return `<div class="viewer-inline-list"><div class="panel-meta">${escapeHtml(venueLabel(venue))} Daily Tricks · ${complete}/${daily.length} complete today${isPaused ? " · timer paused" : ""}</div><div class="viewer-trick-list">${list}</div></div>`;
 }
 
 function bindSessionViewerActions() {
@@ -1911,22 +1927,19 @@ function bindSessionViewerActions() {
     state.sessionViewerSearchTimer = setTimeout(() => renderSessionViewer(), 250);
   });
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
-    state.sessionViewerOpenAthleteId = button.dataset.viewerAthlete;
+    state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
     refreshSessionViewerLight();
   }));
-  document.querySelector("#back-to-rider-grid")?.addEventListener("click", () => {
-    state.sessionViewerOpenAthleteId = "";
-    refreshSessionViewerLight();
-  });
   document.querySelector("#start-group-session")?.addEventListener("click", startViewerGroupSession);
   document.querySelector("#pause-group-session")?.addEventListener("click", toggleViewerGroupSessionPause);
   document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
+  document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
 }
 
 async function startViewerGroupSession() {
   const roster = await getCoachRoster();
-  const athleteIds = roster.filter((athlete) => athlete.groupName === state.sessionViewerGroup).map((athlete) => athlete.id);
+  const athleteIds = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup)).map((athlete) => athlete.id);
   if (!athleteIds.length) return notify("No riders in this group yet.", "error");
   const { data, error } = await client.rpc("start_coach_group_session", {
     p_group_name: state.sessionViewerGroup,
@@ -1937,6 +1950,29 @@ async function startViewerGroupSession() {
   const result = Array.isArray(data) ? data[0] : data;
   notify(`Group session started for ${result.participant_count || athleteIds.length} riders.`);
   state.sessionViewerOpenAthleteId = "";
+  await renderSessionViewer();
+}
+
+async function addExtraRiderToGroupSession(event) {
+  event.preventDefault();
+  const session = await getActiveCoachGroupSession();
+  if (!session) return notify("Start the group session first.", "error");
+  const athleteId = new FormData(event.currentTarget).get("athleteId");
+  if (!athleteId) return notify("Choose a rider to add.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Adding...";
+  const { error } = await client.rpc("add_coach_group_session_rider", {
+    p_group_session_id: session.id,
+    p_athlete_id: athleteId,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Add to this session";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Rider added to this session only.");
+  state.sessionViewerOpenAthleteId = athleteId;
   await renderSessionViewer();
 }
 
@@ -1978,14 +2014,14 @@ async function recordViewerAssignmentAction(event) {
 
 async function refreshSessionViewerLight() {
   if (state.view !== "sessionViewer") return;
-  const detailPanel = document.querySelector(".viewer-detail-panel");
   const rosterGrid = document.querySelector(".viewer-rider-grid");
-  if (!detailPanel || !rosterGrid) return renderSessionViewer();
+  if (!rosterGrid) return renderSessionViewer();
   const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
   const activeGroupSession = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
   const search = state.sessionViewerSearch.toLowerCase().trim();
+  const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
   const filteredRoster = roster
-    .filter((athlete) => athlete.groupName === state.sessionViewerGroup)
+    .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
     .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
   const { assignmentsByAthlete } = await getSessionViewerDailyData(filteredRoster.map((athlete) => athlete.id));
   const schedules = filteredRoster.map((athlete) => {
@@ -1996,27 +2032,24 @@ async function refreshSessionViewerLight() {
   rosterGrid.innerHTML = schedules.length ? schedules.map(({ athlete, daily, venue }) => {
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
-    return `<button class="viewer-rider-card ${athlete.id === state.sessionViewerOpenAthleteId ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}">
-      <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
-      <div class="viewer-progress"><span style="width:${percent}%"></span></div>
-    </button>`;
+    const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+    return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
+      <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
+        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
+        <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
+        <div class="viewer-progress"><span style="width:${percent}%"></span></div>
+      </button>
+      ${isOpen ? sessionViewerDailyList({ athlete, daily, venue }, activeGroupSession) : ""}
+    </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
-  const openSchedule = schedules.find((entry) => entry.athlete.id === state.sessionViewerOpenAthleteId);
-  detailPanel.innerHTML = openSchedule
-    ? sessionViewerDailyList(openSchedule, activeGroupSession)
-    : `<div class="viewer-group-empty"><div class="empty">${activeGroupSession ? "Ask a rider to tap their name to open their own Daily Trick sheet." : "Choose a group and venue, then start the session."}</div></div>`;
   bindSessionViewerFastActions();
 }
 
 function bindSessionViewerFastActions() {
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
-    state.sessionViewerOpenAthleteId = button.dataset.viewerAthlete;
+    state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
     refreshSessionViewerLight();
   }));
-  document.querySelector("#back-to-rider-grid")?.addEventListener("click", () => {
-    state.sessionViewerOpenAthleteId = "";
-    refreshSessionViewerLight();
-  });
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
 }
 
@@ -2259,16 +2292,25 @@ async function getCoachRoster() {
   if (error) throw error;
   const ids = links.map((link) => link.athlete_id);
   if (!ids.length) return [];
-  const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }] = await Promise.all([
+  const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
     client.from("profiles").select("*").in("id", ids).order("display_name"),
     client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
+    client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
   ]);
   if (athleteError) throw athleteError;
   if (sessionError) throw sessionError;
+  if (groupError) throw groupError;
   const groupByAthlete = new Map(links.map((link) => [link.athlete_id, link.group_name || "monday"]));
+  const groupsByAthlete = (groupLinks || []).reduce((map, link) => {
+    const groups = map.get(link.athlete_id) || [];
+    if (!groups.includes(link.group_name)) groups.push(link.group_name);
+    map.set(link.athlete_id, groups);
+    return map;
+  }, new Map());
   return athletes.map((athlete) => {
     const athleteSessions = sessions.filter((session) => session.athlete_id === athlete.id);
-    return { ...athlete, groupName: groupByAthlete.get(athlete.id) || "monday", weeklyPoints: athleteSessions.reduce((sum, session) => sum + session.total_points, 0), sessionCount: athleteSessions.length };
+    const groupNames = groupsByAthlete.get(athlete.id) || [groupByAthlete.get(athlete.id) || "monday"];
+    return { ...athlete, groupName: groupNames[0] || "monday", groupNames, weeklyPoints: athleteSessions.reduce((sum, session) => sum + session.total_points, 0), sessionCount: athleteSessions.length };
   });
 }
 
@@ -2283,14 +2325,17 @@ async function renderCrew() {
   const linkedIds = new Set(roster.map((athlete) => athlete.id));
   const available = (allAthletes || []).filter((athlete) => !linkedIds.has(athlete.id));
   const groupsHtml = coachGroups.map(([groupId, label]) => {
-    const athletes = roster.filter((athlete) => athlete.groupName === groupId);
+    const athletes = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(groupId));
     const students = athletes.length ? athletes.map((athlete) => {
       const status = statuses.get(athlete.id) || {};
       return `
-      <button class="student-chip" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
-        ${avatarHtml(athlete, "student-chip-avatar")}
-        <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small></span>
-      </button>`;
+      <div class="student-chip-wrap">
+        <button class="student-chip" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
+          ${avatarHtml(athlete, "student-chip-avatar")}
+          <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small><small>${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</small></span>
+        </button>
+        ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
+      </div>`;
     }).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
     return `<section class="group-column" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
   }).join("");
@@ -2331,15 +2376,39 @@ async function renderCrew() {
       event.preventDefault();
       group.classList.remove("drag-over");
       const athleteId = event.dataTransfer.getData("text/plain");
-      if (athleteId) await moveAthleteGroup(athleteId, group.dataset.group);
+      if (athleteId) await addAthleteToGroup(athleteId, group.dataset.group);
     });
   });
+  document.querySelectorAll("[data-remove-athlete-group]").forEach((button) => button.addEventListener("click", () => removeAthleteFromGroup(button.dataset.removeAthleteGroup, button.dataset.removeGroup)));
 }
 
-async function moveAthleteGroup(athleteId, groupName) {
-  const { error } = await client.from("coach_athletes").update({ group_name: groupName }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+async function addAthleteToGroup(athleteId, groupName) {
+  const { error } = await client.from("coach_athlete_groups").upsert({
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    group_name: groupName,
+    membership_type: "weekly",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,athlete_id,group_name" });
   if (error) return notify(messageFrom(error), "error");
-  notify("Student moved.");
+  await client.from("coach_athletes").update({ group_name: groupName }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+  notify("Student added to group.");
+  await renderCrew();
+}
+
+async function removeAthleteFromGroup(athleteId, groupName) {
+  const { error } = await client.from("coach_athlete_groups").delete().eq("coach_id", state.user.id).eq("athlete_id", athleteId).eq("group_name", groupName);
+  if (error) return notify(messageFrom(error), "error");
+  const { data: remainingGroups } = await client
+    .from("coach_athlete_groups")
+    .select("group_name")
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .order("created_at", { ascending: true });
+  if (remainingGroups?.[0]?.group_name) {
+    await client.from("coach_athletes").update({ group_name: remainingGroups[0].group_name }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+  }
+  notify("Student removed from that group.");
   await renderCrew();
 }
 
@@ -2361,9 +2430,9 @@ async function renderParents() {
     return map;
   }, new Map());
   const parentOptions = parents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.display_name)}${parent.email ? ` · ${escapeHtml(parent.email)}` : ""}</option>`).join("");
-  const athleteOptions = roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(coachGroupLabel(athlete.groupName))}</option>`).join("");
+  const athleteOptions = roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</option>`).join("");
   const grouped = coachGroups.map(([groupId, label]) => {
-    const athletes = roster.filter((athlete) => athlete.groupName === groupId);
+    const athletes = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(groupId));
     const rows = athletes.length ? athletes.map((athlete) => {
       const athleteLinks = links.filter((link) => link.athlete_id === athlete.id);
       const parentNames = athleteLinks.length ? athleteLinks.map((link) => {
@@ -2429,6 +2498,7 @@ async function createStudent(event) {
   }
   const { error: linkError } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: data.userId });
   if (linkError) return notify(messageFrom(linkError), "error");
+  await client.from("coach_athlete_groups").upsert({ coach_id: state.user.id, athlete_id: data.userId, group_name: "monday", membership_type: "weekly" }, { onConflict: "coach_id,athlete_id,group_name" });
   notify("Student profile created and added to your crew.");
   state.selectedAthleteId = data.userId;
   await navigate("student");
@@ -2439,6 +2509,7 @@ async function addAthlete(event) {
   const athleteId = new FormData(event.currentTarget).get("athleteId");
   const { error } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: athleteId });
   if (error) return notify(messageFrom(error), "error");
+  await client.from("coach_athlete_groups").upsert({ coach_id: state.user.id, athlete_id: athleteId, group_name: "monday", membership_type: "weekly" }, { onConflict: "coach_id,athlete_id,group_name" });
   notify("Athlete added to your crew.");
   await renderCrew();
 }
@@ -2486,6 +2557,8 @@ async function renderStudentProfile() {
   if (parentLinkError) throw parentLinkError;
   if (parentProfileError) throw parentProfileError;
   const template = templates?.[0] || null;
+  const athleteGroups = athlete.groupNames || [athlete.groupName || "monday"];
+  const groupCheckboxes = coachGroups.map(([groupId, label]) => `<label class="group-checkbox"><input type="checkbox" name="groupNames" value="${groupId}" ${athleteGroups.includes(groupId) ? "checked" : ""}> <span>${escapeHtml(label)}</span></label>`).join("");
   const linkByParent = new Map((parentLinks || []).map((link) => [link.parent_id, link]));
   const linkedParentIds = new Set((parentLinks || []).map((link) => link.parent_id));
   const linkedParents = (parentProfiles || []).filter((parent) => linkedParentIds.has(parent.id));
@@ -2525,31 +2598,35 @@ async function renderStudentProfile() {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
-    return `<div class="schedule-editor">
+    return planAccordionSection(info.label, `${assignments.filter((assignment) => assignment.category === category).length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
       <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === category).length}</div></div>
       <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea></div>
-    </div>`;
+    </div>`, category === "one_bang" || category === "dialled");
   }).join("");
-  const categoryEditor = `<div class="venue-editor-grid">${dailyVenueEditors}${customVenueEditor}</div>${otherCategoryEditor}`;
+  const categoryEditor = `<div class="plan-accordion-stack">
+    ${planAccordionSection("Venue-Specific Daily Tricks", "Daily lists by skate park · full list inside 20 minutes earns points", `<div class="venue-editor-grid">${dailyVenueEditors}${customVenueEditor}</div>`, true)}
+    ${otherCategoryEditor}
+  </div>`;
   const dailyDone = dailyCompletionCount(awards);
 
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${athlete.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
-      <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${coachGroups.find(([id]) => id === athlete.groupName)?.[1] || "Monday Team"} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
+      <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
       <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
       <form id="coach-athlete-profile-form" class="two-col-form">
         <div class="field"><label for="coach-athlete-spin">Spin Direction</label><select id="coach-athlete-spin" name="spinDirection"><option value="" ${!athlete.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${athlete.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${athlete.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${athlete.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${athlete.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
         <div class="field"><label for="coach-athlete-favourite">Favourite Trick</label><input id="coach-athlete-favourite" name="favouriteTrick" maxlength="120" value="${escapeHtml(athlete.favourite_trick || "")}" placeholder="Favourite BMX trick"></div>
+        <div class="field group-checkbox-field"><label>Training groups</label><div class="group-checkbox-grid">${groupCheckboxes}</div><small>Riders can be in more than one weekly group.</small></div>
         <button class="primary-btn" type="submit">Save rider details</button>
       </form>
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Current weekly tricks</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
     ${extraTricksSection(athlete, false)}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Edit this week's schedule</div><div class="panel-meta">One trick or line per row · notes after a dash</div></div></div>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Student Plan Builder</div><div class="panel-meta">Open the section you need · one trick or line per row · notes after a dash</div></div></div>
       <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Linked Parents / Guardians</div><div class="panel-meta">Parents are read-only linked viewers, not athlete accounts</div></div></div>
@@ -2637,6 +2714,13 @@ function dailyVenueRowsFromForm(form) {
   });
 }
 
+function planAccordionSection(title, meta, body, open = false) {
+  return `<details class="plan-accordion" ${open ? "open" : ""}>
+    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret">Open</span></summary>
+    <div class="plan-accordion-body">${body}</div>
+  </details>`;
+}
+
 async function saveCoachVenueNames(rows) {
   const venues = rows.map((row, index) => ({
     coach_id: state.user.id,
@@ -2699,12 +2783,25 @@ async function saveWeeklyAssignments(event) {
 async function saveCoachAthleteProfile(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const groupNames = form.getAll("groupNames").filter(Boolean);
+  if (!groupNames.length) return notify("Choose at least one training group.", "error");
   const { error } = await client.from("profiles").update({
     spin_direction: form.get("spinDirection") || "",
     favourite_trick: String(form.get("favouriteTrick") || "").trim().slice(0, 120),
     updated_at: new Date().toISOString(),
   }).eq("id", state.selectedAthleteId);
   if (error) return notify(messageFrom(error), "error");
+  const { error: deleteError } = await client.from("coach_athlete_groups").delete().eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId);
+  if (deleteError) return notify(messageFrom(deleteError), "error");
+  const rows = groupNames.map((groupName) => ({
+    coach_id: state.user.id,
+    athlete_id: state.selectedAthleteId,
+    group_name: groupName,
+    membership_type: "weekly",
+  }));
+  const { error: groupError } = await client.from("coach_athlete_groups").insert(rows);
+  if (groupError) return notify(messageFrom(groupError), "error");
+  await client.from("coach_athletes").update({ group_name: groupNames[0] }).eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId);
   notify("Rider profile details saved.");
   await renderStudentProfile();
 }
