@@ -83,6 +83,7 @@ const weekStartDate = () => {
   return date.toISOString().slice(0, 10);
 };
 const weekStartIso = () => `${weekStartDate()}T00:00:00+10:00`;
+const weekEndDate = () => new Date(new Date(weekStartIso()).getTime() + (6 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
 const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" }).format(new Date(`${weekStartDate()}T00:00:00+10:00`));
 const messageFrom = (error) => error?.message || "Something went wrong. Please try again.";
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -245,7 +246,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.6" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.7" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -391,6 +392,12 @@ async function navigate(view) {
 
 async function getLeaderboard() {
   const { data, error } = await client.rpc("get_weekly_leaderboard");
+  if (error) throw error;
+  return data || [];
+}
+
+async function getPointHistory(athleteId) {
+  const { data, error } = await client.rpc("get_point_history", { p_athlete_id: athleteId });
   if (error) throw error;
   return data || [];
 }
@@ -645,7 +652,7 @@ async function getActiveCoachGroupSession() {
 
 async function getSessionViewerPlanData(athleteIds = []) {
   if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
+  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
     client.from("weekly_trick_assignments")
       .select("*")
       .in("athlete_id", athleteIds)
@@ -654,6 +661,10 @@ async function getSessionViewerPlanData(athleteIds = []) {
     client.from("assignment_progress")
       .select("*")
       .in("athlete_id", athleteIds),
+    client.from("percentage_attempts")
+      .select("*")
+      .in("athlete_id", athleteIds)
+      .order("attempt_number", { ascending: true }),
     client.from("run_plans")
       .select("*")
       .in("athlete_id", athleteIds)
@@ -665,13 +676,20 @@ async function getSessionViewerPlanData(athleteIds = []) {
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
+  if (percentageError) throw percentageError;
   if (runsError) throw runsError;
   if (runProgressError) throw runProgressError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
+  const attemptsById = new Map();
+  (percentageAttempts || []).forEach((attempt) => {
+    const rows = attemptsById.get(attempt.assignment_id) || [];
+    rows.push(attempt);
+    attemptsById.set(attempt.assignment_id, rows);
+  });
   const assignmentsByAthlete = new Map();
   (assignments || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: [] });
+    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
   });
   const runsByAthlete = new Map();
@@ -690,10 +708,11 @@ async function getSessionViewerPlanData(athleteIds = []) {
 }
 
 const categoryInfo = {
+  bonus: { label: "Bonus Tricks", description: "Gold challenge · 5 points each" },
   daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
   dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
   one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
-  percentage: { label: "Percentage Tricks", description: "10 attempts · track landed percentage" },
+  percentage: { label: "Percentage Tricks", description: "10 attempts · 100%=3, 90%=2, 80%=1" },
   foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
 };
 
@@ -701,9 +720,9 @@ const sessionViewerListTabs = [
   { id: "daily", label: "Daily Tricks" },
   { id: "one_bang", label: "One Bangs" },
   { id: "dialled", label: "Dialled" },
+  { id: "percentage", label: "Percentage" },
   { id: "foam_pit", label: "Foam" },
-  { id: "goals", label: "Goals" },
-  { id: "contest_run", label: "Contest Run" },
+  { id: "bonus", label: "Bonus Trick" },
 ];
 
 const coachGroups = [
@@ -906,13 +925,34 @@ function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks
   }).join("");
 }
 
+function dailyVenueGroups(assignments, interactive = false) {
+  const dailyAssignments = assignments.filter((assignment) => assignment.category === "daily");
+  const info = categoryInfo.daily;
+  const venues = dailyVenues(dailyAssignments);
+  const complete = dailyAssignments.filter(isAssignmentComplete).length;
+  const body = venues.length ? venues.map((venue, index) => {
+    const items = assignmentsForVenue(dailyAssignments, venue);
+    const venueComplete = items.filter(isAssignmentComplete).length;
+    const open = venueKey(venue) === venueKey(state.selectedVenue) || index === 0;
+    return `<details class="daily-venue-accordion" ${open ? "open" : ""}>
+      <summary><span><strong>${escapeHtml(venueLabel(venue))} Daily Tricks</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
+      <div class="assignment-list">${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
+    </details>`;
+  }).join("") : `<div class="empty">No Daily Tricks assigned for this week yet.</div>`;
+  return `<section class="assignment-group daily-venue-group">
+    <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="category-count">${complete}/${dailyAssignments.length}</div></div>
+    <div class="daily-venue-stack">${body}</div>
+  </section>`;
+}
+
 function assignmentGroups(assignments, interactive = false) {
   return Object.entries(categoryInfo).map(([category, info]) => {
+    if (category === "daily") return dailyVenueGroups(assignments, interactive);
     const items = assignments.filter((assignment) => assignment.category === category);
     const list = category === "percentage"
       ? percentageAssignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive)
       : assignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive);
-    return `<section class="assignment-group">
+    return `<section class="assignment-group ${category === "bonus" ? "bonus-assignment-group" : ""}">
       <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${items.filter(isAssignmentComplete).length}/${items.length}</div></div>
       <div class="assignment-list">${list}</div>
     </section>`;
@@ -1576,24 +1616,25 @@ function goalsReadonlyHtml(profile = {}) {
   return `<section class="parent-readonly-section"><div class="panel-title">Goals</div><div class="goal-list">${rows}</div></section>`;
 }
 
-function leaderRow(row, index, rows = []) {
+function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const realRows = rows.filter((entry) => !entry.isBenchmarkBot);
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
-  const badge = row.isBenchmarkBot ? "" : medalForRank(row, realIndex, realRows.length);
+  const badge = pointsKey === "weekly_points" && !row.isBenchmarkBot ? medalForRank(row, realIndex, realRows.length) : "";
   const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
   const country = countryBadge(row);
   const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : "";
+  const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
   const content = `
     <div class="rank">#${index + 1}</div>
     <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${country}${escapeHtml(row.display_name)} ${badge}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
-    <div class="points">${row.weekly_points}<small> pts</small></div>`;
+    <div class="points">${points}<small> pts</small></div>`;
   if (row.isBenchmarkBot) return `<article class="list-row leader-row benchmark-row">${content}</article>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
 
-function leaderboardWithBenchmark(rows = []) {
+function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
   const realRows = rows.filter((row) => !row.isBenchmarkBot);
-  const topPoints = Number(realRows[0]?.weekly_points || 0);
+  const topPoints = Number(realRows[0]?.[pointsKey] || 0);
   const benchmarkPoints = topPoints > 2 ? Math.max(1, Math.min(topPoints - 1, Math.round(topPoints * 0.55))) : 0;
   const bot = {
     athlete_id: "__jkcrew_benchmark__",
@@ -1603,6 +1644,7 @@ function leaderboardWithBenchmark(rows = []) {
     country_code: "AU",
     country_name: "Australia",
     weekly_points: benchmarkPoints,
+    all_time_points: benchmarkPoints,
     session_count: 3,
     earned_badges: [{ icon: "🎯", label: "55% guide" }],
     isBenchmarkBot: true,
@@ -1610,9 +1652,42 @@ function leaderboardWithBenchmark(rows = []) {
   };
   if (!realRows.length) return [bot];
   const output = [...realRows];
-  const insertAt = topPoints > 0 ? output.findIndex((row) => Number(row.weekly_points || 0) < benchmarkPoints) : output.length;
+  const insertAt = topPoints > 0 ? output.findIndex((row) => Number(row[pointsKey] || 0) < benchmarkPoints) : output.length;
   output.splice(insertAt === -1 ? output.length : Math.max(1, insertAt), 0, bot);
   return output;
+}
+
+function pointsHelpHtml() {
+  return `<details class="points-help">
+    <summary aria-label="How points work">?</summary>
+    <div>
+      <strong>How Points Work</strong>
+      <ul>
+        <li>Daily Tricks: full list within the live timer = 1 point.</li>
+        <li>One Bangs: 2 points each when landed.</li>
+        <li>Dialled: 2 points each when landed.</li>
+        <li>Bonus Tricks: 5 points each.</li>
+        <li>First rider to finish Daily Tricks in a group session: 1 point.</li>
+        <li>Percentage Tricks: 100% = 3, 90% = 2, 80% = 1, 70% and below = 0.</li>
+        <li>Coaches can deduct points with a saved reason for behaviour or corrections.</li>
+      </ul>
+    </div>
+  </details>`;
+}
+
+function pointHistoryHtml(rows = []) {
+  if (!rows.length) return `<div class="empty compact-empty">No point history recorded yet.</div>`;
+  return `<div class="point-history-list">${rows.slice(0, 24).map((row) => {
+    const points = Number(row.points || 0);
+    const label = points > 0 ? `+${points}` : `${points}`;
+    const item = row.item || row.category || row.source || "Point change";
+    const reason = row.reason ? `<small>${escapeHtml(row.reason)}</small>` : "";
+    const coach = row.coach_name ? `<span>Coach: ${escapeHtml(row.coach_name)}</span>` : "";
+    return `<div class="point-history-row ${points < 0 ? "negative" : "positive"}">
+      <div><strong>${escapeHtml(item)}</strong><small>${dateLabel(row.event_at)} · ${escapeHtml(row.category || row.source || "points")}</small>${reason}</div>
+      <div class="point-history-side"><span class="point-pill">${label} pts</span>${coach}</div>
+    </div>`;
+  }).join("")}</div>`;
 }
 
 function scoreAdjustmentPanel(rows = []) {
@@ -1836,14 +1911,18 @@ async function endSession() {
 
 async function renderBoard() {
   const [rawLeaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
-  const leaderboard = leaderboardWithBenchmark(rawLeaderboard);
+  const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
+  const allTimeLeaderboard = leaderboardWithBenchmark([...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))), "all_time_points");
   const mentionableUsers = boardMentionableUsers(rawLeaderboard);
   state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at midnight every Sunday.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at midnight every Sunday.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
-    <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>
+    <section class="board-rankings-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">Weekly rankings</div><div class="panel-meta">Resets Sunday midnight</div></div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map((row, index, rows) => leaderRow(row, index, rows, "weekly_points")).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">All-time rankings</div><div class="panel-meta">Total points since joining</div></div><div class="panel-meta">${allTimeLeaderboard.length} riders</div></div><div class="leaderboard">${allTimeLeaderboard.length ? allTimeLeaderboard.map((row, index, rows) => leaderRow(row, index, rows, "all_time_points")).join("") : `<div class="empty">No all-time scores yet.</div>`}</div></div>
+    </section>
     <section class="panel board-chat-panel">
       <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team chat · reactions, mentions and safe GIFs</div></div></div>
       <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Start with a positive message.</div>`}</div>
@@ -1865,8 +1944,10 @@ async function submitScoreAdjustment(event) {
   const athleteId = String(form.get("athleteId") || "");
   const action = String(form.get("action") || "add");
   const amount = Math.abs(Number(form.get("points") || 0));
+  const reason = String(form.get("reason") || "").trim().slice(0, 160);
   if (!athleteId || !amount) return notify("Choose a rider and points amount.", "error");
   const signedPoints = action === "deduct" ? -amount : amount;
+  if (signedPoints < 0 && !reason) return notify("Add a reason before deducting points.", "error");
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Applying...";
@@ -1874,7 +1955,7 @@ async function submitScoreAdjustment(event) {
     athlete_id: athleteId,
     coach_id: state.user.id,
     points: signedPoints,
-    reason: String(form.get("reason") || `${action === "deduct" ? "Deducted" : "Added"} by coach`).trim().slice(0, 160),
+    reason: reason || `${action === "deduct" ? "Deducted" : "Added"} by coach`,
     week_start: weekStartDate(),
   });
   if (error) {
@@ -1882,8 +1963,39 @@ async function submitScoreAdjustment(event) {
     button.textContent = "Apply score change";
     return notify(messageFrom(error), "error");
   }
+  if (signedPoints < 0) await createDeductionParentNotification(athleteId, amount, reason);
   notify(`${signedPoints > 0 ? "Added" : "Deducted"} ${amount} point${amount === 1 ? "" : "s"}.`);
   await renderBoard();
+}
+
+async function createDeductionParentNotification(athleteId, amount, reason) {
+  const [{ data: links, error: linksError }, { data: athlete, error: athleteError }] = await Promise.all([
+    client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athleteId),
+    client.from("profiles").select("display_name").eq("id", athleteId).single(),
+  ]);
+  if (linksError || athleteError) {
+    notify(`Score saved, but parent notification could not be prepared: ${messageFrom(linksError || athleteError)}`, "error");
+    return;
+  }
+  if (!links?.length) return;
+  const riderName = athlete?.display_name || "This rider";
+  const rows = links.map((link) => ({
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    recipient_type: "parent",
+    recipient_id: link.parent_id,
+    week_start: weekStartDate(),
+    week_end: weekEndDate(),
+    title: `${riderName} had points deducted`,
+    summary: `Hi, ${riderName} had ${amount} point${amount === 1 ? "" : "s"} deducted today for behaviour during training. Reason: ${reason}. Please speak with them before the next session.`,
+    status: "draft",
+    stats: { type: "behaviour_deduction", points: -amount, reason },
+    coach_notes: reason,
+  }));
+  const { error } = await client.from("weekly_progress_notifications").upsert(rows, {
+    onConflict: "athlete_id,recipient_type,recipient_id,week_start",
+  });
+  if (error) notify(`Score saved, but parent notification could not be prepared: ${messageFrom(error)}`, "error");
 }
 
 function boardChatMessageHtml(post) {
@@ -2403,33 +2515,27 @@ function sessionViewerPlanList(entry, activeGroupSession) {
 }
 
 function sessionViewerListCount(entry, listId) {
-  if (listId === "goals") return Array.isArray(entry.athlete.goals) ? entry.athlete.goals.length : 0;
-  if (listId === "contest_run") {
-    const run = sessionViewerActiveRun(entry);
-    return Array.isArray(run?.points) ? run.points.length : 0;
-  }
   return sessionViewerAssignmentsForList(entry, listId).length;
 }
 
 function sessionViewerListContent(entry, activeGroupSession, listId) {
-  if (listId === "goals") return sessionViewerGoalsList(entry);
-  if (listId === "contest_run") return sessionViewerRunList(entry);
   const assignments = sessionViewerAssignmentsForList(entry, listId);
   const complete = assignments.filter(isAssignmentComplete).length;
   const isPaused = activeGroupSession?.status === "paused";
-  const isActive = activeGroupSession?.status === "running";
   const info = categoryInfo[listId] || { label: "Tricks", description: "" };
-  const canTick = listId !== "daily" || isActive;
-  const lockedText = listId === "daily" && !isActive ? " · start timer to tick timed Daily Tricks" : "";
+  if (listId === "percentage") {
+    const label = info.label;
+    return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div><div class="viewer-percentage-list">${percentageAssignmentList(assignments, "No Percentage Tricks assigned.", true)}</div>`;
+  }
   const list = assignments.length ? assignments.map((assignment) => {
     const done = isAssignmentComplete(assignment);
-    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" ${canTick ? `data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}"` : "disabled"}>
+    return `<button class="viewer-trick-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}">
       <span class="assignment-check">${done ? "✓" : ""}</span>
       <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></span>
     </button>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
   const label = listId === "daily" ? `${venueLabel(entry.venue)} Daily Tricks` : info.label;
-  return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}${lockedText}</div><div class="viewer-trick-list">${list}</div>`;
+  return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div><div class="viewer-trick-list">${list}</div>`;
 }
 
 function sessionViewerGoalsList(entry) {
@@ -2495,6 +2601,7 @@ function bindSessionViewerActions() {
   document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
   document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
   document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
@@ -2572,6 +2679,23 @@ async function recordViewerAssignmentAction(event) {
   }
   const result = Array.isArray(data) ? data[0] : data;
   notify(result.message || "Trick progress updated.");
+  await refreshSessionViewerLight();
+}
+
+async function recordViewerPercentageAttempt(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  const { data, error } = await client.rpc("record_percentage_attempt", {
+    p_assignment_id: button.dataset.assignmentId,
+    p_landed: button.dataset.percentageAction === "true",
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : "";
+  notify(`Percentage attempt saved: ${result.percentage}%${pointsNote}.`);
   await refreshSessionViewerLight();
 }
 
@@ -3439,7 +3563,7 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
@@ -3448,6 +3572,7 @@ async function renderStudentProfile() {
     getDashboardItems(athlete.id),
     getCoachVenues(),
     getStudentPrivateData(athlete.id),
+    getPointHistory(athlete.id),
   ]);
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
@@ -3556,6 +3681,9 @@ async function renderStudentProfile() {
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Completion history</div><div class="panel-meta">Daily Tricks: ${dailyDone}/7 this week · ${assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length} weekly tasks complete</div></div></div>
       ${assignmentGroups(assignments)}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Point history</div><div class="panel-meta">Earned points, deductions, session bonuses and coach changes</div></div></div>
+      ${pointHistoryHtml(pointHistory)}
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Trick help videos</div><div class="panel-meta">Open rider submissions and reply with written or video feedback</div></div></div>
       <div class="help-list">${helpRequestsHtml(helpRequests, "coach")}</div>

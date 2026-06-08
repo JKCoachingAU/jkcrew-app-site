@@ -1,17 +1,17 @@
-const CACHE_NAME = "jkcrew-shell-v2.6.6";
+const CACHE_NAME = "jkcrew-shell-v2.6.7";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.6.6",
-  "./app.js?v=2.6.6",
-  "./manifest.webmanifest?v=2.6.6",
+  "./styles.css?v=2.6.7",
+  "./app.js?v=2.6.7",
+  "./manifest.webmanifest?v=2.6.7",
   "./icons/jkc-logo.png",
-  "./icons/jkcoaching-wordmark.png?v=2.6.6",
+  "./icons/jkcoaching-wordmark.png?v=2.6.7",
   "./icons/app-icon.svg",
-  "./icons/app-icon-192.png?v=2.6.6",
-  "./icons/app-icon-512.png?v=2.6.6",
-  "./icons/app-icon-maskable-512.png?v=2.6.6",
-  "./icons/apple-touch-icon.png?v=2.6.6",
+  "./icons/app-icon-192.png?v=2.6.7",
+  "./icons/app-icon-512.png?v=2.6.7",
+  "./icons/app-icon-maskable-512.png?v=2.6.7",
+  "./icons/apple-touch-icon.png?v=2.6.7",
 ];
 
 self.addEventListener("install", (event) => {
