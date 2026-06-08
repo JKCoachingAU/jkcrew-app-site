@@ -246,7 +246,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.3" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.4" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
