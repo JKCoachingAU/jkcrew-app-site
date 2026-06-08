@@ -245,7 +245,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.5" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.6" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -3476,15 +3476,16 @@ async function renderStudentProfile() {
     return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
   }).join("");
   const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
+    const venueDailyCount = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
     const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
-    return `<div class="schedule-editor compact-schedule-editor venue-edit-panel ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
-      <div class="schedule-editor-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list for ${escapeHtml(venue)}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length}</div></div>
-      <div class="two-col-form venue-name-row">
-        <div class="field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
-        <div class="field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
+    return `<div class="schedule-editor compact-schedule-editor venue-edit-panel compact-venue-editor ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
+      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="category-count">${venueDailyCount}</div></div>
+      <div class="compact-venue-editor-grid">
+        <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
+        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
       </div>
     </div>`;
   }).join("");
@@ -3508,8 +3509,8 @@ async function renderStudentProfile() {
   const categoryEditor = `<div class="plan-accordion-stack">
     ${planAccordionSection("Venue-Specific Daily Tricks", "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
       <div class="compact-venue-controls">
-        <div class="field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select><small>Only one location is shown at a time to keep this page clean.</small></div>
-        <div class="settings-callout">Pick where this rider is training, add the Daily Tricks for that location, then save the complete schedule.</div>
+        <div class="field compact-location-field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select></div>
+        <div class="compact-editor-tip">Only one location is open at a time. Rename the venue, add tricks, then save the full schedule.</div>
       </div>
       <div class="venue-edit-panels">${dailyVenueEditors}</div>
       ${customVenueEditor}

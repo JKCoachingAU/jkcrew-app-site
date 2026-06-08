@@ -1170,25 +1170,38 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .compact-venue-planner {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 .compact-venue-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1fr);
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
 }
 .compact-venue-controls .field { margin: 0; }
 .compact-venue-controls select {
   width: 100%;
-  min-height: 54px;
+  min-height: 46px;
   border: 1px solid rgba(0,255,209,0.32);
-  border-radius: 14px;
-  padding: 0 14px;
+  border-radius: 12px;
+  padding: 0 12px;
   background: var(--surface);
   color: var(--text);
-  font: 900 1rem var(--display);
+  font: 900 0.92rem var(--display);
   text-transform: uppercase;
+}
+.compact-editor-tip {
+  align-self: end;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(0,255,209,0.2);
+  border-radius: 12px;
+  background: rgba(0,255,209,0.075);
+  color: #b8fff1;
+  font: 800 0.78rem var(--mono);
+  line-height: 1.35;
 }
 .venue-edit-panels {
   display: grid;
@@ -1196,7 +1209,41 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .venue-edit-panel { display: none; }
 .venue-edit-panel.active { display: block; }
-.venue-edit-panel textarea { min-height: 190px; }
+.compact-venue-editor {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.016);
+}
+.compact-venue-head {
+  margin-bottom: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+}
+.compact-venue-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.35fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.compact-venue-editor .field {
+  margin: 0;
+}
+.compact-venue-editor .field label {
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+}
+.compact-venue-editor .field input,
+.compact-venue-editor .field textarea {
+  border-radius: 12px;
+  padding: 12px;
+}
+.compact-venue-editor .venue-name-field input {
+  min-height: 48px;
+}
+.compact-venue-editor textarea {
+  min-height: 118px;
+  max-height: 220px;
+}
 .compact-custom-venue {
   margin: 0;
   padding: 12px;
@@ -2200,7 +2247,20 @@ img, video, canvas, svg { max-width: 100%; }
   .public-profile-avatar { width: 104px; height: 104px; }
   .public-badges { justify-content: center; }
   .two-col-form { grid-template-columns: 1fr; gap: 0; }
-  .compact-venue-controls { grid-template-columns: 1fr; }
+  .compact-venue-controls,
+  .compact-venue-editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .compact-editor-tip {
+    min-height: 0;
+    font-size: 0.72rem;
+  }
+  .compact-venue-editor {
+    padding: 10px;
+  }
+  .compact-venue-editor textarea {
+    min-height: 140px;
+  }
   .goal-form { grid-template-columns: 1fr; }
   .extra-trick-form { grid-template-columns: 1fr; }
   .goal-row { grid-template-columns: 40px minmax(0, 1fr); }
