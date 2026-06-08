@@ -47,7 +47,6 @@ const coachNav = [
   ["crew", "Students"],
   ["parents", "Parents"],
   ["board", "Board"],
-  ["notes", "Notes"],
   ["profile", "Profile"],
 ];
 const parentNav = [
@@ -246,7 +245,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.4" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.5" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -528,9 +527,14 @@ async function getBoardChat() {
     ? await client.from("crew_post_reactions").select("*").in("post_id", postIds)
     : { data: [], error: null };
   if (reactionError) throw reactionError;
+  const reactionUserIds = [...new Set((reactions || []).map((reaction) => reaction.user_id).filter(Boolean))];
+  const { data: reactionProfiles } = reactionUserIds.length
+    ? await client.from("profiles").select("id, display_name, avatar").in("id", reactionUserIds)
+    : { data: [] };
+  const profileById = new Map((reactionProfiles || []).map((profile) => [profile.id, profile]));
   const reactionsByPost = (reactions || []).reduce((map, reaction) => {
     const list = map.get(reaction.post_id) || [];
-    list.push(reaction);
+    list.push({ ...reaction, profile: profileById.get(reaction.user_id) || null });
     map.set(reaction.post_id, list);
     return map;
   }, new Map());
@@ -538,7 +542,46 @@ async function getBoardChat() {
 }
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
+const boardGifOptions = [
+  ["Let's go", "https://media.giphy.com/media/111ebonMs90YLu/giphy.gif"],
+  ["Big energy", "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif"],
+  ["Nice one", "https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif"],
+  ["Keep pushing", "https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif"],
+];
+const allowedGifHosts = new Set(["media.giphy.com", "media0.giphy.com", "media1.giphy.com", "media2.giphy.com", "media3.giphy.com", "media4.giphy.com", "i.giphy.com", "media.tenor.com"]);
 const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
+const mentionToken = (name = "") => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+const escapeRegExp = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const boardMentionableUsers = (rows = []) => rows
+  .filter((row) => row.athlete_id && row.display_name && !row.isBenchmarkBot)
+  .map((row) => ({ id: row.athlete_id, name: row.display_name, token: mentionToken(row.display_name), avatar: row.avatar || null }))
+  .filter((row) => row.token);
+const extractBoardMentions = (body = "", users = []) => {
+  const lower = String(body).toLowerCase();
+  return users
+    .filter((user) => lower.includes(`@${user.token}`))
+    .map((user) => ({ id: user.id, name: user.name, token: `@${user.token}` }));
+};
+const formatBoardMessageBody = (body = "", mentions = []) => {
+  let html = escapeHtml(body);
+  mentions.forEach((mention) => {
+    if (!mention?.token || !mention?.id) return;
+    const label = `@${mention.name || mention.token.replace(/^@/, "")}`;
+    html = html.replace(new RegExp(escapeRegExp(escapeHtml(mention.token)), "gi"), `<button class="mention-link" type="button" data-mention-athlete="${escapeHtml(mention.id)}">${escapeHtml(label)}</button>`);
+  });
+  return html;
+};
+const normalizeGifUrl = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || !allowedGifHosts.has(url.hostname)) return "";
+    return url.href.slice(0, 500);
+  } catch (_error) {
+    return "";
+  }
+};
 const countryOptions = [
   ["", "Not set"],
   ["AU", "Australia"],
@@ -1539,10 +1582,10 @@ function leaderRow(row, index, rows = []) {
   const badge = row.isBenchmarkBot ? "" : medalForRank(row, realIndex, realRows.length);
   const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
   const country = countryBadge(row);
-  const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : `Level ${row.level} · ${row.session_count} sessions`;
+  const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : "";
   const content = `
     <div class="rank">#${index + 1}</div>
-    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${country}${escapeHtml(row.display_name)} ${badge}</strong><small>${escapeHtml(meta)}</small>${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${country}${escapeHtml(row.display_name)} ${badge}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
     <div class="points">${row.weekly_points}<small> pts</small></div>`;
   if (row.isBenchmarkBot) return `<article class="list-row leader-row benchmark-row">${content}</article>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
@@ -1794,20 +1837,24 @@ async function endSession() {
 async function renderBoard() {
   const [rawLeaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard);
+  const mentionableUsers = boardMentionableUsers(rawLeaderboard);
+  state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at midnight every Sunday.</p></div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
     <section class="panel"><div class="panel-head"><div class="panel-title">Weekly rankings</div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map(leaderRow).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></section>
     <section class="panel board-chat-panel">
-      <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team-only text chat · no DMs, photos, videos or files</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team chat · reactions, mentions and safe GIFs</div></div></div>
       <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Start with a positive message.</div>`}</div>
-      ${canPost ? `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose"><textarea id="board-message" name="body" required maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea><button class="primary-btn" type="submit">Send</button></form>` : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
+      ${canPost ? boardChatComposerHtml(mentionableUsers) : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
   document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
   document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
+  document.querySelectorAll("[data-mention-athlete]").forEach((button) => button.addEventListener("click", openMentionedAthleteProfile));
+  bindBoardChatComposer(mentionableUsers);
 }
 
 async function submitScoreAdjustment(event) {
@@ -1846,27 +1893,61 @@ function boardChatMessageHtml(post) {
   const authorAvatar = metadata.avatar || author.avatar || null;
   const reactionsByEmoji = post.reactions.reduce((map, reaction) => {
     const list = map.get(reaction.reaction) || [];
-    list.push(reaction.user_id);
+    list.push(reaction);
     map.set(reaction.reaction, list);
     return map;
   }, new Map());
   const reactionHtml = boardReactionEmojis.map((emoji) => {
-    const users = reactionsByEmoji.get(emoji) || [];
-    const active = users.includes(state.user?.id);
-    return `<button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${users.length ? `<span>${users.length}</span>` : ""}</button>`;
+    const reactions = reactionsByEmoji.get(emoji) || [];
+    const active = reactions.some((reaction) => reaction.user_id === state.user?.id);
+    const people = reactions.map((reaction) => {
+      const profile = reaction.profile || {};
+      const name = profile.display_name || (reaction.user_id === state.user?.id ? state.profile?.display_name : "") || "Crew member";
+      return `<span>${avatarHtml({ display_name: name, avatar: profile.avatar }, "reaction-avatar")}<strong>${escapeHtml(name)}</strong></span>`;
+    }).join("");
+    return `<span class="reaction-wrap"><button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${reactions.length ? `<span>${reactions.length}</span>` : ""}</button>${reactions.length ? `<span class="reaction-popover" role="tooltip">${people}</span>` : ""}</span>`;
   }).join("");
+  const gifUrl = normalizeGifUrl(metadata.gif_url || "");
+  const gifHtml = gifUrl ? `<figure class="chat-gif"><img src="${escapeHtml(gifUrl)}" alt="${escapeHtml(metadata.gif_label || "Crew chat GIF")}" loading="lazy"></figure>` : "";
+  const bodyHtml = post.body ? `<p>${formatBoardMessageBody(post.body, metadata.mentions || [])}</p>` : "";
   return `<article class="board-chat-message">
     ${avatarHtml({ display_name: authorName, avatar: authorAvatar })}
-    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div><p>${escapeHtml(post.body)}</p><div class="reaction-row">${reactionHtml}</div></div>
+    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}${gifHtml}<div class="reaction-row">${reactionHtml}</div></div>
   </article>`;
+}
+
+function boardChatComposerHtml(mentionableUsers = []) {
+  const suggestions = mentionableUsers.map((user) => `<button type="button" data-mention-pick="${escapeHtml(user.id)}" data-mention-token="${escapeHtml(user.token)}"><span>${avatarHtml({ display_name: user.name, avatar: user.avatar }, "reaction-avatar")}</span><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.token)}</small></button>`).join("");
+  const gifButtons = boardGifOptions.map(([label, url]) => `<button type="button" data-gif-url="${escapeHtml(url)}" data-gif-label="${escapeHtml(label)}"><img src="${escapeHtml(url)}" alt=""><span>${escapeHtml(label)}</span></button>`).join("");
+  return `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose">
+    <div class="board-compose-main">
+      <div class="mention-field">
+        <textarea id="board-message" name="body" maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea>
+        <div id="board-mention-menu" class="mention-menu" hidden>${suggestions || `<div class="empty compact-empty">No riders to mention yet.</div>`}</div>
+      </div>
+      <button class="primary-btn" type="submit">Send</button>
+    </div>
+    <div class="board-compose-tools">
+      <button class="secondary-btn compact-btn" type="button" id="toggle-gif-picker">GIF</button>
+      <input id="board-gif-url" name="gifUrl" type="url" placeholder="Paste a safe Giphy/Tenor GIF URL">
+      <button class="secondary-btn compact-btn" type="button" id="clear-board-gif" hidden>Remove GIF</button>
+    </div>
+    <div id="board-gif-picker" class="gif-picker" hidden>${gifButtons}</div>
+    <div id="board-gif-preview" class="chat-gif-preview" hidden></div>
+  </form>`;
 }
 
 async function submitBoardChat(event) {
   event.preventDefault();
   if (!canPostBoardChat()) return notify("Only riders and coaches can post in crew chat.", "error");
   const formElement = event.currentTarget;
-  const body = String(new FormData(formElement).get("body") || "").trim();
-  if (!body) return notify("Write a message first.", "error");
+  const form = new FormData(formElement);
+  const body = String(form.get("body") || "").trim();
+  const gifInput = String(form.get("gifUrl") || "").trim();
+  const gifUrl = normalizeGifUrl(gifInput);
+  if (gifInput && !gifUrl) return notify("Use a safe HTTPS GIF link from Giphy or Tenor.", "error");
+  if (!body && !gifUrl) return notify("Write a message or add a GIF first.", "error");
+  const mentions = extractBoardMentions(body, state.boardMentionableCache || []);
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Sending...";
@@ -1878,6 +1959,9 @@ async function submitBoardChat(event) {
       author_name: state.profile?.display_name || state.user?.email || "Crew member",
       author_role: state.profile?.role || "member",
       avatar: state.profile?.avatar || null,
+      gif_url: gifUrl || null,
+      gif_label: gifUrl ? String(formElement.dataset.gifLabel || "Crew chat GIF").slice(0, 80) : null,
+      mentions,
     },
   });
   if (error) {
@@ -1887,6 +1971,78 @@ async function submitBoardChat(event) {
   }
   notify("Message posted.");
   await renderBoard();
+}
+
+function bindBoardChatComposer(mentionableUsers = []) {
+  const form = document.querySelector("#board-chat-form");
+  if (!form) return;
+  const textarea = form.querySelector("#board-message");
+  const menu = form.querySelector("#board-mention-menu");
+  const gifInput = form.querySelector("#board-gif-url");
+  const gifPreview = form.querySelector("#board-gif-preview");
+  const gifPicker = form.querySelector("#board-gif-picker");
+  const clearGif = form.querySelector("#clear-board-gif");
+  const showGifPreview = (url, label = "Crew chat GIF") => {
+    const safeUrl = normalizeGifUrl(url);
+    if (!safeUrl) {
+      gifPreview.hidden = true;
+      gifPreview.innerHTML = "";
+      clearGif.hidden = true;
+      form.dataset.gifLabel = "";
+      return;
+    }
+    gifInput.value = safeUrl;
+    form.dataset.gifLabel = label;
+    clearGif.hidden = false;
+    gifPreview.hidden = false;
+    gifPreview.innerHTML = `<span>GIF ready</span><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}">`;
+  };
+  const refreshMentionMenu = () => {
+    if (!textarea || !menu) return;
+    const beforeCursor = textarea.value.slice(0, textarea.selectionStart || textarea.value.length);
+    const match = beforeCursor.match(/(^|\s)@([a-z0-9]*)$/i);
+    if (!match) {
+      menu.hidden = true;
+      return;
+    }
+    const term = match[2].toLowerCase();
+    let visible = 0;
+    menu.querySelectorAll("[data-mention-pick]").forEach((button) => {
+      const token = button.dataset.mentionToken || "";
+      const name = button.querySelector("strong")?.textContent?.toLowerCase() || "";
+      const matched = token.includes(term) || name.includes(term);
+      button.hidden = !matched;
+      if (matched) visible += 1;
+    });
+    menu.hidden = visible === 0;
+  };
+  textarea?.addEventListener("input", refreshMentionMenu);
+  textarea?.addEventListener("blur", () => setTimeout(() => { if (menu) menu.hidden = true; }, 160));
+  menu?.querySelectorAll("[data-mention-pick]").forEach((button) => button.addEventListener("click", () => {
+    const token = button.dataset.mentionToken;
+    const cursor = textarea.selectionStart || textarea.value.length;
+    const beforeCursor = textarea.value.slice(0, cursor);
+    const afterCursor = textarea.value.slice(cursor);
+    const match = beforeCursor.match(/(^|\s)@([a-z0-9]*)$/i);
+    if (!match || !token) return;
+    const replacementStart = beforeCursor.length - match[0].length;
+    textarea.value = `${beforeCursor.slice(0, replacementStart)}${match[1]}@${token} ${afterCursor}`;
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = replacementStart + match[1].length + token.length + 2;
+    menu.hidden = true;
+  }));
+  document.querySelector("#toggle-gif-picker")?.addEventListener("click", () => {
+    gifPicker.hidden = !gifPicker.hidden;
+  });
+  gifPicker?.querySelectorAll("[data-gif-url]").forEach((button) => button.addEventListener("click", () => {
+    showGifPreview(button.dataset.gifUrl, button.dataset.gifLabel || "Crew chat GIF");
+    gifPicker.hidden = true;
+  }));
+  gifInput?.addEventListener("change", () => showGifPreview(gifInput.value, "Crew chat GIF"));
+  clearGif?.addEventListener("click", () => {
+    gifInput.value = "";
+    showGifPreview("", "");
+  });
 }
 
 async function toggleBoardReaction(event) {
@@ -1909,6 +2065,11 @@ async function toggleBoardReaction(event) {
 
 function openPublicAthleteProfile(event) {
   state.publicAthleteId = event.currentTarget.dataset.publicAthlete;
+  navigate("publicProfile");
+}
+
+function openMentionedAthleteProfile(event) {
+  state.publicAthleteId = event.currentTarget.dataset.mentionAthlete;
   navigate("publicProfile");
 }
 
@@ -3106,6 +3267,10 @@ function coachParentPreviewHtml({ athlete, assignments, awards, dashboardItems, 
 }
 
 async function renderParents() {
+  if (!isCoachRole(state.profile?.role)) {
+    await navigate("home");
+    return;
+  }
   const [roster, parentResult, linkResult] = await Promise.all([
     getCoachRoster(),
     client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
@@ -3138,14 +3303,22 @@ async function renderParents() {
   }).join("");
   const parentRows = parents.length ? parents.map((parent) => {
     const parentLinks = linksByParent.get(parent.id) || [];
+    const linkedNames = parentLinks.map((link) => athleteById.get(link.athlete_id)?.display_name).filter(Boolean);
     const linkedChildren = parentLinks.length ? parentLinks.map((link) => {
       const athlete = athleteById.get(link.athlete_id);
       if (!athlete) return "";
       return `<span class="public-badge">${escapeHtml(athlete.display_name)}${link.relationship ? ` · ${escapeHtml(link.relationship)}` : ""}<button class="inline-remove" type="button" data-unlink-parent-global="${parent.id}" data-unlink-athlete-global="${athlete.id}" aria-label="Unlink ${escapeHtml(parent.display_name)} from ${escapeHtml(athlete.display_name)}">×</button></span>`;
     }).filter(Boolean).join("") : `<span class="public-badge muted-badge">Unlinked</span>`;
     return `<article class="parent-admin-card ${parentLinks.length ? "linked" : "unlinked"}">
-      <div class="person">${avatarHtml(parent, "student-chip-avatar")}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}${parent.phone ? ` · ${escapeHtml(parent.phone)}` : ""}</small><small>Joined ${dateLabel(parent.created_at)}</small></div></div>
-      <div class="parent-status-row"><span class="status-chip">${parentLinks.length ? "linked" : "unlinked"}</span><div class="parent-child-badges">${linkedChildren}</div></div>
+      <div class="parent-card-top">
+        <div class="person">${avatarHtml(parent, "student-chip-avatar")}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}</small>${parent.phone ? `<small>${escapeHtml(parent.phone)}</small>` : ""}<small>Joined ${dateLabel(parent.created_at)}</small></div></div>
+        ${parentContactButtonsHtml(parent, linkedNames)}
+      </div>
+      <div class="parent-link-summary">
+        <span class="status-chip ${parentLinks.length ? "" : "warning-chip"}">${parentLinks.length ? "Linked" : "Not linked yet"}</span>
+        <div><strong>Linked to:</strong> <span>${parentLinks.length ? escapeHtml(linkedNames.join(", ")) : "Not linked yet"}</span></div>
+      </div>
+      <div class="parent-child-badges">${linkedChildren}</div>
     </article>`;
   }).join("") : `<div class="empty">No parent accounts yet. Parents can create their own account from the sign-up screen.</div>`;
   document.querySelector("#view").innerHTML = `
@@ -3159,14 +3332,45 @@ async function renderParents() {
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Link parent to rider</div><div class="panel-meta">Supports multiple children per parent and multiple parents per rider</div></div></div>
       ${parents.length && roster.length ? `<form id="parent-admin-link-form" class="trick-form parent-link-form"><div class="field"><label for="admin-parent-id">Parent account</label><select id="admin-parent-id" name="parentId" required>${parentOptions}</select></div><div class="field"><label for="admin-athlete-ids">Rider/s</label><select id="admin-athlete-ids" name="athleteIds" multiple size="${Math.min(Math.max(roster.length, 3), 7)}" required>${athleteOptions}</select><small>Hold Command on Mac to choose more than one rider.</small></div><div class="field"><label for="admin-relationship">Relationship</label><input id="admin-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link account</button></form>` : `<div class="empty compact-empty">Create at least one parent account and one rider first.</div>`}
     </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">All parent accounts</div><div class="panel-meta">Name, email, phone, linked riders, status and date joined</div></div></div><div class="parent-admin-list">${parentRows}</div></section>
+    <section class="panel parent-accounts-panel">
+      <details class="parent-account-accordion">
+        <summary><div><div class="panel-title">All parent accounts</div><div class="panel-meta">Name, contact details, linked riders, status and date joined</div></div><span>Open</span></summary>
+        <div class="parent-admin-list">${parentRows}</div>
+      </details>
+    </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Parents by training group</div><div class="panel-meta">Quick scan by Monday, Tuesday, Wednesday and online groups</div></div></div><div class="groups-grid">${grouped}</div></section>`;
   document.querySelector("#parent-admin-link-form")?.addEventListener("submit", linkParentFromAdmin);
   document.querySelectorAll("[data-unlink-parent-global]").forEach((button) => button.addEventListener("click", unlinkParentFromAdmin));
+  document.querySelectorAll("[data-copy-parent-contact]").forEach((button) => button.addEventListener("click", copyParentContact));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
     state.selectedAthleteId = button.dataset.openStudent;
     navigate("student");
   }));
+}
+
+function parentContactButtonsHtml(parent = {}, linkedNames = []) {
+  const email = String(parent.email || "").trim();
+  const phone = String(parent.phone || "").trim();
+  const phoneHref = phone.replace(/[^\d+]/g, "");
+  const contactText = [
+    parent.display_name || "Parent",
+    email ? `Email: ${email}` : "",
+    phone ? `Phone: ${phone}` : "",
+    linkedNames.length ? `Linked to: ${linkedNames.join(", ")}` : "Linked to: Not linked yet",
+  ].filter(Boolean).join("\n");
+  const encodedText = encodeURIComponent(contactText);
+  return `<div class="parent-contact-actions">
+    ${phoneHref ? `<a class="secondary-btn compact-btn" href="tel:${escapeHtml(phoneHref)}">Call</a><a class="secondary-btn compact-btn" href="sms:${escapeHtml(phoneHref)}">Text</a>` : ""}
+    ${email ? `<a class="secondary-btn compact-btn" href="mailto:${escapeHtml(email)}">Email</a>` : ""}
+    <button class="secondary-btn compact-btn" type="button" data-copy-parent-contact="${escapeHtml(encodedText)}">Copy</button>
+  </div>`;
+}
+
+async function copyParentContact(event) {
+  const text = decodeURIComponent(event.currentTarget.dataset.copyParentContact || "");
+  if (!text) return notify("No contact details to copy.", "error");
+  await navigator.clipboard.writeText(text);
+  notify("Parent contact details copied.");
 }
 
 async function createStudent(event) {
