@@ -246,7 +246,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.1" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.2" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -376,6 +376,8 @@ async function navigate(view) {
     crew: isCoachRole(state.profile?.role) ? renderCrew : renderAthleteCrew,
     contests: renderContests,
     student: renderStudentProfile,
+    studentPreview: () => renderCoachPreview("student"),
+    parentPreview: () => renderCoachPreview("parent"),
     publicProfile: renderPublicAthleteProfile,
     notes: renderNotes,
     profile: renderProfile,
@@ -2033,32 +2035,20 @@ async function renderCoachCommand() {
   const calendarFeed = combinedCoachCalendarItems(commandData);
   const groupedCalendar = groupCoachCalendarItems(calendarFeed, roster);
   const upcoming = groupedCalendar.filter((event) => new Date(event.starts_at) >= new Date()).length;
-  const recentSessions = commandData.sessions.slice(0, 5);
   const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
-  const sessionRows = recentSessions.length ? recentSessions.map((session) => {
-    const athlete = roster.find((entry) => entry.id === session.athlete_id);
-    return `<button class="list-row command-link-row" type="button" data-open-student="${escapeHtml(session.athlete_id)}"><div><strong>${escapeHtml(athlete?.display_name || "Rider")}</strong><small>${dateLabel(session.started_at)} · ${session.ended_at ? "finished" : "live"} · ${Number(session.total_points || 0)} pts</small></div><span class="points">${session.ended_at ? "done" : "live"}</span></button>`;
-  }).join("") : `<div class="empty compact-empty">No recent sessions recorded.</div>`;
-  const liveSections = [
-    commandAccordionSection("todays-sessions-section", "Today's Sessions", "Recent sessions and live coaching tools", `<div class="attempt-list">${sessionRows}</div><div class="settings-divider"></div><button class="secondary-btn" data-view="sessionViewer" type="button">Open Session Viewer</button>`, true),
-    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster)),
-    commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
-  ].join("");
   const teamSections = [
-    commandAccordionSection("athlete-overview-section", "Athlete Overview", "Profiles, sheet alerts and rider status", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`, true),
+    commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`, true),
     commandAccordionSection("rider-heat-map-section", "Rider Heat Map", "On track, needs help, injured or competition prep", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`),
-    commandAccordionSection("notifications-section", "Notifications", "Clickable private coach alerts", commandNotificationsHtml(roster, commandData, groupedCalendar)),
     commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
   ].join("");
   const adminSections = [
+    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster), true),
     commandAccordionSection("payments-section", "Payments / Reimbursements", "Attendance history and outstanding venue costs", attendanceHistoryHtml(commandData.attendanceSessions)),
     commandAccordionSection("injury-section", "Injury Reports", "Modified training and rider file shortcuts", `<div class="notification-list">${commandData.statuses.filter((status) => status.heat_status === "injured").map((status) => {
       const athlete = roster.find((entry) => entry.id === status.athlete_id);
       return `<button class="notification-card" type="button" data-open-student="${escapeHtml(status.athlete_id)}"><span>Injury</span><strong>${escapeHtml(athlete?.display_name || "Rider")} — modified training / injury</strong></button>`;
     }).join("") || `<div class="empty compact-empty">No injured / modified riders marked.</div>`}</div>`),
     commandAccordionSection("records-section", "Emergency Contacts / Waivers / Forms", "Open rider files to view private records", `<div class="notification-list">${roster.map((athlete) => `<button class="notification-card" type="button" data-open-student="${athlete.id}"><span>Rider file</span><strong>${escapeHtml(athlete.display_name)} — emergency contacts, waivers, forms</strong></button>`).join("")}</div>`),
-    commandAccordionSection("coach-notes-section", "Coach Notes", "Private notes and planning", `<button class="secondary-btn" data-view="notes" type="button">Open Coach Notes</button>`),
-    commandAccordionSection("run-builder-section", "Run Builder", "Open a rider profile to edit competition runs", `<div class="notification-list">${roster.map((athlete) => `<button class="notification-card" type="button" data-open-student="${athlete.id}"><span>Run</span><strong>${escapeHtml(athlete.display_name)} — open run builder</strong></button>`).join("")}</div>`),
     commandAccordionSection("settings-section", "Settings", "Coach account and app settings", `<button class="secondary-btn" data-view="profile" type="button">Open Coach Profile</button>`),
   ].join("");
   document.querySelector("#view").innerHTML = `
@@ -2073,19 +2063,15 @@ async function renderCoachCommand() {
     <section class="coach-tools-row">
       <button class="coach-tool-card" data-view="sessionViewer"><strong>Session Viewer</strong><small>Open iPad group checklist</small></button>
       <button class="coach-tool-card" data-view="crew"><strong>Students</strong><small>Groups, profiles, programs</small></button>
+      <button class="coach-tool-card" data-view="parents"><strong>Parents</strong><small>Linked viewer accounts</small></button>
       <button class="coach-tool-card" data-view="board"><strong>Leaderboard</strong><small>Rankings and rider chat</small></button>
-      <button class="coach-tool-card" data-view="notes"><strong>Coach Notes</strong><small>Private records and planning</small></button>
     </section>
     <section class="command-section-group">
-      <div class="command-section-heading"><span>01</span><div><strong>Live Coaching</strong><small>Sessions, attendance, and upcoming sessions</small></div></div>
-      <div class="command-accordion-stack compact-command-stack">${liveSections}</div>
-    </section>
-    <section class="command-section-group">
-      <div class="command-section-heading"><span>02</span><div><strong>Team Management</strong><small>Rider overview, heat map, alerts, and parent updates</small></div></div>
+      <div class="command-section-heading"><span>01</span><div><strong>Team Management</strong><small>Upcoming events, rider heat map, and parent updates</small></div></div>
       <div class="command-accordion-stack compact-command-stack">${teamSections}</div>
     </section>
     <section class="command-section-group">
-      <div class="command-section-heading"><span>03</span><div><strong>Admin & Records</strong><small>Payments, injuries, records, notes, runs, and settings</small></div></div>
+      <div class="command-section-heading"><span>02</span><div><strong>Admin & Records</strong><small>Attendance, payments, injuries, records, and settings</small></div></div>
       <div class="command-accordion-stack compact-command-stack">${adminSections}</div>
     </section>`;
   document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
@@ -3015,6 +3001,110 @@ async function removeAthleteFromGroup(athleteId, groupName) {
   await renderCrew();
 }
 
+async function getCoachPreviewData() {
+  if (!isCoachRole(state.profile?.role)) {
+    navigate("home");
+    return null;
+  }
+  const roster = await getCoachRoster();
+  if (!roster.length) return { roster, athlete: null };
+  if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
+  const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
+  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs] = await Promise.all([
+    getWeeklyAssignments(athlete.id),
+    getLeaderboard(),
+    getDashboardItems(athlete.id),
+    client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5),
+    getHelpRequests(athlete.id),
+    getRunPlans(athlete.id),
+  ]);
+  if (sessionsResult.error) throw sessionsResult.error;
+  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs };
+}
+
+async function renderCoachPreview(mode = "student") {
+  const data = await getCoachPreviewData();
+  if (!data) return;
+  if (!data.athlete) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>No <span>students</span></h1><p>Add a student first, then you can preview their Student View and Parent View.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs } = data;
+  const { assignments, awards } = schedule;
+  const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
+  const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
+  const weeklyPercent = weeklyCompletionPercent(assignments, awards);
+  const weeklyItems = assignments.filter((assignment) => assignment.category !== "daily");
+  const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+  const taskItems = dashboardItems.filter((item) => item.item_type === "task");
+  const events = dashboardItems.filter((item) => item.item_type === "event");
+  const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
+  const previewBody = mode === "parent"
+    ? coachParentPreviewHtml({ athlete, assignments, awards, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems })
+    : coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent });
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" data-view="student">Back to profile</button><button class="secondary-btn" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
+    <section class="coach-preview-shell">
+      <div class="phone-preview-frame">${previewBody}</div>
+    </section>`;
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelector("[data-preview-switch]")?.addEventListener("click", (event) => navigate(event.currentTarget.dataset.previewSwitch));
+}
+
+function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent }) {
+  const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
+  return `<div class="phone-preview-content">
+    <section class="athlete-scoreboard panel">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
+      <div class="scoreboard-stats preview-stats">
+        ${statCard("World ranking", rank ? `#${rank}` : "-", "", "Crew board")}
+        ${statCard("This week", `${weeklyPercent}%`, "", `${weeklyRow?.weekly_points || 0} pts`)}
+        ${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}
+      </div>
+    </section>
+    ${quoteSection()}
+    ${weekSummaryHtml(assignments, awards)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Important tasks</div><div class="panel-meta">Student can edit their tasks</div></div></div>${dashboardItemsHtml(taskItems, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events</div><div class="panel-meta">Events live in Contests</div></div></div>${dashboardItemsHtml(events, false)}</section>
+    ${goalsReadonlyHtml(athlete)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Session schedule preview</div><div class="panel-meta">Assigned tricks visible to this rider</div></div></div>${assignmentGroups(assignments, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Recent sessions</div></div></div>${sessionRows}</section>
+  </div>`;
+}
+
+function coachParentPreviewHtml({ athlete, assignments, awards, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems }) {
+  const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
+  const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
+  return `<div class="phone-preview-content">
+    <section class="panel parent-child-card">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
+      <div class="scoreboard-stats preview-stats">
+        ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Program complete")}
+        ${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}
+        ${statCard("Leaderboard", rank ? `#${rank}` : "-", "", `${weeklyRow?.weekly_points || 0} pts`)}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
+      </div>
+      <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</div>
+      ${goalsReadonlyHtml(athlete)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Training plan</div>
+      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Events & tasks</div>
+      ${dashboardItemsHtml(dashboardItems, false)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Session progress</div>
+      ${sessionRows}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Run plans</div>
+      ${runRows}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Coach feedback</div>
+      <div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div>
+    </section>
+  </div>`;
+}
+
 async function renderParents() {
   const [roster, parentResult, linkResult] = await Promise.all([
     getCoachRoster(),
@@ -3225,7 +3315,7 @@ async function renderStudentProfile() {
   const dailyDone = dailyCompletionCount(awards);
 
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${athlete.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" id="back-to-students">All students</button></div></div>
+    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${athlete.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
       <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
@@ -3269,6 +3359,7 @@ async function renderStudentProfile() {
       <button class="danger-btn wide" id="delete-student-account" type="button">Delete ${escapeHtml(athlete.display_name)}</button>
     </section>`;
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
+  document.querySelectorAll("[data-preview-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.previewView)));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
   document.querySelector("#daily-venue-select")?.addEventListener("change", (event) => {
