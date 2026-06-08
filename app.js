@@ -246,7 +246,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.7" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.8" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -3795,35 +3795,19 @@ async function saveWeeklyAssignments(event) {
     .slice(0, category === "percentage" ? 3 : undefined)
     .map((line, index) => parseAssignmentLine(line.trim(), 1000 + (categoryIndex * 100) + index, category))
     .filter(Boolean));
-  const assignments = [...dailyAssignments, ...otherAssignments];
+  const assignments = [...dailyAssignments, ...otherAssignments].map((assignment, index) => ({ ...assignment, sort_order: index }));
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Saving...";
-
-  try {
-    await saveCoachVenueNames(dailyVenueRows);
-  } catch (error) {
+  const { error } = await client.rpc("save_weekly_assignments", {
+    p_athlete_id: state.selectedAthleteId,
+    p_week_start: weekStartDate(),
+    p_assignments: assignments,
+    p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+  });
+  if (error) {
     notify(messageFrom(error), "error");
     return renderStudentProfile();
-  }
-
-  const { error: deleteError } = await client
-    .from("weekly_trick_assignments")
-    .delete()
-    .eq("coach_id", state.user.id)
-    .eq("athlete_id", state.selectedAthleteId)
-    .eq("week_start", weekStartDate());
-  if (deleteError) {
-    notify(messageFrom(deleteError), "error");
-    return renderStudentProfile();
-  }
-
-  if (assignments.length) {
-    const { error: insertError } = await client.from("weekly_trick_assignments").insert(assignments);
-    if (insertError) {
-      notify(messageFrom(insertError), "error");
-      return renderStudentProfile();
-    }
   }
 
   notify("Weekly schedule saved for this student.");
@@ -3906,14 +3890,15 @@ async function importScheduleTemplate(template) {
   const assignments = Object.keys(categoryInfo).flatMap((category, categoryIndex) => String(template[category] || "").split("\n")
     .slice(0, category === "percentage" ? 3 : undefined)
     .map((line, index) => parseAssignmentLine(line.trim(), (categoryIndex * 100) + index, category))
-    .filter(Boolean));
-  const { error: deleteError } = await client.from("weekly_trick_assignments").delete()
-    .eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId).eq("week_start", weekStartDate());
-  if (deleteError) return notify(messageFrom(deleteError), "error");
-  if (assignments.length) {
-    const { error } = await client.from("weekly_trick_assignments").insert(assignments);
-    if (error) return notify(messageFrom(error), "error");
-  }
+    .filter(Boolean))
+    .map((assignment, index) => ({ ...assignment, sort_order: index }));
+  const { error: scheduleError } = await client.rpc("save_weekly_assignments", {
+    p_athlete_id: state.selectedAthleteId,
+    p_week_start: weekStartDate(),
+    p_assignments: assignments,
+    p_venues: null,
+  });
+  if (scheduleError) return notify(messageFrom(scheduleError), "error");
   if (template.coach_note) {
     const { error } = await client.from("coach_notes").insert({ coach_id: state.user.id, athlete_id: state.selectedAthleteId, note: template.coach_note });
     if (error) return notify(messageFrom(error), "error");
