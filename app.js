@@ -32,6 +32,7 @@ const state = {
   draggedRunPoint: null,
   draggedDailyId: null,
   coachPlanVenue: "",
+  boardLeaderboardView: "weekly",
 };
 
 const athleteNav = [
@@ -246,7 +247,7 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.8" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.6.9" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
           <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
@@ -550,10 +551,12 @@ async function getBoardChat() {
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
 const boardGifOptions = [
-  ["Let's go", "https://media.giphy.com/media/111ebonMs90YLu/giphy.gif"],
-  ["Big energy", "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif"],
-  ["Nice one", "https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif"],
-  ["Keep pushing", "https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif"],
+  { label: "Let's go", keywords: "lets go hype celebrate win cheer", url: "https://media.giphy.com/media/111ebonMs90YLu/giphy.gif" },
+  { label: "Big energy", keywords: "energy stoked pumped excited", url: "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif" },
+  { label: "Nice one", keywords: "nice great job clap proud", url: "https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif" },
+  { label: "Keep pushing", keywords: "push training grind effort", url: "https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif" },
+  { label: "Fire", keywords: "fire hot landed trick", url: "https://media.giphy.com/media/3o7TKz2bS7J0iX3I6c/giphy.gif" },
+  { label: "Good vibes", keywords: "vibes smile happy crew", url: "https://media.giphy.com/media/26u4lOMA8JKSnL9Uk/giphy.gif" },
 ];
 const allowedGifHosts = new Set(["media.giphy.com", "media0.giphy.com", "media1.giphy.com", "media2.giphy.com", "media3.giphy.com", "media4.giphy.com", "i.giphy.com", "media.tenor.com"]);
 const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
@@ -589,6 +592,7 @@ const normalizeGifUrl = (value = "") => {
     return "";
   }
 };
+const containsGifUrl = (value = "") => /https?:\/\/\S*(?:\.gif|giphy\.com|tenor\.com|media\.tenor\.com|media\d?\.giphy\.com)\S*/i.test(String(value || ""));
 const countryOptions = [
   ["", "Not set"],
   ["AU", "Australia"],
@@ -1913,15 +1917,27 @@ async function renderBoard() {
   const [rawLeaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
   const allTimeLeaderboard = leaderboardWithBenchmark([...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))), "all_time_points");
+  const activeBoardView = state.boardLeaderboardView === "allTime" ? "allTime" : "weekly";
+  const activeRows = activeBoardView === "allTime" ? allTimeLeaderboard : leaderboard;
+  const activePointsKey = activeBoardView === "allTime" ? "all_time_points" : "weekly_points";
+  const boardTitle = activeBoardView === "allTime" ? "All-time rankings" : "Weekly rankings";
+  const boardMeta = activeBoardView === "allTime" ? "Total points since joining" : "Resets Sunday midnight";
   const mentionableUsers = boardMentionableUsers(rawLeaderboard);
   state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at midnight every Sunday.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
-    <section class="board-rankings-grid">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">Weekly rankings</div><div class="panel-meta">Resets Sunday midnight</div></div><div class="panel-meta">${leaderboard.length} riders</div></div><div class="leaderboard">${leaderboard.length ? leaderboard.map((row, index, rows) => leaderRow(row, index, rows, "weekly_points")).join("") : `<div class="empty">No athlete scores yet.</div>`}</div></div>
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">All-time rankings</div><div class="panel-meta">Total points since joining</div></div><div class="panel-meta">${allTimeLeaderboard.length} riders</div></div><div class="leaderboard">${allTimeLeaderboard.length ? allTimeLeaderboard.map((row, index, rows) => leaderRow(row, index, rows, "all_time_points")).join("") : `<div class="empty">No all-time scores yet.</div>`}</div></div>
+    <section class="panel board-rankings-panel">
+      <div class="panel-head board-rankings-head">
+        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta}</div></div>
+        <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">
+          <button type="button" class="${activeBoardView === "weekly" ? "active" : ""}" data-board-view="weekly">Weekly</button>
+          <button type="button" class="${activeBoardView === "allTime" ? "active" : ""}" data-board-view="allTime">All-time</button>
+        </div>
+        <div class="panel-meta">${activeRows.length} riders</div>
+      </div>
+      <div class="leaderboard">${activeRows.length ? activeRows.map((row, index, rows) => leaderRow(row, index, rows, activePointsKey)).join("") : `<div class="empty">No athlete scores yet.</div>`}</div>
     </section>
     <section class="panel board-chat-panel">
       <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team chat · reactions, mentions and safe GIFs</div></div></div>
@@ -1929,6 +1945,10 @@ async function renderBoard() {
       ${canPost ? boardChatComposerHtml(mentionableUsers) : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
+  document.querySelectorAll("[data-board-view]").forEach((button) => button.addEventListener("click", () => {
+    state.boardLeaderboardView = button.dataset.boardView || "weekly";
+    renderBoard();
+  }));
   document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
   document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
@@ -2030,21 +2050,24 @@ function boardChatMessageHtml(post) {
 
 function boardChatComposerHtml(mentionableUsers = []) {
   const suggestions = mentionableUsers.map((user) => `<button type="button" data-mention-pick="${escapeHtml(user.id)}" data-mention-token="${escapeHtml(user.token)}"><span>${avatarHtml({ display_name: user.name, avatar: user.avatar }, "reaction-avatar")}</span><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.token)}</small></button>`).join("");
-  const gifButtons = boardGifOptions.map(([label, url]) => `<button type="button" data-gif-url="${escapeHtml(url)}" data-gif-label="${escapeHtml(label)}"><img src="${escapeHtml(url)}" alt=""><span>${escapeHtml(label)}</span></button>`).join("");
+  const gifButtons = boardGifOptions.map((gif) => `<button type="button" data-gif-url="${escapeHtml(gif.url)}" data-gif-label="${escapeHtml(gif.label)}" data-gif-keywords="${escapeHtml(`${gif.label} ${gif.keywords}`)}"><img src="${escapeHtml(gif.url)}" alt=""><span>${escapeHtml(gif.label)}</span></button>`).join("");
   return `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose">
-    <div class="board-compose-main">
+    <div class="board-compose-shell">
+      <button class="secondary-btn gif-icon-btn" type="button" id="toggle-gif-picker" aria-label="Search safe GIFs">GIF</button>
       <div class="mention-field">
         <textarea id="board-message" name="body" maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea>
         <div id="board-mention-menu" class="mention-menu" hidden>${suggestions || `<div class="empty compact-empty">No riders to mention yet.</div>`}</div>
       </div>
-      <button class="primary-btn" type="submit">Send</button>
+      <button class="primary-btn board-send-btn" type="submit" data-send-board-chat>Send</button>
     </div>
-    <div class="board-compose-tools">
-      <button class="secondary-btn compact-btn" type="button" id="toggle-gif-picker">GIF</button>
-      <input id="board-gif-url" name="gifUrl" type="url" placeholder="Paste a safe Giphy/Tenor GIF URL">
-      <button class="secondary-btn compact-btn" type="button" id="clear-board-gif" hidden>Remove GIF</button>
+    <div id="board-gif-picker" class="gif-picker" hidden>
+      <div class="gif-picker-head">
+        <div><strong>Safe GIF search</strong><small>Choose from approved crew GIFs</small></div>
+        <input id="board-gif-search" type="search" inputmode="search" placeholder="Search hype, fire, nice...">
+      </div>
+      <div class="gif-results" id="board-gif-results">${gifButtons}</div>
+      <div class="empty compact-empty gif-no-results" id="board-gif-empty" hidden>No safe GIFs found for that search.</div>
     </div>
-    <div id="board-gif-picker" class="gif-picker" hidden>${gifButtons}</div>
     <div id="board-gif-preview" class="chat-gif-preview" hidden></div>
   </form>`;
 }
@@ -2055,12 +2078,11 @@ async function submitBoardChat(event) {
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
   const body = String(form.get("body") || "").trim();
-  const gifInput = String(form.get("gifUrl") || "").trim();
-  const gifUrl = normalizeGifUrl(gifInput);
-  if (gifInput && !gifUrl) return notify("Use a safe HTTPS GIF link from Giphy or Tenor.", "error");
+  if (containsGifUrl(body)) return notify("Use the GIF button to add safe GIFs instead of pasting GIF links.", "error");
+  const gifUrl = normalizeGifUrl(formElement.dataset.gifUrl || "");
   if (!body && !gifUrl) return notify("Write a message or add a GIF first.", "error");
   const mentions = extractBoardMentions(body, state.boardMentionableCache || []);
-  const button = formElement.querySelector("button");
+  const button = formElement.querySelector("[data-send-board-chat]");
   button.disabled = true;
   button.textContent = "Sending...";
   const { error } = await client.from("crew_posts").insert({
@@ -2090,24 +2112,35 @@ function bindBoardChatComposer(mentionableUsers = []) {
   if (!form) return;
   const textarea = form.querySelector("#board-message");
   const menu = form.querySelector("#board-mention-menu");
-  const gifInput = form.querySelector("#board-gif-url");
   const gifPreview = form.querySelector("#board-gif-preview");
   const gifPicker = form.querySelector("#board-gif-picker");
-  const clearGif = form.querySelector("#clear-board-gif");
+  const gifSearch = form.querySelector("#board-gif-search");
+  const gifEmpty = form.querySelector("#board-gif-empty");
   const showGifPreview = (url, label = "Crew chat GIF") => {
     const safeUrl = normalizeGifUrl(url);
     if (!safeUrl) {
       gifPreview.hidden = true;
       gifPreview.innerHTML = "";
-      clearGif.hidden = true;
+      form.dataset.gifUrl = "";
       form.dataset.gifLabel = "";
       return;
     }
-    gifInput.value = safeUrl;
+    form.dataset.gifUrl = safeUrl;
     form.dataset.gifLabel = label;
-    clearGif.hidden = false;
     gifPreview.hidden = false;
-    gifPreview.innerHTML = `<span>GIF ready</span><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}">`;
+    gifPreview.innerHTML = `<span>GIF ready</span><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}"><button class="secondary-btn compact-btn" type="button" id="clear-board-gif">Remove</button>`;
+    gifPreview.querySelector("#clear-board-gif")?.addEventListener("click", () => showGifPreview("", ""));
+  };
+  const filterGifResults = () => {
+    if (!gifPicker) return;
+    const term = String(gifSearch?.value || "").trim().toLowerCase();
+    let visible = 0;
+    gifPicker.querySelectorAll("[data-gif-url]").forEach((button) => {
+      const matched = !term || String(button.dataset.gifKeywords || "").toLowerCase().includes(term);
+      button.hidden = !matched;
+      if (matched) visible += 1;
+    });
+    if (gifEmpty) gifEmpty.hidden = visible > 0;
   };
   const refreshMentionMenu = () => {
     if (!textarea || !menu) return;
@@ -2129,6 +2162,15 @@ function bindBoardChatComposer(mentionableUsers = []) {
     menu.hidden = visible === 0;
   };
   textarea?.addEventListener("input", refreshMentionMenu);
+  textarea?.addEventListener("paste", (event) => {
+    const clipboard = event.clipboardData;
+    const text = clipboard?.getData("text") || "";
+    const hasImageOrGif = [...(clipboard?.items || [])].some((item) => item.type === "image/gif" || item.type.startsWith("image/"));
+    if (hasImageOrGif || containsGifUrl(text)) {
+      event.preventDefault();
+      notify("Use the GIF button to add approved GIFs.", "error");
+    }
+  });
   textarea?.addEventListener("blur", () => setTimeout(() => { if (menu) menu.hidden = true; }, 160));
   menu?.querySelectorAll("[data-mention-pick]").forEach((button) => button.addEventListener("click", () => {
     const token = button.dataset.mentionToken;
@@ -2145,16 +2187,16 @@ function bindBoardChatComposer(mentionableUsers = []) {
   }));
   document.querySelector("#toggle-gif-picker")?.addEventListener("click", () => {
     gifPicker.hidden = !gifPicker.hidden;
+    if (!gifPicker.hidden) {
+      gifSearch?.focus();
+      filterGifResults();
+    }
   });
   gifPicker?.querySelectorAll("[data-gif-url]").forEach((button) => button.addEventListener("click", () => {
     showGifPreview(button.dataset.gifUrl, button.dataset.gifLabel || "Crew chat GIF");
     gifPicker.hidden = true;
   }));
-  gifInput?.addEventListener("change", () => showGifPreview(gifInput.value, "Crew chat GIF"));
-  clearGif?.addEventListener("click", () => {
-    gifInput.value = "";
-    showGifPreview("", "");
-  });
+  gifSearch?.addEventListener("input", filterGifResults);
 }
 
 async function toggleBoardReaction(event) {
