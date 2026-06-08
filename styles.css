@@ -1676,6 +1676,18 @@ img, video, canvas, svg { max-width: 100%; }
   min-height: 38px;
   border-radius: 999px;
 }
+.gif-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+}
+.gif-search-row .compact-btn {
+  min-height: 38px;
+  width: auto;
+  min-width: 78px;
+  padding-inline: 12px;
+}
 .gif-results {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1705,6 +1717,29 @@ img, video, canvas, svg { max-width: 100%; }
   color: var(--muted);
   font: 800 0.62rem var(--mono);
   text-transform: uppercase;
+}
+.gif-picker .gif-load-more {
+  grid-column: 1 / -1;
+  min-height: 38px;
+  border-color: rgba(0,255,209,0.28);
+  color: var(--aqua);
+  font: 900 0.74rem var(--display);
+  text-transform: uppercase;
+}
+.gif-results-status {
+  grid-column: 1 / -1;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  font: 800 0.72rem var(--mono);
+  text-align: center;
+  text-transform: uppercase;
+}
+.gif-results-status.error {
+  border-color: rgba(255, 59, 92, 0.36);
+  color: #ff9bb0;
+  background: rgba(255, 59, 92, 0.07);
 }
 .chat-gif-preview {
   display: flex;
@@ -2450,6 +2485,12 @@ img, video, canvas, svg { max-width: 100%; }
   }
   .gif-picker-head {
     grid-template-columns: 1fr;
+  }
+  .gif-search-row {
+    grid-template-columns: 1fr;
+  }
+  .gif-search-row .compact-btn {
+    width: 100%;
   }
   .gif-results {
     grid-template-columns: repeat(2, minmax(0, 1fr));
