@@ -55,6 +55,13 @@ img, video, canvas, svg { max-width: 100%; }
   font-style: italic;
 }
 .brand-mark span { color: var(--aqua); }
+.boot-logo-mark img {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: contain;
+}
 .boot-line {
   height: 3px;
   margin: 22px 0 12px;
@@ -92,6 +99,31 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .auth-logo { font: italic 900 1.7rem var(--display); letter-spacing: -0.03em; }
 .auth-logo span { color: var(--aqua); }
+.logo-sidebar-brand {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font: 900 1rem var(--display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.logo-sidebar-brand img {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: contain;
+}
+.topbar-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: contain;
+  margin-right: 8px;
+  vertical-align: middle;
+}
 .auth-logo-lockup {
   width: fit-content;
   display: grid;
@@ -233,6 +265,13 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .sidebar-brand { padding: 6px 10px 22px; font: italic 900 1.65rem var(--display); }
 .sidebar-brand span { color: var(--aqua); }
+.sidebar-brand.logo-sidebar-brand {
+  font: 900 0.9rem var(--display);
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sidebar-brand.logo-sidebar-brand span { color: var(--text); }
 .role-pill { margin: 0 8px 24px; padding: 7px 9px; color: var(--aqua); background: var(--aqua-soft); border-radius: 7px; font: 600 0.62rem var(--mono); text-transform: uppercase; letter-spacing: 0.09em; }
 .nav-list { display: grid; gap: 5px; }
 .nav-btn {
@@ -296,6 +335,83 @@ img, video, canvas, svg { max-width: 100%; }
 .two-col { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr); gap: 14px; }
 
 .session-list, .leaderboard, .roster, .notes-list, .attempt-list { display: grid; gap: 7px; }
+.assignment-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.attempt-btn {
+  min-width: 54px;
+  min-height: 38px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  color: var(--muted);
+  font: 800 0.68rem var(--mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.attempt-btn:hover,
+.attempt-btn:focus-visible {
+  border-color: rgba(0,255,209,0.55);
+  color: var(--aqua);
+}
+.attempt-count { color: var(--aqua); }
+.viewer-attempt-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.viewer-attempt-row .attempt-btn { min-height: 34px; }
+.finish-daily-btn {
+  margin: 8px 12px 0;
+  width: calc(100% - 24px);
+}
+.tricktionary-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.tricktionary-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+.tricktionary-card strong { display: block; }
+.tricktionary-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tricktionary-card-meta span {
+  padding: 4px 7px;
+  border: 1px solid rgba(0,255,209,0.2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.previous-sheet-stack,
+.previous-sheet-body,
+.previous-sheet-group {
+  display: grid;
+  gap: 8px;
+}
+.previous-sheet-week {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 8px;
+}
+.previous-sheet-week summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.previous-sheet-row { grid-template-columns: minmax(0, 1fr) auto; }
 .list-row {
   min-width: 0;
   display: grid;

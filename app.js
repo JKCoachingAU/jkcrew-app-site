@@ -39,6 +39,7 @@ const state = {
 const athleteNav = [
   ["home", "Home"],
   ["session", "Session"],
+  ["tricktionary", "My Tricktionary"],
   ["contests", "Contests"],
   ["board", "Board"],
   ["profile", "Profile"],
@@ -53,6 +54,7 @@ const coachNav = [
 ];
 const parentNav = [
   ["home", "Home"],
+  ["tricktionary", "Tricktionary"],
   ["profile", "Profile"],
 ];
 
@@ -66,6 +68,7 @@ const escapeHtml = (value = "") => String(value)
 const initials = (name = "JK") => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "JK";
 const dateLabel = (value) => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+const formatPbTime = (seconds) => Number.isFinite(Number(seconds)) && Number(seconds) > 0 ? formatTime(Number(seconds)) : "-";
 const brisbaneDateParts = (date = new Date()) => new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Brisbane",
   year: "numeric",
@@ -159,6 +162,23 @@ function fileToDataUrl(file) {
   });
 }
 
+function videoDurationSeconds(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(video.duration || 0);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read video duration."));
+    };
+    video.src = url;
+  });
+}
+
 function notify(message, type = "ok") {
   toast.textContent = message;
   toast.className = `toast show ${type === "error" ? "error" : ""}`;
@@ -187,21 +207,21 @@ async function installApp() {
     const { outcome } = await deferredInstallPrompt.userChoice;
     deferredInstallPrompt = null;
     updateInstallButton();
-    if (outcome === "accepted") notify("JKCREW is being installed.");
+    if (outcome === "accepted") notify("JK Coaching is being installed.");
     return;
   }
 
   if (isIos()) {
-    window.alert("To install JKCREW: tap the Share button, then choose Add to Home Screen.");
+    window.alert("To install JK Coaching: tap the Share button, then choose Add to Home Screen.");
     return;
   }
 
   if (isSafari()) {
-    window.alert("To install JKCREW in Safari: choose File, then Add to Dock.");
+    window.alert("To install JK Coaching in Safari: choose File, then Add to Dock.");
     return;
   }
 
-  window.alert("To install JKCREW: open your browser menu and choose Install JKCREW or Add to Home Screen.");
+  window.alert("To install JK Coaching: open your browser menu and choose Install JK Coaching or Add to Home Screen.");
 }
 
 function setLoading(label = "Loading") {
@@ -248,11 +268,11 @@ function renderAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.7.0" alt="JKCoaching logo"></div>
+        <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.8.0" alt="JKCoaching logo"></div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
-          <h1>Crafting <em>champions,</em><br>shaping futures.</h1>
-          <p>Weekly trick plans, private progress tracking, and coach feedback built for serious BMX progression.</p>
+          <h1>Crafting <em>talent,</em><br> shaping futures.</h1>
+          <p>Weekly trick plans, attempt tracking, private progress history, and coach feedback built for serious BMX progression.</p>
         </div>
         <div class="feature-strip"><span>Weekly plans</span><span>Private progress</span><span>Coach feedback</span><span>Future focused</span></div>
       </section>
@@ -333,19 +353,19 @@ async function handleAuth(event, mode) {
 function renderShell() {
   const role = state.profile.role;
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", contests: "🏆", crew: "✦", command: "◇", parents: "P", board: "#", profile: "●", notes: "✎" };
+  const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", parents: "P", board: "#", profile: "●", notes: "✎" };
   const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand">JK<span>CREW</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.8.0" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><span class="live-dot"></span>JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.8.0" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -371,6 +391,7 @@ async function navigate(view) {
   const renders = {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
     session: renderSession,
+    tricktionary: renderTricktionary,
     command: renderCoachCommand,
     sessionViewer: renderSessionViewer,
     parents: renderParents,
@@ -395,13 +416,44 @@ async function navigate(view) {
 async function getLeaderboard() {
   const { data, error } = await client.rpc("get_weekly_leaderboard");
   if (error) throw error;
-  return data || [];
+  const rows = data || [];
+  const ids = rows.map((row) => row.athlete_id).filter(Boolean);
+  if (!ids.length) return rows;
+  const { data: profiles } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary").in("id", ids);
+  const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
+  return rows.map((row) => ({ ...row, daily_pb_seconds: row.daily_pb_seconds ?? byId.get(row.athlete_id)?.daily_pb_seconds ?? null }));
 }
 
 async function getPointHistory(athleteId) {
   const { data, error } = await client.rpc("get_point_history", { p_athlete_id: athleteId });
   if (error) throw error;
   return data || [];
+}
+
+async function getAssignmentAttempts(athleteId, sinceIso = weekStartIso()) {
+  const { data, error } = await client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).gte("attempted_at", sinceIso).order("attempted_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getTricktionaryData(athleteId) {
+  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult] = await Promise.all([
+    client.from("profiles").select("*").eq("id", athleteId).single(),
+    client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).limit(400),
+    client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
+    client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).order("attempted_at", { ascending: false }).limit(600),
+    client.from("training_sessions").select("*").eq("athlete_id", athleteId).order("started_at", { ascending: false }).limit(60),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(600),
+  ]);
+  [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult].forEach((result) => { if (result.error) throw result.error; });
+  return {
+    profile: profileResult.data,
+    assignments: assignmentsResult.data || [],
+    progress: progressResult.data || [],
+    attempts: attemptsResult.data || [],
+    sessions: sessionsResult.data || [],
+    awards: awardsResult.data || [],
+  };
 }
 
 async function getPublicAthleteProfile(athleteId) {
@@ -420,16 +472,18 @@ async function getWeeklyAssignments(athleteId) {
       throw rolloverError;
     }
   }
-  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }] = await Promise.all([
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStartDate()).order("sort_order", { ascending: true }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
     client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", weekStartIso()),
     client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
+    client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStartDate()).order("attempted_at", { ascending: false }),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
   if (awardsError) throw awardsError;
   if (percentageError) throw percentageError;
+  if (attemptError) throw attemptError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
@@ -437,10 +491,17 @@ async function getWeeklyAssignments(athleteId) {
     entries.push(attempt);
     attemptsById.set(attempt.assignment_id, entries);
   });
+  const assignmentAttemptsById = new Map();
+  (assignmentAttempts || []).forEach((attempt) => {
+    const entries = assignmentAttemptsById.get(attempt.assignment_id) || [];
+    entries.push(attempt);
+    assignmentAttemptsById.set(attempt.assignment_id, entries);
+  });
   return {
-    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [] })),
+    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] })),
     awards: awards || [],
     percentageAttempts: percentageAttempts || [],
+    assignmentAttempts: assignmentAttempts || [],
   };
 }
 
@@ -465,20 +526,21 @@ async function getCoachVenues() {
 async function getCoachCommandData(roster = []) {
   const ids = roster.map((athlete) => athlete.id);
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
-  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks] = await Promise.all([
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks] = await Promise.all([
     client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
     ids.length ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
     ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category").in("athlete_id", ids).eq("week_start", weekStartDate()) : { data: [], error: null },
     ids.length ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
+    ids.length ? client.from("assignment_attempts").select("*").in("athlete_id", ids).eq("week_start", weekStartDate()).order("attempted_at", { ascending: false }) : { data: [], error: null },
     client.from("attendance_sessions").select("*, attendance_records(*)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
     ids.length ? client.from("parent_athletes").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
     ids.length ? client.from("weekly_progress_notifications").select("*").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
     client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
   ]);
-  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks].forEach((result) => { if (result.error) throw result.error; });
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks].forEach((result) => { if (result.error) throw result.error; });
   return {
     calendar: calendar.data || [],
     statuses: statusRows.data || [],
@@ -486,6 +548,7 @@ async function getCoachCommandData(roster = []) {
     sessions: sessions.data || [],
     scheduleRows: scheduleRows.data || [],
     awards: awards.data || [],
+    assignmentAttempts: assignmentAttempts.data || [],
     attendanceSessions: attendanceSessions.data || [],
     parentLinks: parentLinks.data || [],
     weeklySettings: weeklySettings.data || null,
@@ -665,6 +728,7 @@ const countryOptions = [
   ["IT", "Italy"],
   ["SE", "Sweden"],
   ["NO", "Norway"],
+  ["RU", "Russia"],
   ["DK", "Denmark"],
   ["FI", "Finland"],
   ["BR", "Brazil"],
@@ -712,7 +776,7 @@ async function getActiveCoachGroupSession() {
 
 async function getSessionViewerPlanData(athleteIds = []) {
   if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
+  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
     client.from("weekly_trick_assignments")
       .select("*")
       .in("athlete_id", athleteIds)
@@ -725,6 +789,11 @@ async function getSessionViewerPlanData(athleteIds = []) {
       .select("*")
       .in("athlete_id", athleteIds)
       .order("attempt_number", { ascending: true }),
+    client.from("assignment_attempts")
+      .select("*")
+      .in("athlete_id", athleteIds)
+      .eq("week_start", weekStartDate())
+      .order("attempted_at", { ascending: false }),
     client.from("run_plans")
       .select("*")
       .in("athlete_id", athleteIds)
@@ -737,6 +806,7 @@ async function getSessionViewerPlanData(athleteIds = []) {
   if (error) throw error;
   if (progressError) throw progressError;
   if (percentageError) throw percentageError;
+  if (attemptError) throw attemptError;
   if (runsError) throw runsError;
   if (runProgressError) throw runProgressError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
@@ -746,10 +816,16 @@ async function getSessionViewerPlanData(athleteIds = []) {
     rows.push(attempt);
     attemptsById.set(attempt.assignment_id, rows);
   });
+  const assignmentAttemptsById = new Map();
+  (assignmentAttempts || []).forEach((attempt) => {
+    const rows = assignmentAttemptsById.get(attempt.assignment_id) || [];
+    rows.push(attempt);
+    assignmentAttemptsById.set(attempt.assignment_id, rows);
+  });
   const assignmentsByAthlete = new Map();
   (assignments || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [] });
+    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
   });
   const runsByAthlete = new Map();
@@ -957,10 +1033,17 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
       ? [assignment.notes].filter(Boolean)
       : [assignmentStatus(assignment), assignment.notes].filter(Boolean);
     const meta = metaParts.join(" · ");
+    const attemptCount = assignment.assignmentAttempts?.length || 0;
+    const attemptMeta = `<small class="attempt-count">Attempts: ${attemptCount}</small>`;
+    const controls = interactive ? `
+      <div class="assignment-actions">
+        <button class="assignment-check" type="button" aria-label="${label}" title="${label}" data-assignment-action="${action}" data-assignment-id="${assignment.id}">${complete ? "✓" : ""}</button>
+        <button class="attempt-btn" type="button" aria-label="Mark ${escapeHtml(assignment.trick_name)} attempted" title="Mark attempted" data-assignment-attempt="${assignment.id}">Tried</button>
+      </div>` : `<span class="assignment-check">${complete ? "✓" : ""}</span>`;
     return `
     <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `draggable="true" data-daily-row="${assignment.id}"` : ""}>
-      <button class="assignment-check" type="button" aria-label="${label}" title="${label}" ${interactive ? `data-assignment-action="${action}" data-assignment-id="${assignment.id}"` : "disabled"}>${complete ? "✓" : ""}</button>
-      <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>
+      ${controls}
+      <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${attemptMeta}</div>
     </div>`;
   }).join("");
 }
@@ -1368,7 +1451,7 @@ function showreelHtml(profile = {}, editable = false) {
       ${editable ? `<button class="danger-btn compact-btn" type="button" data-remove-showreel="${index}">Remove</button>` : ""}
     </div>`).join("") : `<div class="empty compact-empty">No showreel videos yet.</div>`;
   return `<section class="panel showreel-panel">
-    <div class="panel-head"><div><div class="panel-title">Showreel</div><div class="panel-meta">2-3 short BMX highlight clips</div></div></div>
+    <div class="panel-head"><div><div class="panel-title">Showreel</div><div class="panel-meta">2-3 BMX highlight clips · max 30 seconds each</div></div></div>
     <div class="showreel-grid">${videoHtml}</div>
     ${editable ? `<div class="settings-divider"></div><form id="showreel-form" class="showreel-form"><input id="showreel-file" name="video" type="file" accept="video/*" hidden><button class="secondary-btn" type="button" id="choose-showreel">Upload showreel clip</button><small>${videos.length}/3 videos added</small></form>` : ""}
   </section>`;
@@ -1533,6 +1616,224 @@ function weekSummaryHtml(assignments, awards) {
   </section>`;
 }
 
+function trickObstacleCategory(assignment = {}) {
+  const text = `${assignment.trick_name || ""} ${assignment.notes || ""} ${assignment.venue || ""}`.toLowerCase();
+  if (/\bbox\b|box jump|jump box/.test(text)) return "Box tricks";
+  if (/\bspine\b/.test(text)) return "Spine tricks";
+  if (/\bair\b|quarter|vert|flyout/.test(text)) return "Air tricks";
+  if (/\bhip\b/.test(text)) return "Hip tricks";
+  return "Other tricks";
+}
+
+function manualTricktionary(profile = {}) {
+  return Array.isArray(profile.manual_tricktionary) ? profile.manual_tricktionary : [];
+}
+
+function coachManualTricktionaryPanel(athlete = {}) {
+  const manual = manualTricktionary(athlete);
+  const rows = manual.length ? manual.map((trick) => {
+    const title = String(trick.title || trick.name || "").trim();
+    if (!title) return "";
+    const addedAt = trick.addedAt || trick.createdAt;
+    return `<div class="list-row">
+      <div><strong>${escapeHtml(title)}</strong><small>Manual Tricktionary entry${addedAt ? ` · Added ${escapeHtml(dateLabel(addedAt))}` : ""}</small></div>
+      <button class="danger-btn compact-btn" type="button" data-coach-remove-manual-trick="${escapeHtml(trick.id || title)}">Remove</button>
+    </div>`;
+  }).filter(Boolean).join("") : `<div class="empty compact-empty">No manual Tricktionary tricks added yet.</div>`;
+  return `<section class="panel">
+    <div class="panel-head"><div><div class="panel-title">Tricktionary management</div><div class="panel-meta">Add landed tricks that were not captured on a weekly sheet</div></div></div>
+    <form id="coach-manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a landed trick for this rider"><button class="primary-btn" type="submit">+</button></form>
+    <div class="goal-list">${rows}</div>
+    <small class="form-note">Manual Tricktionary entries are visible to the rider, linked parents, and the public profile. They do not award points.</small>
+  </section>`;
+}
+
+function landedTricktionaryEntries(data = {}) {
+  const progressByAssignment = new Map((data.progress || []).filter((row) => row.completed_at).map((row) => [row.assignment_id, row]));
+  const awardAssignmentIds = new Set((data.awards || []).map((award) => award.assignment_id).filter(Boolean));
+  const landed = (data.assignments || []).filter((assignment) => progressByAssignment.has(assignment.id) || awardAssignmentIds.has(assignment.id));
+  const byName = new Map();
+  landed.forEach((assignment) => {
+    const key = String(assignment.trick_name || "").trim().toLowerCase();
+    if (!key) return;
+    const previous = byName.get(key);
+    const progress = progressByAssignment.get(assignment.id);
+    const landedAt = progress?.completed_at || assignment.updated_at || assignment.created_at;
+    if (!previous || new Date(landedAt) < new Date(previous.landedAt || Date.now())) {
+      byName.set(key, {
+        id: assignment.id,
+        title: assignment.trick_name,
+        source: categoryInfo[assignment.category]?.label || assignment.category,
+        category: assignment.category,
+        obstacle: trickObstacleCategory(assignment),
+        weekStart: assignment.week_start,
+        landedAt,
+        manual: false,
+      });
+    }
+  });
+  manualTricktionary(data.profile).forEach((trick) => {
+    const title = String(trick.title || trick.name || "").trim();
+    if (!title) return;
+    const key = title.toLowerCase();
+    if (!byName.has(key)) {
+      byName.set(key, {
+        id: trick.id || key,
+        title,
+        source: "Manual add",
+        category: "manual",
+        obstacle: "Other tricks",
+        weekStart: "",
+        landedAt: trick.addedAt || trick.createdAt || new Date().toISOString(),
+        manual: true,
+      });
+    }
+  });
+  return [...byName.values()].sort((a, b) => String(a.title).localeCompare(String(b.title)));
+}
+
+function attemptsByTrick(attempts = []) {
+  return attempts.reduce((map, attempt) => {
+    const key = String(attempt.trick_name || "").trim().toLowerCase();
+    if (!key) return map;
+    const entry = map.get(key) || { title: attempt.trick_name, count: 0 };
+    entry.count += 1;
+    map.set(key, entry);
+    return map;
+  }, new Map());
+}
+
+function tricktionaryEntriesHtml(entries = [], attempts = []) {
+  const attemptMap = attemptsByTrick(attempts);
+  if (!entries.length) return `<div class="empty compact-empty">No landed tricks in the Tricktionary yet.</div>`;
+  return `<div class="tricktionary-grid">${entries.map((entry) => {
+    const count = attemptMap.get(String(entry.title).toLowerCase())?.count || 0;
+    return `<article class="tricktionary-card">
+      <div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Week ${escapeHtml(entry.weekStart)}` : ""}</small></div>
+      <div class="tricktionary-card-meta"><span>${escapeHtml(entry.obstacle)}</span><span>Attempts: ${count}</span></div>
+      ${entry.manual && state.profile?.id === entry.ownerId ? `<button class="danger-btn compact-btn" type="button" data-remove-manual-trick="${escapeHtml(entry.id)}">Remove</button>` : ""}
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function previousTrainingSheetsHtml(data = {}) {
+  const attemptsByAssignment = (data.attempts || []).reduce((map, attempt) => {
+    map.set(attempt.assignment_id, (map.get(attempt.assignment_id) || 0) + 1);
+    return map;
+  }, new Map());
+  const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
+  const awardsByAssignment = (data.awards || []).reduce((map, award) => {
+    const rows = map.get(award.assignment_id) || [];
+    rows.push(award);
+    map.set(award.assignment_id, rows);
+    return map;
+  }, new Map());
+  const weeks = (data.assignments || []).reduce((map, assignment) => {
+    const week = assignment.week_start || "Unknown week";
+    const rows = map.get(week) || [];
+    rows.push(assignment);
+    map.set(week, rows);
+    return map;
+  }, new Map());
+  if (!weeks.size) return `<details class="command-accordion"><summary><span><strong>Previous Training Sheets</strong><small>No previous sheets yet</small></span><span class="accordion-caret">Open</span></summary><div class="empty compact-empty">No previous training sheets saved yet.</div></details>`;
+  const weekRows = [...weeks.entries()].map(([week, assignments]) => {
+    const points = assignments.reduce((sum, assignment) => sum + (awardsByAssignment.get(assignment.id) || []).reduce((total, award) => total + Number(award.points || 0), 0), 0);
+    const groups = ["Box tricks", "Spine tricks", "Air tricks", "Hip tricks", "Other tricks"].map((label) => {
+      const rows = assignments.filter((assignment) => trickObstacleCategory(assignment) === label);
+      if (!rows.length) return "";
+      return `<div class="previous-sheet-group"><strong>${escapeHtml(label)}</strong>${rows.map((assignment) => {
+        const done = Boolean(progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length);
+        const attempts = attemptsByAssignment.get(assignment.id) || 0;
+        return `<div class="list-row previous-sheet-row ${done ? "complete" : ""}"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(categoryInfo[assignment.category]?.label || assignment.category)} · ${done ? "Completed" : "Not completed"} · Attempts: ${attempts}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div><span class="assignment-check">${done ? "✓" : ""}</span></div>`;
+      }).join("")}</div>`;
+    }).filter(Boolean).join("");
+    const dailyTotal = assignments.filter((assignment) => assignment.category === "daily").length;
+    const dailyDone = assignments.filter((assignment) => assignment.category === "daily" && (progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length)).length;
+    const venues = [...new Set(assignments.map((assignment) => venueLabel(assignment.venue)).filter(Boolean))].join(", ");
+    return `<details class="previous-sheet-week">
+      <summary><span><strong>Week ${escapeHtml(week)}</strong><small>${escapeHtml(venues || "Venue not set")} · ${dailyDone}/${dailyTotal} Daily · ${points} pts</small></span><span class="accordion-caret">Open</span></summary>
+      <div class="previous-sheet-body">${groups}</div>
+    </details>`;
+  }).join("");
+  return `<details class="command-accordion previous-sheets-accordion">
+    <summary><span><strong>Previous Training Sheets</strong><small>${weeks.size} saved week${weeks.size === 1 ? "" : "s"} with completed and attempted tricks</small></span><span class="accordion-caret">Open</span></summary>
+    <div class="previous-sheet-stack">${weekRows}</div>
+  </details>`;
+}
+
+async function renderTricktionary() {
+  if (state.profile?.role === "parent") return renderParentTricktionary();
+  const data = await getTricktionaryData(state.user.id);
+  state.profile = data.profile || state.profile;
+  const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: state.user.id }));
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Progress history</div><h1>My <span>Tricktionary</span></h1><p>Your personal BMX trick library, built from landed training-sheet tricks plus manual history.</p></div></div>
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">${entries.length} tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
+      <form id="manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a trick you landed before JKCREW"><button class="primary-btn" type="submit">+</button></form>
+      ${tricktionaryEntriesHtml(entries, data.attempts)}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Attempted this week</div><div class="panel-meta">Effort count without awarding points</div></div></div>
+      ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
+    </section>
+    ${previousTrainingSheetsHtml(data)}`;
+  document.querySelector("#manual-trick-form")?.addEventListener("submit", saveManualTrick);
+  document.querySelectorAll("[data-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeManualTrick));
+}
+
+function weeklyAttemptsHtml(attempts = []) {
+  const rows = [...attemptsByTrick(attempts).values()].sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
+  if (!rows.length) return `<div class="empty compact-empty">No attempted tricks logged this week yet.</div>`;
+  return `<div class="attempt-summary-list">${rows.map((row) => `<div class="list-row"><div><strong>${escapeHtml(row.title)}</strong><small>Attempted this week</small></div><span class="points">${row.count}</span></div>`).join("")}</div>`;
+}
+
+async function saveManualTrick(event) {
+  event.preventDefault();
+  const title = String(new FormData(event.currentTarget).get("title") || "").trim();
+  if (!title) return;
+  const current = manualTricktionary(state.profile);
+  const manual_tricktionary = [{ id: crypto.randomUUID(), title: title.slice(0, 120), addedAt: new Date().toISOString() }, ...current];
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify("Trick added to your Tricktionary. No points were awarded.");
+  await renderTricktionary();
+}
+
+async function removeManualTrick(event) {
+  const id = event.currentTarget.dataset.removeManualTrick;
+  const manual_tricktionary = manualTricktionary(state.profile).filter((trick) => trick.id !== id);
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify("Manual Tricktionary trick removed. Historical session data was kept.");
+  await renderTricktionary();
+}
+
+async function renderParentTricktionary() {
+  const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
+  if (error) throw error;
+  if (!links?.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your coach needs to link this account to a rider first.</p></div></div>`;
+    return;
+  }
+  const sections = await Promise.all(links.map(async (link) => {
+    const data = await getTricktionaryData(link.athlete_id);
+    const entries = landedTricktionaryEntries(data);
+    return `<section class="panel parent-child-card">
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
+      ${tricktionaryEntriesHtml(entries, data.attempts)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
+      <div class="settings-divider"></div>
+      ${previousTrainingSheetsHtml(data)}
+    </section>`;
+  }));
+  document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Tricktionary <span>history</span></h1><p>Read-only landed tricks, attempts, previous sheets, and Daily PBs for linked riders.</p></div></div>${sections.join("")}`;
+}
+
 async function renderAthleteHome() {
   const [{ data: sessions, error }, leaderboard, schedule, dashboardItems] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
@@ -1540,7 +1841,7 @@ async function renderAthleteHome() {
     getWeeklyAssignments(state.user.id),
     getDashboardItems(state.user.id),
   ]);
-  const { assignments, awards } = schedule;
+  const { assignments, awards, assignmentAttempts } = schedule;
   if (error) throw error;
   const weekly = sessions.filter((session) => new Date(session.started_at) >= new Date(weekStartIso()));
   const weeklyPoints = weekly.reduce((sum, session) => sum + session.total_points, 0);
@@ -1565,7 +1866,7 @@ async function renderAthleteHome() {
         ${statCard("Important tasks", openTasks, "", "Open right now")}
       </div>
     </section>
-    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily point needs 20:00 or less</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span></div></section>` : ""}
+    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Important tasks</div><div class="panel-meta">Events and run planner now live in Contests</div></div></div>
@@ -1617,7 +1918,7 @@ async function renderParentHome() {
   const leaderboard = await getLeaderboard();
   const linkByAthlete = new Map((links || []).map((link) => [link.athlete_id, link]));
   const cards = await Promise.all((athletes || []).map(async (athlete) => {
-    const [{ assignments, awards }, helpRequests, dashboardItems, sessions, runs] = await Promise.all([
+    const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, runs] = await Promise.all([
       getWeeklyAssignments(athlete.id),
       getHelpRequests(athlete.id),
       getDashboardItems(athlete.id),
@@ -1644,6 +1945,9 @@ async function renderParentHome() {
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Dialled, One Bangs, Percentage")}
       </div>
       <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(assignmentAttempts || [])}
       ${goalsReadonlyHtml(athlete)}
       <div class="settings-divider"></div>
       <div class="panel-title">Badges & achievements</div>
@@ -1682,7 +1986,7 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const badge = pointsKey === "weekly_points" && !row.isBenchmarkBot ? medalForRank(row, realIndex, realRows.length) : "";
   const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
   const country = countryBadge(row);
-  const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : "";
+  const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : (row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "");
   const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
   const content = `
     <div class="rank">#${index + 1}</div>
@@ -1766,6 +2070,10 @@ function scoreAdjustmentPanel(rows = []) {
       <div class="field"><label for="adjust-reason">Reason</label><input id="adjust-reason" name="reason" maxlength="160" placeholder="Naughty, cheating, bonus effort..."></div>
       <button class="primary-btn" type="submit">Apply score change</button>
     </form>
+    <form id="point-recalc-form" class="score-adjust-form point-recalc-form">
+      <div class="field"><label for="recalc-athlete">Recalculate rider totals</label><select id="recalc-athlete" name="athleteId" required>${options}</select></div>
+      <button class="secondary-btn" type="submit">Recalculate from point history</button>
+    </form>
   </section>`;
 }
 
@@ -1813,6 +2121,7 @@ async function renderSession() {
     document.querySelector("#create-session").addEventListener("click", startSession);
     document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
     document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
+    document.querySelectorAll("[data-assignment-attempt]").forEach((button) => button.addEventListener("click", recordAssignmentAttempt));
     document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     return;
   }
@@ -1820,7 +2129,7 @@ async function renderSession() {
   const attemptsHtml = state.attempts.length ? state.attempts.map((attempt) => `
     <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)} · ${formatTime(attempt.duration_seconds || 0)}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
   document.querySelector("#view").innerHTML = `
-    <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>One Bang = 2pt</span><span>Dialled = 2pt</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
+    <section class="session-hero compact-session-hero"><div><div class="timer-label">Session time elapsed · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Daily list = 1pt</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span><span>Session total: ${state.activeTraining.total_points} pts</span></div></section>
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div><div class="actions"><button class="danger-btn" id="end-session">End session</button></div></div>
     ${venueSelectorHtml(assignments)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(sessionAssignments, true)}</section>
@@ -1833,6 +2142,7 @@ async function renderSession() {
   document.querySelector("#end-session").addEventListener("click", endSession);
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
+  document.querySelectorAll("[data-assignment-attempt]").forEach((button) => button.addEventListener("click", recordAssignmentAttempt));
   document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   updateTimer();
   state.timer = setInterval(updateTimer, 1000);
@@ -1841,6 +2151,23 @@ async function renderSession() {
 function updateTimer() {
   const element = document.querySelector("#trick-timer");
   if (element) element.textContent = formatTime(Math.floor((Date.now() - state.trickStartedAt) / 1000));
+}
+
+async function saveOwnDailyCompletionTime(seconds) {
+  const value = Math.max(0, Number(seconds || 0));
+  const previousPb = Number(state.profile?.daily_pb_seconds || 0);
+  const isNewPb = !previousPb || value < previousPb;
+  const profileUpdate = isNewPb
+    ? { daily_pb_seconds: value, daily_pb_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    : { updated_at: new Date().toISOString() };
+  if (state.activeTraining?.id) {
+    await client.from("training_sessions").update({ daily_completed_seconds: value, daily_completed_at: new Date().toISOString() }).eq("id", state.activeTraining.id);
+  }
+  if (isNewPb) {
+    const { data, error } = await client.from("profiles").update(profileUpdate).eq("id", state.user.id).select().single();
+    if (!error && data) state.profile = data;
+  }
+  return { previousPb, isNewPb, seconds: value };
 }
 
 async function startSession() {
@@ -1864,8 +2191,26 @@ async function recordAssignmentAction(event) {
   const result = Array.isArray(data) ? data[0] : data;
   const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
   const message = `${result.message}${pointsNote}.`;
-  if (result.category === "daily" && result.points_awarded > 0) celebrate(message);
-  else notify(message);
+  if (result.category === "daily" && result.points_awarded > 0) {
+    const completion = await saveOwnDailyCompletionTime(Math.floor((Date.now() - state.trickStartedAt) / 1000));
+    celebrate(completion.isNewPb ? `New PB! ${formatPbTime(completion.seconds)}` : `${message} Completed today in ${formatPbTime(completion.seconds)}.`);
+  } else notify(message);
+  if (state.view === "home") await renderAthleteHome();
+  else await renderSession();
+}
+
+async function recordAssignmentAttempt(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  const { data, error } = await client.rpc("record_assignment_attempt", {
+    p_assignment_id: button.dataset.assignmentAttempt,
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
 }
@@ -2006,6 +2351,7 @@ async function renderBoard() {
     renderBoard();
   }));
   document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
+  document.querySelector("#point-recalc-form")?.addEventListener("submit", submitPointRecalculation);
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
   document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
   document.querySelectorAll("[data-mention-athlete]").forEach((button) => button.addEventListener("click", openMentionedAthleteProfile));
@@ -2042,6 +2388,27 @@ async function submitScoreAdjustment(event) {
   if (signedPoints < 0) await createDeductionParentNotification(athleteId, amount, reason);
   notify(`${signedPoints > 0 ? "Added" : "Deducted"} ${amount} point${amount === 1 ? "" : "s"}.`);
   await renderBoard();
+}
+
+async function submitPointRecalculation(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can recalculate points.", "error");
+  const form = new FormData(event.currentTarget);
+  const athleteId = String(form.get("athleteId") || "");
+  if (!athleteId) return notify("Choose a rider first.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Recalculating...";
+  const { data, error } = await client.rpc("recalculate_athlete_points", { p_athlete_id: athleteId });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Recalculate from point history";
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(`Point audit: ${result?.weekly_points || 0} weekly · ${result?.all_time_points || 0} all-time · ${result?.point_events || 0} events.`);
+  button.disabled = false;
+  button.textContent = "Recalculate from point history";
 }
 
 async function createDeductionParentNotification(athleteId, amount, reason) {
@@ -2353,6 +2720,17 @@ async function renderPublicAthleteProfile() {
     return;
   }
   const badges = earnedBadges(profile.badges);
+  let publicTricktionary = "";
+  try {
+    const trickData = await getTricktionaryData(state.publicAthleteId);
+    const entries = landedTricktionaryEntries(trickData);
+    publicTricktionary = `<details class="command-accordion public-tricktionary-dropdown">
+      <summary><span><strong>Tricktionary</strong><small>${entries.length} public landed trick${entries.length === 1 ? "" : "s"}</small></span><span class="accordion-caret">Open</span></summary>
+      ${tricktionaryEntriesHtml(entries, [])}
+    </details>`;
+  } catch (_error) {
+    publicTricktionary = `<details class="command-accordion public-tricktionary-dropdown"><summary><span><strong>Tricktionary</strong><small>Not visible yet</small></span><span class="accordion-caret">Open</span></summary><div class="empty compact-empty">This rider's Tricktionary is not available publicly yet.</div></details>`;
+  }
   const badgeHtml = [
     profile.is_weekly_winner ? `<span class="public-badge"><span>🏅</span>Weekly leader</span>` : "",
     profile.is_last_place ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
@@ -2382,7 +2760,8 @@ async function renderPublicAthleteProfile() {
     <section class="panel public-profile-details">
       <div class="public-detail"><div class="panel-title">Sponsors</div>${linesHtml(profile.sponsors, "No sponsors added yet.")}</div>
       <div class="public-detail"><div class="panel-title">Achievements</div>${linesHtml(profile.achievements, "No achievements added yet.")}</div>
-    </section>`;
+    </section>
+    ${publicTricktionary}`;
   document.querySelector("#back-to-board").addEventListener("click", () => navigate("board"));
 }
 
@@ -2579,16 +2958,19 @@ async function renderSessionViewer() {
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map((entry) => {
-    const { athlete, daily, venue } = entry;
+    const { athlete, daily, venue, participant } = entry;
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
     const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+    const finish = participant?.daily_finish_seconds ? ` · Finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
+    const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
     return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
       <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
-        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
+        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete${finish}</small></div></div>
         <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
         <div class="viewer-progress"><span style="width:${percent}%"></span></div>
       </button>
+      ${finishButton}
       ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
@@ -2689,10 +3071,12 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
   }
   const list = assignments.length ? assignments.map((assignment) => {
     const done = isAssignmentComplete(assignment);
-    return `<button class="viewer-trick-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}">
-      <span class="assignment-check">${done ? "✓" : ""}</span>
-      <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></span>
-    </button>`;
+    const attemptCount = assignment.assignmentAttempts?.length || 0;
+    return `<div class="viewer-trick-row viewer-attempt-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}">
+      <button class="assignment-check" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}" aria-label="${done ? "Untick landed" : "Mark landed"}">${done ? "✓" : ""}</button>
+      <button class="attempt-btn" type="button" data-viewer-assignment-attempt="${assignment.id}" aria-label="Mark attempted">Tried</button>
+      <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""} · Attempts: ${attemptCount}</small></span>
+    </div>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
   const label = listId === "daily" ? `${venueLabel(entry.venue)} Daily Tricks` : info.label;
   return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div><div class="viewer-trick-list">${list}</div>`;
@@ -2760,7 +3144,9 @@ function bindSessionViewerActions() {
   document.querySelector("#pause-group-session")?.addEventListener("click", toggleViewerGroupSessionPause);
   document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
   document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
+  document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
   document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
@@ -2826,6 +3212,26 @@ async function endViewerGroupSession() {
   await renderSessionViewer();
 }
 
+async function finishViewerDailyTimer(event) {
+  const button = event.currentTarget;
+  const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
+  if (!session) return notify("Start the group session first.", "error");
+  const seconds = groupSessionElapsedSeconds(session);
+  button.disabled = true;
+  const { data, error } = await client.rpc("finish_group_session_daily", {
+    p_group_session_id: session.id,
+    p_athlete_id: button.dataset.finishDailyAthlete,
+    p_seconds: seconds,
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(result?.is_new_pb ? `New Daily PB saved: ${formatPbTime(result.daily_finish_seconds)}` : `Daily finish saved: ${formatPbTime(result?.daily_finish_seconds || seconds)}`);
+  await renderSessionViewer();
+}
+
 async function recordViewerAssignmentAction(event) {
   const button = event.currentTarget;
   button.disabled = true;
@@ -2839,6 +3245,23 @@ async function recordViewerAssignmentAction(event) {
   }
   const result = Array.isArray(data) ? data[0] : data;
   notify(result.message || "Trick progress updated.");
+  await refreshSessionViewerLight();
+}
+
+async function recordViewerAssignmentAttempt(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
+  const { data, error } = await client.rpc("record_assignment_attempt", {
+    p_assignment_id: button.dataset.viewerAssignmentAttempt,
+    p_group_session_id: session?.id || null,
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
   await refreshSessionViewerLight();
 }
 
@@ -2919,19 +3342,23 @@ async function refreshSessionViewerLight() {
     const allAssignments = assignmentsByAthlete.get(athlete.id) || [];
     const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
     const daily = assignmentsForVenue(allDaily, state.sessionViewerVenue);
-    return { athlete, assignments: allAssignments, allDaily, daily, venue: state.sessionViewerVenue, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
+    const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
+    return { athlete, assignments: allAssignments, allDaily, daily, venue: state.sessionViewerVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
   });
   rosterGrid.innerHTML = schedules.length ? schedules.map((entry) => {
-    const { athlete, daily, venue } = entry;
+    const { athlete, daily, venue, participant } = entry;
     const complete = daily.filter(isAssignmentComplete).length;
     const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
     const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+    const finish = participant?.daily_finish_seconds ? ` · Finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
+    const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
     return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
       <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
-        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete</small></div></div>
+        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete${finish}</small></div></div>
         <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
         <div class="viewer-progress"><span style="width:${percent}%"></span></div>
       </button>
+      ${finishButton}
       ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
@@ -2943,7 +3370,9 @@ function bindSessionViewerFastActions() {
     state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
     refreshSessionViewerLight();
   }));
+  document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
   document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
@@ -3068,6 +3497,9 @@ async function generateWeeklyNotificationPreviews(roster = [], commandData = {})
     const sessions = (commandData.sessions || []).filter((session) => session.athlete_id === athlete.id);
     const awards = (commandData.awards || []).filter((award) => award.athlete_id === athlete.id);
     const assignments = (commandData.scheduleRows || []).filter((assignment) => assignment.athlete_id === athlete.id);
+    const attempts = (commandData.assignmentAttempts || []).filter((attempt) => attempt.athlete_id === athlete.id);
+    const attemptRows = [...attemptsByTrick(attempts).values()].sort((a, b) => b.count - a.count).slice(0, 5);
+    const attemptSummary = attemptRows.length ? ` Attempted this week: ${attemptRows.map((row) => `${row.title} (${row.count})`).join(", ")}.` : "";
     const venues = [...new Set(sessions.map((session) => session.venue).filter(Boolean))];
     const status = statuses.get(athlete.id)?.heat_status || "on_track";
     const statusLabel = heatStatuses[status]?.label || "On track";
@@ -3078,9 +3510,11 @@ async function generateWeeklyNotificationPreviews(roster = [], commandData = {})
     const badgesEarned = Array.isArray(athlete.badges) ? athlete.badges.length : 0;
     const pointsEarned = awards.reduce((sum, award) => sum + Number(award.points || 0), 0);
     const weeklyTasks = assignments.filter((assignment) => assignment.category !== "daily").length;
+    const dailyTimes = sessions.map((session) => Number(session.daily_completed_seconds || 0)).filter(Boolean);
+    const latestDailyTime = dailyTimes[0] || null;
     const summary = sessions.length
-      ? `${firstName(athlete)} logged ${sessions.length} session${sessions.length === 1 ? "" : "s"}${venues.length ? ` at ${venues.join(", ")}` : ""}, completed ${dailyAwards} Daily Trick list${dailyAwards === 1 ? "" : "s"}, ${oneBangAwards} One Bangs, ${dialledAwards} Dialled tricks, ${goalsCompleted} goal${goalsCompleted === 1 ? "" : "s"}, and earned ${pointsEarned} points. Status: ${statusLabel}. Next focus: ${statuses.get(athlete.id)?.training_focus || "keep building consistency and flow."}`
-      : `${firstName(athlete)} has no training data recorded this week. Status: ${statusLabel}. Suggested next focus: get one clean session logged and complete the Daily Tricks list.`;
+      ? `${firstName(athlete)} logged ${sessions.length} session${sessions.length === 1 ? "" : "s"}${venues.length ? ` at ${venues.join(", ")}` : ""}, completed ${dailyAwards} Daily Trick list${dailyAwards === 1 ? "" : "s"}, ${oneBangAwards} One Bangs, ${dialledAwards} Dialled tricks, ${goalsCompleted} goal${goalsCompleted === 1 ? "" : "s"}, and earned ${pointsEarned} points.${attemptSummary} Daily PB: ${formatPbTime(athlete.daily_pb_seconds)}${latestDailyTime ? `, latest Daily time: ${formatPbTime(latestDailyTime)}` : ""}. Status: ${statusLabel}. Next focus: ${statuses.get(athlete.id)?.training_focus || "keep building consistency and flow."}`
+      : `${firstName(athlete)} has no training data recorded this week.${attemptSummary} Daily PB: ${formatPbTime(athlete.daily_pb_seconds)}. Status: ${statusLabel}. Suggested next focus: get one clean session logged and complete the Daily Tricks list.`;
     const base = {
       coach_id: state.user.id,
       athlete_id: athlete.id,
@@ -3093,6 +3527,10 @@ async function generateWeeklyNotificationPreviews(roster = [], commandData = {})
         sessions: sessions.length,
         venues,
         daily_lists_completed: dailyAwards,
+        attempted_tricks: attemptRows,
+        attempt_count: attempts.length,
+        daily_pb_seconds: athlete.daily_pb_seconds || null,
+        latest_daily_completed_seconds: latestDailyTime,
         daily_tricks_completed: awards.filter((award) => award.award_key?.startsWith("daily-trick:")).length,
         one_bangs_completed: oneBangAwards,
         dialled_completed: dialledAwards,
@@ -3485,7 +3923,7 @@ async function renderCoachPreview(mode = "student") {
   const events = dashboardItems.filter((item) => item.item_type === "event");
   const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
   const previewBody = mode === "parent"
-    ? coachParentPreviewHtml({ athlete, assignments, awards, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems })
+    ? coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems })
     : coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent });
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" data-view="student">Back to profile</button><button class="secondary-btn" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
@@ -3517,7 +3955,7 @@ function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, even
   </div>`;
 }
 
-function coachParentPreviewHtml({ athlete, assignments, awards, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems }) {
+function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
   return `<div class="phone-preview-content">
@@ -3530,6 +3968,9 @@ function coachParentPreviewHtml({ athlete, assignments, awards, dashboardItems, 
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
       </div>
       <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(assignmentAttempts)}
       ${goalsReadonlyHtml(athlete)}
       <div class="settings-divider"></div>
       <div class="panel-title">Training plan</div>
@@ -3822,6 +4263,7 @@ async function renderStudentProfile() {
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Current weekly tricks</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
     ${extraTricksSection(athlete, false)}
+    ${coachManualTricktionaryPanel(athlete)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Student Plan Builder</div><div class="panel-meta">Open the section you need · one trick or line per row · notes after a dash</div></div></div>
       <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
     </section>
@@ -3864,6 +4306,8 @@ async function renderStudentProfile() {
     });
   });
   document.querySelector("#coach-athlete-profile-form").addEventListener("submit", saveCoachAthleteProfile);
+  document.querySelector("#coach-manual-trick-form")?.addEventListener("submit", saveCoachManualTrick);
+  document.querySelectorAll("[data-coach-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeCoachManualTrick));
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
   document.querySelector("#private-record-form").addEventListener("submit", savePrivateRecord);
   document.querySelector("#document-form").addEventListener("submit", saveAthleteDocument);
@@ -4000,6 +4444,48 @@ async function saveCoachAthleteProfile(event) {
   if (groupError) return notify(messageFrom(groupError), "error");
   await client.from("coach_athletes").update({ group_name: groupNames[0] }).eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId);
   notify("Rider profile details saved.");
+  await renderStudentProfile();
+}
+
+async function selectedCoachAthleteProfile() {
+  if (!isCoachRole(state.profile?.role) || !state.selectedAthleteId) return null;
+  const roster = await getCoachRoster();
+  return roster.find((athlete) => athlete.id === state.selectedAthleteId) || null;
+}
+
+async function saveCoachManualTrick(event) {
+  event.preventDefault();
+  const title = String(new FormData(event.currentTarget).get("title") || "").trim();
+  if (!title) return;
+  const athlete = await selectedCoachAthleteProfile();
+  if (!athlete) return notify("Choose a rider before adding to their Tricktionary.", "error");
+  const current = manualTricktionary(athlete);
+  const exists = current.some((trick) => String(trick.title || trick.name || "").trim().toLowerCase() === title.toLowerCase());
+  if (exists) return notify("That trick is already in this rider's manual Tricktionary.", "error");
+  const manual_tricktionary = [{
+    id: crypto.randomUUID(),
+    title: title.slice(0, 120),
+    addedAt: new Date().toISOString(),
+    addedBy: state.user.id,
+    source: "coach",
+  }, ...current];
+  const { error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", athlete.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Trick added to the rider's Tricktionary. No points were awarded.");
+  await renderStudentProfile();
+}
+
+async function removeCoachManualTrick(event) {
+  const removeId = event.currentTarget.dataset.coachRemoveManualTrick;
+  const athlete = await selectedCoachAthleteProfile();
+  if (!athlete || !removeId) return notify("Choose a rider before changing their Tricktionary.", "error");
+  const manual_tricktionary = manualTricktionary(athlete).filter((trick) => {
+    const id = trick.id || String(trick.title || trick.name || "").trim();
+    return id !== removeId;
+  });
+  const { error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", athlete.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Manual Tricktionary trick removed. Historical session data was kept.");
   await renderStudentProfile();
 }
 
@@ -4643,12 +5129,14 @@ async function saveOwnProfileMedia(update, message) {
 async function addShowreelVideo(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
-  if (file.size > 18 * 1024 * 1024) return notify("Choose a short video under 18MB.", "error");
+  if (file.size > 36 * 1024 * 1024) return notify("Choose a 30 second showreel clip under 36MB.", "error");
   const current = showreelVideos(state.profile);
   if (current.length >= 3) return notify("You can add up to 3 showreel videos.", "error");
   try {
+    const duration = await videoDurationSeconds(file);
+    if (duration > 30.5) return notify("Showreel clips can be up to 30 seconds. Please trim this video and upload again.", "error");
     const dataUrl = await fileToDataUrl(file);
-    current.push({ id: crypto.randomUUID(), dataUrl, name: file.name, addedAt: new Date().toISOString() });
+    current.push({ id: crypto.randomUUID(), dataUrl, name: file.name, durationSeconds: Math.round(duration), addedAt: new Date().toISOString() });
     await saveOwnProfileMedia({ showreel_videos: current }, "Showreel video added.");
   } catch (_error) {
     notify("Could not read that video. Try another short clip.", "error");
@@ -4718,7 +5206,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark">JK<span>CREW</span></div><p>Could not load the app.</p></div>`;
+  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.8.0" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
 });
 
@@ -4731,7 +5219,7 @@ window.addEventListener("beforeinstallprompt", (event) => {
 window.addEventListener("appinstalled", () => {
   deferredInstallPrompt = null;
   updateInstallButton();
-  notify("JKCREW installed. You can launch it from your apps.");
+  notify("JK Coaching installed. You can launch it from your apps.");
 });
 window.addEventListener("load", async () => {
   updateInstallButton();
