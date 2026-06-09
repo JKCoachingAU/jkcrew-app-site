@@ -99,6 +99,17 @@ const isStandalone = () => window.matchMedia("(display-mode: standalone)").match
 const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
 const avatarUrl = (profile = {}) => profile.avatar?.dataUrl || "";
+const normalizedTheme = (value) => value === "light" ? "light" : "dark";
+function applyTheme(value = "dark") {
+  const theme = normalizedTheme(value);
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f1ea" : "#050706");
+  try {
+    localStorage.setItem("jkcrew-theme", theme);
+  } catch {
+    // Theme still applies for this session if storage is blocked.
+  }
+}
 const firstName = (profile = {}) => String(profile.display_name || "This rider").split(/\s+/).filter(Boolean)[0] || "This rider";
 const isCoachRole = (role) => ["coach", "admin"].includes(role);
 const linesHtml = (value = "", emptyText = "Not added yet") => {
@@ -269,6 +280,7 @@ async function handleSession(session) {
   state.activeTraining = null;
   state.attempts = [];
   if (!state.user) {
+    applyTheme("dark");
     renderAuth();
     return;
   }
@@ -283,6 +295,7 @@ async function handleSession(session) {
     data = recovered;
   }
   state.profile = data;
+  applyTheme(data.app_theme);
   state.view = isCoachRole(data.role) ? "command" : "home";
   renderShell();
   navigate(state.view);
@@ -293,8 +306,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.4" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.4" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.5" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.5" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -385,14 +398,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.4" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.5" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.4" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.5" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1018,14 +1031,7 @@ function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTrainin
 }
 
 function nextTrainingOptionsHtml() {
-  return `<div class="next-training-options">
-    <span>After Daily</span>
-    <strong>Pick your next focus:</strong>
-    <button type="button" data-scroll-section="dialled">Dialled</button>
-    <button type="button" data-scroll-section="one-bang">One Bangs</button>
-    <button type="button" data-scroll-section="percentage">Percentage</button>
-    <button type="button" data-scroll-section="foam">Foam</button>
-  </div>`;
+  return "";
 }
 
 function bindVenueSelector() {
@@ -2291,7 +2297,7 @@ async function renderSession() {
       ${statBar}
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
-      <section class="panel"><div class="panel-head"><div><div class="panel-title">Training flow</div><div class="panel-meta">Daily first · then Dialled, One Bangs, Percentage, Foam and bonus work</div></div></div>${nextTrainingOptionsHtml()}${assignmentGroups(sessionAssignments, true)}</section>
+      ${assignmentGroups(sessionAssignments, true)}
       ${extraTricksSection(state.profile, true)}
       ${helpUploadSection(helpRequests)}`;
     bindVenueSelector();
@@ -2312,7 +2318,7 @@ async function renderSession() {
     ${statBar}
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Assigned schedule</div><div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} Daily Tricks · Dialled, One Bangs and Percentage stay available after Daily</div></div></div>${nextTrainingOptionsHtml()}${assignmentGroups(sessionAssignments, true)}</section>
+    ${assignmentGroups(sessionAssignments, true)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
@@ -5471,6 +5477,7 @@ async function renderProfile() {
         <div class="settings-divider"></div>
         ${state.profile.role === "athlete" ? `${showreelHtml(state.profile, true)}<div class="settings-divider"></div>` : ""}
         <form id="profile-form">
+          <div class="field"><label for="profile-theme">Display mode</label><select id="profile-theme" name="appTheme"><option value="dark" ${normalizedTheme(state.profile.app_theme) === "dark" ? "selected" : ""}>Dark mode</option><option value="light" ${normalizedTheme(state.profile.app_theme) === "light" ? "selected" : ""}>Light mode</option></select></div>
           <div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div>
           <div class="field"><label for="profile-phone">Phone number</label><input id="profile-phone" name="phone" type="tel" value="${escapeHtml(state.profile.phone || "")}" placeholder="Optional"></div>
           ${state.profile.role === "athlete" ? `
@@ -5516,6 +5523,7 @@ async function renderProfile() {
   document.querySelector("#showreel-file")?.addEventListener("change", addShowreelVideo);
   document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
   document.querySelector("#open-contests-from-profile")?.addEventListener("click", () => navigate("contests"));
+  document.querySelector("#profile-theme")?.addEventListener("change", (event) => applyTheme(event.target.value));
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
   document.querySelector("#password-form").addEventListener("submit", updatePassword);
   document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
@@ -5582,6 +5590,7 @@ async function updateProfile(event) {
   const updates = {
     display_name: displayName,
     phone: String(form.get("phone") || "").trim().slice(0, 40),
+    app_theme: normalizedTheme(form.get("appTheme")),
     updated_at: new Date().toISOString(),
   };
   if (state.profile.role === "athlete") {
@@ -5605,6 +5614,7 @@ async function updateProfile(event) {
   const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select().single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
+  applyTheme(data.app_theme);
   notify("Profile updated.");
   renderShell();
   navigate("profile");
@@ -5632,7 +5642,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.4" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
+  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.5" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
 });
 
