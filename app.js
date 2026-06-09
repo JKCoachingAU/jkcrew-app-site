@@ -293,8 +293,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.3" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.3" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.4" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.4" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -385,14 +385,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.3" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.4" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.3" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.4" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1042,31 +1042,33 @@ function dailyRowOrder() {
 }
 
 function bindDailyReorder() {
-  document.querySelectorAll("[data-daily-drag-handle]").forEach((handle) => {
-    handle.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    handle.addEventListener("pointerdown", startDailyReorder);
+  document.querySelectorAll("[data-daily-row]").forEach((row) => {
+    row.addEventListener("pointerdown", startDailyReorder);
   });
 }
 
 function startDailyReorder(event) {
   if (event.button && event.button !== 0) return;
-  const handle = event.currentTarget;
-  const row = handle.closest("[data-daily-row]");
+  if (event.target.closest("button, a, input, select, textarea")) return;
+  const row = event.currentTarget.closest("[data-daily-row]");
   if (!row) return;
-  event.preventDefault();
   event.stopPropagation();
   dailyReorderDrag = {
     row,
-    handle,
     originalOrder: dailyRowOrder(),
     moved: false,
+    armed: false,
+    startX: event.clientX,
+    startY: event.clientY,
+    holdTimer: window.setTimeout(() => {
+      if (!dailyReorderDrag || dailyReorderDrag.row !== row) return;
+      dailyReorderDrag.armed = true;
+      row.classList.remove("daily-reorder-pressing");
+      row.classList.add("dragging");
+      row.setPointerCapture?.(event.pointerId);
+    }, 240),
   };
-  row.classList.add("dragging");
-  handle.classList.add("dragging");
-  handle.setPointerCapture?.(event.pointerId);
+  row.classList.add("daily-reorder-pressing");
   document.addEventListener("pointermove", moveDailyReorder, { passive: false });
   document.addEventListener("pointerup", finishDailyReorder, { once: true });
   document.addEventListener("pointercancel", cancelDailyReorder, { once: true });
@@ -1074,8 +1076,13 @@ function startDailyReorder(event) {
 
 function moveDailyReorder(event) {
   if (!dailyReorderDrag) return;
+  const { row, startX, startY } = dailyReorderDrag;
+  if (!dailyReorderDrag.armed) {
+    const distance = Math.hypot(event.clientX - startX, event.clientY - startY);
+    if (distance > 14) cancelDailyReorder();
+    return;
+  }
   event.preventDefault();
-  const { row } = dailyReorderDrag;
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-daily-row]");
   document.querySelectorAll("[data-daily-row].drag-over-row").forEach((element) => {
     if (element !== target) element.classList.remove("drag-over-row");
@@ -1092,7 +1099,7 @@ function moveDailyReorder(event) {
 async function finishDailyReorder() {
   const drag = dailyReorderDrag;
   clearDailyReorder();
-  if (!drag?.moved) return;
+  if (!drag?.armed || !drag?.moved) return;
   const nextOrder = dailyRowOrder();
   if (nextOrder.join("|") === drag.originalOrder.join("|")) return;
   await saveDailyDisplayOrder(nextOrder);
@@ -1103,11 +1110,11 @@ function cancelDailyReorder() {
 }
 
 function clearDailyReorder() {
+  if (dailyReorderDrag?.holdTimer) window.clearTimeout(dailyReorderDrag.holdTimer);
   document.removeEventListener("pointermove", moveDailyReorder);
   document.removeEventListener("pointerup", finishDailyReorder);
   document.removeEventListener("pointercancel", cancelDailyReorder);
-  document.querySelectorAll("[data-daily-row]").forEach((row) => row.classList.remove("dragging", "drag-over-row"));
-  document.querySelectorAll("[data-daily-drag-handle]").forEach((handle) => handle.classList.remove("dragging"));
+  document.querySelectorAll("[data-daily-row]").forEach((row) => row.classList.remove("daily-reorder-pressing", "dragging", "drag-over-row"));
   dailyReorderDrag = null;
 }
 
@@ -1147,15 +1154,13 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
     const meta = metaParts.join(" · ");
     const attemptCount = assignment.assignmentAttempts?.length || 0;
     const attemptMeta = `<small class="attempt-count">${attemptCount ? `${attemptCount} attempt${attemptCount === 1 ? "" : "s"} logged` : "No attempts logged yet"}</small>`;
-    const dragHandle = draggable ? `<button class="daily-drag-handle" type="button" aria-label="Drag ${escapeHtml(assignment.trick_name)} to reorder Daily Tricks" title="Drag to reorder" data-daily-drag-handle="${assignment.id}">Drag</button>` : "";
     const controls = interactive ? `
       <div class="assignment-actions">
         <button class="assignment-check" type="button" aria-label="${label}" title="${label}" data-assignment-action="${action}" data-assignment-id="${assignment.id}">${complete ? "✓" : ""}</button>
         <button class="attempt-btn ${attemptCount ? "attempted" : ""}" type="button" aria-label="Add one attempt for ${escapeHtml(assignment.trick_name)}" title="Add attempt" data-assignment-attempt="${assignment.id}"><span>Attempt</span>${attemptCount ? `<span class="attempt-pill">${attemptCount}</span>` : ""}</button>
-        ${dragHandle}
       </div>` : `<span class="assignment-check">${complete ? "✓" : ""}</span>`;
     return `
-    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `data-daily-row="${assignment.id}"` : ""}>
+    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `data-daily-row="${assignment.id}" aria-label="Hold and drag ${escapeHtml(assignment.trick_name)} to reorder Daily Tricks"` : ""}>
       ${controls}
       <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${attemptMeta}</div>
     </div>`;
@@ -5627,7 +5632,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.3" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
+  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.4" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
 });
 
