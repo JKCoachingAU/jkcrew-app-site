@@ -31,7 +31,6 @@ const state = {
   runBuilder: null,
   runPlaybackTimer: null,
   draggedRunPoint: null,
-  draggedDailyId: null,
   coachPlanVenue: "",
   boardLeaderboardView: "weekly",
   videoReviewStatus: "all",
@@ -273,8 +272,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.0" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.0" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.1" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.1" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -365,14 +364,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.0" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.1" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.0" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.1" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1015,59 +1014,89 @@ function bindVenueSelector() {
   });
 }
 
+let dailyReorderDrag = null;
+
+function dailyRowOrder() {
+  return [...document.querySelectorAll("[data-daily-row]")].map((row) => row.dataset.dailyRow).filter(Boolean);
+}
+
 function bindDailyReorder() {
-  let draggedId = "";
-  document.querySelectorAll("[data-daily-row]").forEach((row) => {
-    row.addEventListener("dragstart", (event) => {
-      draggedId = row.dataset.dailyRow;
-      event.dataTransfer.setData("text/plain", draggedId);
-      row.classList.add("dragging");
-    });
-    row.addEventListener("dragend", () => row.classList.remove("dragging"));
-    row.addEventListener("dragover", (event) => {
+  document.querySelectorAll("[data-daily-drag-handle]").forEach((handle) => {
+    handle.addEventListener("click", (event) => {
       event.preventDefault();
-      row.classList.add("drag-over-row");
+      event.stopPropagation();
     });
-    row.addEventListener("dragleave", () => row.classList.remove("drag-over-row"));
-    row.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      row.classList.remove("drag-over-row");
-      const fromId = event.dataTransfer.getData("text/plain") || draggedId;
-      const toId = row.dataset.dailyRow;
-      if (!fromId || !toId || fromId === toId) return;
-      await saveDailyDisplayOrder(fromId, toId);
-    });
-    row.addEventListener("pointerdown", (event) => {
-      if (event.target.closest("button")) return;
-      state.draggedDailyId = row.dataset.dailyRow;
-      row.classList.add("dragging");
-      document.addEventListener("pointerup", finishDailyPointerReorder, { once: true });
-    });
+    handle.addEventListener("pointerdown", startDailyReorder);
   });
 }
 
-async function finishDailyPointerReorder(event) {
-  const fromId = state.draggedDailyId;
-  document.querySelectorAll("[data-daily-row]").forEach((row) => row.classList.remove("dragging", "drag-over-row"));
-  state.draggedDailyId = null;
-  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-daily-row]");
-  const toId = target?.dataset.dailyRow;
-  if (!fromId || !toId || fromId === toId) return;
-  await saveDailyDisplayOrder(fromId, toId);
+function startDailyReorder(event) {
+  if (event.button && event.button !== 0) return;
+  const handle = event.currentTarget;
+  const row = handle.closest("[data-daily-row]");
+  if (!row) return;
+  event.preventDefault();
+  event.stopPropagation();
+  dailyReorderDrag = {
+    row,
+    handle,
+    originalOrder: dailyRowOrder(),
+    moved: false,
+  };
+  row.classList.add("dragging");
+  handle.classList.add("dragging");
+  handle.setPointerCapture?.(event.pointerId);
+  document.addEventListener("pointermove", moveDailyReorder, { passive: false });
+  document.addEventListener("pointerup", finishDailyReorder, { once: true });
+  document.addEventListener("pointercancel", cancelDailyReorder, { once: true });
 }
 
-async function saveDailyDisplayOrder(fromId, toId) {
-  const rows = [...document.querySelectorAll("[data-daily-row]")].map((row) => row.dataset.dailyRow);
-  const fromIndex = rows.indexOf(fromId);
-  const toIndex = rows.indexOf(toId);
-  if (fromIndex < 0 || toIndex < 0) return;
-  rows.splice(toIndex, 0, rows.splice(fromIndex, 1)[0]);
+function moveDailyReorder(event) {
+  if (!dailyReorderDrag) return;
+  event.preventDefault();
+  const { row } = dailyReorderDrag;
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-daily-row]");
+  document.querySelectorAll("[data-daily-row].drag-over-row").forEach((element) => {
+    if (element !== target) element.classList.remove("drag-over-row");
+  });
+  if (!target || target === row || target.parentElement !== row.parentElement) return;
+  const targetRect = target.getBoundingClientRect();
+  const placeBefore = event.clientY < targetRect.top + targetRect.height / 2;
+  target.classList.add("drag-over-row");
+  if (placeBefore) target.before(row);
+  else target.after(row);
+  dailyReorderDrag.moved = true;
+}
+
+async function finishDailyReorder() {
+  const drag = dailyReorderDrag;
+  clearDailyReorder();
+  if (!drag?.moved) return;
+  const nextOrder = dailyRowOrder();
+  if (nextOrder.join("|") === drag.originalOrder.join("|")) return;
+  await saveDailyDisplayOrder(nextOrder);
+}
+
+function cancelDailyReorder() {
+  clearDailyReorder();
+}
+
+function clearDailyReorder() {
+  document.removeEventListener("pointermove", moveDailyReorder);
+  document.removeEventListener("pointerup", finishDailyReorder);
+  document.removeEventListener("pointercancel", cancelDailyReorder);
+  document.querySelectorAll("[data-daily-row]").forEach((row) => row.classList.remove("dragging", "drag-over-row"));
+  document.querySelectorAll("[data-daily-drag-handle]").forEach((handle) => handle.classList.remove("dragging"));
+  dailyReorderDrag = null;
+}
+
+async function saveDailyDisplayOrder(rows = dailyRowOrder()) {
+  if (!rows.length || !state.profile || !state.user?.id) return;
   const dailyOrder = { ...(state.profile.daily_trick_order || {}), [dailyOrderKey(state.selectedVenue)]: rows };
-  const { data, error } = await client.from("profiles").update({ daily_trick_order: dailyOrder, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  state.profile = { ...state.profile, daily_trick_order: dailyOrder };
+  const { error } = await client.from("profiles").update({ daily_trick_order: dailyOrder, updated_at: new Date().toISOString() }).eq("id", state.user.id);
   if (error) return notify(messageFrom(error), "error");
-  state.profile = data;
   notify("Daily Tricks order saved.");
-  await renderSession();
 }
 
 function percentageSummary(assignment) {
@@ -1097,13 +1126,15 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
     const meta = metaParts.join(" · ");
     const attemptCount = assignment.assignmentAttempts?.length || 0;
     const attemptMeta = `<small class="attempt-count">${attemptCount ? `${attemptCount} attempt${attemptCount === 1 ? "" : "s"} logged` : "No attempts logged yet"}</small>`;
+    const dragHandle = draggable ? `<button class="daily-drag-handle" type="button" aria-label="Drag ${escapeHtml(assignment.trick_name)} to reorder Daily Tricks" title="Drag to reorder" data-daily-drag-handle="${assignment.id}">Drag</button>` : "";
     const controls = interactive ? `
       <div class="assignment-actions">
         <button class="assignment-check" type="button" aria-label="${label}" title="${label}" data-assignment-action="${action}" data-assignment-id="${assignment.id}">${complete ? "✓" : ""}</button>
         <button class="attempt-btn ${attemptCount ? "attempted" : ""}" type="button" aria-label="Add one attempt for ${escapeHtml(assignment.trick_name)}" title="Add attempt" data-assignment-attempt="${assignment.id}"><span>Attempt</span>${attemptCount ? `<span class="attempt-pill">${attemptCount}</span>` : ""}</button>
+        ${dragHandle}
       </div>` : `<span class="assignment-check">${complete ? "✓" : ""}</span>`;
     return `
-    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `draggable="true" data-daily-row="${assignment.id}"` : ""}>
+    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `data-daily-row="${assignment.id}"` : ""}>
       ${controls}
       <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${attemptMeta}</div>
     </div>`;
@@ -2309,14 +2340,22 @@ async function startSession() {
 }
 
 async function recordAssignmentAction(event) {
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.currentTarget;
+  const row = button.closest(".assignment-row");
+  const wasComplete = row?.classList.contains("complete");
   button.disabled = true;
+  row?.classList.toggle("complete", !wasComplete);
+  button.textContent = wasComplete ? "" : "✓";
   const { data, error } = await client.rpc("record_assignment_action", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
   });
   if (error) {
     button.disabled = false;
+    row?.classList.toggle("complete", Boolean(wasComplete));
+    button.textContent = wasComplete ? "✓" : "";
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
@@ -2331,6 +2370,8 @@ async function recordAssignmentAction(event) {
 }
 
 async function recordAssignmentAttempt(event) {
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.currentTarget;
   const currentCount = Number(button.querySelector(".attempt-pill")?.textContent || 0);
   button.disabled = true;
@@ -5475,7 +5516,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.0" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
+  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.1" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
 });
 
