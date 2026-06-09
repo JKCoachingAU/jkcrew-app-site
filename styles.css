@@ -2511,7 +2511,7 @@ img, video, canvas, svg { max-width: 100%; }
   grid-template-columns: auto auto minmax(0, 1fr);
 }
 .viewer-trick-row .assignment-check {
-  pointer-events: none;
+  pointer-events: auto;
   width: 38px;
   height: 38px;
 }
