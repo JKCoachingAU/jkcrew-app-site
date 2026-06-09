@@ -36,6 +36,7 @@ const state = {
   videoReviewStatus: "all",
   videoReviewRider: "all",
   videoReviewSearch: "",
+  videoReviewMedia: new Map(),
 };
 
 const athleteNav = [
@@ -165,6 +166,26 @@ function fileToDataUrl(file) {
   });
 }
 
+function safeFileName(value = "jkcrew-video") {
+  const clean = String(value || "jkcrew-video").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return clean || "jkcrew-video";
+}
+
+function dataUrlVideoExtension(dataUrl = "") {
+  const match = String(dataUrl).match(/^data:video\/([^;]+);/);
+  const ext = (match?.[1] || "mp4").toLowerCase();
+  return ext === "quicktime" ? "mov" : ext.replace(/[^a-z0-9]/g, "") || "mp4";
+}
+
+function downloadDataUrl(dataUrl, filename = "jkcrew-video") {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = `${safeFileName(filename)}.${dataUrlVideoExtension(dataUrl)}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function videoDurationSeconds(file) {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
@@ -272,8 +293,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.1" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.1" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.2" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.2" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -364,14 +385,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.1" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.2" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.1" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.2" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1914,7 +1935,7 @@ async function renderTricktionary() {
     <div class="page-head"><div><div class="eyebrow">Progress history</div><h1>My <span>Tricktionary</span></h1><p>Your personal BMX trick library, built from landed training-sheet tricks plus manual history.</p></div></div>
     <section class="panel">
       <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">${entries.length} tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
-      <form id="manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a trick you landed before JKCREW"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
+      <form id="manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a trick here"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
       ${tricktionaryEntriesHtml(entries, data.attempts)}
     </section>
     <section class="panel">
@@ -5172,11 +5193,13 @@ async function replyToHelpRequest(event) {
       replied_at: new Date().toISOString(),
     };
     if (file?.size) update.coach_video_data_url = await fileToDataUrl(file);
-    const { error } = await client.from("trick_help_requests")
+    const { data, error } = await client.from("trick_help_requests")
       .update(update)
       .eq("id", formElement.dataset.helpReply)
-      .eq("coach_id", state.user.id);
+      .select("id, status");
     if (error) throw error;
+    if (!data?.length) throw new Error("Unable to save feedback for this video. Check the rider is still linked to your coach account.");
+    state.videoReviewMedia.delete(formElement.dataset.helpReply);
     notify("Coach feedback sent to rider.");
     if (state.view === "videoReviews") await renderVideoReviews();
     else await renderStudentProfile();
@@ -5189,10 +5212,14 @@ async function replyToHelpRequest(event) {
 
 async function getCoachVideoReviews() {
   if (!isCoachRole(state.profile?.role)) return { roster: [], requests: [] };
-  const [roster, { data, error }] = await Promise.all([
-    getCoachRoster(),
-    client.from("trick_help_requests").select("*").eq("coach_id", state.user.id).order("created_at", { ascending: false }).limit(200),
-  ]);
+  const roster = await getCoachRoster();
+  const athleteIds = roster.map((athlete) => athlete.id);
+  if (!athleteIds.length) return { roster, requests: [] };
+  const { data, error } = await client.from("trick_help_requests")
+    .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at")
+    .in("athlete_id", athleteIds)
+    .order("created_at", { ascending: false })
+    .limit(120);
   if (error) throw error;
   const byAthlete = new Map(roster.map((athlete) => [athlete.id, athlete]));
   return {
@@ -5213,15 +5240,25 @@ function videoReviewFilterHtml(roster = []) {
 function videoReviewCardHtml(request) {
   const athlete = request.athlete || { display_name: "Unknown rider", avatar: null };
   const status = request.status || "new";
-  const riderVideo = request.video_data_url ? `
-    <video class="help-video" src="${escapeHtml(request.video_data_url)}" controls playsinline preload="metadata"></video>
+  const media = state.videoReviewMedia.get(request.id) || {};
+  const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
+  const riderVideo = media.video_data_url ? `
+    <video class="help-video" src="${escapeHtml(media.video_data_url)}" controls playsinline preload="metadata"></video>
     <div class="video-actions">
-      <a class="secondary-btn compact-btn" href="${escapeHtml(request.video_data_url)}" target="_blank" rel="noopener">Open video</a>
-      <a class="secondary-btn compact-btn" href="${escapeHtml(request.video_data_url)}" download="jkcrew-trick-video">Download</a>
-    </div>` : `<div class="empty compact-empty">No video attached.</div>`;
-  const coachReply = request.coach_comment || request.coach_video_data_url
-    ? `<div class="coach-reply"><strong>Coach reply saved</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${request.coach_video_data_url ? `<video class="help-video" src="${escapeHtml(request.coach_video_data_url)}" controls playsinline preload="metadata"></video>` : ""}</div>`
+      <a class="secondary-btn compact-btn" href="${escapeHtml(media.video_data_url)}" target="_blank" rel="noopener">Open video</a>
+      <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Save video</button>
+    </div>` : `<div class="video-lazy-box" data-help-video-slot="${request.id}">
+      <div><strong>Student video attached</strong><small>Load only when you want to watch it, or save it straight away.</small></div>
+      <div class="video-actions">
+        <button class="secondary-btn compact-btn" type="button" data-load-help-video="${request.id}">Load video</button>
+        <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Save video</button>
+      </div>
+    </div>`;
+  const coachVideo = media.coach_video_data_url ? `<video class="help-video" src="${escapeHtml(media.coach_video_data_url)}" controls playsinline preload="metadata"></video>` : "";
+  const coachReply = request.coach_comment || coachVideo || status === "replied"
+    ? `<div class="coach-reply"><strong>Coach reply saved</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}${!coachVideo && status === "replied" ? `<small>Video reply saved. Load this request's media to view it.</small>` : ""}</div>`
     : "";
+  const reviewed = status === "reviewed";
   return `<article class="video-review-card help-card">
     <div class="video-review-top">
       <div class="person">${avatarHtml(athlete)}<div class="person-name"><strong>${escapeHtml(athlete.display_name)}</strong><small>${dateLabel(request.created_at)} · ${escapeHtml(status)}</small></div></div>
@@ -5235,7 +5272,7 @@ function videoReviewCardHtml(request) {
       <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"></div>
       <button class="primary-btn" type="submit">Send coach reply</button>
     </form>
-    <button class="secondary-btn compact-btn" type="button" data-mark-help-reviewed="${request.id}">Mark reviewed</button>
+    <button class="secondary-btn compact-btn" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Reviewed" : "Mark reviewed"}</button>
   </article>`;
 }
 
@@ -5282,16 +5319,82 @@ async function renderVideoReviews() {
     navigate("student");
   }));
   document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
+  document.querySelectorAll("[data-load-help-video]").forEach((button) => button.addEventListener("click", loadHelpVideo));
+  document.querySelectorAll("[data-save-help-video]").forEach((button) => button.addEventListener("click", saveHelpVideo));
   document.querySelectorAll("[data-mark-help-reviewed]").forEach((button) => button.addEventListener("click", markHelpReviewed));
 }
 
-async function markHelpReviewed(event) {
+async function fetchHelpVideoMedia(requestId) {
+  const cached = state.videoReviewMedia.get(requestId);
+  if (cached?.video_data_url || cached?.coach_video_data_url) return cached;
+  const { data, error } = await client.from("trick_help_requests")
+    .select("id, video_data_url, coach_video_data_url")
+    .eq("id", requestId)
+    .limit(1);
+  if (error) throw error;
+  if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
+  const media = {
+    video_data_url: data[0].video_data_url || "",
+    coach_video_data_url: data[0].coach_video_data_url || "",
+  };
+  state.videoReviewMedia.set(requestId, media);
+  return media;
+}
+
+async function loadHelpVideo(event) {
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.currentTarget;
   button.disabled = true;
-  const { error } = await client.from("trick_help_requests").update({ status: "reviewed" }).eq("id", button.dataset.markHelpReviewed).eq("coach_id", state.user.id);
+  button.textContent = "Loading...";
+  try {
+    const media = await fetchHelpVideoMedia(button.dataset.loadHelpVideo);
+    if (!media.video_data_url) notify("No student video found for this request.", "error");
+    await renderVideoReviews();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Load video";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function saveHelpVideo(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Saving...";
+  try {
+    const media = await fetchHelpVideoMedia(button.dataset.saveHelpVideo);
+    if (!media.video_data_url) throw new Error("No student video found for this request.");
+    downloadDataUrl(media.video_data_url, button.dataset.saveName || "jkcrew-trick-video");
+    button.disabled = false;
+    button.textContent = originalText;
+    notify("Video saved.");
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function markHelpReviewed(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  button.disabled = true;
+  const { data, error } = await client.from("trick_help_requests")
+    .update({ status: "reviewed" })
+    .eq("id", button.dataset.markHelpReviewed)
+    .select("id, status");
   if (error) {
     button.disabled = false;
     return notify(messageFrom(error), "error");
+  }
+  if (!data?.length) {
+    button.disabled = false;
+    return notify("Unable to mark reviewed. Check the rider is still linked to your coach account.", "error");
   }
   notify("Video marked reviewed.");
   await renderVideoReviews();
@@ -5516,7 +5619,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.1" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
+  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.2" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
 });
 

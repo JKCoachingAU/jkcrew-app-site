@@ -416,60 +416,61 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .tricktionary-grid {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
 }
 .tricktionary-card {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
+  border-radius: 7px;
   background: rgba(255,255,255,0.04);
 }
-.tricktionary-card strong { display: block; }
+.tricktionary-card strong { display: block; font-size: 0.9rem; line-height: 1.05; }
 .tricktionary-card-main {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 7px;
 }
 .tricktionary-card-main small {
   display: block;
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--muted);
-  line-height: 1.35;
+  font-size: 0.68rem;
+  line-height: 1.2;
 }
 .tricktionary-count-badge {
-  min-width: 54px;
-  padding: 7px 8px;
+  min-width: 38px;
+  padding: 4px 5px;
   border: 1px solid rgba(0,255,209,0.28);
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--aqua-soft);
   text-align: center;
 }
 .tricktionary-count-badge strong {
   color: var(--aqua);
-  font: 900 1.4rem/0.85 var(--display);
+  font: 900 1rem/0.85 var(--display);
 }
 .tricktionary-count-badge small {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   color: var(--aqua);
-  font: 800 0.52rem var(--mono);
+  font: 800 0.42rem var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .tricktionary-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
 }
 .tricktionary-card-meta span {
-  padding: 4px 7px;
+  padding: 2px 5px;
   border: 1px solid rgba(0,255,209,0.2);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.65rem;
 }
 .previous-sheet-stack,
 .previous-sheet-body,
@@ -784,6 +785,23 @@ img, video, canvas, svg { max-width: 100%; }
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 8px;
+}
+.video-lazy-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px dashed rgba(0,255,209,0.26);
+  border-radius: 11px;
+  background: rgba(0,255,209,0.045);
+}
+.video-lazy-box strong { display: block; }
+.video-lazy-box small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.35;
 }
 .coach-reply {
   margin-top: 12px;
@@ -2908,6 +2926,10 @@ img, video, canvas, svg { max-width: 100%; }
   }
   .video-review-filters { grid-template-columns: 1fr; }
   .video-review-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .video-lazy-box {
     align-items: flex-start;
     flex-direction: column;
   }
