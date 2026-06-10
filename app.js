@@ -1,7 +1,13 @@
 const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
 const GIPHY_API_KEY = String(window.JKCREW_CONFIG?.giphyApiKey || window.JKCREW_GIPHY_API_KEY || "").trim();
-const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+});
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
@@ -279,6 +285,16 @@ function withTimeout(promise, label = "Request", ms = 6000) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
 }
 
+function clearLocalAuthSession() {
+  try {
+    Object.keys(window.localStorage || {}).forEach((key) => {
+      if (key.startsWith("sb-") || key.includes("supabase.auth")) localStorage.removeItem(key);
+    });
+  } catch (error) {
+    console.warn("Unable to clear saved JKCREW session.", error);
+  }
+}
+
 async function init() {
   renderAuth("login", "Checking JKCREW connection...");
   const { data: { session } } = await withTimeout(client.auth.getSession(), "Sign in check");
@@ -291,17 +307,17 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.8" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.9" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
         <button class="primary-btn" type="button" id="boot-retry">Try again</button>
-        <button class="secondary-btn" type="button" id="boot-signout">Sign out</button>
+        <button class="secondary-btn" type="button" id="boot-signout">Reset login on this device</button>
       </div>
     </div>`;
   document.querySelector("#boot-retry")?.addEventListener("click", () => window.location.reload());
   document.querySelector("#boot-signout")?.addEventListener("click", async () => {
-    await client.auth.signOut();
+    clearLocalAuthSession();
     window.location.reload();
   });
 }
@@ -346,8 +362,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.8" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.8" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.9" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.9" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -445,14 +461,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.8" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.9" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.8" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.9" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
