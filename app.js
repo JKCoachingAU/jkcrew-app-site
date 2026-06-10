@@ -95,7 +95,13 @@ const weekStartDate = () => {
 const weekStartIso = () => `${weekStartDate()}T00:00:00+10:00`;
 const weekEndDate = () => new Date(new Date(weekStartIso()).getTime() + (6 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
 const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" }).format(new Date(`${weekStartDate()}T00:00:00+10:00`));
-const messageFrom = (error) => error?.message || "Something went wrong. Please try again.";
+const messageFrom = (error) => {
+  const message = error?.message || String(error || "");
+  if (/522|timed out|timeout|failed to fetch|network|connection/i.test(message)) {
+    return "JKCREW backend is not responding right now. Please try again in a minute.";
+  }
+  return message || "Something went wrong. Please try again.";
+};
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
@@ -265,7 +271,7 @@ function setLoading(label = "Loading") {
   if (view) view.innerHTML = `<div class="loading">${escapeHtml(label)}...</div>`;
 }
 
-function withTimeout(promise, label = "Request", ms = 9000) {
+function withTimeout(promise, label = "Request", ms = 6000) {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error(`${label} timed out. Check your connection and try again.`)), ms);
@@ -274,6 +280,7 @@ function withTimeout(promise, label = "Request", ms = 9000) {
 }
 
 async function init() {
+  renderAuth("login", "Checking JKCREW connection...");
   const { data: { session } } = await withTimeout(client.auth.getSession(), "Sign in check");
   await handleSession(session);
   client.auth.onAuthStateChange(async (_event, nextSession) => {
@@ -284,7 +291,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.7" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.8" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -339,8 +346,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.7" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.7" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.8" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.8" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -349,7 +356,7 @@ function renderAuth(mode = "login", message = "") {
         </div>
         <div class="feature-strip"><span>Weekly plans</span><span>Private progress</span><span>Coach feedback</span><span>Future focused</span></div>
       </section>
-      <section class="auth-panel">
+  <section class="auth-panel">
         <div class="auth-card">
           <div class="eyebrow">Welcome to JKCREW</div>
           <h2>${mode === "login" ? "Sign in" : "Join the crew"}</h2>
@@ -376,7 +383,7 @@ function renderAuth(mode = "login", message = "") {
               <input id="password" name="password" type="password" required minlength="8" autocomplete="${mode === "login" ? "current-password" : "new-password"}" placeholder="At least 8 characters">
             </div>
             <button class="primary-btn wide" type="submit">${mode === "login" ? "Enter JKCREW" : "Create my account"}</button>
-            <div class="auth-message">${escapeHtml(message)}</div>
+            <div class="auth-message ${/backend|connection|timed out|responding/i.test(message) ? "auth-warning" : ""}">${escapeHtml(message)}</div>
           </form>
         </div>
       </section>
@@ -394,33 +401,40 @@ async function handleAuth(event, mode) {
   button.disabled = true;
   button.textContent = mode === "login" ? "Signing in..." : "Creating account...";
 
-  if (mode === "login") {
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) renderAuth(mode, messageFrom(error));
-    return;
-  }
+  try {
+    if (mode === "login") {
+      const { error } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in");
+      if (error) renderAuth(mode, messageFrom(error));
+      return;
+    }
 
-  const displayName = form.get("displayName").trim();
-  const role = form.get("role");
-  if (!displayName) {
-    renderAuth(mode, "Please add a display name.");
-    return;
-  }
-  const { data: signupData, error: signupError } = await client.functions.invoke("create-jkcrew-account", {
-    body: { email, password, displayName, role, website: "" },
-  });
-  if (signupError || signupData?.error) {
-    const signupMessage = signupData?.error || messageFrom(signupError);
-    renderAuth(mode, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
-    return;
-  }
+    const displayName = form.get("displayName").trim();
+    const role = form.get("role");
+    if (!displayName) {
+      renderAuth(mode, "Please add a display name.");
+      return;
+    }
+    const { data: signupData, error: signupError } = await withTimeout(
+      client.functions.invoke("create-jkcrew-account", {
+        body: { email, password, displayName, role, website: "" },
+      }),
+      "Create account"
+    );
+    if (signupError || signupData?.error) {
+      const signupMessage = signupData?.error || messageFrom(signupError);
+      renderAuth(mode, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
+      return;
+    }
 
-  const { error: signInError } = await client.auth.signInWithPassword({ email, password });
-  if (signInError) {
-    renderAuth("login", "Account created. Sign in with your new email and password.");
-    return;
+    const { error: signInError } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in");
+    if (signInError) {
+      renderAuth("login", "Account created. Sign in with your new email and password.");
+      return;
+    }
+    notify("Welcome to JKCREW. Your account is ready.");
+  } catch (error) {
+    renderAuth(mode, messageFrom(error));
   }
-  notify("Welcome to JKCREW. Your account is ready.");
 }
 
 function renderShell() {
@@ -431,14 +445,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.7" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.8" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.7" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.8" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>

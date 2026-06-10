@@ -3217,3 +3217,7 @@ html[data-theme="light"] .success-burst {
   justify-content: center;
   gap: 10px;
 }
+
+.auth-warning {
+  color: #ffcf5a;
+}
