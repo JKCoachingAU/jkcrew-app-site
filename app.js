@@ -325,7 +325,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.2" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.3" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -382,8 +382,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.2" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.2" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.3" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.3" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -481,14 +481,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.2" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.3" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.2" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.3" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1387,16 +1387,19 @@ function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks
       const attemptNumber = index + 1;
       const attempt = byNumber.get(attemptNumber);
       const label = attempt ? (attempt.landed ? "✓" : "×") : index + 1;
+      const stateLabel = attempt ? (attempt.landed ? "landed" : "missed") : "empty";
       const klass = attempt ? (attempt.landed ? "landed" : "missed") : "";
-      const title = attempt ? `Clear attempt ${attemptNumber}` : `Attempt ${attemptNumber} not recorded`;
-      return interactive && attempt
-        ? `<button class="attempt-dot ${klass}" type="button" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" data-assignment-id="${assignment.id}" data-percentage-attempt-number="${attemptNumber}" data-percentage-clear="true">${label}</button>`
+      const title = attempt
+        ? `Tap to change attempt ${attemptNumber}`
+        : `Tap to mark attempt ${attemptNumber} landed`;
+      return interactive
+        ? `<button class="attempt-dot ${klass}" type="button" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" data-assignment-id="${assignment.id}" data-percentage-attempt-number="${attemptNumber}" data-percentage-cycle="${stateLabel}">${label}</button>`
         : `<span class="attempt-dot ${klass}">${label}</span>`;
     }).join("");
     const result = summary.attempts ? `<span class="percentage-result ${percentageClass(summary.percentage)}">${summary.percentage}%</span>` : `<span class="percentage-result">0%</span>`;
     const nextAttempt = nextPercentageAttemptNumber(assignment);
     const controls = interactive
-      ? (nextAttempt ? `<div class="percentage-actions"><button class="primary-btn compact-btn" type="button" data-percentage-action="true" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}">Land attempt ${nextAttempt}</button><button class="danger-btn compact-btn" type="button" data-percentage-action="false" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}">Crash attempt ${nextAttempt}</button></div>` : `<small class="subcopy">Tap a filled circle to undo a mistake.</small>`)
+      ? (nextAttempt ? `<div class="percentage-actions"><button class="primary-btn compact-btn" type="button" data-percentage-action="true" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}">Land attempt ${nextAttempt}</button><button class="danger-btn compact-btn" type="button" data-percentage-action="false" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}">Crash attempt ${nextAttempt}</button></div><small class="subcopy">Shortcut: tap circles to cycle landed, missed, clear.</small>` : `<small class="subcopy">Tap circles to cycle landed, missed, clear.</small>`)
       : "";
     return `<div class="percentage-card">
       <div class="percentage-card-head"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${summary.landed} landed · ${summary.missed} missed · ${summary.attempts}/10 attempts · ${percentagePointsStatus(summary)}</small></div>${result}</div>
@@ -2531,7 +2534,7 @@ async function renderSession() {
     document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
     document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
     document.querySelectorAll("[data-assignment-attempt]").forEach((button) => button.addEventListener("click", recordAssignmentAttempt));
-    document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
+    document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     bindSessionQuickJumps();
     return;
   }
@@ -2553,7 +2556,7 @@ async function renderSession() {
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
   document.querySelectorAll("[data-assignment-attempt]").forEach((button) => button.addEventListener("click", recordAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   bindSessionQuickJumps();
   updateTimer();
   state.timer = setInterval(updateTimer, 1000);
@@ -2647,20 +2650,27 @@ async function recordAssignmentAttempt(event) {
 }
 
 async function recordPercentageAttempt(event) {
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.currentTarget;
   button.disabled = true;
-  const clearAttempt = button.dataset.percentageClear === "true";
+  const cycleState = button.dataset.percentageCycle || "";
+  const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
+  const landed = cycleState
+    ? cycleState === "empty"
+    : button.dataset.percentageAction === "true";
   const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
-    p_landed: clearAttempt ? null : button.dataset.percentageAction === "true",
+    p_landed: clearAttempt ? null : landed,
   });
   if (error) {
     button.disabled = false;
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempts}/10 saved. No points yet.`));
+  const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
+  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempt_number} ${actionText}. ${result.attempts}/10 saved.`));
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
 }
@@ -3612,7 +3622,7 @@ function bindSessionViewerActions() {
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
   document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
   document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
@@ -3743,20 +3753,27 @@ async function recordViewerAssignmentAttempt(event) {
 }
 
 async function recordViewerPercentageAttempt(event) {
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.currentTarget;
   button.disabled = true;
-  const clearAttempt = button.dataset.percentageClear === "true";
+  const cycleState = button.dataset.percentageCycle || "";
+  const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
+  const landed = cycleState
+    ? cycleState === "empty"
+    : button.dataset.percentageAction === "true";
   const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
-    p_landed: clearAttempt ? null : button.dataset.percentageAction === "true",
+    p_landed: clearAttempt ? null : landed,
   });
   if (error) {
     button.disabled = false;
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempts}/10 saved. No points yet.`));
+  const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
+  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempt_number} ${actionText}. ${result.attempts}/10 saved.`));
   await refreshSessionViewerLight();
 }
 
@@ -3883,7 +3900,7 @@ function bindSessionViewerFastActions() {
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
   document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
   document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
