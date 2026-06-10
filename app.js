@@ -33,6 +33,7 @@ const state = {
   draggedRunPoint: null,
   coachPlanVenue: "",
   boardLeaderboardView: "weekly",
+  leaderboardFallbackNotified: false,
   videoReviewStatus: "all",
   videoReviewRider: "all",
   videoReviewSearch: "",
@@ -306,8 +307,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.5" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.5" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.6" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.6" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -398,14 +399,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.5" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.5" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.6" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -456,13 +457,52 @@ async function navigate(view) {
 
 async function getLeaderboard() {
   const { data, error } = await client.rpc("get_weekly_leaderboard");
-  if (error) throw error;
+  if (error) {
+    console.error("Leaderboard RPC failed", error);
+    return getLeaderboardFallback(error);
+  }
+  state.leaderboardFallbackNotified = false;
   const rows = data || [];
   const ids = rows.map((row) => row.athlete_id).filter(Boolean);
   if (!ids.length) return rows;
-  const { data: profiles } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary").in("id", ids);
+  const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary").in("id", ids);
+  if (profileError) console.warn("Leaderboard profile extras failed", profileError);
   const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
   return rows.map((row) => ({ ...row, daily_pb_seconds: row.daily_pb_seconds ?? byId.get(row.athlete_id)?.daily_pb_seconds ?? null }));
+}
+
+async function getLeaderboardFallback(cause) {
+  const { data: profiles, error } = await client
+    .from("profiles")
+    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds")
+    .eq("role", "athlete")
+    .order("display_name", { ascending: true });
+  if (error) {
+    console.error("Leaderboard fallback failed", error);
+    notify(messageFrom(cause || error), "error");
+    return [];
+  }
+
+  const rows = (profiles || []).map((profile) => ({
+    athlete_id: profile.id,
+    display_name: profile.display_name || "Athlete",
+    level: 1,
+    avatar_url: profile.avatar_url || "",
+    avatar: profile.avatar || {},
+    country_code: profile.country_code || "",
+    country_name: profile.country_name || "",
+    weekly_points: 0,
+    all_time_points: 0,
+    session_count: 0,
+    earned_badges: [],
+    daily_pb_seconds: profile.daily_pb_seconds ?? null,
+  }));
+
+  if (!state.leaderboardFallbackNotified) {
+    state.leaderboardFallbackNotified = true;
+    notify("Leaderboard is temporarily using a safe fallback while scores reload.", "error");
+  }
+  return rows;
 }
 
 async function getPointHistory(athleteId) {
@@ -2019,10 +2059,9 @@ async function renderAthleteHome() {
   ]);
   const { assignments, awards, assignmentAttempts } = schedule;
   if (error) throw error;
-  const weekly = sessions.filter((session) => new Date(session.started_at) >= new Date(weekStartIso()));
-  const weeklyPoints = weekly.reduce((sum, session) => sum + session.total_points, 0);
-  const totalPoints = sessions.reduce((sum, session) => sum + session.total_points, 0);
-  const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
+  const leaderboardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
+  const weeklyPoints = Number(leaderboardRow?.weekly_points || 0);
+  const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
   const dailyDone = dailyCompletionCount(awards);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
   const openTasks = dashboardItems.filter((item) => item.item_type === "task" && !item.completed).length;
@@ -5642,7 +5681,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.5" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
+  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.6" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
   notify(messageFrom(error), "error");
 });
 
