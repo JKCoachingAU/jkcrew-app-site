@@ -44,6 +44,8 @@ const state = {
   videoReviewRider: "all",
   videoReviewSearch: "",
   videoReviewMedia: new Map(),
+  realtimeChannel: null,
+  syncRefreshTimer: null,
 };
 
 const athleteNav = [
@@ -80,6 +82,14 @@ const initials = (name = "JK") => name.split(/\s+/).filter(Boolean).slice(0, 2).
 const dateLabel = (value) => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 const formatPbTime = (seconds) => Number.isFinite(Number(seconds)) && Number(seconds) > 0 ? formatTime(Number(seconds)) : "-";
+const parsePbSeconds = (value = "") => {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text);
+  const match = text.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) return NaN;
+  return (Number(match[1]) * 60) + Number(match[2]);
+};
 const brisbaneDateParts = (date = new Date()) => new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Brisbane",
   year: "numeric",
@@ -129,8 +139,9 @@ const linesHtml = (value = "", emptyText = "Not added yet") => {
   const lines = String(value || "").split(/\n|,/).map((line) => line.trim()).filter(Boolean);
   return lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="subcopy">${escapeHtml(emptyText)}</p>`;
 };
-const medalForRank = (row, index, total) => {
-  if (index === 0 && Number(row.weekly_points || 0) > 0) return `<span class="rank-medal" title="Weekly leader">🏅</span>`;
+const medalForRank = (row, index, total, pointsKey = "weekly_points") => {
+  const medals = ["🥇", "🥈", "🥉"];
+  if (index >= 0 && index < 3 && Number(row[pointsKey] || 0) > 0) return `<span class="rank-medal" title="Top ${index + 1}">${medals[index]}</span>`;
   if (total > 1 && index === total - 1) return `<span class="rank-medal last-place" title="Last place">💩</span>`;
   return "";
 };
@@ -314,7 +325,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.0" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.2" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -331,6 +342,7 @@ function renderBootRecovery(message = "The app could not finish loading.") {
 
 async function handleSession(session) {
   clearInterval(state.timer);
+  teardownRealtimeSync();
   state.session = session;
   state.user = session?.user || null;
   state.profile = null;
@@ -360,6 +372,7 @@ async function handleSession(session) {
   state.profile = data;
   applyTheme(data.app_theme);
   state.view = isCoachRole(data.role) ? "command" : "home";
+  setupRealtimeSync();
   renderShell();
   navigate(state.view);
 }
@@ -369,8 +382,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.0" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.0" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.2" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.2" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -468,14 +481,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.0" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.2" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.0" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.2" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -522,6 +535,67 @@ async function navigate(view) {
     document.querySelector("#view").innerHTML = `<div class="empty">Could not load this screen.</div>`;
     notify(messageFrom(error), "error");
   }
+}
+
+function teardownRealtimeSync() {
+  if (state.syncRefreshTimer) {
+    clearTimeout(state.syncRefreshTimer);
+    state.syncRefreshTimer = null;
+  }
+  if (state.realtimeChannel) {
+    client.removeChannel(state.realtimeChannel).catch((error) => console.warn("Realtime channel cleanup failed", error));
+    state.realtimeChannel = null;
+  }
+}
+
+function setupRealtimeSync() {
+  if (!state.user?.id || !state.session?.access_token) return;
+  client.realtime.setAuth(state.session.access_token);
+  const channel = client.channel(`jkcrew-progress-sync:${state.user.id}`);
+  [
+    "assignment_progress",
+    "assignment_point_awards",
+    "percentage_attempts",
+    "assignment_attempts",
+    "weekly_trick_assignments",
+    "leaderboard_point_adjustments",
+    "training_sessions",
+    "coach_group_session_participants",
+    "run_checklist_progress",
+    "profiles",
+  ].forEach((table) => {
+    channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+      if (table === "profiles" && payload.new?.id === state.user.id) state.profile = { ...state.profile, ...payload.new };
+      scheduleRealtimeRefresh(table);
+    });
+  });
+  channel.subscribe((status) => {
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime progress sync status:", status);
+  });
+  state.realtimeChannel = channel;
+}
+
+function scheduleRealtimeRefresh(reason = "sync") {
+  if (!state.user?.id || !state.profile) return;
+  if (state.syncRefreshTimer) clearTimeout(state.syncRefreshTimer);
+  state.syncRefreshTimer = setTimeout(async () => {
+    state.syncRefreshTimer = null;
+    if (!state.user?.id || !state.profile) return;
+    try {
+      if (state.view === "session") await renderSession();
+      else if (state.view === "sessionViewer") await refreshSessionViewerLight();
+      else if (state.view === "board") await renderBoard();
+      else if (state.view === "home") {
+        if (state.profile.role === "parent") await renderParentHome();
+        else if (state.profile.role === "athlete") await renderAthleteHome();
+      } else if (state.view === "crew" && isCoachRole(state.profile.role)) {
+        await renderCrew();
+      } else if (state.view === "student" && state.selectedAthleteId) await renderStudentProfile();
+      else if (state.view === "publicProfile" && state.publicAthleteId) await renderPublicAthleteProfile();
+    } catch (error) {
+      console.warn("Realtime refresh failed", reason, error);
+    }
+  }, 450);
 }
 
 async function getLeaderboard() {
@@ -1011,6 +1085,8 @@ const sessionViewerListTabs = [
   { id: "percentage", label: "Percentage" },
   { id: "foam_pit", label: "Foam" },
   { id: "bonus", label: "Bonus Trick" },
+  { id: "goals", label: "Goals" },
+  { id: "contest_run", label: "Contest Run" },
 ];
 
 const coachGroups = [
@@ -1249,10 +1325,30 @@ function percentageSummary(assignment) {
   return { attempts: attempts.length, landed, missed: attempts.length - landed, percentage, complete: attempts.length >= 10 };
 }
 
+function percentageAttemptsByNumber(assignment) {
+  return new Map((assignment.percentageAttempts || []).map((attempt) => [Number(attempt.attempt_number), attempt]));
+}
+
+function nextPercentageAttemptNumber(assignment) {
+  const byNumber = percentageAttemptsByNumber(assignment);
+  for (let index = 1; index <= 10; index += 1) {
+    if (!byNumber.has(index)) return index;
+  }
+  return null;
+}
+
 function percentageClass(value) {
   if (value < 50) return "result-red";
   if (value <= 70) return "result-yellow";
   return "result-green";
+}
+
+function percentagePointsStatus(summary) {
+  if (!summary.complete) return `Points unlock at 10/10 attempts · ${10 - summary.attempts} left`;
+  if (summary.percentage === 100) return "3 points awarded";
+  if (summary.percentage >= 90) return "2 points awarded";
+  if (summary.percentage >= 80) return "1 point awarded";
+  return "0 points awarded";
 }
 
 function assignmentList(assignments, emptyText = "No tricks assigned for this week yet.", interactive = false) {
@@ -1286,16 +1382,24 @@ function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks
   if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
   return assignments.map((assignment) => {
     const summary = percentageSummary(assignment);
+    const byNumber = percentageAttemptsByNumber(assignment);
     const attempts = Array.from({ length: 10 }, (_, index) => {
-      const attempt = assignment.percentageAttempts?.[index];
+      const attemptNumber = index + 1;
+      const attempt = byNumber.get(attemptNumber);
       const label = attempt ? (attempt.landed ? "✓" : "×") : index + 1;
       const klass = attempt ? (attempt.landed ? "landed" : "missed") : "";
-      return `<span class="attempt-dot ${klass}">${label}</span>`;
+      const title = attempt ? `Clear attempt ${attemptNumber}` : `Attempt ${attemptNumber} not recorded`;
+      return interactive && attempt
+        ? `<button class="attempt-dot ${klass}" type="button" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" data-assignment-id="${assignment.id}" data-percentage-attempt-number="${attemptNumber}" data-percentage-clear="true">${label}</button>`
+        : `<span class="attempt-dot ${klass}">${label}</span>`;
     }).join("");
     const result = summary.attempts ? `<span class="percentage-result ${percentageClass(summary.percentage)}">${summary.percentage}%</span>` : `<span class="percentage-result">0%</span>`;
-    const controls = interactive && !summary.complete ? `<div class="percentage-actions"><button class="primary-btn compact-btn" data-percentage-action="true" data-assignment-id="${assignment.id}">Tick landed</button><button class="danger-btn compact-btn" data-percentage-action="false" data-assignment-id="${assignment.id}">X missed</button></div>` : "";
+    const nextAttempt = nextPercentageAttemptNumber(assignment);
+    const controls = interactive
+      ? (nextAttempt ? `<div class="percentage-actions"><button class="primary-btn compact-btn" type="button" data-percentage-action="true" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}">Land attempt ${nextAttempt}</button><button class="danger-btn compact-btn" type="button" data-percentage-action="false" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}">Crash attempt ${nextAttempt}</button></div>` : `<small class="subcopy">Tap a filled circle to undo a mistake.</small>`)
+      : "";
     return `<div class="percentage-card">
-      <div class="percentage-card-head"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${summary.landed} landed · ${summary.missed} missed · ${summary.attempts}/10 attempts</small></div>${result}</div>
+      <div class="percentage-card-head"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${summary.landed} landed · ${summary.missed} missed · ${summary.attempts}/10 attempts · ${percentagePointsStatus(summary)}</small></div>${result}</div>
       <div class="attempt-dots">${attempts}</div>
       ${controls}
     </div>`;
@@ -1678,11 +1782,14 @@ function showreelVideos(profile = {}) {
   return Array.isArray(profile.showreel_videos) ? profile.showreel_videos.filter((video) => video?.dataUrl).slice(0, 3) : [];
 }
 
+const SHOWREEL_MAX_SECONDS = 30;
+const SHOWREEL_MAX_BYTES = 36 * 1024 * 1024;
+
 function showreelHtml(profile = {}, editable = false) {
   const videos = showreelVideos(profile);
   const videoHtml = videos.length ? videos.map((video, index) => `
     <div class="showreel-tile">
-      <video src="${escapeHtml(video.dataUrl)}" autoplay muted loop playsinline controls></video>
+      <video src="${escapeHtml(video.dataUrl)}" autoplay muted loop playsinline controls preload="metadata"></video>
       ${editable ? `<button class="danger-btn compact-btn" type="button" data-remove-showreel="${index}">Remove</button>` : ""}
     </div>`).join("") : `<div class="empty compact-empty">No showreel videos yet.</div>`;
   return `<section class="panel showreel-panel">
@@ -2267,7 +2374,7 @@ function goalsReadonlyHtml(profile = {}) {
 function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const realRows = rows.filter((entry) => !entry.isBenchmarkBot);
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
-  const badge = pointsKey === "weekly_points" && !row.isBenchmarkBot ? medalForRank(row, realIndex, realRows.length) : "";
+  const badge = !row.isBenchmarkBot ? medalForRank(row, realIndex, realRows.length, pointsKey) : "";
   const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
   const country = countryBadge(row);
   const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : (row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "");
@@ -2278,6 +2385,15 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
     <div class="points">${points}<small> pts</small></div>`;
   if (row.isBenchmarkBot) return `<article class="list-row leader-row benchmark-row">${content}</article>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
+}
+
+function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
+  if (!rows.length) return `<div class="empty">No athlete scores yet.</div>`;
+  const topRows = rows.slice(0, 7);
+  const extraRows = rows.slice(7);
+  return `
+    ${topRows.map((row, index) => leaderRow(row, index, rows, pointsKey)).join("")}
+    ${extraRows.length ? `<details class="leaderboard-more"><summary>View Full Leaderboard <span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey)).join("")}</div></details>` : ""}`;
 }
 
 function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
@@ -2415,7 +2531,7 @@ async function renderSession() {
     document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
     document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
     document.querySelectorAll("[data-assignment-attempt]").forEach((button) => button.addEventListener("click", recordAssignmentAttempt));
-    document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
+    document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     bindSessionQuickJumps();
     return;
   }
@@ -2437,7 +2553,7 @@ async function renderSession() {
   document.querySelector("#help-request-form").addEventListener("submit", submitHelpRequest);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
   document.querySelectorAll("[data-assignment-attempt]").forEach((button) => button.addEventListener("click", recordAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   bindSessionQuickJumps();
   updateTimer();
   state.timer = setInterval(updateTimer, 1000);
@@ -2533,16 +2649,18 @@ async function recordAssignmentAttempt(event) {
 async function recordPercentageAttempt(event) {
   const button = event.currentTarget;
   button.disabled = true;
-  const { data, error } = await client.rpc("record_percentage_attempt", {
+  const clearAttempt = button.dataset.percentageClear === "true";
+  const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
-    p_landed: button.dataset.percentageAction === "true",
+    p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
+    p_landed: clearAttempt ? null : button.dataset.percentageAction === "true",
   });
   if (error) {
     button.disabled = false;
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  notify(`Percentage attempt saved: ${result.percentage}%.`);
+  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempts}/10 saved. No points yet.`));
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
 }
@@ -2653,7 +2771,7 @@ async function renderBoard() {
         </div>
         <div class="panel-meta">${activeRows.length} riders</div>
       </div>
-      <div class="leaderboard">${activeRows.length ? activeRows.map((row, index, rows) => leaderRow(row, index, rows, activePointsKey)).join("") : `<div class="empty">No athlete scores yet.</div>`}</div>
+      <div class="leaderboard">${compactLeaderboardHtml(activeRows, activePointsKey)}</div>
     </section>
     <section class="panel board-chat-panel">
       <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team chat · reactions, mentions and safe stickers</div></div></div>
@@ -3372,17 +3490,22 @@ function sessionViewerPlanList(entry, activeGroupSession) {
 }
 
 function sessionViewerListCount(entry, listId) {
+  if (listId === "goals") return Array.isArray(entry.athlete.goals) ? entry.athlete.goals.length : 0;
+  if (listId === "contest_run") return sessionViewerActiveRun(entry)?.points?.length || 0;
   return sessionViewerAssignmentsForList(entry, listId).length;
 }
 
 function sessionViewerListContent(entry, activeGroupSession, listId) {
+  if (listId === "goals") return sessionViewerGoalsList(entry);
+  if (listId === "contest_run") return sessionViewerRunList(entry);
   const assignments = sessionViewerAssignmentsForList(entry, listId);
   const complete = assignments.filter(isAssignmentComplete).length;
   const isPaused = activeGroupSession?.status === "paused";
   const info = categoryInfo[listId] || { label: "Tricks", description: "" };
+  const editor = isCoachRole(state.profile?.role) ? sessionViewerAssignmentEditor(entry, listId, assignments) : "";
   if (listId === "percentage") {
     const label = info.label;
-    return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div><div class="viewer-percentage-list">${percentageAssignmentList(assignments, "No Percentage Tricks assigned.", true)}</div>`;
+    return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-percentage-list">${percentageAssignmentList(assignments, "No Percentage Tricks assigned.", true)}</div>`;
   }
   const list = assignments.length ? assignments.map((assignment) => {
     const done = isAssignmentComplete(assignment);
@@ -3394,7 +3517,34 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
     </div>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
   const label = listId === "daily" ? `${venueLabel(entry.venue)} Daily Tricks` : info.label;
-  return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div><div class="viewer-trick-list">${list}</div>`;
+  return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-trick-list">${list}</div>`;
+}
+
+function assignmentLinesForEditor(assignments = []) {
+  return assignments.map((assignment) => {
+    const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+    return `${assignment.trick_name}${notes}`;
+  }).join("\n");
+}
+
+function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
+  if (!categoryInfo[listId]) return "";
+  const info = categoryInfo[listId];
+  const helper = listId === "daily"
+    ? `Editing ${venueLabel(entry.venue)} only. One trick per line.`
+    : listId === "percentage"
+      ? "Maximum 3 percentage tricks. One trick per line."
+      : "One trick per line. Add notes after a dash.";
+  return `<details class="viewer-edit-panel">
+    <summary>Edit ${escapeHtml(listId === "daily" ? `${venueLabel(entry.venue)} Daily` : info.label)}</summary>
+    <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
+      <div class="field">
+        <label>${escapeHtml(helper)}</label>
+        <textarea name="assignmentLines" rows="${listId === "daily" ? 7 : 5}" placeholder="Add tricks here...">${escapeHtml(assignmentLinesForEditor(assignments))}</textarea>
+      </div>
+      <button class="primary-btn compact-save-btn" type="submit">Save ${escapeHtml(info.label)}</button>
+    </form>
+  </details>`;
 }
 
 function sessionViewerGoalsList(entry) {
@@ -3462,10 +3612,11 @@ function bindSessionViewerActions() {
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
   document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
   document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
+  document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
 }
 
 async function startViewerGroupSession() {
@@ -3594,23 +3745,56 @@ async function recordViewerAssignmentAttempt(event) {
 async function recordViewerPercentageAttempt(event) {
   const button = event.currentTarget;
   button.disabled = true;
-  const { data, error } = await client.rpc("record_percentage_attempt", {
+  const clearAttempt = button.dataset.percentageClear === "true";
+  const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
-    p_landed: button.dataset.percentageAction === "true",
+    p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
+    p_landed: clearAttempt ? null : button.dataset.percentageAction === "true",
   });
   if (error) {
     button.disabled = false;
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
-  const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : "";
-  notify(`Percentage attempt saved: ${result.percentage}%${pointsNote}.`);
+  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempts}/10 saved. No points yet.`));
   await refreshSessionViewerLight();
 }
 
 function selectViewerListTab(event) {
   state.sessionViewerActiveList = event.currentTarget.dataset.viewerListTab || "daily";
   refreshSessionViewerLight();
+}
+
+async function saveSessionViewerAssignments(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const athleteId = formElement.dataset.athleteId;
+  const listId = formElement.dataset.viewerAssignmentEditor;
+  const venue = formElement.dataset.venue || "";
+  if (!athleteId || !categoryInfo[listId]) return notify("Could not save that list.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+
+  const editedLines = String(new FormData(formElement).get("assignmentLines") || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), index, listId, listId === "daily" ? venue : ""))
+    .filter(Boolean)
+    .slice(0, listId === "percentage" ? 3 : undefined);
+
+  const { error } = await client.rpc("save_weekly_assignment_list", {
+    p_athlete_id: athleteId,
+    p_week_start: weekStartDate(),
+    p_category: listId,
+    p_venue: listId === "daily" ? venue : "",
+    p_assignments: editedLines,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = `Save ${categoryInfo[listId].label}`;
+    return notify(messageFrom(error), "error");
+  }
+  notify(`${categoryInfo[listId].label} saved for this rider.`);
+  await refreshSessionViewerLight();
 }
 
 async function toggleViewerGoal(event) {
@@ -3699,9 +3883,11 @@ function bindSessionViewerFastActions() {
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
   document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
   document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
   document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
   document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
+  document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
 }
 
 async function saveCoachCalendarEvent(event) {
@@ -4112,13 +4298,89 @@ async function getCoachRoster() {
   });
 }
 
+async function getCoachLiveActivity(roster = []) {
+  if (!isCoachRole(state.profile?.role) || !roster.length) return [];
+  const athleteIds = roster.map((athlete) => athlete.id).filter(Boolean);
+  const athleteById = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  const [{ data: awards, error: awardsError }, { data: sessions, error: sessionsError }] = await Promise.all([
+    client.from("assignment_point_awards")
+      .select("id, athlete_id, assignment_id, award_key, points, created_at")
+      .in("athlete_id", athleteIds)
+      .order("created_at", { ascending: false })
+      .limit(18),
+    client.from("training_sessions")
+      .select("id, athlete_id, daily_completed_seconds, daily_completed_at")
+      .in("athlete_id", athleteIds)
+      .not("daily_completed_at", "is", null)
+      .order("daily_completed_at", { ascending: false })
+      .limit(10),
+  ]);
+  if (awardsError) console.warn("Coach live awards failed", awardsError);
+  if (sessionsError) console.warn("Coach live sessions failed", sessionsError);
+
+  const assignmentIds = [...new Set((awards || []).map((award) => award.assignment_id).filter(Boolean))];
+  let assignmentById = new Map();
+  if (assignmentIds.length) {
+    const { data: assignments, error: assignmentsError } = await client.from("weekly_trick_assignments").select("id, category, trick_name, venue").in("id", assignmentIds);
+    if (assignmentsError) console.warn("Coach live assignment labels failed", assignmentsError);
+    assignmentById = new Map((assignments || []).map((assignment) => [assignment.id, assignment]));
+  }
+
+  const pointItems = (awards || []).map((award) => {
+    const athlete = athleteById.get(award.athlete_id);
+    const assignment = assignmentById.get(award.assignment_id) || {};
+    const name = firstName(athlete || {});
+    const category = assignment.category || "";
+    const points = Number(award.points || 0);
+    let text = points > 0 ? `${name} earned +${points} points` : `${name} had ${points} points adjusted`;
+    if (award.award_key?.startsWith("daily:")) text = `${name} completed Daily Tricks${points ? ` · +${points}` : ""}`;
+    else if (award.award_key?.startsWith("group-first-finish:")) text = `${name} finished Daily Tricks first in group · +${points}`;
+    else if (category === "one_bang") text = `${name} earned +${points} from One Bangs${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
+    else if (category === "dialled") text = `${name} completed Dialled${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
+    else if (category === "percentage") text = `${name} earned +${points} from Percentage Tricks${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
+    else if (category === "bonus") text = `${name} landed ${assignment.trick_name || "a bonus trick"} · +${points}`;
+    return { id: `award-${award.id}`, text, at: award.created_at, type: category || "points" };
+  });
+
+  const sessionItems = (sessions || []).map((session) => {
+    const athlete = athleteById.get(session.athlete_id);
+    const seconds = Number(session.daily_completed_seconds || 0);
+    return {
+      id: `daily-${session.id}`,
+      text: `${firstName(athlete || {})} finished Daily Tricks${seconds ? ` in ${formatPbTime(seconds)}` : ""}`,
+      at: session.daily_completed_at,
+      type: "daily",
+    };
+  });
+
+  return [...pointItems, ...sessionItems]
+    .filter((item) => item.at)
+    .sort((a, b) => new Date(b.at) - new Date(a.at))
+    .slice(0, 7);
+}
+
+function coachLiveActivityHtml(items = []) {
+  const rows = items.length ? items.map((item) => `
+    <div class="coach-live-row">
+      <span class="live-dot"></span>
+      <div><strong>${escapeHtml(item.text)}</strong><small>${dateLabel(item.at)}</small></div>
+    </div>`).join("") : `<div class="empty compact-empty">Live rider activity will show here.</div>`;
+  return `<article class="coach-live-card">
+    <div class="coach-live-head"><div><div class="stat-label">Live activity</div><strong>Coach feed</strong></div><span>Live</span></div>
+    <div class="coach-live-list">${rows}</div>
+  </article>`;
+}
+
 async function renderCrew() {
   const [roster, { data: allAthletes, error }] = await Promise.all([
     getCoachRoster(),
     client.from("profiles").select("id, display_name, level, avatar").eq("role", "athlete").order("display_name"),
   ]);
   if (error) throw error;
-  const commandData = roster.length ? await getCoachCommandData(roster) : { statuses: [] };
+  const [commandData, liveActivity] = roster.length ? await Promise.all([
+    getCoachCommandData(roster),
+    getCoachLiveActivity(roster),
+  ]) : [{ statuses: [] }, []];
   const statuses = statusByAthlete(commandData.statuses);
   const linkedIds = new Set(roster.map((athlete) => athlete.id));
   const available = (allAthletes || []).filter((athlete) => !linkedIds.has(athlete.id));
@@ -4130,17 +4392,17 @@ async function renderCrew() {
       <div class="student-chip-wrap">
         <button class="student-chip" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
           ${avatarHtml(athlete, "student-chip-avatar")}
-          <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small><small>${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</small></span>
+          <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small></span>
         </button>
         ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
       </div>`;
     }).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
-    return `<section class="group-column" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
+    return `<section class="group-column group-${groupId}" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
   }).join("");
   const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach dashboard</div><h1>Training <span>groups</span></h1><p>Drag students between groups, or click a student to open their profile.</p></div></div>
-    <section class="stats-grid single-stat">${statCard("Total students", roster.length, "", "Assigned to your crew")}</section>
+    <section class="coach-dashboard-top">${statCard("Total students", roster.length, "", "Assigned to your crew")}${coachLiveActivityHtml(liveActivity)}</section>
     <section class="groups-grid">${groupsHtml}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">Add an athlete</div><div class="panel-meta">They need an account first</div></div>
       ${available.length ? `<form id="add-athlete-form" class="trick-form"><div class="field"><label for="athlete-id">Available athletes</label><select id="athlete-id" name="athleteId">${options}</select></div><button class="primary-btn" type="submit">Add to crew</button></form>` : `<div class="empty">Every available athlete is already linked.</div>`}
@@ -5557,8 +5819,68 @@ async function addNote(event) {
   await renderNotes();
 }
 
+function coachDailyPbSettingsHtml(roster = []) {
+  const options = roster.length
+    ? roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · PB ${formatPbTime(athlete.daily_pb_seconds)}</option>`).join("")
+    : `<option value="">No linked riders yet</option>`;
+  return `<section class="panel coach-pb-panel">
+    <div class="panel-head"><div><div class="panel-title">Daily PB repair</div><div class="panel-meta">Coach-only manual fix for accidental Daily Tricks times</div></div></div>
+    <form id="coach-daily-pb-form" class="compact-admin-form">
+      <div class="field"><label for="coach-pb-athlete">Rider</label><select id="coach-pb-athlete" name="athleteId" required>${options}</select></div>
+      <div class="field"><label for="coach-pb-time">Daily PB time</label><input id="coach-pb-time" name="dailyPb" placeholder="1:24 or 84 seconds" inputmode="numeric"></div>
+      <div class="actions compact-actions"><button class="primary-btn" type="submit">Save PB</button><button class="secondary-btn" type="button" id="clear-daily-pb">Clear PB</button></div>
+    </form>
+    <p class="subcopy">Leave the time blank or use Clear PB if a mistaken time should be removed.</p>
+  </section>`;
+}
+
+async function saveCoachDailyPb(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const athleteId = form.get("athleteId");
+  const seconds = parsePbSeconds(form.get("dailyPb"));
+  if (!athleteId) return notify("Choose a rider first.", "error");
+  if (Number.isNaN(seconds)) return notify("Use a time like 1:24, or type total seconds like 84.", "error");
+  const button = formElement.querySelector("button[type='submit']");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  const { data, error } = await client.rpc("set_athlete_daily_pb", {
+    p_athlete_id: athleteId,
+    p_seconds: seconds,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Save PB";
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(result?.daily_pb_seconds ? `Daily PB saved: ${formatPbTime(result.daily_pb_seconds)}.` : "Daily PB cleared.");
+  await renderProfile();
+}
+
+async function clearCoachDailyPb(event) {
+  const formElement = event.currentTarget.closest("form");
+  const athleteId = new FormData(formElement).get("athleteId");
+  if (!athleteId) return notify("Choose a rider first.", "error");
+  event.currentTarget.disabled = true;
+  event.currentTarget.textContent = "Clearing...";
+  const { error } = await client.rpc("set_athlete_daily_pb", {
+    p_athlete_id: athleteId,
+    p_seconds: null,
+  });
+  if (error) {
+    event.currentTarget.disabled = false;
+    event.currentTarget.textContent = "Clear PB";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Daily PB cleared.");
+  await renderProfile();
+}
+
 async function renderProfile() {
   let trainingHistorySection = "";
+  let coachPbSection = "";
   try {
     if (state.profile.role === "athlete") {
       const historyData = await getTricktionaryData(state.user.id);
@@ -5574,6 +5896,13 @@ async function renderProfile() {
     }
   } catch (error) {
     trainingHistorySection = `<section class="panel"><div class="empty compact-empty">Training history could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
+  }
+  if (isCoachRole(state.profile?.role)) {
+    try {
+      coachPbSection = coachDailyPbSettingsHtml(await getCoachRoster());
+    } catch (error) {
+      coachPbSection = `<section class="panel"><div class="empty compact-empty">Daily PB repair could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
+    }
   }
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
@@ -5622,6 +5951,7 @@ async function renderProfile() {
         <button class="danger-btn wide" id="sign-out">Sign out</button>
       </section>
     </div>
+    ${coachPbSection}
     ${trainingHistorySection}
     ${state.profile.role === "athlete" ? `<section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
@@ -5634,6 +5964,8 @@ async function renderProfile() {
   document.querySelector("#profile-theme")?.addEventListener("change", (event) => applyTheme(event.target.value));
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
   document.querySelector("#password-form").addEventListener("submit", updatePassword);
+  document.querySelector("#coach-daily-pb-form")?.addEventListener("submit", saveCoachDailyPb);
+  document.querySelector("#clear-daily-pb")?.addEventListener("click", clearCoachDailyPb);
   document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
 }
 
@@ -5671,17 +6003,28 @@ async function saveOwnProfileMedia(update, message) {
 async function addShowreelVideo(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
-  if (file.size > 36 * 1024 * 1024) return notify("Choose a 30 second showreel clip under 36MB.", "error");
+  if (file.size > SHOWREEL_MAX_BYTES) {
+    event.currentTarget.value = "";
+    return notify("Choose a showreel clip under 36MB. Short 30 second clips work best on phones.", "error");
+  }
   const current = showreelVideos(state.profile);
-  if (current.length >= 3) return notify("You can add up to 3 showreel videos.", "error");
+  if (current.length >= 3) {
+    event.currentTarget.value = "";
+    return notify("You can add up to 3 showreel videos.", "error");
+  }
   try {
     const duration = await videoDurationSeconds(file);
-    if (duration > 30.5) return notify("Showreel clips can be up to 30 seconds. Please trim this video and upload again.", "error");
+    if (duration > SHOWREEL_MAX_SECONDS + 0.5) {
+      event.currentTarget.value = "";
+      return notify("Showreel clips can be up to 30 seconds. Please trim this video and upload again.", "error");
+    }
     const dataUrl = await fileToDataUrl(file);
     current.push({ id: crypto.randomUUID(), dataUrl, name: file.name, durationSeconds: Math.round(duration), addedAt: new Date().toISOString() });
     await saveOwnProfileMedia({ showreel_videos: current }, "Showreel video added.");
   } catch (_error) {
     notify("Could not read that video. Try another short clip.", "error");
+  } finally {
+    event.currentTarget.value = "";
   }
 }
 
