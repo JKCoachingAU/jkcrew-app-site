@@ -265,11 +265,37 @@ function setLoading(label = "Loading") {
   if (view) view.innerHTML = `<div class="loading">${escapeHtml(label)}...</div>`;
 }
 
+function withTimeout(promise, label = "Request", ms = 9000) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out. Check your connection and try again.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
 async function init() {
-  const { data: { session } } = await client.auth.getSession();
+  const { data: { session } } = await withTimeout(client.auth.getSession(), "Sign in check");
   await handleSession(session);
   client.auth.onAuthStateChange(async (_event, nextSession) => {
     if (nextSession?.user?.id !== state.user?.id || !nextSession) await handleSession(nextSession);
+  });
+}
+
+function renderBootRecovery(message = "The app could not finish loading.") {
+  app.innerHTML = `
+    <div class="boot-screen boot-recovery">
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.7" alt="JK Coaching logo"></div>
+      <h1>JKCREW is having trouble loading</h1>
+      <p>${escapeHtml(message)}</p>
+      <div class="boot-actions">
+        <button class="primary-btn" type="button" id="boot-retry">Try again</button>
+        <button class="secondary-btn" type="button" id="boot-signout">Sign out</button>
+      </div>
+    </div>`;
+  document.querySelector("#boot-retry")?.addEventListener("click", () => window.location.reload());
+  document.querySelector("#boot-signout")?.addEventListener("click", async () => {
+    await client.auth.signOut();
+    window.location.reload();
   });
 }
 
@@ -285,12 +311,18 @@ async function handleSession(session) {
     renderAuth();
     return;
   }
-  let { data, error } = await client.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+  let { data, error } = await withTimeout(
+    client.from("profiles").select("*").eq("id", state.user.id).maybeSingle(),
+    "Profile load"
+  );
   if (error || !data) {
-    const { data: recovered, error: recoveryError } = await client.rpc("ensure_current_profile");
+    const { data: recovered, error: recoveryError } = await withTimeout(
+      client.rpc("ensure_current_profile"),
+      "Profile recovery"
+    );
     if (recoveryError || !recovered) {
-      renderAuth();
-      notify("I could not load your JKCREW profile. Sign out and try once more.", "error");
+      renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
+      notify(messageFrom(recoveryError || error || "Profile failed to load."), "error");
       return;
     }
     data = recovered;
@@ -307,8 +339,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.6" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.6" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.9.7" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.9.7" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -399,14 +431,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.9.7" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.6" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.9.7" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -5681,7 +5713,7 @@ async function updatePassword(event) {
 }
 
 init().catch((error) => {
-  app.innerHTML = `<div class="boot-screen"><div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.9.6" alt="JK Coaching logo"></div><p>Could not load the app.</p></div>`;
+  renderBootRecovery(messageFrom(error));
   notify(messageFrom(error), "error");
 });
 
