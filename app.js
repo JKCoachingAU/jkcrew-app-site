@@ -208,7 +208,7 @@ function normalizeXpSummary(summary = {}, profile = {}) {
 function levelBadgeHtml(badge = {}, compact = false) {
   const safe = badge || {};
   const tone = escapeHtml(safe.tone || "bronze");
-  return `<span class="level-badge tone-${tone} ${compact ? "compact" : ""}" title="${escapeHtml(safe.label || "Level badge")}"><span>${escapeHtml(safe.icon || "★")}</span>${compact ? "" : `<strong>L${escapeHtml(safe.level || "")}</strong>`}</span>`;
+  return `<span class="level-badge tone-${tone} ${compact ? "compact" : ""}" title="${escapeHtml(safe.label || "Level badge")}"><span>${escapeHtml(safe.icon || "★")}</span><strong>L${escapeHtml(safe.level || "")}</strong></span>`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -436,7 +436,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.4" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.5" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -493,8 +493,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.4" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.4" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.5" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.5" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -592,14 +592,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.4" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.5" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.4" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.5" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2081,14 +2081,13 @@ function dashboardTaskForm(ownerId) {
 }
 
 function weekSummaryHtml(assignments, awards) {
-  const dailyDone = dailyCompletionCount(awards);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
-  const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
-  const weeklyTargets = assignments.filter((assignment) => assignment.category !== "daily").length;
+  const weeklyItems = completionAssignments(assignments);
+  const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
   return `<section class="panel simple-summary">
     <div class="panel-head"><div><div class="panel-title">This week</div><div class="panel-meta">Clean progress snapshot</div></div><strong>${weeklyPercent}%</strong></div>
     <div class="progress-bar"><span style="width:${weeklyPercent}%"></span></div>
-    <p>Daily Tricks completed ${dailyDone}/7 days. Weekly tricks completed ${completedWeekly}/${weeklyTargets || 0}.</p>
+    <p>Weekly program completed ${completedWeekly}/${weeklyItems.length || 0}. Daily Tricks are tracked in Session, not in this weekly rating.</p>
   </section>`;
 }
 
@@ -2373,11 +2372,11 @@ async function renderAthleteHome() {
   const leaderboardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
   const weeklyPoints = Number(leaderboardRow?.weekly_points || 0);
   const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
-  const dailyDone = dailyCompletionCount(awards);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
   const openTasks = dashboardItems.filter((item) => item.item_type === "task" && !item.completed).length;
   const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const activeSession = await getActiveSession();
+  const xp = normalizeXpSummary(xpSummary, state.profile);
   if (activeSession) {
     state.activeTraining = activeSession;
     state.trickStartedAt = new Date(activeSession.started_at).getTime();
@@ -2387,11 +2386,13 @@ async function renderAthleteHome() {
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats">
+        ${statCard("Weekly score", weeklyPoints, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("World ranking", rank ? `#${rank}` : "-", "", `${leaderboard.length || 0} riders on board`)}
-        ${statCard("This week", `${weeklyPercent}%`, "", `${weeklyPoints} pts earned`)}
         ${statCard("Important tasks", openTasks, "", "Open right now")}
       </div>
-      ${xpProgressHtml(xpSummary)}
+      ${xpProgressHtml(xp)}
     </section>
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
     ${quoteSection()}
@@ -2414,14 +2415,17 @@ function statCard(label, value, unit, foot) {
   return `<article class="stat-card"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${escapeHtml(value)}${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
 }
 
+function statCardRaw(label, body, foot, className = "") {
+  return `<article class="stat-card ${className}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${body}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
+}
+
+const completionCategories = new Set(["dialled", "one_bang", "foam", "bonus", "percentage"]);
+const completionAssignments = (assignments = []) => assignments.filter((assignment) => completionCategories.has(assignment.category));
+
 function weeklyCompletionPercent(assignments, awards) {
-  const dailyTarget = assignments.some((assignment) => assignment.category === "daily") ? 7 : 0;
-  const dailyDone = dailyCompletionCount(awards);
-  const weeklyItems = assignments.filter((assignment) => assignment.category !== "daily");
+  const weeklyItems = completionAssignments(assignments);
   const weeklyDone = weeklyItems.filter(isAssignmentComplete).length;
-  const total = dailyTarget + weeklyItems.length;
-  const done = Math.min(dailyDone, 7) + weeklyDone;
-  return total ? Math.round((done / total) * 100) : 0;
+  return weeklyItems.length ? Math.round((weeklyDone / weeklyItems.length) * 100) : 0;
 }
 
 async function renderParentHome() {
@@ -2459,20 +2463,21 @@ async function renderParentHome() {
     const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
     const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
     const percent = weeklyCompletionPercent(assignments, awards);
-    const weeklyItems = assignments.filter((assignment) => assignment.category !== "daily");
+    const weeklyItems = completionAssignments(assignments);
     const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+    const xp = normalizeXpSummary(xpSummary, athlete);
     const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
     const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
     const relationship = linkByAthlete.get(athlete.id)?.relationship;
     return `<section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view${relationship ? ` · ${escapeHtml(relationship)}` : ""}</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats">
-        ${statCard("Weekly completion", `${percent}%`, "", "Program complete")}
-        ${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}
-        ${statCard("Leaderboard", rank ? `#${rank}` : "-", "", `${weeklyRow?.weekly_points || 0} pts`)}
-        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Dialled, One Bangs, Percentage")}
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Weekly completion", `${percent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked weekly items")}
       </div>
-      ${xpProgressHtml(xpSummary, true)}
+      ${xpProgressHtml(xp, true)}
       <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</div>
       <div class="settings-divider"></div>
       <div class="panel-title">Attempted this week</div>
@@ -4645,16 +4650,17 @@ async function getCoachPreviewData() {
   if (!roster.length) return { roster, athlete: null };
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs] = await Promise.all([
+  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs, xpSummary] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     getLeaderboard(),
     getDashboardItems(athlete.id),
     client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5),
     getHelpRequests(athlete.id),
     getRunPlans(athlete.id),
+    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
   ]);
   if (sessionsResult.error) throw sessionsResult.error;
-  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs };
+  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs, xpSummary };
 }
 
 async function renderCoachPreview(mode = "student") {
@@ -4664,19 +4670,19 @@ async function renderCoachPreview(mode = "student") {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>No <span>students</span></h1><p>Add a student first, then you can preview their Student View and Parent View.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs } = data;
+  const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs, xpSummary } = data;
   const { assignments, awards } = schedule;
   const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
   const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
-  const weeklyItems = assignments.filter((assignment) => assignment.category !== "daily");
+  const weeklyItems = completionAssignments(assignments);
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
   const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const events = dashboardItems.filter((item) => item.item_type === "event");
   const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
   const previewBody = mode === "parent"
-    ? coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems })
-    : coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent });
+    ? coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary })
+    : coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary });
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" data-view="student">Back to profile</button><button class="secondary-btn" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
     <section class="coach-preview-shell">
@@ -4686,16 +4692,18 @@ async function renderCoachPreview(mode = "student") {
   document.querySelector("[data-preview-switch]")?.addEventListener("click", (event) => navigate(event.currentTarget.dataset.previewSwitch));
 }
 
-function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent }) {
+function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
+  const xp = normalizeXpSummary(xpSummary, athlete);
   return `<div class="phone-preview-content">
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats preview-stats">
-        ${statCard("World ranking", rank ? `#${rank}` : "-", "", "Crew board")}
-        ${statCard("This week", `${weeklyPercent}%`, "", `${weeklyRow?.weekly_points || 0} pts`)}
-        ${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
       </div>
+      ${xpProgressHtml(xp, true)}
     </section>
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
@@ -4707,18 +4715,20 @@ function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, even
   </div>`;
 }
 
-function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems }) {
+function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
+  const xp = normalizeXpSummary(xpSummary, athlete);
   return `<div class="phone-preview-content">
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats preview-stats">
-        ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Program complete")}
-        ${statCard("Daily Tricks", `${dailyCompletionCount(awards)}/7`, "", "This week")}
-        ${statCard("Leaderboard", rank ? `#${rank}` : "-", "", `${weeklyRow?.weekly_points || 0} pts`)}
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
       </div>
+      ${xpProgressHtml(xp, true)}
       <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</div>
       <div class="settings-divider"></div>
       <div class="panel-title">Attempted this week</div>

@@ -765,7 +765,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .athlete-scoreboard { margin-bottom: 16px; }
 .athlete-scoreboard h1 { margin: 3px 0 4px; font: italic 900 clamp(2.5rem, 5vw, 4.8rem)/0.82 var(--display); letter-spacing: -0.045em; text-transform: uppercase; }
 .athlete-scoreboard p { margin: 0; color: var(--muted); }
-.scoreboard-stats { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.scoreboard-stats { margin-top: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .coach-dashboard-top {
   display: grid;
   grid-template-columns: minmax(240px, 0.7fr) minmax(320px, 1.3fr);
@@ -2809,14 +2809,49 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   line-height: 1;
 }
 .level-badge.compact {
-  grid-template-columns: 1fr;
-  padding: 4px;
-  border-radius: 13px;
+  grid-template-columns: auto auto;
+  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 999px;
 }
 .level-badge.compact span {
   width: 24px;
   height: 24px;
   font-size: 0.82rem;
+}
+.level-badge.compact strong {
+  font-size: 0.62rem;
+  line-height: 1;
+}
+.level-stat-card .stat-value {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+.level-stat-card .level-badge {
+  transform: scale(1.05);
+  transform-origin: left center;
+}
+.level-stat-text {
+  font: italic 900 clamp(1.7rem, 4vw, 2.5rem)/0.9 var(--display);
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+.leader-row .level-badge.compact {
+  margin-left: 5px;
+  padding: 3px 6px;
+  vertical-align: middle;
+  transform: translateY(-1px);
+}
+.leader-row .level-badge.compact span {
+  width: 22px;
+  height: 22px;
+}
+.leader-row .level-badge.compact strong {
+  font-size: 0.58rem;
 }
 .level-badge.tone-bronze { --badge-accent: #b9773a; }
 .level-badge.tone-silver { --badge-accent: #cbd5e1; }
