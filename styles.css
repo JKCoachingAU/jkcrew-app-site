@@ -153,7 +153,7 @@ img, video, canvas, svg { max-width: 100%; }
   width: 100%;
   display: grid;
   justify-items: center;
-  gap: clamp(14px, 3vw, 22px);
+  gap: clamp(10px, 2vw, 18px);
 }
 .auth-logo-lockup {
   width: fit-content;
@@ -172,26 +172,12 @@ img, video, canvas, svg { max-width: 100%; }
     #090b0a;
   box-shadow: 0 22px 90px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.12);
 }
-.auth-logo-lockup.badge-lockup {
-  padding: 18px;
-  border-radius: 40px;
-  background:
-    linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.018)),
-    #000;
-}
 .auth-logo-lockup img {
   width: 148px;
   height: 148px;
   object-fit: contain;
   border-radius: 28px;
   box-shadow: 0 18px 58px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
-}
-.auth-logo-lockup.badge-lockup img {
-  width: 176px;
-  height: 176px;
-  padding: 4px;
-  background: #000;
-  border-radius: 32px;
 }
 .auth-logo-lockup span {
   color: #e8eeeb;
@@ -200,7 +186,7 @@ img, video, canvas, svg { max-width: 100%; }
   text-transform: uppercase;
 }
 .auth-logo-lockup.wordmark-lockup {
-  width: min(440px, 72vw);
+  width: min(560px, 78vw);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -531,6 +517,8 @@ img, video, canvas, svg { max-width: 100%; }
   appearance: none;
   width: 100%;
   grid-template-columns: 30px minmax(0, 1fr) auto;
+  min-height: 76px;
+  padding: 15px 16px;
   color: inherit;
   text-align: left;
   font: inherit;
@@ -538,6 +526,26 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .leader-row:hover { border-color: rgba(32,227,195,0.32); background: rgba(32,227,195,0.055); }
 .leader-row.me { border-color: rgba(32,227,195,0.42); background: var(--aqua-soft); }
+.leader-row.dns-rider {
+  border-color: rgba(32,227,195,0.13);
+  background: rgba(32,227,195,0.028);
+  opacity: 0.62;
+}
+.leader-row.dns-rider .avatar,
+.leader-row.dns-rider .person-name strong,
+.leader-row.dns-rider .points {
+  color: var(--aqua);
+}
+.dns-points {
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+}
+.leader-person .country-flag {
+  flex: 0 0 auto;
+  font-size: 1.2rem;
+  line-height: 1;
+  margin-right: -2px;
+}
 .rank-medal { display: inline-block; margin-left: 5px; font-size: 0.96rem; vertical-align: -1px; }
 .last-place { filter: saturate(1.1); }
 .leader-badges { display: flex; gap: 4px; margin-top: 4px; font-size: 0.9rem; }
@@ -1097,6 +1105,58 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 }
 .video-review-card .help-video {
   max-height: 440px;
+}
+.video-review-hint {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(32,227,195,0.18);
+  border-radius: 12px;
+  background: rgba(32,227,195,0.055);
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.trick-request-form {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.trick-request-form .field { margin-bottom: 0; }
+.request-list,
+.trick-request-review-list {
+  display: grid;
+  gap: 8px;
+}
+.request-row,
+.trick-request-review-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.018);
+}
+.request-row span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font: 800 0.62rem var(--mono);
+  text-transform: uppercase;
+}
+.request-row small,
+.request-review-main small { display: block; color: var(--muted); margin-top: 3px; }
+.trick-request-review-card {
+  grid-template-columns: minmax(190px, 0.85fr) minmax(0, 1fr) auto;
+}
+.request-review-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 .parent-link-row { grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 8px; }
 .parent-waiting-card {
@@ -2747,6 +2807,18 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.leader-row .level-badge.compact {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  gap: 4px;
+}
+.leader-row .level-badge.compact .level-badge-art,
+.leader-row .level-badge.compact .level-badge-fallback {
+  box-shadow: none;
+  border-radius: 10px;
+}
 .level-badge-art {
   width: 42px;
   height: 42px;
@@ -2801,9 +2873,13 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 }
 .leader-row .level-badge.compact {
   margin-left: 5px;
-  padding: 2px 6px 2px 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   vertical-align: middle;
   transform: translateY(-1px);
+  gap: 4px;
 }
 .leader-row .level-badge.compact .level-badge-art,
 .leader-row .level-badge.compact .level-badge-fallback {
@@ -3183,7 +3259,7 @@ html[data-theme="light"] .auth-hero {
   background: linear-gradient(145deg, rgba(255,255,255,0.22), rgba(0,143,125,0.04));
 }
 html[data-theme="light"] .auth-logo-lockup,
-html[data-theme="light"] .auth-logo-lockup.badge-lockup {
+html[data-theme="light"] .auth-logo-lockup {
   background:
     linear-gradient(145deg, rgba(255,255,255,0.8), rgba(234,228,216,0.92)),
     #f8f3ea;
@@ -3314,8 +3390,7 @@ html[data-theme="light"] .success-burst {
   .auth-hero { min-height: 46vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 28px 22px; }
   .auth-logo-lockup { margin: 0 auto; }
   .auth-logo-lockup img { width: 118px; height: 118px; border-radius: 24px; }
-  .auth-logo-lockup.badge-lockup img { width: 138px; height: 138px; border-radius: 26px; }
-  .auth-logo-lockup.wordmark-lockup { width: min(300px, 76vw); }
+  .auth-logo-lockup.wordmark-lockup { width: min(360px, 86vw); }
   .auth-logo-lockup.wordmark-lockup img { width: 100%; height: auto; border-radius: 0; }
   .hero-copy h1 { font-size: clamp(4.2rem, 21vw, 7rem); letter-spacing: -0.024em; line-height: 0.86; }
   .feature-strip { display: none; }
@@ -3441,6 +3516,16 @@ html[data-theme="light"] .success-burst {
   .video-lazy-box {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .trick-request-form,
+  .trick-request-review-card {
+    grid-template-columns: 1fr;
+  }
+  .request-review-actions {
+    justify-content: stretch;
+  }
+  .request-review-actions .compact-btn {
+    flex: 1;
   }
   .parent-card-top {
     flex-direction: column;

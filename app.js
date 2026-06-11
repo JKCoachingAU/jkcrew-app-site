@@ -12,6 +12,8 @@ const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 const installButton = document.querySelector("#install-app");
 let deferredInstallPrompt = null;
+const RIDER_VIDEO_MAX_BYTES = 96 * 1024 * 1024;
+const COACH_VIDEO_MAX_BYTES = 160 * 1024 * 1024;
 const state = {
   session: null,
   user: null,
@@ -44,6 +46,7 @@ const state = {
   videoReviewRider: "all",
   videoReviewSearch: "",
   videoReviewMedia: new Map(),
+  trickRequestSearchTimer: null,
   realtimeChannel: null,
   syncRefreshTimer: null,
   cache: {},
@@ -271,7 +274,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.4`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.5`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -516,7 +519,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.4" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.5" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -573,8 +576,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.4" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.4" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.5" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -672,14 +674,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.4" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.5" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.4" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.5" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -755,6 +757,7 @@ function setupRealtimeSync() {
     "coach_group_session_participants",
     "run_checklist_progress",
     "xp_ledger",
+    "trick_requests",
     "profiles",
   ].forEach((table) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
@@ -803,7 +806,7 @@ function invalidateCachesForRealtime(table) {
     cacheClear("coach-live:");
     cacheClear("coach-command:");
   }
-  if (["weekly_trick_assignments", "coach_group_session_participants", "profiles"].includes(table)) {
+  if (["weekly_trick_assignments", "coach_group_session_participants", "trick_requests", "profiles"].includes(table)) {
     cacheClear("roster");
     cacheClear("schedule:");
     cacheClear("coach-command:");
@@ -998,6 +1001,14 @@ async function getHelpRequests(athleteId) {
   return data || [];
 }
 
+async function getTrickRequestsForAthlete(athleteId, statuses = []) {
+  let query = client.from("trick_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
+  if (statuses.length) query = query.in("status", statuses);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 async function getDashboardItems(athleteId) {
   const { data, error } = await client.from("dashboard_items").select("*").eq("owner_id", athleteId).order("completed", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
   if (error) throw error;
@@ -1016,7 +1027,7 @@ async function getCoachCommandData(roster = []) {
   const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
-  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks] = await Promise.all([
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests] = await Promise.all([
     client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
@@ -1029,8 +1040,9 @@ async function getCoachCommandData(roster = []) {
     client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
     ids.length ? client.from("weekly_progress_notifications").select("*").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
     client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
+    ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
   ]);
-  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks].forEach((result) => { if (result.error) throw result.error; });
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests].forEach((result) => { if (result.error) throw result.error; });
   return cacheSet(cacheKey, {
     calendar: calendar.data || [],
     statuses: statusRows.data || [],
@@ -1044,6 +1056,7 @@ async function getCoachCommandData(roster = []) {
     weeklySettings: weeklySettings.data || null,
     weeklyNotifications: weeklyNotifications.data || [],
     dismissedTasks: dismissedTasks.data || [],
+    trickRequests: trickRequests.data || [],
   });
 }
 
@@ -1275,8 +1288,6 @@ const sessionViewerListTabs = [
   { id: "percentage", label: "Percentage" },
   { id: "foam_pit", label: "Foam" },
   { id: "bonus", label: "Bonus Trick" },
-  { id: "goals", label: "Goals" },
-  { id: "contest_run", label: "Contest Run" },
 ];
 
 const coachGroups = [
@@ -1670,7 +1681,8 @@ function helpRequestsHtml(requests, mode = "athlete") {
 
 function helpUploadSection(requests) {
   return `<section class="panel help-section">
-    <div class="panel-head"><div><div class="panel-title">Need Help With A Trick?</div><div class="panel-meta">Upload a video and ask your coach what to fix</div></div></div>
+    <div class="panel-head"><div><div class="panel-title">Need Help With A Trick?</div><div class="panel-meta">Upload longer videos, save coach replies, and keep feedback in one place</div></div></div>
+    <div class="video-review-hint">Tip: trim if you can, but longer riding clips are supported. CoachNow-style drawing/voice-over needs a dedicated video annotation service later.</div>
     <form id="help-request-form" class="help-form">
       <div class="field"><label for="help-question">Short note or question</label><textarea id="help-question" name="question" required placeholder="I keep missing my barspin. What should I change?"></textarea></div>
       <div class="field"><label for="help-video">Trick video</label><input id="help-video" name="video" type="file" accept="video/*" required></div>
@@ -1679,6 +1691,45 @@ function helpUploadSection(requests) {
     <div class="settings-divider"></div>
     <div class="panel-title">My coach feedback</div>
     <div class="help-list">${helpRequestsHtml(requests)}</div>
+  </section>`;
+}
+
+const trickRequestCategoryLabels = {
+  daily: "Daily Tricks",
+  one_bang: "One Bangs",
+  dialled: "Dialled",
+  percentage: "Percentage Tricks",
+};
+
+function trickRequestCategoryOptions(selected = "daily") {
+  return Object.entries(trickRequestCategoryLabels)
+    .map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function athleteTrickRequestSection(assignments = [], requests = []) {
+  const venueNames = [...new Set([
+    ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue)),
+    ...defaultVenues,
+  ].filter(Boolean))];
+  const venueOptions = venueNames.map((venue) => `<option value="${escapeHtml(venueKey(venue))}">${escapeHtml(venue)}</option>`).join("");
+  const requestRows = requests.length ? requests.slice(0, 5).map((request) => `
+    <div class="request-row ${escapeHtml(request.status)}">
+      <span>${escapeHtml(request.status || "pending")}</span>
+      <strong>${escapeHtml(request.trick_name)}</strong>
+      <small>${escapeHtml(trickRequestCategoryLabels[request.category] || request.category)} · ${escapeHtml(venueLabel(request.venue))}</small>
+    </div>`).join("") : `<div class="empty compact-empty">No requests sent yet.</div>`;
+  return `<section class="panel trick-request-panel">
+    <div class="panel-head"><div><div class="panel-title">Request Tricks For Next Week</div><div class="panel-meta">Ask your coach to add a trick to your next schedule</div></div></div>
+    <form id="trick-request-form" class="trick-request-form">
+      <div class="field"><label for="request-venue">Park / venue</label><select id="request-venue" name="venue">${venueOptions}</select></div>
+      <div class="field"><label for="request-category">List</label><select id="request-category" name="category">${trickRequestCategoryOptions()}</select></div>
+      <div class="field trick-request-name"><label for="request-trick">Trick</label><input id="request-trick" name="trickName" required maxlength="120" placeholder="Tailwhip, flair, barspin..."></div>
+      <div class="field trick-request-note"><label for="request-notes">Note</label><input id="request-notes" name="notes" maxlength="180" placeholder="Why do you want this next week?"></div>
+      <button class="primary-btn" type="submit">Send request</button>
+    </form>
+    <div class="settings-divider"></div>
+    <div class="request-list">${requestRows}</div>
   </section>`;
 }
 
@@ -1953,6 +2004,102 @@ function weeklyNotificationControlsHtml(commandData = {}) {
     </div>
     <div class="notification-list weekly-history-list">${historyRows}</div>
   </div>`;
+}
+
+function trickRequestRowsHtml(requests = [], roster = [], context = "command") {
+  if (!requests.length) return `<div class="empty compact-empty">No rider trick requests waiting.</div>`;
+  const byId = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  return `<div class="trick-request-review-list">${requests.map((request) => {
+    const athlete = byId.get(request.athlete_id) || {};
+    return `<article class="trick-request-review-card">
+      <div class="person">${avatarHtml(athlete)}<div class="person-name"><strong>${escapeHtml(athlete.display_name || "Rider")}</strong><small>${escapeHtml(trickRequestCategoryLabels[request.category] || request.category)} · ${escapeHtml(venueLabel(request.venue))} · ${escapeHtml(request.status || "pending")}</small></div></div>
+      <div class="request-review-main"><strong>${escapeHtml(request.trick_name)}</strong>${request.notes ? `<small>${escapeHtml(request.notes)}</small>` : ""}</div>
+      <div class="request-review-actions">
+        <button class="primary-btn compact-btn" type="button" data-request-accept="${escapeHtml(request.id)}" data-request-context="${escapeHtml(context)}">Accept</button>
+        <button class="danger-btn compact-btn" type="button" data-request-decline="${escapeHtml(request.id)}" data-request-context="${escapeHtml(context)}">Decline</button>
+      </div>
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function coachTrickRequestsHtml(commandData = {}, roster = []) {
+  const requests = commandData.trickRequests || [];
+  return trickRequestRowsHtml(requests, roster, "command");
+}
+
+async function acceptTrickRequest(event) {
+  const requestId = event.currentTarget.dataset.requestAccept;
+  const context = event.currentTarget.dataset.requestContext || "";
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Accepting...";
+  try {
+    const { data: request, error: requestError } = await client.from("trick_requests").select("*").eq("id", requestId).maybeSingle();
+    if (requestError) throw requestError;
+    if (!request) throw new Error("Could not find that trick request.");
+    const { data: existingRows, error: maxError } = await client.from("weekly_assignment_plans")
+      .select("sort_order")
+      .eq("coach_id", state.user.id)
+      .eq("athlete_id", request.athlete_id)
+      .eq("target_week_start", request.target_week_start)
+      .eq("status", "draft")
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    if (maxError) throw maxError;
+    const sortOrder = Number(existingRows?.[0]?.sort_order || 0) + 1;
+    const { data: inserted, error: insertError } = await client.from("weekly_assignment_plans").insert({
+      coach_id: state.user.id,
+      athlete_id: request.athlete_id,
+      target_week_start: request.target_week_start,
+      trick_name: request.trick_name,
+      category: request.category,
+      target_reps: request.category === "dialled" ? 3 : request.category === "percentage" ? 10 : 1,
+      notes: request.notes || "",
+      sort_order: sortOrder,
+      venue: request.category === "daily" ? request.venue || "" : "",
+      status: "draft",
+    }).select("id").single();
+    if (insertError) throw insertError;
+    const { error: updateError } = await client.from("trick_requests").update({
+      status: "accepted",
+      planned_assignment_id: inserted.id,
+      reviewed_by: state.user.id,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", requestId);
+    if (updateError) throw updateError;
+    notify("Request accepted and added to next week's private plan.");
+    cacheClear("coach-command");
+    if (context === "planner") await renderPlanner();
+    else await renderCoachCommand();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Accept";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function declineTrickRequest(event) {
+  const requestId = event.currentTarget.dataset.requestDecline;
+  const context = event.currentTarget.dataset.requestContext || "";
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Declining...";
+  const { error } = await client.from("trick_requests").update({
+    status: "declined",
+    reviewed_by: state.user.id,
+    reviewed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", requestId);
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Decline";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Request declined.");
+  cacheClear("coach-command");
+  if (context === "planner") await renderPlanner();
+  else await renderCoachCommand();
 }
 
 function goalsSection(profile = {}) {
@@ -2420,12 +2567,13 @@ async function renderParentTricktionary() {
 }
 
 async function renderAthleteHome() {
-  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, xpSummary] = await Promise.all([
+  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, xpSummary, trickRequests] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
     getDashboardItems(state.user.id),
     getXpSummary(state.user.id).catch(() => normalizeXpSummary({}, state.profile)),
+    getTrickRequestsForAthlete(state.user.id).catch(() => []),
   ]);
   const { assignments, awards, assignmentAttempts } = schedule;
   if (error) throw error;
@@ -2462,9 +2610,11 @@ async function renderAthleteHome() {
       <div class="settings-divider"></div>
       ${dashboardTaskForm(state.user.id)}
     </section>
-    ${goalsSection(state.profile)}`;
+    ${goalsSection(state.profile)}
+    ${athleteTrickRequestSection(assignments, trickRequests)}`;
   bindGoalActions();
   bindDashboardItemActions(renderAthleteHome);
+  document.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
   if (activeSession) {
     updateTimer();
     state.timer = setInterval(updateTimer, 1000);
@@ -2583,13 +2733,14 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
   const xp = scoreLevelSummary(points);
   const country = countryBadge(row);
+  const hasStarted = points > 0 || Boolean(row.daily_pb_seconds);
   const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : (row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "");
   const content = `
     <div class="rank">#${index + 1}</div>
-    <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${country}${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
-    <div class="points">${points}<small> pts</small></div>`;
+    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="points ${hasStarted ? "" : "dns-points"}">${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
   if (row.isBenchmarkBot) return `<article class="list-row leader-row benchmark-row">${content}</article>`;
-  return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
+  return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
 
 function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
@@ -3262,17 +3413,6 @@ async function renderPublicAthleteProfile() {
   }
   const scoreXp = scoreLevelSummary(profile.weekly_points || 0);
   const badges = earnedBadges(profile.badges);
-  let publicTricktionary = "";
-  try {
-    const trickData = await getTricktionaryData(state.publicAthleteId);
-    const entries = landedTricktionaryEntries(trickData);
-    publicTricktionary = `<details class="command-accordion public-tricktionary-dropdown">
-      <summary><span><strong>Tricktionary</strong><small>${entries.length} public landed trick${entries.length === 1 ? "" : "s"}</small></span><span class="accordion-caret">Open</span></summary>
-      ${tricktionaryEntriesHtml(entries, [])}
-    </details>`;
-  } catch (_error) {
-    publicTricktionary = `<details class="command-accordion public-tricktionary-dropdown"><summary><span><strong>Tricktionary</strong><small>Not visible yet</small></span><span class="accordion-caret">Open</span></summary><div class="empty compact-empty">This rider's Tricktionary is not available publicly yet.</div></details>`;
-  }
   const badgeHtml = [
     profile.is_weekly_winner ? `<span class="public-badge"><span>🏅</span>Weekly leader</span>` : "",
     profile.is_last_place ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
@@ -3303,8 +3443,7 @@ async function renderPublicAthleteProfile() {
     <section class="panel public-profile-details">
       <div class="public-detail"><div class="panel-title">Sponsors</div>${linesHtml(profile.sponsors, "No sponsors added yet.")}</div>
       <div class="public-detail"><div class="panel-title">Achievements</div>${linesHtml(profile.achievements, "No achievements added yet.")}</div>
-    </section>
-    ${publicTricktionary}`;
+    </section>`;
   document.querySelector("#back-to-board").addEventListener("click", () => navigate("board"));
 }
 
@@ -3388,6 +3527,7 @@ async function renderCoachCommand() {
   const upcoming = groupedCalendar.filter((event) => new Date(event.starts_at) >= new Date()).length;
   const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
   const teamSections = [
+    commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
     commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
     commandAccordionSection("rider-heat-map-section", "Rider Heat Map", "On track, needs help, injured, competition prep or away", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`),
     commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
@@ -3430,6 +3570,8 @@ async function renderCoachCommand() {
   document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
   document.querySelector("#generate-weekly-previews")?.addEventListener("click", () => generateWeeklyNotificationPreviews(roster, commandData));
   document.querySelectorAll("[data-dismiss-task]").forEach((button) => button.addEventListener("click", dismissCoachTask));
+  document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
+  document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
   document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
@@ -4583,9 +4725,10 @@ async function renderPlanner() {
 
   if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
-  const [currentSchedule, plannedAssignments] = await Promise.all([
+  const [currentSchedule, plannedAssignments, plannerRequests] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     getWeeklyAssignmentPlan(athlete.id, targetWeekStart),
+    getTrickRequestsForAthlete(athlete.id, ["pending"]),
   ]);
   const templateAssignments = plannedAssignments.length ? plannedAssignments : currentSchedule.assignments.map((assignment) => ({
     ...assignment,
@@ -4613,6 +4756,10 @@ async function renderPlanner() {
       <div class="field planner-athlete-picker"><label for="planner-athlete-select">Student</label><select id="planner-athlete-select">${studentOptions}</select></div>
       <div class="planner-status-pill">${plannedCount ? `${plannedCount} planned tricks saved` : "Using current week as template"}</div>
     </section>
+    <section class="panel planner-request-panel">
+      <div class="panel-head"><div><div class="panel-title">Requested tricks</div><div class="panel-meta">Accepting adds the trick to next week's private draft</div></div></div>
+      ${trickRequestRowsHtml(plannerRequests, roster, "planner")}
+    </section>
     <section class="panel planner-editor-panel">
       <div class="panel-head"><div><div class="panel-title">${escapeHtml(athlete.display_name)} · next week draft</div><div class="panel-meta">Draft only · students cannot see this before Sunday</div></div></div>
       <form id="planner-form">${editor}<button class="primary-btn wide" type="submit">Save private plan for next week</button></form>
@@ -4628,6 +4775,8 @@ async function renderPlanner() {
     renderPlanner();
   });
   document.querySelector("#planner-form").addEventListener("submit", savePlannedWeeklyAssignments);
+  document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
+  document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
   document.querySelectorAll("[data-planner-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.plannerAthleteId = button.dataset.plannerAthlete;
     state.coachPlanVenue = "";
@@ -5898,7 +6047,7 @@ async function submitHelpRequest(event) {
   const video = form.get("video");
   const question = String(form.get("question") || "").trim();
   if (!video?.size) return notify("Upload a trick video first.", "error");
-  if (video.size > 24 * 1024 * 1024) return notify("Choose a video under 24MB for now.", "error");
+  if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Choose a video under 96MB for now.", "error");
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Uploading...";
@@ -5922,6 +6071,41 @@ async function submitHelpRequest(event) {
   }
 }
 
+async function submitTrickRequest(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const trickName = String(form.get("trickName") || "").trim();
+  const category = String(form.get("category") || "daily");
+  const venue = String(form.get("venue") || "").trim();
+  const notes = String(form.get("notes") || "").trim();
+  if (!trickName) return notify("Add the trick you want to request.", "error");
+  if (!trickRequestCategoryLabels[category]) return notify("Choose a valid trick list.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Sending...";
+  try {
+    const coachId = await getLinkedCoachIdForCurrentAthlete().catch(() => null);
+    const { error } = await client.from("trick_requests").insert({
+      athlete_id: state.user.id,
+      coach_id: coachId,
+      target_week_start: nextWeekStartDate(),
+      venue,
+      category,
+      trick_name: trickName,
+      notes,
+    });
+    if (error) throw error;
+    notify("Trick request sent to your coach.");
+    cacheClear("coach-command");
+    await renderAthleteHome();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Send request";
+    notify(messageFrom(error), "error");
+  }
+}
+
 async function replyToHelpRequest(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
@@ -5929,7 +6113,7 @@ async function replyToHelpRequest(event) {
   const file = form.get("video");
   const comment = String(form.get("comment") || "").trim();
   if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
-  if (file?.size > 24 * 1024 * 1024) return notify("Choose a video under 24MB for now.", "error");
+  if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 160MB for now.", "error");
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Sending...";
@@ -5989,19 +6173,20 @@ function videoReviewCardHtml(request) {
   const status = request.status || "new";
   const media = state.videoReviewMedia.get(request.id) || {};
   const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
+  const coachSaveName = `${athlete.display_name || "rider"}-${dateLabel(request.replied_at || request.created_at)}-coach-reply`;
   const riderVideo = media.video_data_url ? `
     <video class="help-video" src="${escapeHtml(media.video_data_url)}" controls playsinline preload="metadata"></video>
     <div class="video-actions">
       <a class="secondary-btn compact-btn" href="${escapeHtml(media.video_data_url)}" target="_blank" rel="noopener">Open video</a>
-      <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Save video</button>
+      <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download video</button>
     </div>` : `<div class="video-lazy-box" data-help-video-slot="${request.id}">
       <div><strong>Student video attached</strong><small>Load only when you want to watch it, or save it straight away.</small></div>
       <div class="video-actions">
         <button class="secondary-btn compact-btn" type="button" data-load-help-video="${request.id}">Load video</button>
-        <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Save video</button>
+        <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download video</button>
       </div>
     </div>`;
-  const coachVideo = media.coach_video_data_url ? `<video class="help-video" src="${escapeHtml(media.coach_video_data_url)}" controls playsinline preload="metadata"></video>` : "";
+  const coachVideo = media.coach_video_data_url ? `<video class="help-video" src="${escapeHtml(media.coach_video_data_url)}" controls playsinline preload="metadata"></video><div class="video-actions"><a class="secondary-btn compact-btn" href="${escapeHtml(media.coach_video_data_url)}" target="_blank" rel="noopener">Open reply</a><button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-kind="coach" data-save-name="${escapeHtml(coachSaveName)}">Download reply</button></div>` : "";
   const coachReply = request.coach_comment || coachVideo || status === "replied"
     ? `<div class="coach-reply"><strong>Coach reply saved</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}${!coachVideo && status === "replied" ? `<small>Video reply saved. Load this request's media to view it.</small>` : ""}</div>`
     : "";
@@ -6016,7 +6201,7 @@ function videoReviewCardHtml(request) {
     ${coachReply}
     <form class="reply-form" data-help-reply="${request.id}">
       <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="What should they fix?">${escapeHtml(request.coach_comment || "")}</textarea></div>
-      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"></div>
+      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"><small>Coach replies can be up to 160MB.</small></div>
       <button class="primary-btn" type="submit">Send coach reply</button>
     </form>
     <button class="secondary-btn compact-btn" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Reviewed" : "Mark reviewed"}</button>
@@ -6114,8 +6299,9 @@ async function saveHelpVideo(event) {
   button.textContent = "Saving...";
   try {
     const media = await fetchHelpVideoMedia(button.dataset.saveHelpVideo);
-    if (!media.video_data_url) throw new Error("No student video found for this request.");
-    downloadDataUrl(media.video_data_url, button.dataset.saveName || "jkcrew-trick-video");
+    const key = button.dataset.saveKind === "coach" ? "coach_video_data_url" : "video_data_url";
+    if (!media[key]) throw new Error(button.dataset.saveKind === "coach" ? "No coach reply video found for this request." : "No student video found for this request.");
+    downloadDataUrl(media[key], button.dataset.saveName || "jkcrew-trick-video");
     button.disabled = false;
     button.textContent = originalText;
     notify("Video saved.");
