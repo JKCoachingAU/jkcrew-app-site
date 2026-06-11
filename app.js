@@ -178,7 +178,7 @@ function localLevelFromXp(xp = 0) {
 }
 function localLevelBadge(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
-  const tones = safeLevel >= 41 ? "red" : safeLevel >= 36 ? "purple" : safeLevel >= 31 ? "aqua" : safeLevel >= 21 ? "gold" : safeLevel >= 11 ? "silver" : "bronze";
+  const tones = safeLevel >= 41 ? "red" : safeLevel >= 36 ? "pink" : safeLevel >= 31 ? "purple" : safeLevel >= 21 ? "blue" : safeLevel >= 11 ? "teal" : "aqua";
   const icons = ["", "⌁","◉","⚙","▣","◒","🏁","✦","▰","◈","⌃","⌁","▬","🔗","♜","⚙","▰","◐","★","⚡","🚲","◇","◉","⚙","▣","∞","🚲","▰","★","♛","🔥","◉","⚡","⌁","»","✊","🚲","★","⚙","1","🚲","🚲","🔗","🚲","♛","◉","🔥","★","⚡","👑","🏆"];
   return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, icon: icons[safeLevel] || "★", tone: tones };
 }
@@ -436,7 +436,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.6" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.7" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -493,8 +493,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.6" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.6" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.7" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.7" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -592,14 +592,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.7" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.6" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.7" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2538,7 +2538,7 @@ function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
   const extraRows = rows.slice(7);
   return `
     ${topRows.map((row, index) => leaderRow(row, index, rows, pointsKey)).join("")}
-    ${extraRows.length ? `<details class="leaderboard-more"><summary>View Full Leaderboard <span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey)).join("")}</div></details>` : ""}`;
+    ${extraRows.length ? `<details class="leaderboard-more"><summary><span class="leaderboard-toggle-closed">View Full Leaderboard</span><span class="leaderboard-toggle-open">Hide Full Leaderboard</span><span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey)).join("")}</div></details>` : ""}`;
 }
 
 function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
@@ -2924,7 +2924,7 @@ async function renderBoard() {
     ${scoreAdjustmentPanel(rawLeaderboard)}
     <section class="panel board-rankings-panel">
       <div class="panel-head board-rankings-head">
-        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta}</div></div>
+        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta} · Points rank the board, levels come from long-term XP.</div></div>
         <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">
           <button type="button" class="${activeBoardView === "weekly" ? "active" : ""}" data-board-view="weekly">Weekly</button>
           <button type="button" class="${activeBoardView === "allTime" ? "active" : ""}" data-board-view="allTime">All-time</button>

@@ -542,6 +542,8 @@ img, video, canvas, svg { max-width: 100%; }
 .last-place { filter: saturate(1.1); }
 .leader-badges { display: flex; gap: 4px; margin-top: 4px; font-size: 0.9rem; }
 .leaderboard-more {
+  display: flex;
+  flex-direction: column;
   margin-top: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -549,6 +551,7 @@ img, video, canvas, svg { max-width: 100%; }
   background: rgba(255,255,255,0.018);
 }
 .leaderboard-more summary {
+  order: 2;
   display: flex;
   justify-content: center;
   gap: 8px;
@@ -567,7 +570,16 @@ img, video, canvas, svg { max-width: 100%; }
   color: var(--muted);
   font-size: 0.66rem;
 }
+.leaderboard-more summary .leaderboard-toggle-closed,
+.leaderboard-more summary .leaderboard-toggle-open {
+  color: var(--aqua);
+  font-size: 0.72rem;
+}
+.leaderboard-more summary .leaderboard-toggle-open { display: none; }
+.leaderboard-more[open] summary .leaderboard-toggle-closed { display: none; }
+.leaderboard-more[open] summary .leaderboard-toggle-open { display: inline; }
 .leaderboard-more-list {
+  order: 1;
   display: grid;
   gap: 7px;
   padding: 8px;
@@ -2779,7 +2791,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .public-badge span { font-size: 1rem; line-height: 1; }
 .muted-badge { border-color: var(--line); background: var(--surface); color: var(--muted); }
 .level-badge {
-  --badge-accent: #b9773a;
+  --badge-accent: var(--aqua);
   display: inline-grid;
   grid-template-columns: auto auto;
   gap: 5px;
@@ -2853,11 +2865,14 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .leader-row .level-badge.compact strong {
   font-size: 0.58rem;
 }
-.level-badge.tone-bronze { --badge-accent: #b9773a; }
-.level-badge.tone-silver { --badge-accent: #cbd5e1; }
-.level-badge.tone-gold { --badge-accent: #ffd66b; }
+.level-badge.tone-bronze,
 .level-badge.tone-aqua { --badge-accent: var(--aqua); }
+.level-badge.tone-silver,
+.level-badge.tone-teal { --badge-accent: #4ade80; }
+.level-badge.tone-gold,
+.level-badge.tone-blue { --badge-accent: #38bdf8; }
 .level-badge.tone-purple { --badge-accent: #a855f7; }
+.level-badge.tone-pink { --badge-accent: #ec4899; }
 .level-badge.tone-red { --badge-accent: #ff4567; }
 .xp-panel {
   display: grid;
