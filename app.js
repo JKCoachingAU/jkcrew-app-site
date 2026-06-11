@@ -436,7 +436,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.5" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.6" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -493,8 +493,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.5" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.5" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.6" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.6" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -592,14 +592,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.5" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.5" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.6" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -4671,7 +4671,7 @@ async function renderCoachPreview(mode = "student") {
     return;
   }
   const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs, xpSummary } = data;
-  const { assignments, awards } = schedule;
+  const { assignments, awards, assignmentAttempts = [] } = schedule;
   const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
   const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
