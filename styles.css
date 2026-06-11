@@ -780,14 +780,21 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .scoreboard-stats { margin-top: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .coach-dashboard-top {
   display: grid;
-  grid-template-columns: minmax(240px, 0.7fr) minmax(320px, 1.3fr);
+  grid-template-columns: minmax(150px, 220px) minmax(320px, 1fr);
   gap: 12px;
   margin-bottom: 14px;
+  align-items: start;
 }
 .coach-dashboard-top .stat-card { margin: 0; }
+.compact-stat-card {
+  min-height: 106px;
+  padding: 14px;
+}
+.compact-stat-card .stat-value { font-size: clamp(2.05rem, 4vw, 2.9rem); }
+.compact-stat-card .stat-foot { margin-top: 8px; }
 .coach-live-card {
-  min-height: 150px;
-  padding: 16px;
+  min-height: auto;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 13px;
   background:
@@ -816,6 +823,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   text-transform: uppercase;
 }
 .coach-live-list { display: grid; gap: 7px; }
+.coach-live-preview { margin-bottom: 7px; }
 .coach-live-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -837,6 +845,97 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   margin-top: 2px;
   color: var(--muted);
   font-size: 0.7rem;
+}
+.coach-live-more {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 8px;
+}
+.coach-live-more summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  color: var(--aqua);
+  font: 800 0.66rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  list-style: none;
+}
+.coach-live-more summary::-webkit-details-marker { display: none; }
+.coach-live-more summary span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.coach-live-more[open] summary { margin-bottom: 8px; }
+.planner-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px) auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.planner-hero-copy p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.planner-athlete-picker { margin: 0; }
+.planner-status-pill {
+  align-self: center;
+  justify-self: end;
+  padding: 11px 13px;
+  border: 1px solid rgba(32,227,195,0.22);
+  border-radius: 999px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font: 800 0.66rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.planner-summary-list {
+  display: grid;
+  gap: 8px;
+}
+.planner-summary-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.025);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.planner-summary-row.active {
+  border-color: rgba(32,227,195,0.55);
+  background: rgba(32,227,195,0.09);
+}
+.planner-summary-row strong {
+  display: block;
+  font: 900 0.95rem var(--display);
+}
+.planner-summary-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.planner-summary-row b {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font: 900 0.74rem var(--mono);
 }
 .groups-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
 .group-column {
@@ -3285,6 +3384,9 @@ html[data-theme="light"] .success-burst {
 @media (max-width: 1050px) {
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .coach-dashboard-top { grid-template-columns: 1fr; }
+  .compact-stat-card { max-width: 280px; }
+  .planner-hero { grid-template-columns: 1fr; align-items: stretch; }
+  .planner-status-pill { justify-self: start; }
   .coach-live-row strong { white-space: normal; }
   .scoreboard-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .groups-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

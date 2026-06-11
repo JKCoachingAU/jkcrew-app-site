@@ -38,6 +38,7 @@ const state = {
   runPlaybackTimer: null,
   draggedRunPoint: null,
   coachPlanVenue: "",
+  plannerAthleteId: null,
   boardLeaderboardView: "weekly",
   leaderboardFallbackNotified: false,
   videoReviewStatus: "all",
@@ -60,6 +61,7 @@ const coachNav = [
   ["command", "Command"],
   ["sessionViewer", "Session Viewer"],
   ["crew", "Students"],
+  ["planner", "Planner"],
   ["parents", "Parents"],
   ["videoReviews", "Video Reviews"],
   ["board", "Board"],
@@ -108,6 +110,12 @@ const weekStartDate = () => {
   date.setUTCDate(date.getUTCDate() - day);
   return date.toISOString().slice(0, 10);
 };
+const shiftDateString = (dateString, days) => {
+  const [year, month, day] = String(dateString).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+const nextWeekStartDate = () => shiftDateString(weekStartDate(), 7);
 const weekStartIso = () => `${weekStartDate()}T00:00:00+10:00`;
 const weekEndDate = () => new Date(new Date(weekStartIso()).getTime() + (6 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
 const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" }).format(new Date(`${weekStartDate()}T00:00:00+10:00`));
@@ -436,7 +444,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.8" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.0" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -493,8 +501,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.8" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.8" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.0" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.0" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -587,19 +595,19 @@ async function handleAuth(event, mode) {
 function renderShell() {
   const role = state.profile.role;
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
+  const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
   const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.8" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.0" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.8" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.0" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -628,6 +636,7 @@ async function navigate(view) {
     tricktionary: renderTricktionary,
     command: renderCoachCommand,
     sessionViewer: renderSessionViewer,
+    planner: renderPlanner,
     parents: renderParents,
     videoReviews: renderVideoReviews,
     board: renderBoard,
@@ -2412,8 +2421,8 @@ async function renderAthleteHome() {
   }
 }
 
-function statCard(label, value, unit, foot) {
-  return `<article class="stat-card"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${escapeHtml(value)}${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
+function statCard(label, value, unit, foot, className = "") {
+  return `<article class="stat-card ${escapeHtml(className)}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${escapeHtml(value)}${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
 }
 
 function statCardRaw(label, body, foot, className = "") {
@@ -4526,19 +4535,170 @@ async function getCoachLiveActivity(roster = []) {
   return [...pointItems, ...sessionItems]
     .filter((item) => item.at)
     .sort((a, b) => new Date(b.at) - new Date(a.at))
-    .slice(0, 7);
+    .slice(0, 24);
 }
 
-function coachLiveActivityHtml(items = []) {
-  const rows = items.length ? items.map((item) => `
+function coachLiveRowsHtml(items = [], emptyText = "Live rider activity will show here.") {
+  return items.length ? items.map((item) => `
     <div class="coach-live-row">
       <span class="live-dot"></span>
       <div><strong>${escapeHtml(item.text)}</strong><small>${dateLabel(item.at)}</small></div>
-    </div>`).join("") : `<div class="empty compact-empty">Live rider activity will show here.</div>`;
+    </div>`).join("") : `<div class="empty compact-empty">${escapeHtml(emptyText)}</div>`;
+}
+
+function coachLiveActivityHtml(items = []) {
+  const previewItems = items.slice(0, 3);
+  const remainingItems = items.slice(3);
   return `<article class="coach-live-card">
-    <div class="coach-live-head"><div><div class="stat-label">Live activity</div><strong>Coach feed</strong></div><span>Live</span></div>
-    <div class="coach-live-list">${rows}</div>
+    <div class="coach-live-head"><div><div class="stat-label">Live feed</div><strong>Coach activity</strong></div><span>${items.length ? `${items.length} live` : "Live"}</span></div>
+    <div class="coach-live-list coach-live-preview">${coachLiveRowsHtml(previewItems)}</div>
+    ${remainingItems.length ? `<details class="coach-live-more"><summary>View more notifications <span>${remainingItems.length} more</span></summary><div class="coach-live-list">${coachLiveRowsHtml(remainingItems, "")}</div></details>` : ""}
   </article>`;
+}
+
+function bindDailyVenuePicker() {
+  document.querySelector("#daily-venue-select")?.addEventListener("change", (event) => {
+    const selectedIndex = event.currentTarget.value;
+    const selectedPanel = document.querySelector(`[data-venue-panel="${selectedIndex}"]`);
+    state.coachPlanVenue = selectedPanel?.querySelector(`[name="dailyVenueName:${selectedIndex}"]`)?.value || "";
+    document.querySelectorAll("[data-venue-panel]").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.venuePanel === selectedIndex);
+    });
+  });
+}
+
+async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const { data, error } = await client.from("weekly_assignment_plans")
+    .select("*")
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .eq("target_week_start", targetWeekStart)
+    .eq("status", "draft")
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+function plannerSummaryHtml(roster = [], plannedRows = []) {
+  const summaryByAthlete = plannedRows.reduce((map, row) => {
+    const entry = map.get(row.athlete_id) || { total: 0, categories: new Map(), updatedAt: row.updated_at };
+    entry.total += 1;
+    entry.updatedAt = entry.updatedAt && new Date(entry.updatedAt) > new Date(row.updated_at) ? entry.updatedAt : row.updated_at;
+    entry.categories.set(row.category, (entry.categories.get(row.category) || 0) + 1);
+    map.set(row.athlete_id, entry);
+    return map;
+  }, new Map());
+
+  return roster.map((athlete) => {
+    const summary = summaryByAthlete.get(athlete.id);
+    const detail = summary ? [...summary.categories.entries()]
+      .map(([category, count]) => `${categoryInfo[category]?.label || category}: ${count}`)
+      .join(" · ") : "No private plan saved yet";
+    return `<button class="planner-summary-row ${state.plannerAthleteId === athlete.id ? "active" : ""}" type="button" data-planner-athlete="${athlete.id}">
+      ${avatarHtml(athlete)}
+      <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(detail)}</small></span>
+      <b>${summary ? `${summary.total}` : "0"}</b>
+    </button>`;
+  }).join("");
+}
+
+async function renderPlanner() {
+  if (!isCoachRole(state.profile?.role)) {
+    document.querySelector("#view").innerHTML = `<div class="empty">Planner is for coach/admin accounts only.</div>`;
+    return;
+  }
+  const targetWeekStart = nextWeekStartDate();
+  const [roster, coachVenues, { data: plannedRows, error: plannedRowsError }] = await Promise.all([
+    getCoachRoster(),
+    getCoachVenues(),
+    client.from("weekly_assignment_plans")
+      .select("athlete_id, category, updated_at")
+      .eq("coach_id", state.user.id)
+      .eq("target_week_start", targetWeekStart)
+      .eq("status", "draft"),
+  ]);
+  if (plannedRowsError) throw plannedRowsError;
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Add students first, then you can schedule their next weekly plans.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+
+  if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
+  const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
+  const [currentSchedule, plannedAssignments] = await Promise.all([
+    getWeeklyAssignments(athlete.id),
+    getWeeklyAssignmentPlan(athlete.id, targetWeekStart),
+  ]);
+  const templateAssignments = plannedAssignments.length ? plannedAssignments : currentSchedule.assignments.map((assignment) => ({
+    ...assignment,
+    id: `planner-${assignment.id}`,
+    week_start: targetWeekStart,
+  }));
+  if (!state.coachPlanVenue) {
+    state.coachPlanVenue = venueLabel(templateAssignments.find((assignment) => assignment.category === "daily")?.venue || "");
+  }
+  const studentOptions = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
+  const editor = scheduleEditorHtml(templateAssignments, coachVenues, {
+    dailyTitle: "Next Week Daily Tricks",
+    dailyMeta: "Private draft · copied from this week unless already planned",
+    tip: "This is hidden from the rider until Sunday reset. Edit the draft freely without changing this week.",
+    openWeeklySections: false,
+  });
+  const plannedCount = plannedAssignments.length;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
+    <section class="panel planner-hero">
+      <div class="planner-hero-copy">
+        <div class="panel-title">Plan for week starting ${escapeHtml(targetWeekStart)}</div>
+        <p>Choose a rider, start from their current active list, then save the edited version as next week's private draft.</p>
+      </div>
+      <div class="field planner-athlete-picker"><label for="planner-athlete-select">Student</label><select id="planner-athlete-select">${studentOptions}</select></div>
+      <div class="planner-status-pill">${plannedCount ? `${plannedCount} planned tricks saved` : "Using current week as template"}</div>
+    </section>
+    <section class="panel planner-editor-panel">
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(athlete.display_name)} · next week draft</div><div class="panel-meta">Draft only · students cannot see this before Sunday</div></div></div>
+      <form id="planner-form">${editor}<button class="primary-btn wide" type="submit">Save private plan for next week</button></form>
+    </section>
+    <section class="panel planner-summary-panel">
+      <div class="panel-head"><div><div class="panel-title">Scheduled plans</div><div class="panel-meta">Week starting ${escapeHtml(targetWeekStart)}</div></div></div>
+      <div class="planner-summary-list">${plannerSummaryHtml(roster, plannedRows || [])}</div>
+    </section>`;
+
+  document.querySelector("#planner-athlete-select").addEventListener("change", (event) => {
+    state.plannerAthleteId = event.currentTarget.value;
+    state.coachPlanVenue = "";
+    renderPlanner();
+  });
+  document.querySelector("#planner-form").addEventListener("submit", savePlannedWeeklyAssignments);
+  document.querySelectorAll("[data-planner-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.plannerAthleteId = button.dataset.plannerAthlete;
+    state.coachPlanVenue = "";
+    renderPlanner();
+  }));
+  bindDailyVenuePicker();
+}
+
+async function savePlannedWeeklyAssignments(event) {
+  event.preventDefault();
+  if (!state.plannerAthleteId) return notify("Choose a student first.", "error");
+  const form = new FormData(event.currentTarget);
+  const targetWeekStart = nextWeekStartDate();
+  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.plannerAthleteId, targetWeekStart);
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  button.disabled = true;
+  button.textContent = "Saving private plan...";
+  const { error } = await client.rpc("save_weekly_assignment_plan", {
+    p_athlete_id: state.plannerAthleteId,
+    p_target_week_start: targetWeekStart,
+    p_assignments: assignments,
+    p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+  });
+  if (error) {
+    notify(messageFrom(error), "error");
+    return renderPlanner();
+  }
+  notify("Private next-week plan saved.");
+  await renderPlanner();
 }
 
 async function renderCrew() {
@@ -4572,7 +4732,7 @@ async function renderCrew() {
   const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach dashboard</div><h1>Training <span>groups</span></h1><p>Drag students between groups, or click a student to open their profile.</p></div></div>
-    <section class="coach-dashboard-top">${statCard("Total students", roster.length, "", "Assigned to your crew")}${coachLiveActivityHtml(liveActivity)}</section>
+    <section class="coach-dashboard-top">${statCard("Total students", roster.length, "", "Assigned to your crew", "compact-stat-card")}${coachLiveActivityHtml(liveActivity)}</section>
     <section class="groups-grid">${groupsHtml}</section>
     <section class="panel"><div class="panel-head"><div class="panel-title">Add an athlete</div><div class="panel-meta">They need an account first</div></div>
       ${available.length ? `<form id="add-athlete-form" class="trick-form"><div class="field"><label for="athlete-id">Available athletes</label><select id="athlete-id" name="athleteId">${options}</select></div><button class="primary-btn" type="submit">Add to crew</button></form>` : `<div class="empty">Every available athlete is already linked.</div>`}
@@ -4958,56 +5118,7 @@ async function renderStudentProfile() {
       <button class="danger-btn compact-btn" data-unlink-parent="${parent.id}">Unlink</button>
     </div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
-  const savedVenueNames = coachVenues.map((venue) => venue.name).filter(Boolean);
-  const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
-  const venueNames = [...new Set([...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
-  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue) === venueKey(state.coachPlanVenue || "")));
-  const venueOptions = venueNames.map((venue, venueIndex) => {
-    const count = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
-    return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
-  }).join("");
-  const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
-    const venueDailyCount = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
-    const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
-      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
-      return `${assignment.trick_name}${notes}`;
-    }).join("\n");
-    return `<div class="schedule-editor compact-schedule-editor venue-edit-panel compact-venue-editor ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
-      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="category-count">${venueDailyCount}</div></div>
-      <div class="compact-venue-editor-grid">
-        <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
-        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
-      </div>
-    </div>`;
-  }).join("");
-  const customVenueEditor = `<details class="coach-tool-details custom-venue-editor compact-custom-venue">
-    <summary>Add another venue</summary>
-    <div class="two-col-form">
-      <div class="field"><label for="custom-daily-venue">Venue name</label><input id="custom-daily-venue" name="customDailyVenue" placeholder="New skate park name"></div>
-      <div class="field"><label for="custom-daily-list">Daily tricks</label><textarea id="custom-daily-list" name="customDaily" placeholder="One trick per line"></textarea></div>
-    </div>
-  </details>`;
-  const otherCategoryEditor = Object.entries(categoryInfo).filter(([category]) => category !== "daily").map(([category, info]) => {
-    const assignmentText = assignments.filter((assignment) => assignment.category === category).map((assignment) => {
-      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
-      return `${assignment.trick_name}${notes}`;
-    }).join("\n");
-    return planAccordionSection(info.label, `${assignments.filter((assignment) => assignment.category === category).length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
-      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === category).length}</div></div>
-      <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea></div>
-    </div>`, category === "one_bang" || category === "dialled");
-  }).join("");
-  const categoryEditor = `<div class="plan-accordion-stack">
-    ${planAccordionSection("Venue-Specific Daily Tricks", "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
-      <div class="compact-venue-controls">
-        <div class="field compact-location-field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select></div>
-        <div class="compact-editor-tip">Only one location is open at a time. Rename the venue, add tricks, then save the full schedule.</div>
-      </div>
-      <div class="venue-edit-panels">${dailyVenueEditors}</div>
-      ${customVenueEditor}
-    </div>`, true)}
-    ${otherCategoryEditor}
-  </div>`;
+  const categoryEditor = scheduleEditorHtml(assignments, coachVenues);
   const dailyDone = dailyCompletionCount(awards);
 
   document.querySelector("#view").innerHTML = `
@@ -5105,7 +5216,7 @@ async function renderStudentProfile() {
   document.querySelector("#delete-student-account").addEventListener("click", () => deleteSelectedAthlete(athlete));
 }
 
-function parseAssignmentLine(line, index, category, venue = "") {
+function parseAssignmentLine(line, index, category, venue = "", athleteId = state.selectedAthleteId, weekStart = weekStartDate()) {
   const [left, ...noteParts] = line.split(" - ");
   const note = noteParts.join(" - ").trim();
   const trickName = left.trim();
@@ -5113,8 +5224,8 @@ function parseAssignmentLine(line, index, category, venue = "") {
   const targetReps = category === "dialled" ? 3 : category === "percentage" ? 10 : 1;
   return {
     coach_id: state.user.id,
-    athlete_id: state.selectedAthleteId,
-    week_start: weekStartDate(),
+    athlete_id: athleteId,
+    week_start: weekStart,
     trick_name: trickName.slice(0, 120),
     category,
     venue: category === "daily" ? venueKey(venue).slice(0, 80) : "",
@@ -5122,6 +5233,21 @@ function parseAssignmentLine(line, index, category, venue = "") {
     notes: note.slice(0, 500),
     sort_order: index,
   };
+}
+
+function assignmentsFromScheduleForm(form, athleteId = state.selectedAthleteId, weekStart = weekStartDate()) {
+  const selectedVenueIndex = String(form.get("selectedDailyVenueIndex") || "0");
+  state.coachPlanVenue = String(form.get(`dailyVenueName:${selectedVenueIndex}`) || "").trim();
+  const dailyVenueRows = dailyVenueRowsFromForm(form);
+  const dailyAssignments = dailyVenueRows.flatMap((row, venueIndex) => String(row.tricks || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", row.name, athleteId, weekStart))
+    .filter(Boolean));
+  const otherAssignments = Object.keys(categoryInfo).filter((category) => category !== "daily").flatMap((category, categoryIndex) => String(form.get(category) || "").split("\n")
+    .slice(0, category === "percentage" ? 3 : undefined)
+    .map((line, index) => parseAssignmentLine(line.trim(), 1000 + (categoryIndex * 100) + index, category, "", athleteId, weekStart))
+    .filter(Boolean));
+  const assignments = [...dailyAssignments, ...otherAssignments].map((assignment, index) => ({ ...assignment, sort_order: index }));
+  return { dailyVenueRows, assignments };
 }
 
 function dailyVenueRowsFromForm(form) {
@@ -5147,6 +5273,59 @@ function dailyVenueRowsFromForm(form) {
   });
 }
 
+function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
+  const savedVenueNames = (coachVenues || []).map((venue) => venue.name).filter(Boolean);
+  const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
+  const venueNames = [...new Set([...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
+  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue) === venueKey(state.coachPlanVenue || "")));
+  const venueOptions = venueNames.map((venue, venueIndex) => {
+    const count = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
+    return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
+  }).join("");
+  const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
+    const venueDailyCount = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
+    const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
+      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+      return `${assignment.trick_name}${notes}`;
+    }).join("\n");
+    return `<div class="schedule-editor compact-schedule-editor venue-edit-panel compact-venue-editor ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
+      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="category-count">${venueDailyCount}</div></div>
+      <div class="compact-venue-editor-grid">
+        <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
+        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
+      </div>
+    </div>`;
+  }).join("");
+  const customVenueEditor = `<details class="coach-tool-details custom-venue-editor compact-custom-venue">
+    <summary>Add another venue</summary>
+    <div class="two-col-form">
+      <div class="field"><label for="custom-daily-venue">Venue name</label><input id="custom-daily-venue" name="customDailyVenue" placeholder="New skate park name"></div>
+      <div class="field"><label for="custom-daily-list">Daily tricks</label><textarea id="custom-daily-list" name="customDaily" placeholder="One trick per line"></textarea></div>
+    </div>
+  </details>`;
+  const otherCategoryEditor = Object.entries(categoryInfo).filter(([category]) => category !== "daily").map(([category, info]) => {
+    const assignmentText = assignments.filter((assignment) => assignment.category === category).map((assignment) => {
+      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+      return `${assignment.trick_name}${notes}`;
+    }).join("\n");
+    return planAccordionSection(info.label, `${assignments.filter((assignment) => assignment.category === category).length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
+      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === category).length}</div></div>
+      <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea></div>
+    </div>`, options.openWeeklySections ?? (category === "one_bang" || category === "dialled"));
+  }).join("");
+  return `<div class="plan-accordion-stack">
+    ${planAccordionSection(options.dailyTitle || "Venue-Specific Daily Tricks", options.dailyMeta || "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
+      <div class="compact-venue-controls">
+        <div class="field compact-location-field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select></div>
+        <div class="compact-editor-tip">${escapeHtml(options.tip || "Only one location is open at a time. Rename the venue, add tricks, then save the full schedule.")}</div>
+      </div>
+      <div class="venue-edit-panels">${dailyVenueEditors}</div>
+      ${customVenueEditor}
+    </div>`, options.dailyOpen ?? true)}
+    ${otherCategoryEditor}
+  </div>`;
+}
+
 function planAccordionSection(title, meta, body, open = false) {
   return `<details class="plan-accordion" ${open ? "open" : ""}>
     <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret">Open</span></summary>
@@ -5170,17 +5349,7 @@ async function saveCoachVenueNames(rows) {
 async function saveWeeklyAssignments(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  const selectedVenueIndex = String(form.get("selectedDailyVenueIndex") || "0");
-  state.coachPlanVenue = String(form.get(`dailyVenueName:${selectedVenueIndex}`) || "").trim();
-  const dailyVenueRows = dailyVenueRowsFromForm(form);
-  const dailyAssignments = dailyVenueRows.flatMap((row, venueIndex) => String(row.tricks || "").split("\n")
-    .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", row.name))
-    .filter(Boolean));
-  const otherAssignments = Object.keys(categoryInfo).filter((category) => category !== "daily").flatMap((category, categoryIndex) => String(form.get(category) || "").split("\n")
-    .slice(0, category === "percentage" ? 3 : undefined)
-    .map((line, index) => parseAssignmentLine(line.trim(), 1000 + (categoryIndex * 100) + index, category))
-    .filter(Boolean));
-  const assignments = [...dailyAssignments, ...otherAssignments].map((assignment, index) => ({ ...assignment, sort_order: index }));
+  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.selectedAthleteId, weekStartDate());
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Saving...";
