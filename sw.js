@@ -1,41 +1,64 @@
-const CACHE_NAME = "jkcommunity-app-v3";
-const APP_ASSETS = [
+const CACHE_NAME = "jkcrew-shell-v2.11.7";
+const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./brand/jkc-logo.png",
-  "./merch/hoodie.png",
-  "./merch/key-chain.png",
-  "./merch/faded-tee.png",
-  "./merch/cap.png",
-  "./merch/pencil-case.png",
-  "./merch/training-tee.png",
-  "./merch/gloves.png"
+  "./styles.css?v=2.11.7",
+  "./app.js?v=2.11.7",
+  "./manifest.webmanifest?v=2.11.7",
+  "./icons/jkc-logo.png?v=2.11.7",
+  "./icons/jkcoaching-wordmark.png?v=2.11.7",
+  "./icons/app-icon.svg",
+  "./icons/app-icon-192.png?v=2.11.7",
+  "./icons/app-icon-512.png?v=2.11.7",
+  "./icons/app-icon-maskable-512.png?v=2.11.7",
+  "./icons/apple-touch-icon.png?v=2.11.7",
 ];
 
-self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_ASSETS))
-      .then(() => self.skipWaiting())
-  );
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  self.skipWaiting();
 });
 
-self.addEventListener("activate", event => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then((clients) => clients.forEach((client) => {
+        const url = new URL(client.url);
+        if (url.origin === self.location.origin && !url.searchParams.has("jkcrew-updated")) {
+          url.searchParams.set("jkcrew-updated", "1");
+          client.navigate(url.href);
+        }
+      })),
   );
 });
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+self.addEventListener("fetch", (event) => {
+  const requestUrl = new URL(event.request.url);
+  if (event.request.method !== "GET" || requestUrl.origin !== self.location.origin) return;
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+          return response;
+        })
+        .catch(() => caches.match("./index.html")),
+    );
+    return;
+  }
+
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request)),
   );
 });

@@ -1,290 +1,46 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#050607" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="JKCommunity" />
-    <title>JKCommunity</title>
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="./icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=jkcommunity-exclusive" />
-  </head>
-  <body class="locked">
-    <section class="auth-screen" id="authScreen">
-      <div class="auth-hero">
-        <div class="auth-brand-row">
-          <img class="auth-logo" src="./brand/jkc-logo.png" alt="JK Coaching logo" />
-          <div class="auth-actions">
-            <button class="auth-install-button" id="installAppButton" type="button">Install app</button>
-            <a class="auth-book-link" href="https://jk-coaching.square.site/" target="_blank" rel="noopener">Book now</a>
-          </div>
-        </div>
-        <div class="auth-copy">
-          <img class="auth-lockup-logo" src="./brand/jkc-logo.png" alt="JK Coaching logo" />
-          <h1>Welcome to JKCommunity</h1>
-          <p class="auth-slogan">Crafting Champions, Shaping Futures</p>
-          <p class="auth-lead">Join one of the world's largest BMX coaching schools.</p>
-          <p class="auth-intro">The official JKCoaching community for families to access after-school lessons, private coaching, rider progress, bookings, updates, and the JKCoaching journey.</p>
-          <div class="auth-services">
-            <span>After-school riders</span>
-            <span>Private BMX lessons</span>
-            <span>Family updates</span>
-          </div>
-          <div class="auth-proof">
-            <span>Coached at Paris Olympic Games</span>
-            <span>Coached at X Games</span>
-            <span>Premium BMX coaching community</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="auth-card">
-        <p class="eyebrow">Exclusive family access</p>
-        <h2>Join JKCommunity</h2>
-        <p class="auth-note">Whether your child is just starting out or already chasing big goals, JKCommunity helps families stay connected, organised, and part of the journey.</p>
-        <ul class="auth-benefits">
-          <li>View coaching, lesson and park updates</li>
-          <li>Track rider progress throughout the term</li>
-          <li>Access bookings, merch and JKCoaching news</li>
-        </ul>
-        <form class="auth-form" id="authForm">
-          <label>Email<input id="loginEmail" type="email" autocomplete="email" placeholder="you@jkcoaching.com.au" required /></label>
-          <label>Password<input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" required /></label>
-          <button class="primary-action full-width" type="submit">Join the JKCommunity</button>
-        </form>
-        <p class="install-help" id="installHelp">Install from Chrome using the install icon in the address bar, or Menu > Save and share > Install page as app.</p>
-      </div>
-    </section>
-
-    <div class="app-shell" id="appShell" aria-hidden="true">
-      <aside class="sidebar">
-        <div class="brand">
-          <img class="brand-mark" src="./brand/jkc-logo.png" alt="JK Coaching logo" />
-          <span>
-            <strong>JKCommunity</strong>
-            <small id="roleLabel">Owner</small>
-          </span>
-        </div>
-        <nav class="side-nav" id="primaryNav" aria-label="Operations navigation"></nav>
-        <button class="logout-button" id="logoutButton" type="button">Log out</button>
-      </aside>
-
-      <main class="workspace">
-        <header class="workspace-header">
-          <div>
-            <p class="eyebrow">Term 3 operations</p>
-            <h1 id="pageTitle">Command Centre</h1>
-          </div>
-          <div class="sync-pill" id="syncPill">Square sync: setup needed</div>
-        </header>
-
-        <section class="view active" data-panel="command">
-          <div class="metric-grid">
-            <article class="metric-card"><span>Students</span><strong id="metricStudents">0</strong></article>
-            <article class="metric-card"><span>Classes</span><strong id="metricClasses">0</strong></article>
-            <article class="metric-card"><span>Coaches</span><strong id="metricCoaches">1</strong></article>
-            <article class="metric-card"><span>SMS queued</span><strong id="metricSms">0</strong></article>
-          </div>
-
-          <div class="ops-grid">
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Today</p>
-                  <h2>Roster overview</h2>
-                </div>
-              </div>
-              <div id="dashboardRoster" class="empty-state">No classes yet. Build your Term 3 class list, then Square purchases will flow into the matching roster.</div>
-            </section>
-
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Square</p>
-                  <h2>Signup pipeline</h2>
-                </div>
-              </div>
-              <ol class="pipeline">
-                <li id="stepParks">Add real skate parks</li>
-                <li id="stepCoaches">Create coach accounts</li>
-                <li id="stepClasses">Map Square lesson products to classes</li>
-                <li id="stepWebhook">Connect Square webhook endpoint</li>
-              </ol>
-            </section>
-          </div>
-        </section>
-
-        <section class="view" data-panel="classes">
-          <div class="split-grid">
-            <form class="panel form-panel owner-only" id="classForm">
-              <h2>Class builder</h2>
-              <label>Day<select id="classDay"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Saturday</option></select></label>
-              <label>Class name<input id="className" placeholder="Level 2 Term 3" required /></label>
-              <label>Coach<select id="classCoach" required></select></label>
-              <label>Skate park<select id="classPark" required></select></label>
-              <label>Square product or variation name<input id="classSquareKey" placeholder="Exactly as it appears in Square" required /></label>
-              <label>Capacity<input id="classCapacity" type="number" min="1" value="10" required /></label>
-              <button class="primary-action full-width" type="submit">Create class</button>
-            </form>
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Configured classes</p>
-                  <h2>Term 3 roster map</h2>
-                </div>
-              </div>
-              <div id="classList" class="class-list"></div>
-            </section>
-          </div>
-        </section>
-
-        <section class="view" data-panel="rosters">
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Attendance</p>
-                <h2>Students</h2>
-              </div>
-              <select id="rosterClassSelect"></select>
-            </div>
-            <form class="inline-form owner-only" id="manualRiderForm">
-              <input id="manualRiderName" placeholder="Rider name" required />
-              <input id="manualParentName" placeholder="Parent name" />
-              <input id="manualParentPhone" placeholder="Parent mobile" />
-              <button class="primary-action" type="submit">Add rider</button>
-            </form>
-            <div id="riderTable" class="data-table"></div>
-          </div>
-        </section>
-
-        <section class="view" data-panel="people">
-          <div class="split-grid">
-            <form class="panel form-panel owner-only" id="accountForm">
-              <h2>Create account</h2>
-              <label>Type<select id="accountType"><option value="coach">Coach</option><option value="parent">Parent</option></select></label>
-              <label>Name<input id="accountName" required /></label>
-              <label>Email<input id="accountEmail" type="email" /></label>
-              <label>Mobile<input id="accountPhone" /></label>
-              <label>Password<input id="accountPassword" /></label>
-              <button class="primary-action full-width" type="submit">Create account</button>
-            </form>
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Team and parents</p>
-                  <h2>Accounts</h2>
-                </div>
-              </div>
-              <div id="accountList" class="account-list"></div>
-            </section>
-          </div>
-        </section>
-
-        <section class="view" data-panel="parks">
-          <div class="split-grid">
-            <form class="panel form-panel owner-only" id="parkForm">
-              <h2>Skate parks</h2>
-              <label>Park name<input id="parkName" required /></label>
-              <label>Suburb / address<input id="parkAddress" required /></label>
-              <label>BOM station / notes<input id="parkBom" placeholder="Nearest BOM station or radar note" /></label>
-              <button class="primary-action full-width" type="submit">Add park</button>
-            </form>
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Weather</p>
-                  <h2>Park-specific conditions</h2>
-                </div>
-              </div>
-              <div id="parkList" class="park-list"></div>
-            </section>
-          </div>
-        </section>
-
-        <section class="view" data-panel="square">
-          <div class="ops-grid">
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Automatic intake</p>
-                  <h2>Square webhook</h2>
-                </div>
-              </div>
-              <div class="integration-box">
-                <div class="connection-banner" id="connectionBanner">
-                  <strong>Local preview</strong>
-                  <span>Step 1: put this app online first.</span>
-                </div>
-                <label>Square location ID<input id="squareLocationId" placeholder="Required for Orders API" /></label>
-                <label>Webhook endpoint
-                  <span class="copy-row"><input id="webhookEndpoint" readonly value="/api/square-webhook" /><button class="mini-action copy-button" data-copy-target="webhookEndpoint" type="button">Copy</button></span>
-                </label>
-                <p class="plain-help">This is the link Square will use to send new lesson orders into JKCommunity.</p>
-              </div>
-            </section>
-
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Test import</p>
-                  <h2>Process Square order JSON</h2>
-                </div>
-              </div>
-              <form id="squareImportForm" class="square-import">
-                <textarea id="squareOrderJson" rows="10" placeholder='Paste a real Square order payload or export here'></textarea>
-                <button class="primary-action full-width" type="submit">Import order into roster</button>
-              </form>
-              <div id="importResult" class="import-result"></div>
-            </section>
-          </div>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Go live</p>
-                <h2>Do these in order</h2>
-              </div>
-            </div>
-            <div class="setup-list">
-              <article id="squareStepDeploy">
-                <span></span>
-                <div><strong>1. Put the app online</strong><p>You need a live HTTPS link before Square can connect.</p></div>
-              </article>
-              <article id="squareStepKeys">
-                <span></span>
-                <div><strong>2. Add the Square keys</strong><p>Access token and webhook signature key go into the hosting settings.</p></div>
-              </article>
-              <article id="squareStepLocation">
-                <span></span>
-                <div><strong>3. Paste your Square location ID here</strong><p>This tells the app which Square store to read from.</p></div>
-              </article>
-              <article id="squareStepClasses">
-                <span></span>
-                <div><strong>4. Match each lesson product to a class</strong><p>Example: Term 3 Monday Level 1 becomes the Monday class in JKCommunity.</p></div>
-              </article>
-              <article id="squareStepSms">
-                <span></span>
-                <div><strong>5. Turn on parent texts</strong><p>This needs Twilio later. Square can be connected first.</p></div>
-              </article>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Messages</p>
-                <h2>Signup SMS queue</h2>
-              </div>
-              <button class="mini-action owner-only" id="sendQueuedSms" type="button">Send queued SMS</button>
-            </div>
-            <div id="smsQueue" class="sms-list"></div>
-          </section>
-        </section>
-      </main>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#050706">
+  <meta name="description" content="JK Coaching BMX talent, progression, and future tracking">
+  <meta name="application-name" content="JK Coaching">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JK Coaching">
+  <title>JK Coaching | BMX Progression</title>
+  <link rel="manifest" href="manifest.webmanifest?v=2.11.7">
+  <link rel="icon" href="icons/app-icon-192.png?v=2.11.7" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2.11.7">
+  <script>
+    (() => {
+      try {
+        const theme = localStorage.getItem("jkcrew-theme");
+        if (theme === "light") {
+          document.documentElement.dataset.theme = "light";
+          document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f4f1ea");
+        }
+      } catch {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=2.11.7">
+</head>
+<body>
+  <div id="app">
+    <div class="boot-screen">
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.7" alt="JK Coaching logo"></div>
+      <div class="boot-line"></div>
+      <p>Crafting talent, shaping futures...</p>
     </div>
+  </div>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <button id="install-app" class="install-app hidden" type="button">Install JK Coaching</button>
 
-    <script src="./app.js?v=jkcommunity-exclusive"></script>
-  </body>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="app.js?v=2.11.7"></script>
+</body>
 </html>
