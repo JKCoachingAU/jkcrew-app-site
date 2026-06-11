@@ -436,7 +436,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.7" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.10.8" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -493,8 +493,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.7" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.7" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.10.8" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.10.8" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -592,14 +592,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.7" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.10.8" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.7" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.10.8" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1232,6 +1232,7 @@ const heatStatuses = {
   falling_behind: { label: "Falling behind", dot: "red", icon: "●" },
   injured: { label: "Injured / modified", dot: "blue", icon: "●" },
   competition_prep: { label: "Competition prep", dot: "purple", icon: "●" },
+  away: { label: "On holiday / away", dot: "grey", icon: "●" },
 };
 const heatOptions = () => Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}">${info.label}</option>`).join("");
 
@@ -3445,7 +3446,7 @@ async function renderCoachCommand() {
   const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
   const teamSections = [
     commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
-    commandAccordionSection("rider-heat-map-section", "Rider Heat Map", "On track, needs help, injured or competition prep", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`),
+    commandAccordionSection("rider-heat-map-section", "Rider Heat Map", "On track, needs help, injured, competition prep or away", `<div class="overview-list">${athleteOverviewHtml(roster, commandData)}</div>`),
     commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
   ].join("");
   const adminSections = [

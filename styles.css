@@ -1454,6 +1454,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .heat-chip.red { color: #ff8fa4; border-color: rgba(255,69,103,0.34); background: rgba(255,69,103,0.1); }
 .heat-chip.blue { color: #83c7ff; border-color: rgba(90,175,255,0.34); background: rgba(90,175,255,0.1); }
 .heat-chip.purple { color: #d3a5ff; border-color: rgba(168,85,247,0.34); background: rgba(168,85,247,0.1); }
+.heat-chip.grey { color: #b8c0c7; border-color: rgba(184,192,199,0.28); background: rgba(184,192,199,0.1); }
 .attendance-form { display: grid; gap: 10px; }
 .attendance-grid {
   display: grid;
