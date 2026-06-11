@@ -186,9 +186,8 @@ function localLevelFromXp(xp = 0) {
 }
 function localLevelBadge(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
-  const tones = safeLevel >= 41 ? "red" : safeLevel >= 36 ? "pink" : safeLevel >= 31 ? "purple" : safeLevel >= 21 ? "blue" : safeLevel >= 11 ? "teal" : "aqua";
-  const icons = ["", "⌁","◉","⚙","▣","◒","🏁","✦","▰","◈","⌃","⌁","▬","🔗","♜","⚙","▰","◐","★","⚡","🚲","◇","◉","⚙","▣","∞","🚲","▰","★","♛","🔥","◉","⚡","⌁","»","✊","🚲","★","⚙","1","🚲","🚲","🔗","🚲","♛","◉","🔥","★","⚡","👑","🏆"];
-  return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, icon: icons[safeLevel] || "★", tone: tones };
+  const tones = safeLevel >= 41 ? "red" : safeLevel >= 36 ? "purple" : safeLevel >= 31 ? "aqua" : safeLevel >= 21 ? "gold" : safeLevel >= 11 ? "silver" : "aqua";
+  return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, tone: tones };
 }
 function normalizeXpSummary(summary = {}, profile = {}) {
   const xp = Number(summary.xp_total ?? profile.xp_total ?? 0);
@@ -215,8 +214,18 @@ function normalizeXpSummary(summary = {}, profile = {}) {
 }
 function levelBadgeHtml(badge = {}, compact = false) {
   const safe = badge || {};
+  const level = Math.min(XP_LEVEL_CAP, Math.max(1, Number(safe.level || 1)));
   const tone = escapeHtml(safe.tone || "bronze");
-  return `<span class="level-badge tone-${tone} ${compact ? "compact" : ""}" title="${escapeHtml(safe.label || "Level badge")}"><span>${escapeHtml(safe.icon || "★")}</span><strong>L${escapeHtml(safe.level || "")}</strong></span>`;
+  const imageUrl = levelBadgeImageUrl(level);
+  return `<span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
+    ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
+    <strong>L${escapeHtml(level)}</strong>
+  </span>`;
+}
+function levelBadgeImageUrl(level = 1) {
+  const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
+  if (safeLevel > 45) return "";
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.1`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -237,8 +246,24 @@ function levelBadgesGridHtml(summary) {
   });
   return `<div class="level-badge-grid">${badges.map((badge) => `<div class="level-badge-cell ${badge.unlocked ? "unlocked" : "locked"} ${badge.current ? "current" : ""}" title="${escapeHtml(badge.label)} · ${badge.xp_required || 0} XP">
     ${levelBadgeHtml(badge, true)}
-    <small>${badge.unlocked ? `L${badge.level}` : "Locked"}</small>
+    <small>${badge.level > 45 ? "Artwork pending" : badge.unlocked ? `L${badge.level}` : "Locked"}</small>
   </div>`).join("")}</div>`;
+}
+function levelBadgesAccordionHtml(summary, options = {}) {
+  const xp = normalizeXpSummary(summary);
+  const unlocked = Math.min(XP_LEVEL_CAP, Math.max(0, xp.level || 0));
+  const title = options.title || "Badges";
+  const meta = options.meta || `${unlocked}/${XP_LEVEL_CAP} unlocked · current Level ${xp.level}`;
+  return `<details class="badges-accordion" ${options.open ? "open" : ""}>
+    <summary>
+      <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>
+      <span class="badges-summary-current">${levelBadgeHtml(xp.current_badge, true)}<b>Open</b></span>
+    </summary>
+    <div class="badges-accordion-body">
+      <div class="badge-lock-note">Level badges unlock automatically from XP. Riders cannot manually edit badges.</div>
+      ${levelBadgesGridHtml(xp)}
+    </div>
+  </details>`;
 }
 function xpHistoryHtml(rows = []) {
   return rows.length ? `<div class="history-list xp-history-list">${rows.map((row) => `<div class="list-row">
@@ -444,7 +469,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.0" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.1" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -501,8 +526,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.0" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.0" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.1" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.1" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -600,14 +625,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.0" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.1" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.0" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.1" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2496,7 +2521,7 @@ async function renderParentHome() {
       <div class="settings-divider"></div>
       <div class="panel-title">Badges & achievements</div>
       <div class="public-badges">${badgeStripHtml(athlete.badges)}</div>
-      ${levelBadgesGridHtml(xpSummary)}
+      ${levelBadgesAccordionHtml(xpSummary)}
       <div class="settings-divider"></div>
       <div class="panel-title">Training plan</div>
       <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
@@ -3350,7 +3375,7 @@ async function renderPublicAthleteProfile() {
         <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No earned badges yet</span>`}</div>
       </div>
     </section>
-    <section class="panel">${xpProgressHtml(xpSummary)}${levelBadgesGridHtml(xpSummary)}</section>
+    <section class="panel">${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}</section>
     ${showreelHtml(profile)}
     ${socialLinksHtml(profile)}
     <section class="stats-grid public-profile-stats">
@@ -5138,7 +5163,7 @@ async function renderStudentProfile() {
         <button class="secondary-btn" type="submit">Apply XP Change</button>
       </form>
       <div class="settings-divider"></div>
-      ${levelBadgesGridHtml(xpSummary)}
+      ${levelBadgesAccordionHtml(xpSummary, { title: "Level Badges", meta: "Unlocked by XP level · coach view" })}
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
       <form id="coach-athlete-profile-form" class="two-col-form">
@@ -6280,7 +6305,7 @@ async function renderProfile() {
         getXpHistory(state.user.id).catch(() => []),
       ]);
       trainingHistorySection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">Training history</div><div class="panel-meta">Previous sheets moved here from Tricktionary</div></div></div>${previousTrainingSheetsHtml(historyData)}</section>`;
-      xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesGridHtml(xpSummary)}<div class="settings-divider"></div>${xpHistoryHtml(xpHistory)}</section>`;
+      xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}<div class="settings-divider"></div>${xpHistoryHtml(xpHistory)}</section>`;
     } else if (state.profile.role === "parent") {
       const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
       if (error) throw error;
