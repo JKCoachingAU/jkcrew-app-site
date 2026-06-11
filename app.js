@@ -115,15 +115,60 @@ const parsePbSeconds = (value = "") => {
   if (!match) return NaN;
   return (Number(match[1]) * 60) + Number(match[2]);
 };
-const brisbaneDateParts = (date = new Date()) => new Intl.DateTimeFormat("en-AU", {
-  timeZone: "Australia/Brisbane",
+const countryTimeZones = {
+  AU: "Australia/Brisbane",
+  NZ: "Pacific/Auckland",
+  DE: "Europe/Berlin",
+  GB: "Europe/London",
+  UK: "Europe/London",
+  US: "America/Los_Angeles",
+  CA: "America/Toronto",
+  FR: "Europe/Paris",
+  NL: "Europe/Amsterdam",
+  BE: "Europe/Brussels",
+  ES: "Europe/Madrid",
+  IT: "Europe/Rome",
+  SE: "Europe/Stockholm",
+  NO: "Europe/Oslo",
+  DK: "Europe/Copenhagen",
+  FI: "Europe/Helsinki",
+  IE: "Europe/Dublin",
+  PT: "Europe/Lisbon",
+  CH: "Europe/Zurich",
+  AT: "Europe/Vienna",
+  PL: "Europe/Warsaw",
+  CZ: "Europe/Prague",
+  RU: "Europe/Moscow",
+  KZ: "Asia/Almaty",
+  JP: "Asia/Tokyo",
+  SG: "Asia/Singapore",
+  CN: "Asia/Shanghai",
+  KR: "Asia/Seoul",
+  TH: "Asia/Bangkok",
+  ID: "Asia/Jakarta",
+  MY: "Asia/Kuala_Lumpur",
+  PH: "Asia/Manila",
+  AE: "Asia/Dubai",
+  ZA: "Africa/Johannesburg",
+  BR: "America/Sao_Paulo",
+  AR: "America/Argentina/Buenos_Aires",
+  MX: "America/Mexico_City",
+};
+const countryTimeZone = (countryCode = "AU") => countryTimeZones[String(countryCode || "AU").trim().toUpperCase()] || "Australia/Brisbane";
+const datePartsInTimeZone = (timeZone = "Australia/Brisbane", date = new Date()) => new Intl.DateTimeFormat("en-AU", {
+  timeZone,
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
   weekday: "short",
 }).formatToParts(date).reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {});
+const brisbaneDateParts = (date = new Date()) => datePartsInTimeZone("Australia/Brisbane", date);
 const localDate = () => {
   const parts = brisbaneDateParts();
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+const localDateForCountry = (countryCode = "AU", date = new Date()) => {
+  const parts = datePartsInTimeZone(countryTimeZone(countryCode), date);
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 const weekStartDate = () => {
@@ -276,7 +321,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.6`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.7`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -582,7 +627,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.7" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -639,7 +684,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.6" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.7" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -737,14 +782,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.7" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.6" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.7" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -787,7 +832,7 @@ async function navigate(view) {
     profile: renderProfile,
   };
   try {
-    await renders[view]();
+    await withTimeout(renders[view](), `Load ${view}`, 12000);
   } catch (error) {
     document.querySelector("#view").innerHTML = `<div class="empty">Could not load this screen.</div>`;
     notify(messageFrom(error), "error");
@@ -1025,18 +1070,21 @@ async function getWeeklyAssignments(athleteId) {
       throw rolloverError;
     }
   }
-  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: athleteProfile, error: profileError }] = await Promise.all([
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
     client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", weekStartIso()),
     client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
     client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("attempted_at", { ascending: false }),
+    client.from("profiles").select("id, country_code").eq("id", athleteId).maybeSingle(),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
   if (awardsError) throw awardsError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
+  if (profileError) console.warn("Could not load rider local date profile", profileError);
+  const riderLocalToday = localDateForCountry(athleteProfile?.country_code || (athleteId === state.profile?.id ? state.profile?.country_code : "AU"));
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
@@ -1051,7 +1099,7 @@ async function getWeeklyAssignments(athleteId) {
     assignmentAttemptsById.set(attempt.assignment_id, entries);
   });
   return cacheSet(cacheKey, {
-    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] })),
+    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, riderLocalToday, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] })),
     awards: awards || [],
     percentageAttempts: percentageAttempts || [],
     assignmentAttempts: assignmentAttempts || [],
@@ -1268,7 +1316,7 @@ async function getActiveCoachGroupSession() {
 
 async function getSessionViewerPlanData(athleteIds = []) {
   if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
+  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }, { data: profiles, error: profilesError }] = await Promise.all([
     client.from("weekly_trick_assignments")
       .select("*")
       .in("athlete_id", athleteIds)
@@ -1294,6 +1342,9 @@ async function getSessionViewerPlanData(athleteIds = []) {
     client.from("run_checklist_progress")
       .select("*")
       .in("athlete_id", athleteIds),
+    client.from("profiles")
+      .select("id, country_code")
+      .in("id", athleteIds),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
@@ -1301,6 +1352,8 @@ async function getSessionViewerPlanData(athleteIds = []) {
   if (attemptError) throw attemptError;
   if (runsError) throw runsError;
   if (runProgressError) throw runProgressError;
+  if (profilesError) console.warn("Could not load session viewer rider local dates", profilesError);
+  const riderTodayById = new Map((profiles || []).map((profile) => [profile.id, localDateForCountry(profile.country_code || "AU")]));
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
@@ -1317,7 +1370,7 @@ async function getSessionViewerPlanData(athleteIds = []) {
   const assignmentsByAthlete = new Map();
   (assignments || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
+    rows.push({ ...assignment, riderLocalToday: riderTodayById.get(assignment.athlete_id) || localDate(), progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
   });
   const runsByAthlete = new Map();
@@ -1399,7 +1452,7 @@ function extraTricks(profile = state.profile) {
 }
 
 function isAssignmentComplete(assignment) {
-  if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
+  if (assignment.category === "daily") return assignment.progress?.progress_date === (assignment.riderLocalToday || localDate());
   if (assignment.category === "percentage") return (assignment.percentageAttempts || []).length >= 10;
   return Boolean(assignment.progress?.completed_at);
 }
