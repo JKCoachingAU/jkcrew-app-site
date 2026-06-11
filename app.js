@@ -166,6 +166,7 @@ const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
   return emptyText ? `<span class="public-badge muted-badge">${escapeHtml(emptyText)}</span>` : "";
 };
 const XP_LEVEL_CAP = 50;
+const SCORE_POINTS_PER_LEVEL = 5;
 function localXpRequiredForLevel(level = 1) {
   const target = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   let total = 0;
@@ -188,6 +189,33 @@ function localLevelBadge(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   const tones = safeLevel >= 41 ? "red" : safeLevel >= 36 ? "purple" : safeLevel >= 31 ? "aqua" : safeLevel >= 21 ? "gold" : safeLevel >= 11 ? "silver" : "aqua";
   return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, tone: tones };
+}
+function scoreLevelFromPoints(points = 0) {
+  return Math.min(XP_LEVEL_CAP, Math.max(1, Math.floor(Math.max(0, Number(points || 0)) / SCORE_POINTS_PER_LEVEL) + 1));
+}
+function scoreLevelSummary(points = 0) {
+  const total = Math.max(0, Number(points || 0));
+  const level = scoreLevelFromPoints(total);
+  const current = (level - 1) * SCORE_POINTS_PER_LEVEL;
+  const nextLevel = Math.min(XP_LEVEL_CAP, level + 1);
+  const next = level >= XP_LEVEL_CAP ? current : level * SCORE_POINTS_PER_LEVEL;
+  const into = Math.max(0, total - current);
+  const span = Math.max(1, next - current);
+  return {
+    xp_total: total,
+    level,
+    level_cap: XP_LEVEL_CAP,
+    current_level_xp: current,
+    next_level: nextLevel,
+    next_level_xp: next,
+    xp_into_level: into,
+    xp_needed: level >= XP_LEVEL_CAP ? 0 : Math.max(0, next - total),
+    progress_percent: level >= XP_LEVEL_CAP ? 100 : Math.min(100, Math.round((into / span) * 100)),
+    current_badge: localLevelBadge(level),
+    badges: [],
+    unit_label: "pts",
+    progress_note: "Scoreboard points decide the visible level and badge.",
+  };
 }
 function normalizeXpSummary(summary = {}, profile = {}) {
   const xp = Number(summary.xp_total ?? profile.xp_total ?? 0);
@@ -225,16 +253,17 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.1`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.2`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
+  const unit = xp.unit_label || "XP";
   return `<div class="xp-panel ${compact ? "compact" : ""}">
     <div class="xp-badge-wrap">${levelBadgeHtml(xp.current_badge)}</div>
     <div class="xp-copy">
-      <div class="xp-title">Level ${xp.level}<span>${xp.xp_total} XP</span></div>
-      <div class="xp-bar" aria-label="XP progress"><span style="width:${Math.max(0, Math.min(100, xp.progress_percent))}%"></span></div>
-      <div class="xp-meta">${xp.level >= XP_LEVEL_CAP ? "Max level reached" : `${xp.xp_needed} XP to Level ${xp.next_level}`}</div>
+      <div class="xp-title">Level ${xp.level}<span>${xp.xp_total} ${escapeHtml(unit)}</span></div>
+      <div class="xp-bar" aria-label="Level progress"><span style="width:${Math.max(0, Math.min(100, xp.progress_percent))}%"></span></div>
+      <div class="xp-meta">${xp.level >= XP_LEVEL_CAP ? "Max level reached" : `${xp.xp_needed} ${escapeHtml(unit)} to Level ${xp.next_level}`}</div>
     </div>
   </div>`;
 }
@@ -260,7 +289,7 @@ function levelBadgesAccordionHtml(summary, options = {}) {
       <span class="badges-summary-current">${levelBadgeHtml(xp.current_badge, true)}<b>Open</b></span>
     </summary>
     <div class="badges-accordion-body">
-      <div class="badge-lock-note">Level badges unlock automatically from XP. Riders cannot manually edit badges.</div>
+      <div class="badge-lock-note">${escapeHtml(xp.progress_note || "Level badges unlock automatically from the current scoreboard level. Riders cannot manually edit badges.")}</div>
       ${levelBadgesGridHtml(xp)}
     </div>
   </details>`;
@@ -469,7 +498,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.1" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.2" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -526,8 +555,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.1" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.1" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.2" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.2" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -625,14 +654,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.1" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.2" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.1" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.2" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -759,8 +788,9 @@ async function getLeaderboard() {
   const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
   return rows.map((row) => {
     const profile = byId.get(row.athlete_id) || {};
-    const xp = normalizeXpSummary({ xp_total: profile.xp_total, level: profile.level }, row);
-    return { ...row, daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: xp.xp_total, xp_level: xp.level, level_badge: xp.current_badge };
+    const weeklyScore = Number(row.weekly_points || 0);
+    const scoreLevel = scoreLevelSummary(weeklyScore);
+    return { ...row, daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: weeklyScore, xp_level: scoreLevel.level, level_badge: scoreLevel.current_badge };
   });
 }
 
@@ -779,10 +809,10 @@ async function getLeaderboardFallback(cause) {
   const rows = (profiles || []).map((profile) => ({
     athlete_id: profile.id,
     display_name: profile.display_name || "Athlete",
-    level: profile.level || 1,
-    xp_level: profile.level || 1,
-    xp_total: profile.xp_total || 0,
-    level_badge: localLevelBadge(profile.level || localLevelFromXp(profile.xp_total || 0)),
+    level: 1,
+    xp_level: 1,
+    xp_total: 0,
+    level_badge: localLevelBadge(1),
     avatar_url: profile.avatar_url || "",
     avatar: profile.avatar || {},
     country_code: profile.country_code || "",
@@ -2411,7 +2441,7 @@ async function renderAthleteHome() {
   const openTasks = dashboardItems.filter((item) => item.item_type === "task" && !item.completed).length;
   const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const activeSession = await getActiveSession();
-  const xp = normalizeXpSummary(xpSummary, state.profile);
+  const xp = scoreLevelSummary(weeklyPoints);
   if (activeSession) {
     state.activeTraining = activeSession;
     state.trickStartedAt = new Date(activeSession.started_at).getTime();
@@ -2422,7 +2452,7 @@ async function renderAthleteHome() {
       <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats">
         ${statCard("Weekly score", weeklyPoints, "pts", rank ? `Crew rank #${rank}` : "This week")}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("World ranking", rank ? `#${rank}` : "-", "", `${leaderboard.length || 0} riders on board`)}
         ${statCard("Important tasks", openTasks, "", "Open right now")}
@@ -2500,7 +2530,7 @@ async function renderParentHome() {
     const percent = weeklyCompletionPercent(assignments, awards);
     const weeklyItems = completionAssignments(assignments);
     const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
-    const xp = normalizeXpSummary(xpSummary, athlete);
+    const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
     const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
     const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
     const relationship = linkByAthlete.get(athlete.id)?.relationship;
@@ -2508,7 +2538,7 @@ async function renderParentHome() {
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view${relationship ? ` · ${escapeHtml(relationship)}` : ""}</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats">
         ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Weekly completion", `${percent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked weekly items")}
       </div>
@@ -2521,7 +2551,7 @@ async function renderParentHome() {
       <div class="settings-divider"></div>
       <div class="panel-title">Badges & achievements</div>
       <div class="public-badges">${badgeStripHtml(athlete.badges)}</div>
-      ${levelBadgesAccordionHtml(xpSummary)}
+      ${levelBadgesAccordionHtml(xp)}
       <div class="settings-divider"></div>
       <div class="panel-title">Training plan</div>
       <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
@@ -2555,10 +2585,10 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
   const badge = !row.isBenchmarkBot ? medalForRank(row, realIndex, realRows.length, pointsKey) : "";
   const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
-  const xp = normalizeXpSummary({ xp_total: row.xp_total, level: row.xp_level || row.level, current_badge: row.level_badge }, row);
+  const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
+  const xp = scoreLevelSummary(points);
   const country = countryBadge(row);
   const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : (row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "");
-  const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
   const content = `
     <div class="rank">#${index + 1}</div>
     <div class="person">${avatarHtml(row)}<div class="person-name"><strong>${country}${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
@@ -2583,10 +2613,10 @@ function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
   const bot = {
     athlete_id: "__jkcrew_benchmark__",
     display_name: "Anonymous Rider",
-    level: 1,
-    xp_level: 1,
-    xp_total: 0,
-    level_badge: localLevelBadge(1),
+    level: scoreLevelFromPoints(benchmarkPoints),
+    xp_level: scoreLevelFromPoints(benchmarkPoints),
+    xp_total: benchmarkPoints,
+    level_badge: scoreLevelSummary(benchmarkPoints).current_badge,
     avatar: {},
     country_code: "AU",
     country_name: "Australia",
@@ -2950,16 +2980,16 @@ async function renderBoard() {
   const activeRows = activeBoardView === "allTime" ? allTimeLeaderboard : leaderboard;
   const activePointsKey = activeBoardView === "allTime" ? "all_time_points" : "weekly_points";
   const boardTitle = activeBoardView === "allTime" ? "All-time rankings" : "Weekly rankings";
-  const boardMeta = activeBoardView === "allTime" ? "Total points since joining" : "Resets Sunday midnight";
+  const boardMeta = activeBoardView === "allTime" ? "Total points since joining" : "Resets Sunday evening in each rider's country";
   const mentionableUsers = boardMentionableUsers(rawLeaderboard);
   state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at midnight every Sunday.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
+    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets Sunday evening in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
     <section class="panel board-rankings-panel">
       <div class="panel-head board-rankings-head">
-        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta} · Points rank the board, levels come from long-term XP.</div></div>
+        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta} · Levels and badges follow the selected scoreboard points.</div></div>
         <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">
           <button type="button" class="${activeBoardView === "weekly" ? "active" : ""}" data-board-view="weekly">Weekly</button>
           <button type="button" class="${activeBoardView === "allTime" ? "active" : ""}" data-board-view="allTime">All-time</button>
@@ -3347,7 +3377,7 @@ async function renderPublicAthleteProfile() {
     document.querySelector("#view").innerHTML = `<div class="empty">Could not find that rider profile.</div>`;
     return;
   }
-  const xpSummary = await getXpSummary(state.publicAthleteId).catch(() => normalizeXpSummary({}, profile));
+  const scoreXp = scoreLevelSummary(profile.weekly_points || 0);
   const badges = earnedBadges(profile.badges);
   let publicTricktionary = "";
   try {
@@ -3371,11 +3401,11 @@ async function renderPublicAthleteProfile() {
       ${avatarHtml(profile, "public-profile-avatar")}
       <div>
         <div class="eyebrow">Rider profile</div>
-        <h2>${escapeHtml(profile.display_name)} ${levelBadgeHtml(xpSummary.current_badge, true)}</h2>
+        <h2>${escapeHtml(profile.display_name)} ${levelBadgeHtml(scoreXp.current_badge, true)}</h2>
         <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No earned badges yet</span>`}</div>
       </div>
     </section>
-    <section class="panel">${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}</section>
+    <section class="panel">${xpProgressHtml(scoreXp)}${levelBadgesAccordionHtml(scoreXp)}</section>
     ${showreelHtml(profile)}
     ${socialLinksHtml(profile)}
     <section class="stats-grid public-profile-stats">
@@ -4880,13 +4910,13 @@ async function renderCoachPreview(mode = "student") {
 
 function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
-  const xp = normalizeXpSummary(xpSummary, athlete);
+  const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
   return `<div class="phone-preview-content">
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats preview-stats">
         ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
       </div>
       ${xpProgressHtml(xp, true)}
@@ -4904,13 +4934,13 @@ function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, even
 function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
-  const xp = normalizeXpSummary(xpSummary, athlete);
+  const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
   return `<div class="phone-preview-content">
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats preview-stats">
         ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
       </div>
@@ -5112,7 +5142,7 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory, xpSummary, xpHistory] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory, xpSummary, xpHistory, leaderboard] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
@@ -5124,6 +5154,7 @@ async function renderStudentProfile() {
     getPointHistory(athlete.id),
     getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
     getXpHistory(athlete.id).catch(() => []),
+    getLeaderboard(),
   ]);
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
@@ -5145,25 +5176,29 @@ async function renderStudentProfile() {
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
   const categoryEditor = scheduleEditorHtml(assignments, coachVenues);
   const dailyDone = dailyCompletionCount(awards);
+  const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
+  const scoreXp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
 
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${xpSummary.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" id="back-to-students">All students</button></div></div>
+    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
       <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
       <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
     </section>
     <section class="panel xp-coach-panel">
-      <div class="panel-head"><div><div class="panel-title">XP & Level Progression</div><div class="panel-meta">Separate from points · coach/admin controlled adjustments</div></div></div>
-      ${xpProgressHtml(xpSummary)}
+      <div class="panel-head"><div><div class="panel-title">Scoreboard Level & Badges</div><div class="panel-meta">Follows current weekly points from marked-off schedule items</div></div></div>
+      ${xpProgressHtml(scoreXp)}
+      <div class="settings-divider"></div>
+      ${levelBadgesAccordionHtml(scoreXp, { title: "Current Score Badges", meta: "Unlocked by current weekly points · coach view" })}
+      <div class="settings-divider"></div>
+      <div class="panel-head"><div><div class="panel-title">Legacy XP adjustment</div><div class="panel-meta">Admin-only archive tool · does not control visible scoreboard badges</div></div></div>
       <form id="xp-adjust-form" class="xp-adjust-form">
         <div class="field"><label for="xp-action">Action</label><select id="xp-action" name="action"><option value="add">Add XP</option><option value="deduct">Deduct XP</option></select></div>
         <div class="field"><label for="xp-amount">XP amount</label><input id="xp-amount" name="amount" type="number" min="1" step="1" placeholder="35"></div>
         <div class="field"><label for="xp-reason">Reason</label><input id="xp-reason" name="reason" placeholder="Bonus effort, correction, PB repair..."></div>
         <button class="secondary-btn" type="submit">Apply XP Change</button>
       </form>
-      <div class="settings-divider"></div>
-      ${levelBadgesAccordionHtml(xpSummary, { title: "Level Badges", meta: "Unlocked by XP level · coach view" })}
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
       <form id="coach-athlete-profile-form" class="two-col-form">
