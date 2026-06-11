@@ -12,8 +12,10 @@ const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 const installButton = document.querySelector("#install-app");
 let deferredInstallPrompt = null;
-const RIDER_VIDEO_MAX_BYTES = 96 * 1024 * 1024;
-const COACH_VIDEO_MAX_BYTES = 160 * 1024 * 1024;
+const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
+const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
+const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const state = {
   session: null,
   user: null,
@@ -274,7 +276,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.5`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.6`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -376,6 +378,27 @@ function dataUrlVideoExtension(dataUrl = "") {
   return ext === "quicktime" ? "mov" : ext.replace(/[^a-z0-9]/g, "") || "mp4";
 }
 
+function videoFileExtension(file = {}) {
+  const fromName = String(file.name || "").split(".").pop()?.toLowerCase();
+  const cleanNameExt = fromName?.replace(/[^a-z0-9]/g, "");
+  if (cleanNameExt && cleanNameExt.length <= 8 && cleanNameExt !== String(file.name || "").toLowerCase()) return cleanNameExt;
+  const mimeExt = String(file.type || "").split("/").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (mimeExt === "quicktime") return "mov";
+  if (mimeExt === "x-m4v") return "m4v";
+  return mimeExt || "mp4";
+}
+
+function openDownloadUrl(url, filename = "jkcrew-video") {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeFileName(filename);
+  link.target = "_blank";
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function downloadDataUrl(dataUrl, filename = "jkcrew-video") {
   const link = document.createElement("a");
   link.href = dataUrl;
@@ -383,6 +406,46 @@ function downloadDataUrl(dataUrl, filename = "jkcrew-video") {
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+async function uploadHelpVideoFile(file, kind = "student") {
+  if (!state.user?.id) throw new Error("Sign in again before uploading a video.");
+  const ext = videoFileExtension(file);
+  const path = `${state.user.id}/${kind}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await client.storage
+    .from(TRICK_HELP_VIDEO_BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      contentType: file.type || "video/mp4",
+      upsert: false,
+    });
+  if (error) throw error;
+  return {
+    path: data?.path || path,
+    fileName: file.name || `${kind}-video.${ext}`,
+    mimeType: file.type || "video/mp4",
+    size: file.size || 0,
+  };
+}
+
+async function signedHelpVideoUrl(path = "") {
+  if (!path) return "";
+  const { data, error } = await client.storage
+    .from(TRICK_HELP_VIDEO_BUCKET)
+    .createSignedUrl(path, HELP_VIDEO_SIGNED_URL_SECONDS);
+  if (error) throw error;
+  return data?.signedUrl || "";
+}
+
+async function hydrateHelpRequestMediaUrls(requests = []) {
+  return Promise.all((requests || []).map(async (request) => {
+    const hydrated = { ...request };
+    if (hydrated.video_storage_path) hydrated.video_url = await signedHelpVideoUrl(hydrated.video_storage_path);
+    else hydrated.video_url = hydrated.video_data_url || "";
+    if (hydrated.coach_video_storage_path) hydrated.coach_video_url = await signedHelpVideoUrl(hydrated.coach_video_storage_path);
+    else hydrated.coach_video_url = hydrated.coach_video_data_url || "";
+    return hydrated;
+  }));
 }
 
 function videoDurationSeconds(file) {
@@ -519,7 +582,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.5" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -576,7 +639,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.5" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.6" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -674,14 +737,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.5" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.5" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.6" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -998,7 +1061,7 @@ async function getWeeklyAssignments(athleteId) {
 async function getHelpRequests(athleteId) {
   const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
   if (error) throw error;
-  return data || [];
+  return hydrateHelpRequestMediaUrls(data || []);
 }
 
 async function getTrickRequestsForAthlete(athleteId, statuses = []) {
@@ -1649,19 +1712,21 @@ function assignmentGroups(assignments, interactive = false) {
 function helpRequestsHtml(requests, mode = "athlete") {
   if (!requests.length) return `<div class="empty">No trick help videos yet.</div>`;
   return requests.map((request) => {
-    const riderVideo = request.video_data_url ? `
-      <video class="help-video" src="${escapeHtml(request.video_data_url)}" controls playsinline preload="metadata"></video>
+    const riderVideoUrl = request.video_url || request.video_data_url || "";
+    const coachVideoUrl = request.coach_video_url || request.coach_video_data_url || "";
+    const riderVideo = riderVideoUrl ? `
+      <video class="help-video" src="${escapeHtml(riderVideoUrl)}" controls playsinline preload="metadata"></video>
       <div class="video-actions">
-        <a class="secondary-btn compact-btn" href="${escapeHtml(request.video_data_url)}" target="_blank" rel="noopener">Open video</a>
-        <a class="secondary-btn compact-btn" href="${escapeHtml(request.video_data_url)}" download="jkcrew-trick-video">Download</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open video</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" download="${escapeHtml(safeFileName(request.video_file_name || "jkcrew-trick-video"))}">Download</a>
       </div>` : `<div class="empty compact-empty">No video attached.</div>`;
-    const coachVideo = request.coach_video_data_url ? `
-      <video class="help-video" src="${escapeHtml(request.coach_video_data_url)}" controls playsinline preload="metadata"></video>
+    const coachVideo = coachVideoUrl ? `
+      <video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>
       <div class="video-actions">
-        <a class="secondary-btn compact-btn" href="${escapeHtml(request.coach_video_data_url)}" target="_blank" rel="noopener">Open coach video</a>
-        <a class="secondary-btn compact-btn" href="${escapeHtml(request.coach_video_data_url)}" download="jkcrew-coach-reply">Download</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" target="_blank" rel="noopener">Open coach video</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" download="${escapeHtml(safeFileName(request.coach_video_file_name || "jkcrew-coach-reply"))}">Download</a>
       </div>` : "";
-    const coachReply = request.coach_comment || request.coach_video_data_url
+    const coachReply = request.coach_comment || coachVideoUrl
       ? `<div class="coach-reply"><strong>Coach reply</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}</div>`
       : `<div class="panel-meta">Waiting for coach reply</div>`;
     const coachTools = mode === "coach" ? `
@@ -2677,7 +2742,7 @@ async function renderParentHome() {
     const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
     const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
     const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
-    const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
+    const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
     const relationship = linkByAthlete.get(athlete.id)?.relationship;
     return `<section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view${relationship ? ` · ${escapeHtml(relationship)}` : ""}</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</p></div></div>
@@ -4949,7 +5014,7 @@ async function renderCoachPreview(mode = "student") {
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
   const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const events = dashboardItems.filter((item) => item.item_type === "event");
-  const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url);
+  const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
   const previewBody = mode === "parent"
     ? coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary })
     : coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary });
@@ -6047,19 +6112,23 @@ async function submitHelpRequest(event) {
   const video = form.get("video");
   const question = String(form.get("question") || "").trim();
   if (!video?.size) return notify("Upload a trick video first.", "error");
-  if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Choose a video under 96MB for now.", "error");
+  if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Choose a video under 500MB.", "error");
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Uploading...";
   try {
     const coachId = await getLinkedCoachIdForCurrentAthlete();
     if (!coachId) throw new Error("Ask your coach to add you to their crew first.");
-    const videoDataUrl = await fileToDataUrl(video);
+    const upload = await uploadHelpVideoFile(video, "student");
     const { error } = await client.from("trick_help_requests").insert({
       athlete_id: state.user.id,
       coach_id: coachId,
       question,
-      video_data_url: videoDataUrl,
+      video_data_url: "",
+      video_storage_path: upload.path,
+      video_file_name: upload.fileName,
+      video_mime_type: upload.mimeType,
+      video_size_bytes: upload.size,
     });
     if (error) throw error;
     notify("Video sent to your coach.");
@@ -6113,17 +6182,24 @@ async function replyToHelpRequest(event) {
   const file = form.get("video");
   const comment = String(form.get("comment") || "").trim();
   if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
-  if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 160MB for now.", "error");
+  if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 500MB.", "error");
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Sending...";
   try {
     const update = {
-      coach_comment: comment || null,
+      coach_comment: comment || "",
       status: "replied",
       replied_at: new Date().toISOString(),
     };
-    if (file?.size) update.coach_video_data_url = await fileToDataUrl(file);
+    if (file?.size) {
+      const upload = await uploadHelpVideoFile(file, "coach-reply");
+      update.coach_video_data_url = "";
+      update.coach_video_storage_path = upload.path;
+      update.coach_video_file_name = upload.fileName;
+      update.coach_video_mime_type = upload.mimeType;
+      update.coach_video_size_bytes = upload.size;
+    }
     const { data, error } = await client.from("trick_help_requests")
       .update(update)
       .eq("id", formElement.dataset.helpReply)
@@ -6147,7 +6223,7 @@ async function getCoachVideoReviews() {
   const athleteIds = roster.map((athlete) => athlete.id);
   if (!athleteIds.length) return { roster, requests: [] };
   const { data, error } = await client.from("trick_help_requests")
-    .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at")
+    .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at, video_storage_path, coach_video_storage_path, video_file_name, coach_video_file_name, video_mime_type, coach_video_mime_type, video_size_bytes, coach_video_size_bytes")
     .in("athlete_id", athleteIds)
     .order("created_at", { ascending: false })
     .limit(120);
@@ -6174,20 +6250,24 @@ function videoReviewCardHtml(request) {
   const media = state.videoReviewMedia.get(request.id) || {};
   const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
   const coachSaveName = `${athlete.display_name || "rider"}-${dateLabel(request.replied_at || request.created_at)}-coach-reply`;
-  const riderVideo = media.video_data_url ? `
-    <video class="help-video" src="${escapeHtml(media.video_data_url)}" controls playsinline preload="metadata"></video>
+  const hasRiderVideo = true;
+  const riderVideoUrl = media.video_url || media.video_data_url || "";
+  const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
+  const riderVideo = riderVideoUrl ? `
+    <video class="help-video" src="${escapeHtml(riderVideoUrl)}" controls playsinline preload="metadata"></video>
     <div class="video-actions">
-      <a class="secondary-btn compact-btn" href="${escapeHtml(media.video_data_url)}" target="_blank" rel="noopener">Open video</a>
+      <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open video</a>
       <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download video</button>
-    </div>` : `<div class="video-lazy-box" data-help-video-slot="${request.id}">
+    </div>` : hasRiderVideo ? `<div class="video-lazy-box" data-help-video-slot="${request.id}">
       <div><strong>Student video attached</strong><small>Load only when you want to watch it, or save it straight away.</small></div>
       <div class="video-actions">
         <button class="secondary-btn compact-btn" type="button" data-load-help-video="${request.id}">Load video</button>
         <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download video</button>
       </div>
-    </div>`;
-  const coachVideo = media.coach_video_data_url ? `<video class="help-video" src="${escapeHtml(media.coach_video_data_url)}" controls playsinline preload="metadata"></video><div class="video-actions"><a class="secondary-btn compact-btn" href="${escapeHtml(media.coach_video_data_url)}" target="_blank" rel="noopener">Open reply</a><button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-kind="coach" data-save-name="${escapeHtml(coachSaveName)}">Download reply</button></div>` : "";
-  const coachReply = request.coach_comment || coachVideo || status === "replied"
+    </div>` : `<div class="empty compact-empty">No video attached.</div>`;
+  const coachVideo = coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video><div class="video-actions"><a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" target="_blank" rel="noopener">Open reply</a><button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-kind="coach" data-save-name="${escapeHtml(coachSaveName)}">Download reply</button></div>` : "";
+  const hasCoachVideo = request.coach_video_storage_path || request.coach_video_data_url || coachVideoUrl;
+  const coachReply = request.coach_comment || coachVideo || status === "replied" || hasCoachVideo
     ? `<div class="coach-reply"><strong>Coach reply saved</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}${!coachVideo && status === "replied" ? `<small>Video reply saved. Load this request's media to view it.</small>` : ""}</div>`
     : "";
   const reviewed = status === "reviewed";
@@ -6201,7 +6281,7 @@ function videoReviewCardHtml(request) {
     ${coachReply}
     <form class="reply-form" data-help-reply="${request.id}">
       <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="What should they fix?">${escapeHtml(request.coach_comment || "")}</textarea></div>
-      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"><small>Coach replies can be up to 160MB.</small></div>
+      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"><small>Coach replies can be up to 500MB.</small></div>
       <button class="primary-btn" type="submit">Send coach reply</button>
     </form>
     <button class="secondary-btn compact-btn" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Reviewed" : "Mark reviewed"}</button>
@@ -6258,17 +6338,14 @@ async function renderVideoReviews() {
 
 async function fetchHelpVideoMedia(requestId) {
   const cached = state.videoReviewMedia.get(requestId);
-  if (cached?.video_data_url || cached?.coach_video_data_url) return cached;
+  if (cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url) return cached;
   const { data, error } = await client.from("trick_help_requests")
-    .select("id, video_data_url, coach_video_data_url")
+    .select("id, video_data_url, coach_video_data_url, video_storage_path, coach_video_storage_path")
     .eq("id", requestId)
     .limit(1);
   if (error) throw error;
   if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
-  const media = {
-    video_data_url: data[0].video_data_url || "",
-    coach_video_data_url: data[0].coach_video_data_url || "",
-  };
+  const [media] = await hydrateHelpRequestMediaUrls(data);
   state.videoReviewMedia.set(requestId, media);
   return media;
 }
@@ -6281,7 +6358,7 @@ async function loadHelpVideo(event) {
   button.textContent = "Loading...";
   try {
     const media = await fetchHelpVideoMedia(button.dataset.loadHelpVideo);
-    if (!media.video_data_url) notify("No student video found for this request.", "error");
+    if (!(media.video_url || media.video_data_url)) notify("No student video found for this request.", "error");
     await renderVideoReviews();
   } catch (error) {
     button.disabled = false;
@@ -6299,9 +6376,12 @@ async function saveHelpVideo(event) {
   button.textContent = "Saving...";
   try {
     const media = await fetchHelpVideoMedia(button.dataset.saveHelpVideo);
-    const key = button.dataset.saveKind === "coach" ? "coach_video_data_url" : "video_data_url";
-    if (!media[key]) throw new Error(button.dataset.saveKind === "coach" ? "No coach reply video found for this request." : "No student video found for this request.");
-    downloadDataUrl(media[key], button.dataset.saveName || "jkcrew-trick-video");
+    const key = button.dataset.saveKind === "coach" ? "coach_video_url" : "video_url";
+    const legacyKey = button.dataset.saveKind === "coach" ? "coach_video_data_url" : "video_data_url";
+    const source = media[key] || media[legacyKey];
+    if (!source) throw new Error(button.dataset.saveKind === "coach" ? "No coach reply video found for this request." : "No student video found for this request.");
+    if (String(source).startsWith("data:")) downloadDataUrl(source, button.dataset.saveName || "jkcrew-trick-video");
+    else openDownloadUrl(source, button.dataset.saveName || "jkcrew-trick-video");
     button.disabled = false;
     button.textContent = originalText;
     notify("Video saved.");
