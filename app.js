@@ -1,6 +1,5 @@
 const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
-const GIPHY_API_KEY = String(window.JKCREW_CONFIG?.giphyApiKey || window.JKCREW_GIPHY_API_KEY || "").trim();
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     autoRefreshToken: false,
@@ -272,7 +271,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.3`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.4`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -517,7 +516,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.3" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.4" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -574,8 +573,8 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.3" alt="JK Coaching badge"><span>JKCoaching</span></div>
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.3" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup badge-lockup"><img src="icons/jkc-logo.png?v=2.11.4" alt="JK Coaching badge"><span>JKCoaching</span></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.4" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -673,14 +672,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.3" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.4" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.3" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.4" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1082,10 +1081,11 @@ async function getBoardChat() {
   const { data: posts, error } = await client.from("crew_posts")
     .select("*, profiles:author_id(display_name, avatar)")
     .eq("post_type", "chat")
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(60);
   if (error) throw error;
-  const postIds = (posts || []).map((post) => post.id);
+  const visiblePosts = (posts || []).filter((post) => String(post.body || "").trim());
+  const postIds = visiblePosts.map((post) => post.id);
   const { data: reactions, error: reactionError } = postIds.length
     ? await client.from("crew_post_reactions").select("*").in("post_id", postIds)
     : { data: [], error: null };
@@ -1101,75 +1101,11 @@ async function getBoardChat() {
     map.set(reaction.post_id, list);
     return map;
   }, new Map());
-  return (posts || []).map((post) => ({ ...post, reactions: reactionsByPost.get(post.id) || [] }));
+  return visiblePosts.map((post) => ({ ...post, reactions: reactionsByPost.get(post.id) || [] }));
 }
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
-const allowedGifHosts = new Set(["media.giphy.com", "media0.giphy.com", "media1.giphy.com", "media2.giphy.com", "media3.giphy.com", "media4.giphy.com", "i.giphy.com", "media.tenor.com"]);
 const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
-const giphyEndpoint = (path) => `https://api.giphy.com/v1/gifs/${path}`;
-const giphyImageUrl = (gif, keys = ["fixed_width", "downsized_medium", "original"]) => {
-  const images = gif?.images || {};
-  return keys.map((key) => images[key]?.url).find(Boolean) || "";
-};
-const mapGiphyResult = (gif) => ({
-  id: gif.id,
-  label: gif.title || gif.slug || "Crew sticker",
-  url: giphyImageUrl(gif, ["fixed_height", "downsized_medium", "original"]),
-  preview: giphyImageUrl(gif, ["fixed_width_small", "fixed_height_small", "fixed_width", "downsized"]),
-});
-async function searchGiphyViaEdge(query = "", offset = 0) {
-  const { data: sessionData } = await client.auth.getSession();
-  const accessToken = sessionData?.session?.access_token || "";
-  if (!accessToken) throw new Error("Sign in before searching stickers.");
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/search-jkcrew-giphy`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${accessToken}`,
-      "apikey": SUPABASE_KEY,
-    },
-    body: JSON.stringify({ query: String(query || "").trim(), offset }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.error) throw new Error(payload?.error || "Sticker search failed. Please try again.");
-  return {
-    gifs: Array.isArray(payload?.gifs) ? payload.gifs : [],
-    hasMore: Boolean(payload?.hasMore),
-  };
-}
-async function searchGiphy(query = "", offset = 0) {
-  const trimmedQuery = String(query || "").trim();
-  try {
-    const edgeResults = await searchGiphyViaEdge(trimmedQuery, offset);
-    if (edgeResults.gifs.length || !GIPHY_API_KEY) return edgeResults;
-  } catch (edgeError) {
-    if (!GIPHY_API_KEY) throw new Error(messageFrom(edgeError) || "Sticker search needs an API key before it can load the full sticker library.");
-  }
-  if (!GIPHY_API_KEY) throw new Error("Sticker search needs an API key before it can load the full sticker library.");
-  const params = new URLSearchParams({
-    api_key: GIPHY_API_KEY,
-    limit: "24",
-    offset: String(Math.max(0, Number(offset || 0))),
-    rating: "pg",
-    lang: "en",
-    bundle: "messaging_non_clips",
-  });
-  const endpoint = trimmedQuery ? "search" : "trending";
-  if (trimmedQuery) params.set("q", trimmedQuery);
-  const response = await fetch(`${giphyEndpoint(endpoint)}?${params.toString()}`);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.meta?.msg || "Sticker search failed. Please try again.");
-  const gifs = (payload.data || [])
-    .map(mapGiphyResult)
-    .filter((gif) => gif.url && gif.preview && normalizeGifUrl(gif.url) && normalizeGifUrl(gif.preview));
-  const pagination = payload.pagination || {};
-  const nextOffset = Number(pagination.offset || 0) + Number(pagination.count || gifs.length || 0);
-  return {
-    gifs,
-    hasMore: nextOffset < Number(pagination.total_count || 0),
-  };
-}
 const mentionToken = (name = "") => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
 const escapeRegExp = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const boardMentionableUsers = (rows = []) => rows
@@ -1190,17 +1126,6 @@ const formatBoardMessageBody = (body = "", mentions = []) => {
     html = html.replace(new RegExp(escapeRegExp(escapeHtml(mention.token)), "gi"), `<button class="mention-link" type="button" data-mention-athlete="${escapeHtml(mention.id)}">${escapeHtml(label)}</button>`);
   });
   return html;
-};
-const normalizeGifUrl = (value = "") => {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:" || !allowedGifHosts.has(url.hostname)) return "";
-    return url.href.slice(0, 900);
-  } catch (_error) {
-    return "";
-  }
 };
 const containsGifUrl = (value = "") => /https?:\/\/\S*(?:\.gif|giphy\.com|tenor\.com|media\.tenor\.com|media\d?\.giphy\.com)\S*/i.test(String(value || ""));
 const countryOptions = [
@@ -3077,7 +3002,7 @@ async function renderBoard() {
       <div class="leaderboard">${compactLeaderboardHtml(activeRows, activePointsKey)}</div>
     </section>
     <section class="panel board-chat-panel">
-      <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Riders and coaches · team chat · reactions, mentions and safe stickers</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Crew chat</div><div class="panel-meta">Newest first · riders and coaches · text-only team chat</div></div></div>
       <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Start with a positive message.</div>`}</div>
       ${canPost ? boardChatComposerHtml(mentionableUsers) : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
@@ -3198,12 +3123,10 @@ function boardChatMessageHtml(post) {
     }).join("");
     return `<span class="reaction-wrap"><button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${reactions.length ? `<span>${reactions.length}</span>` : ""}</button>${reactions.length ? `<span class="reaction-popover" role="tooltip">${people}</span>` : ""}</span>`;
   }).join("");
-  const stickerUrl = normalizeGifUrl(metadata.sticker_url || metadata.gif_url || "");
-  const stickerHtml = stickerUrl ? `<figure class="chat-sticker"><img src="${escapeHtml(stickerUrl)}" alt="${escapeHtml(metadata.sticker_label || metadata.gif_label || "Crew chat sticker")}" loading="lazy"></figure>` : "";
   const bodyHtml = post.body ? `<p>${formatBoardMessageBody(post.body, metadata.mentions || [])}</p>` : "";
   return `<article class="board-chat-message">
     ${avatarHtml({ display_name: authorName, avatar: authorAvatar })}
-    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}${stickerHtml}<div class="reaction-row">${reactionHtml}</div></div>
+    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}<div class="reaction-row">${reactionHtml}</div></div>
   </article>`;
 }
 
@@ -3211,25 +3134,12 @@ function boardChatComposerHtml(mentionableUsers = []) {
   const suggestions = mentionableUsers.map((user) => `<button type="button" data-mention-pick="${escapeHtml(user.id)}" data-mention-token="${escapeHtml(user.token)}"><span>${avatarHtml({ display_name: user.name, avatar: user.avatar }, "reaction-avatar")}</span><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.token)}</small></button>`).join("");
   return `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose">
     <div class="board-compose-shell">
-      <button class="secondary-btn sticker-icon-btn" type="button" id="toggle-gif-picker" aria-label="Search stickers">Sticker</button>
       <div class="mention-field">
         <textarea id="board-message" name="body" maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea>
         <div id="board-mention-menu" class="mention-menu" hidden>${suggestions || `<div class="empty compact-empty">No riders to mention yet.</div>`}</div>
       </div>
       <button class="primary-btn board-send-btn" type="submit" data-send-board-chat>Send</button>
     </div>
-    <div id="board-gif-picker" class="sticker-picker" hidden>
-      <div class="gif-picker-head">
-        <div><strong>Sticker search</strong><small>Search the safe sticker library</small></div>
-        <div class="gif-search-row">
-          <input id="board-gif-search" type="search" inputmode="search" placeholder="Search BMX, hype, fire...">
-          <button class="secondary-btn compact-btn" type="button" id="board-gif-search-btn">Search</button>
-        </div>
-      </div>
-      <div class="gif-results" id="board-gif-results"><div class="gif-results-status">Open Sticker search to load results.</div></div>
-      <div class="empty compact-empty gif-no-results" id="board-gif-empty" hidden>No sticker results found for that search.</div>
-    </div>
-    <div id="board-gif-preview" class="chat-sticker-preview" hidden></div>
   </form>`;
 }
 
@@ -3239,9 +3149,8 @@ async function submitBoardChat(event) {
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
   const body = String(form.get("body") || "").trim();
-  if (containsGifUrl(body)) return notify("Use the Sticker button instead of pasting sticker links.", "error");
-  const gifUrl = normalizeGifUrl(formElement.dataset.gifUrl || "");
-  if (!body && !gifUrl) return notify("Write a message or add a sticker first.", "error");
+  if (containsGifUrl(body)) return notify("GIFs and stickers are turned off for crew chat.", "error");
+  if (!body) return notify("Write a message first.", "error");
   const mentions = extractBoardMentions(body, state.boardMentionableCache || []);
   const button = formElement.querySelector("[data-send-board-chat]");
   button.disabled = true;
@@ -3254,8 +3163,6 @@ async function submitBoardChat(event) {
       author_name: state.profile?.display_name || state.user?.email || "Crew member",
       author_role: state.profile?.role || "member",
       avatar: state.profile?.avatar || null,
-      sticker_url: gifUrl || null,
-      sticker_label: gifUrl ? String(formElement.dataset.gifLabel || "Crew chat sticker").slice(0, 80) : null,
       mentions,
     },
   });
@@ -3273,83 +3180,6 @@ function bindBoardChatComposer(mentionableUsers = []) {
   if (!form) return;
   const textarea = form.querySelector("#board-message");
   const menu = form.querySelector("#board-mention-menu");
-  const gifPreview = form.querySelector("#board-gif-preview");
-  const gifPicker = form.querySelector("#board-gif-picker");
-  const gifSearch = form.querySelector("#board-gif-search");
-  const gifSearchButton = form.querySelector("#board-gif-search-btn");
-  const gifResults = form.querySelector("#board-gif-results");
-  const gifEmpty = form.querySelector("#board-gif-empty");
-  let gifSearchTimer = null;
-  let gifSearchOffset = 0;
-  let gifCurrentQuery = "";
-  const showGifPreview = (url, label = "Crew chat sticker") => {
-    const safeUrl = normalizeGifUrl(url);
-    if (!safeUrl) {
-      gifPreview.hidden = true;
-      gifPreview.innerHTML = "";
-      form.dataset.gifUrl = "";
-      form.dataset.gifLabel = "";
-      return;
-    }
-    form.dataset.gifUrl = safeUrl;
-    form.dataset.gifLabel = label;
-    gifPreview.hidden = false;
-    gifPreview.innerHTML = `<span>Sticker ready</span><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}"><button class="secondary-btn compact-btn" type="button" id="clear-board-gif">Remove</button>`;
-    gifPreview.querySelector("#clear-board-gif")?.addEventListener("click", () => showGifPreview("", ""));
-  };
-  const setGifStatus = (message, tone = "") => {
-    if (!gifResults) return;
-    gifResults.innerHTML = `<div class="gif-results-status ${tone}">${escapeHtml(message)}</div>`;
-    if (gifEmpty) gifEmpty.hidden = true;
-  };
-  const gifResultButtonsHtml = (gifs = []) => gifs.map((gif) => `
-      <button type="button" data-gif-url="${escapeHtml(gif.url)}" data-gif-label="${escapeHtml(gif.label)}">
-        <img src="${escapeHtml(gif.preview)}" alt="${escapeHtml(gif.label)}" loading="lazy">
-        <span>${escapeHtml(gif.label)}</span>
-      </button>
-    `).join("");
-  const renderGifResults = (gifs = [], { append = false, hasMore = false } = {}) => {
-    if (!gifResults) return;
-    if (!gifs.length && !append) {
-      gifResults.innerHTML = "";
-      if (gifEmpty) gifEmpty.hidden = false;
-      return;
-    }
-    if (gifEmpty) gifEmpty.hidden = true;
-    const previousButtons = append
-      ? [...gifResults.querySelectorAll("[data-gif-url]")].map((button) => button.outerHTML).join("")
-      : "";
-    const loadMore = hasMore ? `<button type="button" class="gif-load-more" data-gif-load-more>Load more stickers</button>` : "";
-    gifResults.innerHTML = `${previousButtons}${gifResultButtonsHtml(gifs)}${loadMore}`;
-  };
-  const loadGiphyResults = async (query = "", append = false) => {
-    if (!gifResults) return;
-    const normalizedQuery = String(query || "").trim();
-    if (!append || normalizedQuery !== gifCurrentQuery) {
-      gifCurrentQuery = normalizedQuery;
-      gifSearchOffset = 0;
-    }
-    if (append) {
-      const loadMoreButton = gifResults.querySelector("[data-gif-load-more]");
-      if (loadMoreButton) {
-        loadMoreButton.disabled = true;
-        loadMoreButton.textContent = "Loading...";
-      }
-    } else {
-      setGifStatus("Searching stickers...");
-    }
-    try {
-      const result = await searchGiphy(gifCurrentQuery, gifSearchOffset);
-      gifSearchOffset += result.gifs.length;
-      renderGifResults(result.gifs, { append, hasMore: result.hasMore });
-    } catch (error) {
-      setGifStatus(messageFrom(error), "error");
-    }
-  };
-  const queueGiphySearch = () => {
-    clearTimeout(gifSearchTimer);
-    gifSearchTimer = setTimeout(() => loadGiphyResults(gifSearch?.value || ""), 360);
-  };
   const refreshMentionMenu = () => {
     if (!textarea || !menu) return;
     const beforeCursor = textarea.value.slice(0, textarea.selectionStart || textarea.value.length);
@@ -3376,7 +3206,7 @@ function bindBoardChatComposer(mentionableUsers = []) {
     const hasImageOrGif = [...(clipboard?.items || [])].some((item) => item.type === "image/gif" || item.type.startsWith("image/"));
     if (hasImageOrGif || containsGifUrl(text)) {
       event.preventDefault();
-      notify("Use the Sticker button to search and add stickers.", "error");
+      notify("GIFs and stickers are turned off for crew chat.", "error");
     }
   });
   textarea?.addEventListener("blur", () => setTimeout(() => { if (menu) menu.hidden = true; }, 160));
@@ -3393,31 +3223,6 @@ function bindBoardChatComposer(mentionableUsers = []) {
     textarea.selectionStart = textarea.selectionEnd = replacementStart + match[1].length + token.length + 2;
     menu.hidden = true;
   }));
-  document.querySelector("#toggle-gif-picker")?.addEventListener("click", () => {
-    gifPicker.hidden = !gifPicker.hidden;
-    if (!gifPicker.hidden) {
-      gifSearch?.focus();
-      if (!gifResults?.querySelector("[data-gif-url]")) loadGiphyResults("");
-    }
-  });
-  gifResults?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-gif-load-more]")) {
-      loadGiphyResults(gifCurrentQuery, true);
-      return;
-    }
-    const button = event.target.closest("[data-gif-url]");
-    if (!button) return;
-    showGifPreview(button.dataset.gifUrl, button.dataset.gifLabel || "Crew chat sticker");
-    gifPicker.hidden = true;
-  });
-  gifSearch?.addEventListener("input", queueGiphySearch);
-  gifSearch?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      loadGiphyResults(gifSearch.value || "");
-    }
-  });
-  gifSearchButton?.addEventListener("click", () => loadGiphyResults(gifSearch?.value || ""));
 }
 
 async function toggleBoardReaction(event) {
@@ -3506,7 +3311,7 @@ async function renderPublicAthleteProfile() {
 async function renderAthleteCrew() {
   const [leaderboard, feed] = await Promise.all([getLeaderboard(), getCrewFeed()]);
   const leader = leaderboard[0];
-  const orderedFeed = [...feed].reverse();
+  const orderedFeed = [...feed].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   const feedHtml = orderedFeed.length ? orderedFeed.map((item) => `
     <article class="feed-card chat-message ${item.author_id === state.user.id ? "mine" : ""} ${item.feed_type === "landed" ? "activity" : ""}">
       ${avatarHtml({ display_name: item.author_name, avatar: item.avatar })}
@@ -3516,15 +3321,11 @@ async function renderAthleteCrew() {
     <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and see live notifications when someone moves up or lands a trick.</p></div></div>
     ${leader ? `<section class="panel leader-alert"><div class="live-dot"></div><div><div class="panel-title">Current leader: ${escapeHtml(leader.display_name)}</div><div class="panel-meta">${leader.weekly_points} points this week · new leaders show here</div></div></section>` : ""}
     <section class="panel crew-chat-panel">
-      <div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages stay at the bottom</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages first</div></div></div>
       <div class="feed-list chat-list" id="crew-chat-list">${feedHtml}</div>
       <form id="crew-post-form" class="crew-post-form crew-chat-compose"><textarea id="crew-message" name="body" required maxlength="500" rows="1" placeholder="Message the crew..."></textarea><button class="primary-btn" type="submit">Send</button></form>
     </section>`;
   document.querySelector("#crew-post-form").addEventListener("submit", submitCrewPost);
-  requestAnimationFrame(() => {
-    const list = document.querySelector("#crew-chat-list");
-    if (list) list.scrollTop = list.scrollHeight;
-  });
 }
 
 async function submitCrewPost(event) {
