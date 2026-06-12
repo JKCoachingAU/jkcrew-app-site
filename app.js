@@ -42,6 +42,8 @@ const state = {
   draggedRunPoint: null,
   coachPlanVenue: "",
   plannerAthleteId: null,
+  coachTricktionaryAthleteId: null,
+  coachPreviewTab: "home",
   boardLeaderboardView: "weekly",
   leaderboardFallbackNotified: false,
   videoReviewStatus: "all",
@@ -89,6 +91,7 @@ const coachNav = [
   ["planner", "Planner"],
   ["parents", "Parents"],
   ["videoReviews", "Video Reviews"],
+  ["tricktionary", "Tricktionary"],
   ["board", "Board"],
   ["profile", "Profile"],
 ];
@@ -303,7 +306,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.11`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.12`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -612,7 +615,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.11" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.12" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -671,7 +674,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.11" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.12" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -790,14 +793,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.11" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.12" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.11" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.12" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2662,6 +2665,7 @@ function previousTrainingSheetsHtml(data = {}) {
 }
 
 async function renderTricktionary() {
+  if (isCoachRole(state.profile?.role)) return renderCoachTricktionary();
   if (state.profile?.role === "parent") return renderParentTricktionary();
   const data = await getTricktionaryData(state.user.id);
   state.profile = data.profile || state.profile;
@@ -2732,6 +2736,46 @@ async function renderParentTricktionary() {
     </section>`;
   }));
   document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Tricktionary <span>history</span></h1><p>Read-only landed tricks, attempts, and Daily PBs for linked riders. Previous training sheets live in Profile.</p></div></div>${sections.join("")}`;
+}
+
+async function renderCoachTricktionary() {
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach Tricktionary</div><h1>Rider <span>library</span></h1><p>Add students first, then you can view their landed tricks here.</p></div></div><div class="empty compact-empty">No students linked yet.</div>`;
+    return;
+  }
+  if (!state.coachTricktionaryAthleteId || !roster.some((athlete) => athlete.id === state.coachTricktionaryAthleteId)) {
+    state.coachTricktionaryAthleteId = state.selectedAthleteId && roster.some((athlete) => athlete.id === state.selectedAthleteId)
+      ? state.selectedAthleteId
+      : roster[0].id;
+  }
+  const athlete = roster.find((entry) => entry.id === state.coachTricktionaryAthleteId);
+  const data = await getTricktionaryData(athlete.id);
+  const displayProfile = data.profile || athlete;
+  const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
+  const options = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach Tricktionary</div><h1>Rider <span>Tricktionary</span></h1><p>Filter by rider and view their private trick library, attempts, Daily PB, and saved weekly sheets.</p></div></div>
+    <section class="panel coach-tricktionary-controls">
+      <div class="field"><label for="coach-tricktionary-athlete">Select rider</label><select id="coach-tricktionary-athlete">${options}</select></div>
+      <div class="coach-tricktionary-summary">${avatarHtml(displayProfile, "student-chip-avatar")}<div><strong>${escapeHtml(displayProfile.display_name)}</strong><small>${entries.length} landed tricks · Daily PB ${formatPbTime(displayProfile.daily_pb_seconds)}</small></div></div>
+    </section>
+    <section class="panel compact-panel">
+      <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">Private to coach, rider, and linked parents</div></div></div>
+      ${tricktionaryEntriesHtml(entries, data.attempts)}
+    </section>
+    <section class="panel compact-panel">
+      <div class="panel-head"><div><div class="panel-title">Attempted this week</div><div class="panel-meta">Effort count without awarding points</div></div></div>
+      ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
+    </section>
+    <section class="panel compact-panel">
+      ${previousTrainingSheetsHtml(data)}
+    </section>`;
+  document.querySelector("#coach-tricktionary-athlete")?.addEventListener("change", (event) => {
+    state.coachTricktionaryAthleteId = event.target.value;
+    state.selectedAthleteId = event.target.value;
+    renderCoachTricktionary();
+  });
 }
 
 async function renderAthleteHome() {
@@ -5127,16 +5171,66 @@ async function renderCoachPreview(mode = "student") {
   const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const events = dashboardItems.filter((item) => item.item_type === "event");
   const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
-  const previewBody = mode === "parent"
-    ? coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts, leaderboard, dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary })
-    : coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary });
+  const tabs = coachPreviewTabs(mode);
+  if (!tabs.some(([id]) => id === state.coachPreviewTab)) state.coachPreviewTab = "home";
+  const activeTab = state.coachPreviewTab;
+  const tricktionaryData = activeTab === "tricktionary" ? await getTricktionaryData(athlete.id) : null;
+  const previewBody = coachPreviewPageHtml({
+    mode,
+    activeTab,
+    athlete,
+    assignments,
+    awards,
+    assignmentAttempts,
+    leaderboard,
+    dashboardItems,
+    taskItems,
+    events,
+    sessions,
+    runs,
+    visibleFeedback,
+    rank,
+    weeklyRow,
+    weeklyPercent,
+    completedWeekly,
+    weeklyItems,
+    xpSummary,
+    tricktionaryData,
+  });
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" data-view="student">Back to profile</button><button class="secondary-btn" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
     <section class="coach-preview-shell">
-      <div class="phone-preview-frame">${previewBody}</div>
+      <div class="phone-preview-frame">
+        <div class="preview-phone-tabs">${tabs.map(([id, label]) => `<button class="${id === activeTab ? "active" : ""}" type="button" data-preview-tab="${id}">${escapeHtml(label)}</button>`).join("")}</div>
+        ${previewBody}
+      </div>
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
-  document.querySelector("[data-preview-switch]")?.addEventListener("click", (event) => navigate(event.currentTarget.dataset.previewSwitch));
+  document.querySelector("[data-preview-switch]")?.addEventListener("click", (event) => {
+    state.coachPreviewTab = "home";
+    navigate(event.currentTarget.dataset.previewSwitch);
+  });
+  document.querySelectorAll("[data-preview-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.coachPreviewTab = button.dataset.previewTab || "home";
+    renderCoachPreview(mode);
+  }));
+}
+
+function coachPreviewTabs(mode = "student") {
+  return mode === "parent"
+    ? [["home", "Home"], ["tricktionary", "Tricktionary"], ["profile", "Profile"]]
+    : [["home", "Home"], ["session", "Session"], ["tricktionary", "Tricktionary"], ["contests", "Contests"], ["board", "Board"], ["profile", "Profile"]];
+}
+
+function coachPreviewPageHtml(context) {
+  const { mode, activeTab } = context;
+  if (activeTab === "tricktionary") return coachPreviewTricktionaryHtml(context);
+  if (activeTab === "profile") return mode === "parent" ? coachParentPreviewProfileHtml(context) : coachStudentPreviewProfileHtml(context);
+  if (mode === "parent") return coachParentPreviewTabHtml(context);
+  if (activeTab === "session") return coachStudentPreviewSessionHtml(context);
+  if (activeTab === "contests") return coachStudentPreviewContestsHtml(context);
+  if (activeTab === "board") return coachPreviewBoardHtml(context);
+  return coachStudentPreviewHtml(context);
 }
 
 function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary }) {
@@ -5159,6 +5253,47 @@ function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, even
     ${goalsReadonlyHtml(athlete)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Session schedule preview</div><div class="panel-meta">Assigned tricks visible to this rider</div></div></div>${assignmentGroups(assignments, false)}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Recent sessions</div></div></div>${sessionRows}</section>
+  </div>`;
+}
+
+function coachStudentPreviewSessionHtml({ assignments, awards }) {
+  return `<div class="phone-preview-content">
+    ${weekSummaryHtml(assignments, awards)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Session</div><div class="panel-meta">Assigned tricks visible to this rider</div></div></div>${assignmentGroups(assignments, false)}</section>
+  </div>`;
+}
+
+function coachPreviewTricktionaryHtml({ athlete, tricktionaryData }) {
+  const data = tricktionaryData || { profile: athlete, assignments: [], progress: [], awards: [], attempts: [], percentageAttempts: [] };
+  const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
+  return `<div class="phone-preview-content">
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile?.daily_pb_seconds)}</div></div></div>${tricktionaryEntriesHtml(entries, data.attempts || [])}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Attempted this week</div></div></div>${weeklyAttemptsHtml((data.attempts || []).filter((attempt) => attempt.week_start === weekStartDate()))}</section>
+  </div>`;
+}
+
+function coachStudentPreviewContestsHtml({ dashboardItems, runs }) {
+  const events = dashboardItems.filter((item) => item.item_type === "event");
+  return `<div class="phone-preview-content">
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Contests</div><div class="panel-meta">Events visible in the rider Contests tab</div></div></div>${dashboardItemsHtml(events, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Run planner</div><div class="panel-meta">Saved rider run plans</div></div></div>${runPlansHtml(runs)}</section>
+  </div>`;
+}
+
+function coachPreviewBoardHtml({ leaderboard }) {
+  const rows = leaderboardWithBenchmark(leaderboard, "weekly_points");
+  return `<div class="phone-preview-content">
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Crew board</div><div class="panel-meta">What this rider sees on the Board tab</div></div></div><div class="leaderboard preview-leaderboard">${compactLeaderboardHtml(rows, "weekly_points")}</div></section>
+  </div>`;
+}
+
+function coachStudentPreviewProfileHtml({ athlete, weeklyRow }) {
+  const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
+  return `<div class="phone-preview-content">
+    <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">athlete · Level ${xp.level}</div><p class="subcopy" style="margin-top:12px">${countryBadge(athlete)} ${escapeHtml(athlete.country_name || "Country not set")}</p></section>
+    <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
+    ${showreelHtml(athlete, false)}
+    ${goalsReadonlyHtml(athlete)}
   </div>`;
 }
 
@@ -5197,6 +5332,42 @@ function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttemp
       <div class="panel-title">Coach feedback</div>
       <div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div>
     </section>
+  </div>`;
+}
+
+function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = [], weeklyRow, weeklyPercent, completedWeekly, weeklyItems, rank }) {
+  const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
+  return `<div class="phone-preview-content">
+    <section class="panel parent-child-card">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
+      <div class="scoreboard-stats preview-stats">
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
+      </div>
+      ${xpProgressHtml(xp, true)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Training plan</div>
+      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(assignmentAttempts)}
+    </section>
+  </div>`;
+}
+
+function coachParentPreviewProfileHtml({ athlete, dashboardItems, sessions, runs, visibleFeedback, weeklyRow }) {
+  const xp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
+  const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
+  return `<div class="phone-preview-content">
+    <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">read-only linked rider</div></section>
+    <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
+    ${goalsReadonlyHtml(athlete)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & tasks</div></div></div>${dashboardItemsHtml(dashboardItems, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Session progress</div></div></div>${sessionRows}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Run plans</div></div></div>${runPlansHtml(runs)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Coach feedback</div></div></div><div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div></section>
   </div>`;
 }
 
