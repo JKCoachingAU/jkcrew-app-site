@@ -2,7 +2,7 @@ const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
-    autoRefreshToken: true,
+    autoRefreshToken: false,
     persistSession: true,
     detectSessionInUrl: true,
   },
@@ -16,13 +16,6 @@ const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
 const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
 const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
-const ASSIGNMENT_SELECT = "id, athlete_id, week_start, category, trick_name, venue, target_reps, notes, sort_order";
-const ASSIGNMENT_PROGRESS_SELECT = "id, athlete_id, assignment_id, progress_date, completed_at";
-const ASSIGNMENT_AWARD_SELECT = "id, athlete_id, assignment_id, award_key, points, created_at";
-const ASSIGNMENT_ATTEMPT_SELECT = "id, athlete_id, assignment_id, week_start, attempted_at";
-const PERCENTAGE_ATTEMPT_SELECT = "id, athlete_id, assignment_id, attempt_number, landed, created_at";
-const SESSION_SUMMARY_SELECT = "id, athlete_id, started_at, ended_at, total_points, daily_completed_seconds, daily_completed_at";
-const ROSTER_PROFILE_SELECT = "id, display_name, role, email, phone, avatar, avatar_url, country_code, country_name, daily_pb_seconds, xp_total, level, goals, badges, manual_tricktionary, spin_direction, favourite_trick";
 const state = {
   session: null,
   user: null,
@@ -58,7 +51,6 @@ const state = {
   trickRequestSearchTimer: null,
   realtimeChannel: null,
   syncRefreshTimer: null,
-  lastLocalWriteAt: 0,
   cache: {},
   coachRosterIds: new Set(),
 };
@@ -78,10 +70,6 @@ function cacheClear(prefix = "") {
   Object.keys(state.cache || {}).forEach((key) => {
     if (!prefix || key.startsWith(prefix)) delete state.cache[key];
   });
-}
-
-function markLocalWrite() {
-  state.lastLocalWriteAt = Date.now();
 }
 
 const athleteNav = [
@@ -127,60 +115,15 @@ const parsePbSeconds = (value = "") => {
   if (!match) return NaN;
   return (Number(match[1]) * 60) + Number(match[2]);
 };
-const countryTimeZones = {
-  AU: "Australia/Brisbane",
-  NZ: "Pacific/Auckland",
-  DE: "Europe/Berlin",
-  GB: "Europe/London",
-  UK: "Europe/London",
-  US: "America/Los_Angeles",
-  CA: "America/Toronto",
-  FR: "Europe/Paris",
-  NL: "Europe/Amsterdam",
-  BE: "Europe/Brussels",
-  ES: "Europe/Madrid",
-  IT: "Europe/Rome",
-  SE: "Europe/Stockholm",
-  NO: "Europe/Oslo",
-  DK: "Europe/Copenhagen",
-  FI: "Europe/Helsinki",
-  IE: "Europe/Dublin",
-  PT: "Europe/Lisbon",
-  CH: "Europe/Zurich",
-  AT: "Europe/Vienna",
-  PL: "Europe/Warsaw",
-  CZ: "Europe/Prague",
-  RU: "Europe/Moscow",
-  KZ: "Asia/Almaty",
-  JP: "Asia/Tokyo",
-  SG: "Asia/Singapore",
-  CN: "Asia/Shanghai",
-  KR: "Asia/Seoul",
-  TH: "Asia/Bangkok",
-  ID: "Asia/Jakarta",
-  MY: "Asia/Kuala_Lumpur",
-  PH: "Asia/Manila",
-  AE: "Asia/Dubai",
-  ZA: "Africa/Johannesburg",
-  BR: "America/Sao_Paulo",
-  AR: "America/Argentina/Buenos_Aires",
-  MX: "America/Mexico_City",
-};
-const countryTimeZone = (countryCode = "AU") => countryTimeZones[String(countryCode || "AU").trim().toUpperCase()] || "Australia/Brisbane";
-const datePartsInTimeZone = (timeZone = "Australia/Brisbane", date = new Date()) => new Intl.DateTimeFormat("en-AU", {
-  timeZone,
+const brisbaneDateParts = (date = new Date()) => new Intl.DateTimeFormat("en-AU", {
+  timeZone: "Australia/Brisbane",
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
   weekday: "short",
 }).formatToParts(date).reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {});
-const brisbaneDateParts = (date = new Date()) => datePartsInTimeZone("Australia/Brisbane", date);
 const localDate = () => {
   const parts = brisbaneDateParts();
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
-const localDateForCountry = (countryCode = "AU", date = new Date()) => {
-  const parts = datePartsInTimeZone(countryTimeZone(countryCode), date);
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 const weekStartDate = () => {
@@ -333,7 +276,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.9`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.6`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -624,7 +567,7 @@ async function init() {
   renderAuth("login", "Checking JKCREW connection...");
   let session = null;
   try {
-    const result = await withTimeout(client.auth.getSession(), "Sign in check", 10000);
+    const result = await withTimeout(client.auth.getSession(), "Sign in check", 4000);
     session = result.data?.session || null;
   } catch (error) {
     renderAuth("login", messageFrom(error));
@@ -639,7 +582,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.9" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -669,14 +612,12 @@ async function handleSession(session) {
   }
   let { data, error } = await withTimeout(
     client.from("profiles").select("*").eq("id", state.user.id).maybeSingle(),
-    "Profile load",
-    10000
+    "Profile load"
   );
   if (error || !data) {
     const { data: recovered, error: recoveryError } = await withTimeout(
       client.rpc("ensure_current_profile"),
-      "Profile recovery",
-      12000
+      "Profile recovery"
     );
     if (recoveryError || !recovered) {
       renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
@@ -698,7 +639,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.9" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.6" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -754,10 +695,8 @@ async function handleAuth(event, mode) {
 
   try {
     if (mode === "login") {
-      const { data, error } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in", 15000);
+      const { error } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in");
       if (error) renderAuth(mode, messageFrom(error));
-      else if (data?.session) await handleSession(data.session);
-      else renderAuth("login", "Signed in. Loading your profile...");
       return;
     }
 
@@ -779,12 +718,11 @@ async function handleAuth(event, mode) {
       return;
     }
 
-    const { data: signInData, error: signInError } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in", 15000);
+    const { error: signInError } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in");
     if (signInError) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
       return;
     }
-    if (signInData?.session) await handleSession(signInData.session);
     notify("Welcome to JKCREW. Your account is ready.");
   } catch (error) {
     renderAuth(mode, messageFrom(error));
@@ -799,14 +737,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.9" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.9" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.6" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -849,7 +787,7 @@ async function navigate(view) {
     profile: renderProfile,
   };
   try {
-    await withTimeout(renders[view](), `Load ${view}`, 12000);
+    await renders[view]();
   } catch (error) {
     document.querySelector("#view").innerHTML = `<div class="empty">Could not load this screen.</div>`;
     notify(messageFrom(error), "error");
@@ -871,8 +809,21 @@ function setupRealtimeSync() {
   if (!state.user?.id || !state.session?.access_token) return;
   client.realtime.setAuth(state.session.access_token);
   const channel = client.channel(`jkcrew-progress-sync:${state.user.id}`);
-  realtimeSubscriptionsForCurrentUser().forEach(({ table, filter }) => {
-    channel.on("postgres_changes", { event: "*", schema: "public", table, ...(filter ? { filter } : {}) }, (payload) => {
+  [
+    "assignment_progress",
+    "assignment_point_awards",
+    "percentage_attempts",
+    "assignment_attempts",
+    "weekly_trick_assignments",
+    "leaderboard_point_adjustments",
+    "training_sessions",
+    "coach_group_session_participants",
+    "run_checklist_progress",
+    "xp_ledger",
+    "trick_requests",
+    "profiles",
+  ].forEach((table) => {
+    channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
       if (!isRelevantRealtimePayload(table, payload)) return;
       if (table === "profiles" && payload.new?.id === state.user.id) state.profile = { ...state.profile, ...payload.new };
       invalidateCachesForRealtime(table);
@@ -883,31 +834,6 @@ function setupRealtimeSync() {
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime progress sync status:", status);
   });
   state.realtimeChannel = channel;
-}
-
-function realtimeSubscriptionsForCurrentUser() {
-  if (!state.user?.id || !state.profile) return [];
-  const userId = state.user.id;
-  const athleteTables = [
-    "assignment_progress",
-    "assignment_point_awards",
-    "percentage_attempts",
-    "assignment_attempts",
-    "weekly_trick_assignments",
-    "training_sessions",
-    "xp_ledger",
-    "trick_requests",
-  ];
-  if (state.profile.role === "athlete") {
-    return [
-      ...athleteTables.map((table) => ({ table, filter: `athlete_id=eq.${userId}` })),
-      { table: "profiles", filter: `id=eq.${userId}` },
-    ];
-  }
-  if (state.profile.role === "parent") {
-    return [{ table: "profiles", filter: `id=eq.${userId}` }];
-  }
-  return [{ table: "profiles", filter: `id=eq.${userId}` }];
 }
 
 function realtimeRow(payload = {}) {
@@ -952,7 +878,6 @@ function invalidateCachesForRealtime(table) {
 
 function scheduleRealtimeRefresh(reason = "sync") {
   if (!state.user?.id || !state.profile) return;
-  if (Date.now() - state.lastLocalWriteAt < 2500) return;
   if (state.syncRefreshTimer) clearTimeout(state.syncRefreshTimer);
   state.syncRefreshTimer = setTimeout(async () => {
     state.syncRefreshTimer = null;
@@ -975,7 +900,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
 }
 
 async function getLeaderboard() {
-  const cached = cacheGet("leaderboard:weekly", 30000);
+  const cached = cacheGet("leaderboard:weekly", 7000);
   if (cached) return cached;
   const { data, error } = await client.rpc("get_weekly_leaderboard");
   if (error) {
@@ -1053,31 +978,22 @@ async function getXpHistory(athleteId) {
 }
 
 async function getAssignmentAttempts(athleteId, sinceIso = weekStartIso()) {
-  const { data, error } = await client.from("assignment_attempts").select(ASSIGNMENT_ATTEMPT_SELECT).eq("athlete_id", athleteId).gte("attempted_at", sinceIso).order("attempted_at", { ascending: false }).limit(300);
+  const { data, error } = await client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).gte("attempted_at", sinceIso).order("attempted_at", { ascending: false });
   if (error) throw error;
   return data || [];
 }
 
 async function getTricktionaryData(athleteId) {
-  const [profileResult, assignmentsResult, sessionsResult] = await Promise.all([
+  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult] = await Promise.all([
     client.from("profiles").select("*").eq("id", athleteId).single(),
-    client.from("weekly_trick_assignments").select(ASSIGNMENT_SELECT).eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).limit(400),
-    client.from("training_sessions").select(SESSION_SUMMARY_SELECT).eq("athlete_id", athleteId).order("started_at", { ascending: false }).limit(60),
+    client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).limit(400),
+    client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
+    client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).order("attempted_at", { ascending: false }).limit(600),
+    client.from("training_sessions").select("*").eq("athlete_id", athleteId).order("started_at", { ascending: false }).limit(60),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(600),
+    client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(900),
   ]);
-  [profileResult, assignmentsResult, sessionsResult].forEach((result) => { if (result.error) throw result.error; });
-  const assignmentIds = (assignmentsResult.data || []).map((assignment) => assignment.id).filter(Boolean);
-  const [progressResult, attemptsResult, awardsResult, percentageAttemptsResult] = assignmentIds.length ? await Promise.all([
-    client.from("assignment_progress").select(ASSIGNMENT_PROGRESS_SELECT).in("assignment_id", assignmentIds),
-    client.from("assignment_attempts").select(ASSIGNMENT_ATTEMPT_SELECT).in("assignment_id", assignmentIds).order("attempted_at", { ascending: false }).limit(600),
-    client.from("assignment_point_awards").select(ASSIGNMENT_AWARD_SELECT).in("assignment_id", assignmentIds).order("created_at", { ascending: false }).limit(600),
-    client.from("percentage_attempts").select(PERCENTAGE_ATTEMPT_SELECT).in("assignment_id", assignmentIds).order("created_at", { ascending: false }).limit(900),
-  ]) : [
-    { data: [], error: null },
-    { data: [], error: null },
-    { data: [], error: null },
-    { data: [], error: null },
-  ];
-  [progressResult, attemptsResult, awardsResult, percentageAttemptsResult].forEach((result) => { if (result.error) throw result.error; });
+  [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult].forEach((result) => { if (result.error) throw result.error; });
   return {
     profile: profileResult.data,
     assignments: assignmentsResult.data || [],
@@ -1098,7 +1014,7 @@ async function getPublicAthleteProfile(athleteId) {
 async function getWeeklyAssignments(athleteId) {
   const weekStart = weekStartDate();
   const cacheKey = `schedule:${athleteId}:${weekStart}`;
-  const cached = cacheGet(cacheKey, 12000);
+  const cached = cacheGet(cacheKey, 6500);
   if (cached) return cached;
   if (state.user?.id) {
     const { error: rolloverError } = await client.rpc("ensure_current_week_assignments", {
@@ -1109,29 +1025,18 @@ async function getWeeklyAssignments(athleteId) {
       throw rolloverError;
     }
   }
-  const [{ data, error }, { data: athleteProfile, error: profileError }] = await Promise.all([
-    client.from("weekly_trick_assignments").select(ASSIGNMENT_SELECT).eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
-    client.from("profiles").select("id, country_code").eq("id", athleteId).maybeSingle(),
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
+    client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
+    client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", weekStartIso()),
+    client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
+    client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("attempted_at", { ascending: false }),
   ]);
   if (error) throw error;
-  const assignmentIds = (data || []).map((assignment) => assignment.id).filter(Boolean);
-  const [{ data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = assignmentIds.length ? await Promise.all([
-    client.from("assignment_progress").select(ASSIGNMENT_PROGRESS_SELECT).in("assignment_id", assignmentIds),
-    client.from("assignment_point_awards").select(ASSIGNMENT_AWARD_SELECT).in("assignment_id", assignmentIds).gte("created_at", weekStartIso()).limit(300),
-    client.from("percentage_attempts").select(PERCENTAGE_ATTEMPT_SELECT).in("assignment_id", assignmentIds).order("attempt_number", { ascending: true }).limit(600),
-    client.from("assignment_attempts").select(ASSIGNMENT_ATTEMPT_SELECT).in("assignment_id", assignmentIds).eq("week_start", weekStart).order("attempted_at", { ascending: false }).limit(300),
-  ]) : [
-    { data: [], error: null },
-    { data: [], error: null },
-    { data: [], error: null },
-    { data: [], error: null },
-  ];
   if (progressError) throw progressError;
   if (awardsError) throw awardsError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
-  if (profileError) console.warn("Could not load rider local date profile", profileError);
-  const riderLocalToday = localDateForCountry(athleteProfile?.country_code || (athleteId === state.profile?.id ? state.profile?.country_code : "AU"));
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
@@ -1146,7 +1051,7 @@ async function getWeeklyAssignments(athleteId) {
     assignmentAttemptsById.set(attempt.assignment_id, entries);
   });
   return cacheSet(cacheKey, {
-    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, riderLocalToday, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] })),
+    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] })),
     awards: awards || [],
     percentageAttempts: percentageAttempts || [],
     assignmentAttempts: assignmentAttempts || [],
@@ -1154,25 +1059,21 @@ async function getWeeklyAssignments(athleteId) {
 }
 
 async function getHelpRequests(athleteId) {
-  const { data, error } = await client.from("trick_help_requests")
-    .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at, video_storage_path, coach_video_storage_path, video_file_name, coach_video_file_name, video_mime_type, coach_video_mime_type, video_size_bytes, coach_video_size_bytes")
-    .eq("athlete_id", athleteId)
-    .order("created_at", { ascending: false })
-    .limit(12);
+  const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
   if (error) throw error;
   return hydrateHelpRequestMediaUrls(data || []);
 }
 
 async function getTrickRequestsForAthlete(athleteId, statuses = []) {
-  let query = client.from("trick_requests").select("id, athlete_id, category, venue, trick_name, note, status, created_at").eq("athlete_id", athleteId).order("created_at", { ascending: false });
+  let query = client.from("trick_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
   if (statuses.length) query = query.in("status", statuses);
-  const { data, error } = await query.limit(40);
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
 
 async function getDashboardItems(athleteId) {
-  const { data, error } = await client.from("dashboard_items").select("id, owner_id, item_type, title, details, due_at, end_at, completed, created_at").eq("owner_id", athleteId).order("completed", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false }).limit(50);
+  const { data, error } = await client.from("dashboard_items").select("*").eq("owner_id", athleteId).order("completed", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
 }
@@ -1186,23 +1087,23 @@ async function getCoachVenues() {
 async function getCoachCommandData(roster = []) {
   const ids = roster.map((athlete) => athlete.id);
   const cacheKey = `coach-command:${ids.slice().sort().join(",")}:${weekStartDate()}`;
-  const cached = cacheGet(cacheKey, 30000);
+  const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
   const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests] = await Promise.all([
     client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
-    ids.length ? client.from("training_sessions").select(SESSION_SUMMARY_SELECT).in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }).limit(180) : { data: [], error: null },
+    ids.length ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
     ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category").in("athlete_id", ids).eq("week_start", weekStartDate()) : { data: [], error: null },
-    ids.length ? client.from("assignment_point_awards").select(ASSIGNMENT_AWARD_SELECT).in("athlete_id", ids).gte("created_at", weekStartIso()).order("created_at", { ascending: false }).limit(300) : { data: [], error: null },
-    ids.length ? client.from("assignment_attempts").select(ASSIGNMENT_ATTEMPT_SELECT).in("athlete_id", ids).eq("week_start", weekStartDate()).order("attempted_at", { ascending: false }).limit(300) : { data: [], error: null },
-    client.from("attendance_sessions").select("id, coach_id, group_name, venue, session_date, total_entry_cost, attendance_records(id, athlete_id, status, owes_entry_fee, entry_fee_paid)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
-    ids.length ? client.from("parent_athletes").select("parent_id, athlete_id, relationship, created_at").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
+    ids.length ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
+    ids.length ? client.from("assignment_attempts").select("*").in("athlete_id", ids).eq("week_start", weekStartDate()).order("attempted_at", { ascending: false }) : { data: [], error: null },
+    client.from("attendance_sessions").select("*, attendance_records(*)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
+    ids.length ? client.from("parent_athletes").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
-    ids.length ? client.from("weekly_progress_notifications").select("id, coach_id, athlete_id, week_start, status, created_at").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }).limit(120) : { data: [], error: null },
-    client.from("dismissed_coach_tasks").select("task_key, week_start, created_at").eq("coach_id", state.user.id).eq("week_start", weekStartDate()).limit(80),
-    ids.length ? client.from("trick_requests").select("id, athlete_id, category, venue, trick_name, note, status, created_at").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
+    ids.length ? client.from("weekly_progress_notifications").select("*").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
+    client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
+    ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
   ]);
   [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests].forEach((result) => { if (result.error) throw result.error; });
   return cacheSet(cacheKey, {
@@ -1367,43 +1268,39 @@ async function getActiveCoachGroupSession() {
 
 async function getSessionViewerPlanData(athleteIds = []) {
   if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const [{ data: assignments, error }, { data: profiles, error: profilesError }] = await Promise.all([
+  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
     client.from("weekly_trick_assignments")
-      .select(ASSIGNMENT_SELECT)
+      .select("*")
       .in("athlete_id", athleteIds)
       .eq("week_start", weekStartDate())
       .order("sort_order", { ascending: true }),
-    client.from("profiles")
-      .select("id, country_code")
-      .in("id", athleteIds),
+    client.from("assignment_progress")
+      .select("*")
+      .in("athlete_id", athleteIds),
+    client.from("percentage_attempts")
+      .select("*")
+      .in("athlete_id", athleteIds)
+      .order("attempt_number", { ascending: true }),
+    client.from("assignment_attempts")
+      .select("*")
+      .in("athlete_id", athleteIds)
+      .eq("week_start", weekStartDate())
+      .order("attempted_at", { ascending: false }),
+    client.from("run_plans")
+      .select("*")
+      .in("athlete_id", athleteIds)
+      .is("archived_at", null)
+      .order("updated_at", { ascending: false }),
+    client.from("run_checklist_progress")
+      .select("*")
+      .in("athlete_id", athleteIds),
   ]);
   if (error) throw error;
-  const assignmentIds = (assignments || []).map((assignment) => assignment.id).filter(Boolean);
-  const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = assignmentIds.length ? await Promise.all([
-    client.from("assignment_progress")
-      .select(ASSIGNMENT_PROGRESS_SELECT)
-      .in("assignment_id", assignmentIds),
-    client.from("percentage_attempts")
-      .select(PERCENTAGE_ATTEMPT_SELECT)
-      .in("assignment_id", assignmentIds)
-      .order("attempt_number", { ascending: true })
-      .limit(1000),
-    client.from("assignment_attempts")
-      .select(ASSIGNMENT_ATTEMPT_SELECT)
-      .in("assignment_id", assignmentIds)
-      .eq("week_start", weekStartDate())
-      .order("attempted_at", { ascending: false })
-      .limit(600),
-  ]) : [
-    { data: [], error: null },
-    { data: [], error: null },
-    { data: [], error: null },
-  ];
   if (progressError) throw progressError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
-  if (profilesError) console.warn("Could not load session viewer rider local dates", profilesError);
-  const riderTodayById = new Map((profiles || []).map((profile) => [profile.id, localDateForCountry(profile.country_code || "AU")]));
+  if (runsError) throw runsError;
+  if (runProgressError) throw runProgressError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
@@ -1420,11 +1317,21 @@ async function getSessionViewerPlanData(athleteIds = []) {
   const assignmentsByAthlete = new Map();
   (assignments || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-    rows.push({ ...assignment, riderLocalToday: riderTodayById.get(assignment.athlete_id) || localDate(), progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
+    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
   });
   const runsByAthlete = new Map();
+  (runs || []).forEach((run) => {
+    const rows = runsByAthlete.get(run.athlete_id) || [];
+    rows.push(run);
+    runsByAthlete.set(run.athlete_id, rows);
+  });
   const runProgressByPlan = new Map();
+  (runProgress || []).forEach((row) => {
+    const rows = runProgressByPlan.get(row.run_plan_id) || [];
+    rows.push(row);
+    runProgressByPlan.set(row.run_plan_id, rows);
+  });
   return { assignmentsByAthlete, runsByAthlete, runProgressByPlan };
 }
 
@@ -1492,7 +1399,7 @@ function extraTricks(profile = state.profile) {
 }
 
 function isAssignmentComplete(assignment) {
-  if (assignment.category === "daily") return assignment.progress?.progress_date === (assignment.riderLocalToday || localDate());
+  if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
   if (assignment.category === "percentage") return (assignment.percentageAttempts || []).length >= 10;
   return Boolean(assignment.progress?.completed_at);
 }
@@ -2726,7 +2633,7 @@ async function renderParentTricktionary() {
 
 async function renderAthleteHome() {
   const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, xpSummary, trickRequests] = await Promise.all([
-    client.from("training_sessions").select(SESSION_SUMMARY_SELECT).eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
+    client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
     getDashboardItems(state.user.id),
@@ -2821,7 +2728,7 @@ async function renderParentHome() {
       getWeeklyAssignments(athlete.id),
       getHelpRequests(athlete.id),
       getDashboardItems(athlete.id),
-      client.from("training_sessions").select(SESSION_SUMMARY_SELECT).eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5).then((result) => {
+      client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5).then((result) => {
         if (result.error) throw result.error;
         return result.data || [];
       }),
@@ -2995,7 +2902,7 @@ function scoreAdjustmentPanel(rows = []) {
 }
 
 async function loadActiveSession() {
-  const { data, error } = await client.from("training_sessions").select(SESSION_SUMMARY_SELECT).eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
+  const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
   if (error) throw error;
   state.activeTraining = data?.[0] || null;
   if (!state.activeTraining) {
@@ -3008,7 +2915,7 @@ async function loadActiveSession() {
 }
 
 async function getActiveSession() {
-  const { data, error } = await client.from("training_sessions").select(SESSION_SUMMARY_SELECT).eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
+  const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
   if (error) throw error;
   return data?.[0] || null;
 }
@@ -3121,7 +3028,6 @@ async function recordAssignmentAction(event) {
   button.disabled = true;
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
-  markLocalWrite();
   const { data, error } = await client.rpc("record_assignment_action", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
@@ -3157,7 +3063,6 @@ async function recordAssignmentAttempt(event) {
   button.disabled = true;
   button.classList.add("attempted");
   button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
-  markLocalWrite();
   const { data, error } = await client.rpc("record_assignment_attempt", {
     p_assignment_id: button.dataset.assignmentAttempt,
   });
@@ -3182,7 +3087,6 @@ async function recordPercentageAttempt(event) {
   const landed = cycleState
     ? cycleState === "empty"
     : button.dataset.percentageAction === "true";
-  markLocalWrite();
   const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
@@ -4116,7 +4020,6 @@ async function recordViewerAssignmentAction(event) {
   button.disabled = true;
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
-  markLocalWrite();
   const { data, error } = await client.rpc("record_assignment_action", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.viewerAssignmentAction,
@@ -4142,7 +4045,6 @@ async function recordViewerAssignmentAttempt(event) {
   button.classList.add("attempted");
   button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
   const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
-  markLocalWrite();
   const { data, error } = await client.rpc("record_assignment_attempt", {
     p_assignment_id: button.dataset.viewerAssignmentAttempt,
     p_group_session_id: session?.id || null,
@@ -4168,7 +4070,6 @@ async function recordViewerPercentageAttempt(event) {
   const landed = cycleState
     ? cycleState === "empty"
     : button.dataset.percentageAction === "true";
-  markLocalWrite();
   const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
@@ -4702,7 +4603,7 @@ function runBuilderPanel(runs = []) {
 
 async function getCoachRoster() {
   const cacheKey = `roster:${state.user.id}`;
-  const cached = cacheGet(cacheKey, 60000);
+  const cached = cacheGet(cacheKey, 10000);
   if (cached) {
     state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
     return cached;
@@ -4715,8 +4616,8 @@ async function getCoachRoster() {
     return cacheSet(cacheKey, []);
   }
   const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
-    client.from("profiles").select(ROSTER_PROFILE_SELECT).in("id", ids).order("display_name"),
-    client.from("training_sessions").select("id, athlete_id, total_points, started_at").in("athlete_id", ids).gte("started_at", weekStartIso()).limit(400),
+    client.from("profiles").select("*").in("id", ids).order("display_name"),
+    client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
     client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
   ]);
   if (athleteError) throw athleteError;
@@ -5088,7 +4989,7 @@ async function getCoachPreviewData() {
     getWeeklyAssignments(athlete.id),
     getLeaderboard(),
     getDashboardItems(athlete.id),
-    client.from("training_sessions").select(SESSION_SUMMARY_SELECT).eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5),
+    client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5),
     getHelpRequests(athlete.id),
     getRunPlans(athlete.id),
     getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
@@ -6325,7 +6226,7 @@ async function getCoachVideoReviews() {
     .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at, video_storage_path, coach_video_storage_path, video_file_name, coach_video_file_name, video_mime_type, coach_video_mime_type, video_size_bytes, coach_video_size_bytes")
     .in("athlete_id", athleteIds)
     .order("created_at", { ascending: false })
-    .limit(60);
+    .limit(120);
   if (error) throw error;
   const byAthlete = new Map(roster.map((athlete) => [athlete.id, athlete]));
   return {
