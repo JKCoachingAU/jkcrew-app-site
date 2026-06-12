@@ -87,20 +87,31 @@ const athleteNav = [
 ];
 const coachNav = [
   ["command", "Command"],
-  ["sessionViewer", "Session Viewer"],
-  ["crew", "Students"],
-  ["planner", "Planner"],
-  ["parents", "Parents"],
-  ["videoReviews", "Video Reviews"],
-  ["tricktionary", "Tricktionary"],
-  ["board", "Board"],
-  ["profile", "Profile"],
+  ["sessionViewer", "Session"],
+  ["crew", "Riders"],
+  ["coachTools", "Coach Tools"],
+  ["more", "More"],
+];
+const coachNavGroups = [
+  { id: "command", label: "Command", icon: "◇", links: [["command", "Dashboard"]] },
+  { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
+  { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Planner"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Run Planner"]] },
+  { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
   ["home", "Home"],
   ["tricktionary", "Tricktionary"],
   ["profile", "Profile"],
 ];
+
+function coachPrimaryView(view = "") {
+  if (view === "sessionViewer") return "sessionViewer";
+  if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
+  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
+  if (["more", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
+  return "command";
+}
 
 const escapeHtml = (value = "") => String(value)
   .replaceAll("&", "&amp;")
@@ -307,7 +318,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.13`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.14`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -616,7 +627,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.13" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.14" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -675,7 +686,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.13" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.14" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -789,24 +800,33 @@ async function handleAuth(event, mode) {
 function renderShell() {
   const role = state.profile.role;
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
-  const navHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
+  const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
+  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
+  const sidebarNavHtml = isCoachRole(role)
+    ? coachNavGroups.map((group) => `
+        <details class="sidebar-nav-group" ${coachPrimaryView(state.view) === group.id ? "open" : ""}>
+          <summary><button class="nav-btn group-nav-btn" type="button" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span></button></summary>
+          <div class="sidebar-subnav">
+            ${group.links.map(([id, label]) => `<button class="nav-sub-btn" type="button" data-view="${id}">${escapeHtml(label)}</button>`).join("")}
+          </div>
+        </details>`).join("")
+    : bottomNavHtml;
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.13" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.14" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
-        <nav class="nav-list">${navHtml}</nav>
+        <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.13" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.14" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
       </div>
-      <nav class="bottom-nav">${navHtml}</nav>
+      <nav class="bottom-nav">${bottomNavHtml}</nav>
     </div>`;
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
 }
@@ -822,7 +842,17 @@ async function navigate(view) {
     state.sessionViewerClock = null;
   }
   state.view = view;
-  document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  const activeView = isCoachRole(state.profile?.role) ? coachPrimaryView(view) : view;
+  document.querySelectorAll("[data-view]").forEach((button) => {
+    const buttonView = button.dataset.view;
+    const buttonActiveView = isCoachRole(state.profile?.role) ? coachPrimaryView(buttonView) : buttonView;
+    const isSubnav = button.classList.contains("nav-sub-btn");
+    button.classList.toggle("active", buttonView === view || (!isSubnav && buttonActiveView === activeView));
+  });
+  document.querySelectorAll(".sidebar-nav-group").forEach((group) => {
+    const groupView = group.querySelector(".group-nav-btn")?.dataset.view;
+    group.open = groupView === activeView;
+  });
   setLoading();
   const renders = {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
@@ -830,6 +860,8 @@ async function navigate(view) {
     tricktionary: renderTricktionary,
     command: renderCoachCommand,
     sessionViewer: renderSessionViewer,
+    coachTools: renderCoachTools,
+    more: renderCoachMore,
     planner: renderPlanner,
     parents: renderParents,
     videoReviews: renderVideoReviews,
@@ -3258,6 +3290,27 @@ function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
     ${extraRows.length ? `<details class="leaderboard-more"><summary><span class="leaderboard-toggle-closed">View Full Leaderboard</span><span class="leaderboard-toggle-open">Hide Full Leaderboard</span><span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey)).join("")}</div></details>` : ""}`;
 }
 
+function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
+  const limit = window.matchMedia("(min-width: 980px)").matches ? 10 : 5;
+  const previewRows = rows.slice(0, limit);
+  if (!previewRows.length) return `<div class="empty compact-empty">No leaderboard scores yet.</div>`;
+  return `
+    <div class="command-leaderboard-list">
+      ${previewRows.map((row, index) => {
+        const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
+        const xp = scoreLevelSummary(points);
+        return `<button class="command-leader-row" type="button" ${row.isBenchmarkBot ? "" : `data-public-athlete="${escapeHtml(row.athlete_id)}"`}>
+          <span class="command-rank">#${index + 1}</span>
+          ${avatarHtml(row)}
+          <strong>${escapeHtml(row.display_name)}</strong>
+          <span class="command-level">L${xp.level}</span>
+          <span class="command-points">${points} pts</span>
+        </button>`;
+      }).join("")}
+    </div>
+    <button class="secondary-btn full-width-btn" type="button" data-view="board">View Full Leaderboard</button>`;
+}
+
 function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
   const realRows = rows.filter((row) => !row.isBenchmarkBot);
   const topPoints = Number(realRows[0]?.[pointsKey] || 0);
@@ -4024,13 +4077,59 @@ async function renderContests() {
   bindRunBuilderActions();
 }
 
+function coachHubCard(view, title, meta, icon = "•") {
+  return `<button class="coach-hub-card" type="button" data-view="${escapeHtml(view)}">
+    <span>${escapeHtml(icon)}</span>
+    <div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></div>
+  </button>`;
+}
+
+async function renderCoachTools() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Training <span>toolbox</span></h1><p>Planner, reviews, Tricktionary, run work, feedback and weekly schedule tools in one cleaner hub.</p></div></div>
+    <section class="coach-hub-grid">
+      ${coachHubCard("planner", "Planner", "Prepare next week's private trick lists", "▤")}
+      ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
+      ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
+      ${coachHubCard("contests", "Run Planner", "Events, contests and saved runs", "🏆")}
+    </section>
+    <section class="command-section-group">
+      <div class="command-section-heading"><span>01</span><div><strong>Weekly schedule tools</strong><small>Fast shortcuts for planning and feedback</small></div></div>
+      <div class="coach-tools-row">
+        <button class="coach-tool-card" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
+        <button class="coach-tool-card" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
+        <button class="coach-tool-card" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
+        <button class="coach-tool-card" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
+      </div>
+    </section>`;
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+}
+
+async function renderCoachMore() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">More</div><h1>Coach <span>admin</span></h1><p>Parent management, leaderboard, profile, account settings, app updates and sign out live here so the main nav stays clean.</p></div></div>
+    <section class="coach-hub-grid">
+      ${coachHubCard("parents", "Parents", "Linked parent viewer accounts", "P")}
+      ${coachHubCard("board", "Board", "Full leaderboard and crew chat", "#")}
+      ${coachHubCard("profile", "Profile", "Account settings, theme and password", "●")}
+      ${coachHubCard("command", "Command", "Back to the coach dashboard", "◇")}
+    </section>`;
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+}
+
 async function renderCoachCommand() {
   const roster = await getCoachRoster();
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>No <span>riders</span></h1><p>Add students first, then this becomes your calendar, heat map, attendance, and parent-update hub.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  const commandData = await getCoachCommandData(roster);
+  const [commandData, rawLeaderboard] = await Promise.all([
+    getCoachCommandData(roster),
+    getLeaderboard(),
+  ]);
+  const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
   const attentionCount = roster.filter((athlete) => athleteAttention(athlete, commandData).flags.length).length;
   const injuredCount = commandData.statuses.filter((status) => status.heat_status === "injured").length;
   const calendarFeed = combinedCoachCalendarItems(commandData);
@@ -4063,10 +4162,14 @@ async function renderCoachCommand() {
       ${statCard("Modified", injuredCount, "", "Injured / modified")}
     </section>
     <section class="coach-tools-row">
-      <button class="coach-tool-card" data-view="sessionViewer"><strong>Session Viewer</strong><small>Open iPad group checklist</small></button>
-      <button class="coach-tool-card" data-view="crew"><strong>Students</strong><small>Groups, profiles, programs</small></button>
-      <button class="coach-tool-card" data-view="parents"><strong>Parents</strong><small>Linked viewer accounts</small></button>
-      <button class="coach-tool-card" data-view="board"><strong>Leaderboard</strong><small>Rankings and rider chat</small></button>
+      <button class="coach-tool-card start-coaching-card" data-view="sessionViewer"><strong>Start Coaching</strong><small>Jump straight to live Session Viewer</small></button>
+      <button class="coach-tool-card" data-view="crew"><strong>Riders</strong><small>Groups, profiles, programs</small></button>
+      <button class="coach-tool-card" data-view="coachTools"><strong>Coach Tools</strong><small>Planner, video, trick libraries</small></button>
+      <button class="coach-tool-card" data-view="more"><strong>More</strong><small>Parents, account and admin links</small></button>
+    </section>
+    <section class="panel command-leaderboard-panel">
+      <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top riders this week · full board lives under More</div></div></div>
+      ${commandLeaderboardPreviewHtml(leaderboard, "weekly_points")}
     </section>
     <section class="command-section-group">
       <div class="command-section-heading"><span>01</span><div><strong>Team Management</strong><small>Upcoming events, rider heat map, and parent updates</small></div></div>
@@ -4085,6 +4188,10 @@ async function renderCoachCommand() {
   document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
   document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelectorAll("#view [data-public-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.publicAthleteId = button.dataset.publicAthlete;
+    navigate("publicProfile");
+  }));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
     state.selectedAthleteId = button.dataset.openStudent;
     navigate("student");
