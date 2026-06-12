@@ -43,6 +43,7 @@ const state = {
   coachPlanVenue: "",
   plannerAthleteId: null,
   coachTricktionaryAthleteId: null,
+  tricktionaryDrag: null,
   coachPreviewTab: "home",
   boardLeaderboardView: "weekly",
   leaderboardFallbackNotified: false,
@@ -306,7 +307,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.12`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.13`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -615,7 +616,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.12" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.13" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -674,7 +675,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.12" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.13" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -793,14 +794,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.12" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.13" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.12" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.13" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2478,8 +2479,65 @@ function trickObstacleCategory(assignment = {}) {
   return "Other tricks";
 }
 
+const TRICKTIONARY_SECTIONS = [
+  { id: "new", label: "New Tricks", hint: "Unsorted tricks land here first" },
+  { id: "box", label: "Box", hint: "Box jump and jump-box tricks" },
+  { id: "spine", label: "Spine", hint: "Spine tricks and transfers" },
+  { id: "hip", label: "Hip", hint: "Hip tricks and hip lines" },
+  { id: "air", label: "Air", hint: "Quarter, ramp, flyout, and air tricks" },
+];
+const TRICKTIONARY_CATEGORY_LABELS = Object.fromEntries(TRICKTIONARY_SECTIONS.map((section) => [section.id, section.label]));
+const TRICKTIONARY_ALLOWED_CATEGORIES = new Set(TRICKTIONARY_SECTIONS.map((section) => section.id));
+
+function normalizeTrickKey(title = "") {
+  return String(title || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function tricktionaryMeta(profile = {}) {
+  const meta = profile?.tricktionary_meta && typeof profile.tricktionary_meta === "object" ? profile.tricktionary_meta : {};
+  return {
+    categories: meta.categories && typeof meta.categories === "object" ? meta.categories : {},
+    updatedAt: meta.updatedAt || "",
+  };
+}
+
+function tricktionaryCategoryFromText(value = "") {
+  const text = String(value || "").toLowerCase();
+  if (/\bfoam\b|foam pit/.test(text)) return "foam";
+  if (/\bbox\b|box jump|jump box/.test(text)) return "box";
+  if (/\bspine\b/.test(text)) return "spine";
+  if (/\bhip\b/.test(text)) return "hip";
+  if (/\bair\b|quarter|vert|flyout/.test(text)) return "air";
+  return "new";
+}
+
+function safeTricktionaryCategory(category = "") {
+  return TRICKTIONARY_ALLOWED_CATEGORIES.has(category) ? category : "new";
+}
+
+function tricktionaryCategoryForEntry(entry = {}, profile = {}) {
+  const meta = tricktionaryMeta(profile);
+  const key = normalizeTrickKey(entry.title || entry.trick_name);
+  const saved = meta.categories?.[key] || entry.tricktionaryCategory || entry.categoryOverride;
+  if (["new", "box", "spine", "hip", "air"].includes(saved)) return saved;
+  return tricktionaryCategoryFromText(`${entry.title || entry.trick_name || ""} ${entry.notes || ""} ${entry.venue || ""}`);
+}
+
 function manualTricktionary(profile = {}) {
   return Array.isArray(profile.manual_tricktionary) ? profile.manual_tricktionary : [];
+}
+
+function cloneTricktionaryManual(manual = []) {
+  return manual.map((trick) => ({ ...trick }));
+}
+
+function buildTricktionaryMeta(profile = {}, categories = {}) {
+  const current = tricktionaryMeta(profile);
+  return {
+    ...profile.tricktionary_meta,
+    categories: { ...current.categories, ...categories },
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function coachManualTricktionaryPanel(athlete = {}) {
@@ -2498,11 +2556,13 @@ function coachManualTricktionaryPanel(athlete = {}) {
     <div class="panel-head"><div><div class="panel-title">Tricktionary management</div><div class="panel-meta">Add landed tricks that were not captured on a weekly sheet</div></div></div>
     <form id="coach-manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a landed trick for this rider"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
     <div class="goal-list">${rows}</div>
-    <small class="form-note">Manual Tricktionary entries are visible to the rider, linked parents, and the public profile. They do not award points.</small>
+    <small class="form-note">Manual Tricktionary entries are private to the coach, rider, and linked parents. They do not award points.</small>
   </section>`;
 }
 
 function landedTricktionaryEntries(data = {}) {
+  const profile = data.profile || {};
+  const meta = tricktionaryMeta(profile);
   const assignmentsById = new Map((data.assignments || []).map((assignment) => [assignment.id, assignment]));
   const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
   const awardsByAssignment = (data.awards || []).reduce((map, award) => {
@@ -2527,14 +2587,19 @@ function landedTricktionaryEntries(data = {}) {
   };
   const addEntry = (assignment, count, landedAt, sourceOverride = "", manual = false, manualId = "") => {
     if (!assignment || !Number(count)) return;
-    const key = String(assignment.trick_name || "").trim().toLowerCase();
+    const key = normalizeTrickKey(assignment.trick_name || "");
     if (!key) return;
+    if (assignment.category === "foam_pit" || assignment.tricktionaryCategory === "foam" || meta.categories[key] === "foam") return;
+    const categoryGuess = tricktionaryCategoryFromText(`${assignment.trick_name || ""} ${assignment.notes || ""} ${assignment.venue || ""}`);
+    if (categoryGuess === "foam") return;
     const previous = byName.get(key) || {
       id: assignment.id || manualId || key,
+      key,
       title: assignment.trick_name,
       sources: new Set(),
       category: assignment.category || "manual",
-      obstacle: trickObstacleCategory(assignment),
+      obstacle: TRICKTIONARY_CATEGORY_LABELS[meta.categories[key] || assignment.tricktionaryCategory || categoryGuess] || "New Tricks",
+      tricktionaryCategory: meta.categories[key] || assignment.tricktionaryCategory || categoryGuess,
       weekStart: assignment.week_start || "",
       landedAt,
       count: 0,
@@ -2543,6 +2608,8 @@ function landedTricktionaryEntries(data = {}) {
     };
     previous.count += Number(count);
     previous.sources.add(sourceOverride || categoryInfo[assignment.category]?.label || assignment.category || "Manual add");
+    previous.tricktionaryCategory = meta.categories[key] || previous.tricktionaryCategory || "new";
+    previous.obstacle = TRICKTIONARY_CATEGORY_LABELS[previous.tricktionaryCategory] || "New Tricks";
     if (manual && manualId) previous.manualIds.push(manualId);
     if (!previous.landedAt || new Date(landedAt) > new Date(previous.landedAt)) previous.landedAt = landedAt;
     if (assignment.week_start && (!previous.weekStart || new Date(assignment.week_start) > new Date(previous.weekStart))) previous.weekStart = assignment.week_start;
@@ -2577,12 +2644,14 @@ function landedTricktionaryEntries(data = {}) {
   manualTricktionary(data.profile).forEach((trick) => {
     const title = String(trick.title || trick.name || "").trim();
     if (!title) return;
+    if (trick.category === "foam_pit" || trick.tricktionaryCategory === "foam" || tricktionaryCategoryFromText(`${title} ${trick.notes || ""}`) === "foam") return;
     const count = Math.max(1, Number(trick.count || trick.landedCount || 1));
     addEntry({
       id: trick.id || title.toLowerCase(),
       trick_name: title,
       category: "manual",
       notes: trick.notes || "",
+      tricktionaryCategory: trick.tricktionaryCategory || trick.categoryOverride || "",
       week_start: "",
       updated_at: trick.addedAt || trick.createdAt || new Date().toISOString(),
     }, count, trick.addedAt || trick.createdAt || new Date().toISOString(), "Manual add", true, trick.id || title.toLowerCase());
@@ -2617,6 +2686,221 @@ function tricktionaryEntriesHtml(entries = [], attempts = []) {
       ${entry.manual && state.profile?.id === entry.ownerId && entry.manualRemoveId ? `<button class="danger-btn compact-btn" type="button" data-remove-manual-trick="${escapeHtml(entry.manualRemoveId)}">Remove manual entry</button>` : ""}
     </article>`;
   }).join("")}</div>`;
+}
+
+function tricktionaryCardHtml(entry = {}, attemptMap = new Map(), editable = false) {
+  const attemptCount = attemptMap.get(String(entry.title || "").toLowerCase())?.count || 0;
+  const landedCount = Math.max(1, Number(entry.count || 1));
+  const key = normalizeTrickKey(entry.title);
+  const category = safeTricktionaryCategory(entry.tricktionaryCategory);
+  return `<article class="tricktionary-card tricktionary-drag-card" ${editable ? `draggable="true" data-tricktionary-card="1"` : ""} data-trick-key="${escapeHtml(key)}" data-trick-title="${escapeHtml(entry.title)}" data-trick-category="${escapeHtml(category)}">
+    <div class="tricktionary-card-main">
+      <div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Latest week ${escapeHtml(entry.weekStart)}` : ""}</small></div>
+      <div class="tricktionary-count-badge"><strong>${landedCount}</strong><small>landed</small></div>
+    </div>
+    <div class="tricktionary-card-meta">
+      <span>${escapeHtml(TRICKTIONARY_CATEGORY_LABELS[category] || "New Tricks")}</span>
+      ${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}
+      ${editable ? `<span>Hold + drag to organise</span>` : ""}
+    </div>
+    ${entry.manual && state.profile?.id === entry.ownerId && entry.manualRemoveId ? `<button class="danger-btn compact-btn" type="button" data-remove-manual-trick="${escapeHtml(entry.manualRemoveId)}">Remove manual entry</button>` : ""}
+  </article>`;
+}
+
+function tricktionaryBoardHtml(entries = [], attempts = [], options = {}) {
+  const attemptMap = attemptsByTrick(attempts);
+  const editable = Boolean(options.editable);
+  const grouped = TRICKTIONARY_SECTIONS.reduce((map, section) => ({ ...map, [section.id]: [] }), {});
+  entries.forEach((entry) => {
+    const category = safeTricktionaryCategory(entry.tricktionaryCategory || entry.categoryOverride || "new");
+    grouped[category].push({ ...entry, tricktionaryCategory: category });
+  });
+  const zoneHtml = (section, isTop = false) => {
+    const rows = grouped[section.id] || [];
+    return `<section class="tricktionary-zone ${isTop ? "new-zone" : ""}" data-tricktionary-drop-category="${escapeHtml(section.id)}">
+      <div class="tricktionary-zone-header">
+        <div><h3>${escapeHtml(section.label)}</h3><small>${escapeHtml(section.hint)}</small></div>
+        <span>${rows.length}</span>
+      </div>
+      <div class="tricktionary-zone-body">
+        ${rows.length ? rows.map((entry) => tricktionaryCardHtml(entry, attemptMap, editable)).join("") : `<div class="empty compact-empty">No ${escapeHtml(section.label.toLowerCase())} here yet.</div>`}
+      </div>
+    </section>`;
+  };
+  const topSection = TRICKTIONARY_SECTIONS[0];
+  const categorySections = TRICKTIONARY_SECTIONS.slice(1);
+  const help = editable ? `<p class="tricktionary-help">Hold a trick and drag it into Box, Spine, Hip, or Air. Drop one trick on another to create a combined trick.</p>` : "";
+  return `<div class="tricktionary-board" data-tricktionary-board="1">
+    ${help}
+    ${zoneHtml(topSection, true)}
+    <div class="tricktionary-category-grid">${categorySections.map((section) => zoneHtml(section)).join("")}</div>
+  </div>`;
+}
+
+async function saveTricktionaryProfileUpdate(athleteId, updater) {
+  const { data: profile, error: fetchError } = await client.from("profiles").select("id, manual_tricktionary, tricktionary_meta").eq("id", athleteId).single();
+  if (fetchError) throw fetchError;
+  const patch = updater(profile || {}) || {};
+  const { data, error } = await client.from("profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", athleteId).select("*").single();
+  if (error) throw error;
+  if (state.user?.id === athleteId) state.profile = data;
+  cacheClear("roster");
+  return data;
+}
+
+async function moveTricktionaryEntry(athleteId, trickKey, category) {
+  const safeCategory = safeTricktionaryCategory(category);
+  if (!athleteId || !trickKey) return;
+  await saveTricktionaryProfileUpdate(athleteId, (profile) => {
+    const manual = cloneTricktionaryManual(manualTricktionary(profile)).map((trick) => {
+      const key = normalizeTrickKey(trick.title || trick.name);
+      return key === trickKey ? { ...trick, tricktionaryCategory: safeCategory } : trick;
+    });
+    return {
+      manual_tricktionary: manual,
+      tricktionary_meta: buildTricktionaryMeta(profile, { [trickKey]: safeCategory }),
+    };
+  });
+}
+
+async function mergeTricktionaryEntries(athleteId, sourceTitle, targetTitle, category) {
+  const source = String(sourceTitle || "").trim();
+  const target = String(targetTitle || "").trim();
+  if (!athleteId || !source || !target || normalizeTrickKey(source) === normalizeTrickKey(target)) return;
+  const suggestedTitle = `${source} to ${target}`;
+  const title = window.prompt("Confirm combined trick title", suggestedTitle);
+  const cleanTitle = String(title || "").trim();
+  if (!cleanTitle) return;
+  const cleanKey = normalizeTrickKey(cleanTitle);
+  const safeCategory = safeTricktionaryCategory(category);
+  await saveTricktionaryProfileUpdate(athleteId, (profile) => {
+    const manual = cloneTricktionaryManual(manualTricktionary(profile));
+    const exists = manual.some((trick) => normalizeTrickKey(trick.title || trick.name) === cleanKey);
+    const nextManual = exists ? manual : [{
+      id: crypto.randomUUID(),
+      title: cleanTitle.slice(0, 120),
+      count: 1,
+      addedAt: new Date().toISOString(),
+      addedBy: state.user?.id || "",
+      source: "merged",
+      tricktionaryCategory: safeCategory,
+      mergedFrom: [source, target],
+    }, ...manual];
+    return {
+      manual_tricktionary: nextManual,
+      tricktionary_meta: buildTricktionaryMeta(profile, { [cleanKey]: safeCategory }),
+    };
+  });
+  notify("Combined trick saved. Originals were kept.");
+}
+
+function tricktionaryDropTargetFromPoint(x, y) {
+  const element = document.elementFromPoint(x, y);
+  if (!element) return {};
+  return {
+    card: element.closest?.("[data-tricktionary-card]") || null,
+    zone: element.closest?.("[data-tricktionary-drop-category]") || null,
+  };
+}
+
+function bindTricktionaryBoard({ athleteId, refresh }) {
+  const board = document.querySelector("[data-tricktionary-board]");
+  if (!board || !athleteId) return;
+  const performDrop = async (payload, targetCard, targetZone) => {
+    if (!payload?.key) return;
+    const targetKey = targetCard?.dataset?.trickKey || "";
+    const targetTitle = targetCard?.dataset?.trickTitle || "";
+    const category = targetCard?.dataset?.trickCategory || targetZone?.dataset?.tricktionaryDropCategory || payload.category || "new";
+    try {
+      if (targetCard && targetKey && targetKey !== payload.key) {
+        await mergeTricktionaryEntries(athleteId, payload.title, targetTitle, category);
+      } else if (targetZone) {
+        await moveTricktionaryEntry(athleteId, payload.key, category);
+        notify(`Moved to ${TRICKTIONARY_CATEGORY_LABELS[safeTricktionaryCategory(category)]}.`);
+      }
+      await refresh?.();
+    } catch (error) {
+      notify(messageFrom(error), "error");
+    }
+  };
+  board.querySelectorAll("[data-tricktionary-card]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      const payload = {
+        key: card.dataset.trickKey,
+        title: card.dataset.trickTitle,
+        category: card.dataset.trickCategory,
+      };
+      state.tricktionaryDrag = payload;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/json", JSON.stringify(payload));
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      board.querySelectorAll(".drag-over, .merge-target").forEach((node) => node.classList.remove("drag-over", "merge-target"));
+      state.tricktionaryDrag = null;
+    });
+    let holdTimer = null;
+    let pointerPayload = null;
+    card.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button, input, select, textarea")) return;
+      pointerPayload = {
+        key: card.dataset.trickKey,
+        title: card.dataset.trickTitle,
+        category: card.dataset.trickCategory,
+        active: false,
+      };
+      holdTimer = setTimeout(() => {
+        pointerPayload.active = true;
+        state.tricktionaryDrag = pointerPayload;
+        card.classList.add("dragging");
+        card.setPointerCapture?.(event.pointerId);
+      }, 220);
+    });
+    card.addEventListener("pointermove", (event) => {
+      if (!pointerPayload?.active) return;
+      event.preventDefault();
+      const { card: targetCard, zone } = tricktionaryDropTargetFromPoint(event.clientX, event.clientY);
+      board.querySelectorAll(".drag-over, .merge-target").forEach((node) => node.classList.remove("drag-over", "merge-target"));
+      if (targetCard && targetCard !== card) targetCard.classList.add("merge-target");
+      else zone?.classList.add("drag-over");
+    });
+    card.addEventListener("pointerup", async (event) => {
+      clearTimeout(holdTimer);
+      const payload = pointerPayload;
+      pointerPayload = null;
+      card.releasePointerCapture?.(event.pointerId);
+      card.classList.remove("dragging");
+      board.querySelectorAll(".drag-over, .merge-target").forEach((node) => node.classList.remove("drag-over", "merge-target"));
+      if (!payload?.active) return;
+      const { card: targetCard, zone } = tricktionaryDropTargetFromPoint(event.clientX, event.clientY);
+      await performDrop(payload, targetCard === card ? null : targetCard, zone);
+    });
+    card.addEventListener("pointercancel", () => {
+      clearTimeout(holdTimer);
+      pointerPayload = null;
+      card.classList.remove("dragging");
+      state.tricktionaryDrag = null;
+    });
+  });
+  board.querySelectorAll("[data-tricktionary-drop-category]").forEach((zone) => {
+    zone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      zone.classList.add("drag-over");
+    });
+    zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+    zone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      zone.classList.remove("drag-over");
+      let payload = state.tricktionaryDrag;
+      try {
+        const raw = event.dataTransfer.getData("application/json");
+        if (raw) payload = JSON.parse(raw);
+      } catch (_) {}
+      const targetCard = event.target.closest("[data-tricktionary-card]");
+      await performDrop(payload, targetCard, zone);
+    });
+  });
 }
 
 function previousTrainingSheetsHtml(data = {}) {
@@ -2675,7 +2959,7 @@ async function renderTricktionary() {
     <section class="panel">
       <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">${entries.length} tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
       <form id="manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a trick here"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
-      ${tricktionaryEntriesHtml(entries, data.attempts)}
+      ${tricktionaryBoardHtml(entries, data.attempts, { editable: true })}
     </section>
     <section class="panel">
       <div class="panel-head"><div><div class="panel-title">Attempted this week</div><div class="panel-meta">Effort count without awarding points</div></div></div>
@@ -2684,6 +2968,7 @@ async function renderTricktionary() {
     `;
   document.querySelector("#manual-trick-form")?.addEventListener("submit", saveManualTrick);
   document.querySelectorAll("[data-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeManualTrick));
+  bindTricktionaryBoard({ athleteId: state.user.id, refresh: renderTricktionary });
 }
 
 function weeklyAttemptsHtml(attempts = []) {
@@ -2699,8 +2984,17 @@ async function saveManualTrick(event) {
   const count = Math.max(1, Number(form.get("count") || 1));
   if (!title) return;
   const current = manualTricktionary(state.profile);
-  const manual_tricktionary = [{ id: crypto.randomUUID(), title: title.slice(0, 120), count, addedAt: new Date().toISOString() }, ...current];
-  const { data, error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const guessedCategory = tricktionaryCategoryFromText(title);
+  if (guessedCategory === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
+  const manual_tricktionary = [{
+    id: crypto.randomUUID(),
+    title: title.slice(0, 120),
+    count,
+    addedAt: new Date().toISOString(),
+    tricktionaryCategory: guessedCategory,
+  }, ...current];
+  const tricktionary_meta = buildTricktionaryMeta(state.profile, { [normalizeTrickKey(title)]: guessedCategory });
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, tricktionary_meta, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify("Trick added to your Tricktionary. No points were awarded.");
@@ -2729,7 +3023,7 @@ async function renderParentTricktionary() {
     const entries = landedTricktionaryEntries(data);
     return `<section class="panel parent-child-card">
       <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
-      ${tricktionaryEntriesHtml(entries, data.attempts)}
+      ${tricktionaryBoardHtml(entries, data.attempts)}
       <div class="settings-divider"></div>
       <div class="panel-title">Attempted this week</div>
       ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
@@ -2762,7 +3056,7 @@ async function renderCoachTricktionary() {
     </section>
     <section class="panel compact-panel">
       <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">Private to coach, rider, and linked parents</div></div></div>
-      ${tricktionaryEntriesHtml(entries, data.attempts)}
+      ${tricktionaryBoardHtml(entries, data.attempts, { editable: true })}
     </section>
     <section class="panel compact-panel">
       <div class="panel-head"><div><div class="panel-title">Attempted this week</div><div class="panel-meta">Effort count without awarding points</div></div></div>
@@ -2776,6 +3070,7 @@ async function renderCoachTricktionary() {
     state.selectedAthleteId = event.target.value;
     renderCoachTricktionary();
   });
+  bindTricktionaryBoard({ athleteId: athlete.id, refresh: renderCoachTricktionary });
 }
 
 async function renderAthleteHome() {
@@ -5267,7 +5562,7 @@ function coachPreviewTricktionaryHtml({ athlete, tricktionaryData }) {
   const data = tricktionaryData || { profile: athlete, assignments: [], progress: [], awards: [], attempts: [], percentageAttempts: [] };
   const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
   return `<div class="phone-preview-content">
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile?.daily_pb_seconds)}</div></div></div>${tricktionaryEntriesHtml(entries, data.attempts || [])}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile?.daily_pb_seconds)}</div></div></div>${tricktionaryBoardHtml(entries, data.attempts || [])}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Attempted this week</div></div></div>${weeklyAttemptsHtml((data.attempts || []).filter((attempt) => attempt.week_start === weekStartDate()))}</section>
   </div>`;
 }
@@ -5905,6 +6200,8 @@ async function saveCoachManualTrick(event) {
   const athlete = await selectedCoachAthleteProfile();
   if (!athlete) return notify("Choose a rider before adding to their Tricktionary.", "error");
   const current = manualTricktionary(athlete);
+  const guessedCategory = tricktionaryCategoryFromText(title);
+  if (guessedCategory === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
   const exists = current.some((trick) => String(trick.title || trick.name || "").trim().toLowerCase() === title.toLowerCase());
   if (exists) return notify("That trick is already in this rider's manual Tricktionary.", "error");
   const manual_tricktionary = [{
@@ -5914,8 +6211,10 @@ async function saveCoachManualTrick(event) {
     addedAt: new Date().toISOString(),
     addedBy: state.user.id,
     source: "coach",
+    tricktionaryCategory: guessedCategory,
   }, ...current];
-  const { error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", athlete.id);
+  const tricktionary_meta = buildTricktionaryMeta(athlete, { [normalizeTrickKey(title)]: guessedCategory });
+  const { error } = await client.from("profiles").update({ manual_tricktionary, tricktionary_meta, updated_at: new Date().toISOString() }).eq("id", athlete.id);
   if (error) return notify(messageFrom(error), "error");
   notify("Trick added to the rider's Tricktionary. No points were awarded.");
   await renderStudentProfile();
