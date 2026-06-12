@@ -52,6 +52,8 @@ const state = {
   realtimeChannel: null,
   syncRefreshTimer: null,
   cache: {},
+  pendingAssignmentProgress: new Map(),
+  pendingPercentageAttempts: new Map(),
   coachRosterIds: new Set(),
 };
 
@@ -301,7 +303,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.9`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.10`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -607,7 +609,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.9" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.10" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -666,7 +668,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.9" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.10" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -785,14 +787,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.9" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.10" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.9" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.10" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1062,7 +1064,7 @@ async function getPublicAthleteProfile(athleteId) {
 async function getWeeklyAssignments(athleteId) {
   const weekStart = weekStartDate();
   const cacheKey = `schedule:${athleteId}:${weekStart}`;
-  const cached = cacheGet(cacheKey, 6500);
+  const cached = state.view === "session" ? null : cacheGet(cacheKey, 6500);
   if (cached) return cached;
   if (state.user?.id) {
     const { error: rolloverError } = await client.rpc("ensure_current_week_assignments", {
@@ -1447,8 +1449,10 @@ function extraTricks(profile = state.profile) {
 }
 
 function isAssignmentComplete(assignment) {
+  const pending = pendingAssignmentState(assignment);
+  if (pending) return Boolean(pending.complete);
   if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
-  if (assignment.category === "percentage") return (assignment.percentageAttempts || []).length >= 10;
+  if (assignment.category === "percentage") return percentageAttemptsByNumber(assignment).size >= 10;
   return Boolean(assignment.progress?.completed_at);
 }
 
@@ -1632,14 +1636,62 @@ async function saveDailyDisplayOrder(rows = dailyRowOrder()) {
 }
 
 function percentageSummary(assignment) {
-  const attempts = assignment.percentageAttempts || [];
+  const attempts = Array.from(percentageAttemptsByNumber(assignment).values());
   const landed = attempts.filter((attempt) => attempt.landed).length;
   const percentage = attempts.length ? Math.round((landed / attempts.length) * 100) : 0;
   return { attempts: attempts.length, landed, missed: attempts.length - landed, percentage, complete: attempts.length >= 10 };
 }
 
+const PENDING_PROGRESS_TTL_MS = 2 * 60 * 1000;
+
+function pendingAssignmentState(assignment) {
+  const entry = state.pendingAssignmentProgress?.get(assignment.id);
+  if (!entry) return null;
+  if (Date.now() - entry.time > PENDING_PROGRESS_TTL_MS) {
+    state.pendingAssignmentProgress.delete(assignment.id);
+    return null;
+  }
+  return entry;
+}
+
+function setPendingAssignmentProgress(assignmentId, complete) {
+  if (!assignmentId) return;
+  state.pendingAssignmentProgress.set(assignmentId, { complete: Boolean(complete), time: Date.now() });
+}
+
+function clearPendingAssignmentProgress(assignmentId) {
+  if (assignmentId) state.pendingAssignmentProgress.delete(assignmentId);
+}
+
+function percentageAttemptKey(assignmentId, attemptNumber) {
+  return `${assignmentId}:${Number(attemptNumber)}`;
+}
+
+function setPendingPercentageAttempt(assignmentId, attemptNumber, landed) {
+  if (!assignmentId || !attemptNumber) return;
+  state.pendingPercentageAttempts.set(percentageAttemptKey(assignmentId, attemptNumber), {
+    attemptNumber: Number(attemptNumber),
+    landed,
+    time: Date.now(),
+  });
+}
+
+function clearPendingPercentageAttempt(assignmentId, attemptNumber) {
+  if (assignmentId && attemptNumber) state.pendingPercentageAttempts.delete(percentageAttemptKey(assignmentId, attemptNumber));
+}
+
 function percentageAttemptsByNumber(assignment) {
-  return new Map((assignment.percentageAttempts || []).map((attempt) => [Number(attempt.attempt_number), attempt]));
+  const byNumber = new Map((assignment.percentageAttempts || []).map((attempt) => [Number(attempt.attempt_number), attempt]));
+  (state.pendingPercentageAttempts || new Map()).forEach((entry, key) => {
+    if (!key.startsWith(`${assignment.id}:`)) return;
+    if (Date.now() - entry.time > PENDING_PROGRESS_TTL_MS) {
+      state.pendingPercentageAttempts.delete(key);
+      return;
+    }
+    if (entry.landed === null) byNumber.delete(entry.attemptNumber);
+    else byNumber.set(entry.attemptNumber, { assignment_id: assignment.id, attempt_number: entry.attemptNumber, landed: entry.landed });
+  });
+  return byNumber;
 }
 
 function nextPercentageAttemptNumber(assignment) {
@@ -3076,11 +3128,13 @@ async function recordAssignmentAction(event) {
   button.disabled = true;
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
+  setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.assignmentAction === "landed");
   const { data, error } = await client.rpc("record_assignment_action", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
   });
   if (error) {
+    clearPendingAssignmentProgress(button.dataset.assignmentId);
     button.disabled = false;
     row?.classList.toggle("complete", Boolean(wasComplete));
     button.textContent = wasComplete ? "✓" : "";
@@ -3135,12 +3189,15 @@ async function recordPercentageAttempt(event) {
   const landed = cycleState
     ? cycleState === "empty"
     : button.dataset.percentageAction === "true";
+  const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
+  setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
   const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
-    p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
+    p_attempt_number: attemptNumber,
     p_landed: clearAttempt ? null : landed,
   });
   if (error) {
+    clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
     button.disabled = false;
     return notify(messageFrom(error), "error");
   }
@@ -4068,11 +4125,13 @@ async function recordViewerAssignmentAction(event) {
   button.disabled = true;
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
+  setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
   const { data, error } = await client.rpc("record_assignment_action", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.viewerAssignmentAction,
   });
   if (error) {
+    clearPendingAssignmentProgress(button.dataset.assignmentId);
     button.disabled = false;
     row?.classList.toggle("complete", Boolean(wasComplete));
     button.textContent = wasComplete ? "✓" : "";
@@ -4118,12 +4177,15 @@ async function recordViewerPercentageAttempt(event) {
   const landed = cycleState
     ? cycleState === "empty"
     : button.dataset.percentageAction === "true";
+  const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
+  setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
   const { data, error } = await client.rpc("set_percentage_attempt", {
     p_assignment_id: button.dataset.assignmentId,
-    p_attempt_number: Number(button.dataset.percentageAttemptNumber || 1),
+    p_attempt_number: attemptNumber,
     p_landed: clearAttempt ? null : landed,
   });
   if (error) {
+    clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
     button.disabled = false;
     return notify(messageFrom(error), "error");
   }
