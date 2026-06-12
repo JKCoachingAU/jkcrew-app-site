@@ -318,7 +318,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.14`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.15`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -627,7 +627,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.14" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.15" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -686,7 +686,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.14" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.15" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -814,14 +814,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.14" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.15" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.14" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.15" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1114,18 +1114,20 @@ async function getWeeklyAssignments(athleteId) {
       throw rolloverError;
     }
   }
-  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: athleteProfile, error: athleteProfileError }] = await Promise.all([
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
     client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", weekStartIso()),
     client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
     client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("attempted_at", { ascending: false }),
+    client.from("profiles").select("id, country_code").eq("id", athleteId).maybeSingle(),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
   if (awardsError) throw awardsError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
+  if (athleteProfileError) throw athleteProfileError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
@@ -1140,7 +1142,10 @@ async function getWeeklyAssignments(athleteId) {
     assignmentAttemptsById.set(attempt.assignment_id, entries);
   });
   return cacheSet(cacheKey, {
-    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => ({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] })),
+    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => {
+      const contextualAssignment = { ...assignment, athlete_country_code: athleteProfile?.country_code || state.profile?.country_code || "AU" };
+      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id)), percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] };
+    }),
     awards: awards || [],
     percentageAttempts: percentageAttempts || [],
     assignmentAttempts: assignmentAttempts || [],
@@ -1333,6 +1338,50 @@ function countryFlag(code = "") {
   return value.split("").map((char) => String.fromCodePoint(127397 + char.charCodeAt(0))).join("");
 }
 
+const countryTimezones = {
+  AU: "Australia/Brisbane",
+  NZ: "Pacific/Auckland",
+  US: "America/Los_Angeles",
+  GB: "Europe/London",
+  CA: "America/Toronto",
+  JP: "Asia/Tokyo",
+  FR: "Europe/Paris",
+  DE: "Europe/Berlin",
+  NL: "Europe/Amsterdam",
+  BE: "Europe/Brussels",
+  ES: "Europe/Madrid",
+  IT: "Europe/Rome",
+  SE: "Europe/Stockholm",
+  NO: "Europe/Oslo",
+  RU: "Europe/Moscow",
+  DK: "Europe/Copenhagen",
+  FI: "Europe/Helsinki",
+  BR: "America/Sao_Paulo",
+  AR: "America/Argentina/Buenos_Aires",
+  CL: "America/Santiago",
+  ZA: "Africa/Johannesburg",
+  SG: "Asia/Singapore",
+  MY: "Asia/Kuala_Lumpur",
+  TH: "Asia/Bangkok",
+  ID: "Asia/Jakarta",
+  PH: "Asia/Manila",
+};
+function dateForTimezone(timeZone = "Australia/Brisbane", date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date).reduce((all, part) => ({ ...all, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function dateForCountryCode(countryCode = "") {
+  return dateForTimezone(countryTimezones[String(countryCode || "").toUpperCase()] || "Australia/Brisbane");
+}
+function assignmentLocalDate(assignment = {}) {
+  return dateForCountryCode(assignment.athlete_country_code || assignment.country_code || state.profile?.country_code || "AU");
+}
+
 function countryOptionsHtml(selectedCode = "") {
   return countryOptions.map(([code, label]) => `<option value="${code}" ${selectedCode === code ? "selected" : ""}>${code ? `${countryFlag(code)} ${label}` : label}</option>`).join("");
 }
@@ -1458,7 +1507,24 @@ const heatStatuses = {
 };
 const heatOptions = () => Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}">${info.label}</option>`).join("");
 
-const dailyCompletionCount = (awards = []) => new Set(awards.filter((award) => award.award_key?.startsWith("daily:")).map((award) => String(award.award_key).slice(-10))).size;
+const isDailyCompletionAward = (award = {}) => {
+  const key = String(award.award_key || "");
+  return key.startsWith("daily-complete:") || key.startsWith("daily:");
+};
+const isDailyUnder20Award = (award = {}) => String(award.award_key || "").startsWith("daily-under-20:");
+const dailyAwardDate = (award = {}) => {
+  const key = String(award.award_key || "");
+  const match = key.match(/(\d{4}-\d{2}-\d{2})$/);
+  return match?.[1] || String(award.created_at || "").slice(0, 10);
+};
+const dailyCompletionCount = (awards = []) => new Set(awards.filter(isDailyCompletionAward).map(dailyAwardDate).filter(Boolean)).size;
+function normalizeAssignmentProgress(assignment, progress) {
+  if (!progress) return null;
+  if (assignment?.category === "daily" && progress.progress_date && progress.progress_date !== assignmentLocalDate(assignment)) {
+    return { ...progress, progress_date: null, completed: false };
+  }
+  return progress;
+}
 const spinDirectionLabels = {
   "": "Not set",
   left: "Left spin",
@@ -1490,7 +1556,7 @@ function extraTricks(profile = state.profile) {
 function isAssignmentComplete(assignment) {
   const pending = pendingAssignmentState(assignment);
   if (pending) return Boolean(pending.complete);
-  if (assignment.category === "daily") return assignment.progress?.progress_date === localDate();
+  if (assignment.category === "daily") return assignment.progress?.progress_date === assignmentLocalDate(assignment);
   if (assignment.category === "percentage") return percentageAttemptsByNumber(assignment).size >= 10;
   return Boolean(assignment.progress?.completed_at);
 }
@@ -1958,7 +2024,7 @@ function groupLabelList(groupNames = []) {
 function athleteAttention(athlete, data = {}) {
   const sessions = (data.sessions || []).filter((session) => session.athlete_id === athlete.id);
   const lastSession = sessions[0];
-  const dailyAwards = (data.awards || []).filter((award) => award.athlete_id === athlete.id && award.award_key?.startsWith("daily:")).length;
+  const dailyAwards = (data.awards || []).filter((award) => award.athlete_id === athlete.id && isDailyCompletionAward(award)).length;
   const weeklyAssignments = (data.scheduleRows || []).filter((assignment) => assignment.athlete_id === athlete.id);
   const weeklyNonDaily = weeklyAssignments.filter((assignment) => assignment.category !== "daily").length;
   const flags = [];
@@ -3539,8 +3605,9 @@ async function recordAssignmentAction(event) {
   cacheClear("leaderboard");
   const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
   const message = `${result.message}${pointsNote}.`;
-  if (result.category === "daily" && result.points_awarded > 0) {
-    const completion = await saveOwnDailyCompletionTime(Math.floor((Date.now() - state.trickStartedAt) / 1000));
+  const dailyCompleteResult = result.category === "daily" && (result.daily_complete || (result.progress_date === assignmentLocalDate({ athlete_country_code: state.profile?.country_code }) && Number(result.points_awarded || 0) > 0));
+  if (dailyCompleteResult && result.live_session && Number.isFinite(Number(result.elapsed_seconds)) && Number(result.elapsed_seconds) > 0) {
+    const completion = await saveOwnDailyCompletionTime(Number(result.elapsed_seconds));
     celebrate(completion.isNewPb ? `New PB! ${formatPbTime(completion.seconds)}` : `${message} Completed today in ${formatPbTime(completion.seconds)}.`);
     await refreshOwnXpAfterAction();
   } else {
@@ -4238,7 +4305,10 @@ async function renderSessionViewer() {
   const athleteIds = filteredRoster.map((athlete) => athlete.id);
   const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(athleteIds);
   const schedules = filteredRoster.map((athlete) => {
-    const allAssignments = assignmentsByAthlete.get(athlete.id) || [];
+    const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
+      const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
+      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, assignment.progress) };
+    });
     const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
     const selectedVenue = state.sessionViewerVenue || dailyVenues(allDaily)[0] || "";
     const visibleDaily = assignmentsForVenue(allDaily, selectedVenue);
@@ -4589,7 +4659,10 @@ async function recordViewerAssignmentAction(event) {
   const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
   if (athleteId) cacheClear(`schedule:${athleteId}:`);
   cacheClear("leaderboard");
-  notify(result.message || "Trick progress updated.");
+  const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
+  const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
+  const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
+  notify(`${result?.message || "Trick progress updated"}${pointsNote}${timeNote}.`);
   await refreshSessionViewerLight();
 }
 
@@ -4735,7 +4808,10 @@ async function refreshSessionViewerLight() {
     .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
   const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster.map((athlete) => athlete.id));
   const schedules = filteredRoster.map((athlete) => {
-    const allAssignments = assignmentsByAthlete.get(athlete.id) || [];
+    const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
+      const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
+      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, assignment.progress) };
+    });
     const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
     const daily = assignmentsForVenue(allDaily, state.sessionViewerVenue);
     const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
@@ -4903,7 +4979,7 @@ async function generateWeeklyNotificationPreviews(roster = [], commandData = {})
     const venues = [...new Set(sessions.map((session) => session.venue).filter(Boolean))];
     const status = statuses.get(athlete.id)?.heat_status || "on_track";
     const statusLabel = heatStatuses[status]?.label || "On track";
-    const dailyAwards = awards.filter((award) => award.award_key?.startsWith("daily:")).length;
+    const dailyAwards = awards.filter(isDailyCompletionAward).length;
     const oneBangAwards = awards.filter((award) => award.award_key?.includes("one")).length;
     const dialledAwards = awards.filter((award) => award.award_key?.includes("dial")).length;
     const goalsCompleted = Array.isArray(athlete.goals) ? athlete.goals.filter((goal) => goal.completed).length : 0;
@@ -5235,7 +5311,8 @@ async function getCoachLiveActivity(roster = []) {
     const category = assignment.category || "";
     const points = Number(award.points || 0);
     let text = points > 0 ? `${name} earned +${points} points` : `${name} had ${points} points adjusted`;
-    if (award.award_key?.startsWith("daily:")) text = `${name} completed Daily Tricks${points ? ` · +${points}` : ""}`;
+    if (isDailyUnder20Award(award)) text = `${name} completed Daily Tricks under 20 minutes${points ? ` · +${points}` : ""}`;
+    else if (isDailyCompletionAward(award)) text = `${name} completed Daily Tricks${points ? ` · +${points}` : ""}`;
     else if (award.award_key?.startsWith("group-first-finish:")) text = `${name} finished Daily Tricks first in group · +${points}`;
     else if (category === "one_bang") text = `${name} earned +${points} from One Bangs${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
     else if (category === "dialled") text = `${name} completed Dialled${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
