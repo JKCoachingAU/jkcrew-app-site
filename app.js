@@ -2,7 +2,7 @@ const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
-    autoRefreshToken: false,
+    autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
   },
@@ -276,7 +276,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.6`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.8`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -567,7 +567,7 @@ async function init() {
   renderAuth("login", "Checking JKCREW connection...");
   let session = null;
   try {
-    const result = await withTimeout(client.auth.getSession(), "Sign in check", 4000);
+    const result = await withTimeout(client.auth.getSession(), "Sign in check", 10000);
     session = result.data?.session || null;
   } catch (error) {
     renderAuth("login", messageFrom(error));
@@ -582,7 +582,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.8" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -612,12 +612,14 @@ async function handleSession(session) {
   }
   let { data, error } = await withTimeout(
     client.from("profiles").select("*").eq("id", state.user.id).maybeSingle(),
-    "Profile load"
+    "Profile load",
+    10000
   );
   if (error || !data) {
     const { data: recovered, error: recoveryError } = await withTimeout(
       client.rpc("ensure_current_profile"),
-      "Profile recovery"
+      "Profile recovery",
+      12000
     );
     if (recoveryError || !recovered) {
       renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
@@ -639,7 +641,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.6" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.8" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -695,8 +697,10 @@ async function handleAuth(event, mode) {
 
   try {
     if (mode === "login") {
-      const { error } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in");
+      const { data, error } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in", 15000);
       if (error) renderAuth(mode, messageFrom(error));
+      else if (data?.session) await handleSession(data.session);
+      else renderAuth("login", "Signed in. Loading your profile...");
       return;
     }
 
@@ -718,11 +722,12 @@ async function handleAuth(event, mode) {
       return;
     }
 
-    const { error: signInError } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in");
+    const { data: signInData, error: signInError } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in", 15000);
     if (signInError) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
       return;
     }
+    if (signInData?.session) await handleSession(signInData.session);
     notify("Welcome to JKCREW. Your account is ready.");
   } catch (error) {
     renderAuth(mode, messageFrom(error));
@@ -737,14 +742,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.6" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.8" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.6" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.8" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
