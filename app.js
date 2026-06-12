@@ -13,6 +13,7 @@ const toast = document.querySelector("#toast");
 const installButton = document.querySelector("#install-app");
 let deferredInstallPrompt = null;
 const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
+const PROFILE_SHOWREEL_BUCKET = "profile-showreels";
 const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
 const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
@@ -318,7 +319,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.15`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.16`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -468,6 +469,40 @@ async function uploadHelpVideoFile(file, kind = "student") {
     mimeType: file.type || "video/mp4",
     size: file.size || 0,
   };
+}
+
+async function uploadShowreelVideoFile(riderId, file) {
+  if (!state.user?.id) throw new Error("Sign in again before uploading a showreel clip.");
+  const ext = videoFileExtension(file);
+  const path = `${riderId}/showreel/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await client.storage
+    .from(PROFILE_SHOWREEL_BUCKET)
+    .upload(path, file, {
+      cacheControl: "86400",
+      contentType: file.type || "video/mp4",
+      upsert: false,
+    });
+  if (error) throw error;
+  const publicUrl = client.storage.from(PROFILE_SHOWREEL_BUCKET).getPublicUrl(data?.path || path).data?.publicUrl || "";
+  return {
+    path: data?.path || path,
+    publicUrl,
+    fileName: file.name || `showreel.${ext}`,
+    mimeType: file.type || "video/mp4",
+    size: file.size || 0,
+  };
+}
+
+async function getProfileShowreels(riderId) {
+  if (!riderId) return [];
+  const { data, error } = await client
+    .from("profile_showreels")
+    .select("id,rider_id,video_url,storage_path,duration_seconds,mime_type,file_size_bytes,created_at")
+    .eq("rider_id", riderId)
+    .order("created_at", { ascending: false })
+    .limit(3);
+  if (error) throw error;
+  return data || [];
 }
 
 async function signedHelpVideoUrl(path = "") {
@@ -627,7 +662,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.15" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.16" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -686,7 +721,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.15" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.16" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -814,14 +849,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.15" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.16" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.15" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.16" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1097,7 +1132,15 @@ async function getTricktionaryData(athleteId) {
 async function getPublicAthleteProfile(athleteId) {
   const { data, error } = await client.rpc("get_public_athlete_profile", { p_athlete_id: athleteId });
   if (error) throw error;
-  return Array.isArray(data) ? data[0] : data;
+  const profile = Array.isArray(data) ? data[0] : data;
+  if (!profile?.id) return profile;
+  try {
+    const showreels = await getProfileShowreels(profile.id);
+    return { ...profile, showreel_videos: showreels };
+  } catch (showreelError) {
+    console.warn("Showreels could not be loaded", showreelError);
+    return profile;
+  }
 }
 
 async function getWeeklyAssignments(athleteId) {
@@ -2389,24 +2432,40 @@ function goalsSection(profile = {}) {
   </section>`;
 }
 
-function showreelVideos(profile = {}) {
-  return Array.isArray(profile.showreel_videos) ? profile.showreel_videos.filter((video) => video?.dataUrl).slice(0, 3) : [];
+function normalizeShowreelClip(video = {}) {
+  const videoUrl = video.video_url || video.videoUrl || video.public_url || video.dataUrl || "";
+  const storagePath = video.storage_path || video.storagePath || "";
+  return {
+    id: video.id || storagePath || videoUrl,
+    videoUrl,
+    storagePath,
+    durationSeconds: Number(video.duration_seconds || video.durationSeconds || 0),
+    fileName: video.file_name || video.name || "Showreel clip",
+    createdAt: video.created_at || video.createdAt || video.addedAt || "",
+  };
 }
 
-const SHOWREEL_MAX_SECONDS = 30;
-const SHOWREEL_MAX_BYTES = 36 * 1024 * 1024;
+function showreelVideos(profile = {}) {
+  return Array.isArray(profile.showreel_videos)
+    ? profile.showreel_videos.map(normalizeShowreelClip).filter((video) => video.videoUrl).slice(0, 3)
+    : [];
+}
 
-function showreelHtml(profile = {}, editable = false) {
+const SHOWREEL_MAX_SECONDS = 10;
+const SHOWREEL_MAX_BYTES = 120 * 1024 * 1024;
+
+function showreelHtml(profile = {}, editable = false, removable = editable) {
   const videos = showreelVideos(profile);
   const videoHtml = videos.length ? videos.map((video, index) => `
     <div class="showreel-tile">
-      <video src="${escapeHtml(video.dataUrl)}" autoplay muted loop playsinline controls preload="metadata"></video>
-      ${editable ? `<button class="danger-btn compact-btn" type="button" data-remove-showreel="${index}">Remove</button>` : ""}
+      <video src="${escapeHtml(video.videoUrl)}" autoplay muted loop playsinline controls preload="metadata"></video>
+      ${removable ? `<button class="danger-btn compact-btn" type="button" data-remove-showreel="${escapeHtml(video.id || String(index))}" data-showreel-path="${escapeHtml(video.storagePath || "")}">Remove</button>` : ""}
     </div>`).join("") : `<div class="empty compact-empty">No showreel videos yet.</div>`;
+  const limitReached = videos.length >= 3;
   return `<section class="panel showreel-panel">
-    <div class="panel-head"><div><div class="panel-title">Showreel</div><div class="panel-meta">2-3 BMX highlight clips · max 30 seconds each</div></div></div>
+    <div class="panel-head"><div><div class="panel-title">Showreel</div><div class="panel-meta">Up to 3 BMX highlight clips · max 10 seconds each</div></div></div>
     <div class="showreel-grid">${videoHtml}</div>
-    ${editable ? `<div class="settings-divider"></div><form id="showreel-form" class="showreel-form"><input id="showreel-file" name="video" type="file" accept="video/*" hidden><button class="secondary-btn" type="button" id="choose-showreel">Upload showreel clip</button><small>${videos.length}/3 videos added</small></form>` : ""}
+    ${editable ? `<div class="settings-divider"></div><form id="showreel-form" class="showreel-form"><input id="showreel-file" name="video" type="file" accept="video/*" hidden><button class="secondary-btn" type="button" id="choose-showreel" ${limitReached ? "disabled" : ""}>Upload showreel clip</button><small>${limitReached ? "You can only upload 3 showreel clips. Delete one to add a new clip." : `${videos.length}/3 clips added`}</small></form>` : ""}
   </section>`;
 }
 
@@ -4060,7 +4119,7 @@ async function renderPublicAthleteProfile() {
       </div>
     </section>
     <section class="panel">${xpProgressHtml(scoreXp)}${levelBadgesAccordionHtml(scoreXp)}</section>
-    ${showreelHtml(profile)}
+    ${showreelHtml(profile, false, isCoachRole(state.profile?.role))}
     ${socialLinksHtml(profile)}
     <section class="stats-grid public-profile-stats">
       ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
@@ -4076,6 +4135,7 @@ async function renderPublicAthleteProfile() {
       <div class="public-detail"><div class="panel-title">Achievements</div>${linesHtml(profile.achievements, "No achievements added yet.")}</div>
     </section>`;
   document.querySelector("#back-to-board").addEventListener("click", () => navigate("board"));
+  document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
 }
 
 async function renderAthleteCrew() {
@@ -5620,7 +5680,7 @@ async function getCoachPreviewData() {
   if (!roster.length) return { roster, athlete: null };
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs, xpSummary] = await Promise.all([
+  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs, xpSummary, showreels] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     getLeaderboard(),
     getDashboardItems(athlete.id),
@@ -5628,9 +5688,10 @@ async function getCoachPreviewData() {
     getHelpRequests(athlete.id),
     getRunPlans(athlete.id),
     getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
+    getProfileShowreels(athlete.id).catch(() => showreelVideos(athlete)),
   ]);
   if (sessionsResult.error) throw sessionsResult.error;
-  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs, xpSummary };
+  return { roster, athlete: { ...athlete, showreel_videos: showreels }, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs, xpSummary };
 }
 
 async function renderCoachPreview(mode = "student") {
@@ -6025,7 +6086,7 @@ async function renderStudentProfile() {
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory, xpSummary, xpHistory, leaderboard] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory, xpSummary, xpHistory, leaderboard, showreels] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
@@ -6038,6 +6099,7 @@ async function renderStudentProfile() {
     getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
     getXpHistory(athlete.id).catch(() => []),
     getLeaderboard(),
+    getProfileShowreels(athlete.id).catch(() => showreelVideos(athlete)),
   ]);
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
@@ -6061,6 +6123,7 @@ async function renderStudentProfile() {
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
   const scoreXp = scoreLevelSummary(weeklyRow?.weekly_points || 0);
+  const athleteWithShowreels = { ...athlete, showreel_videos: showreels };
 
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" id="back-to-students">All students</button></div></div>
@@ -6083,6 +6146,7 @@ async function renderStudentProfile() {
         <button class="secondary-btn" type="submit">Apply XP Change</button>
       </form>
     </section>
+    ${showreelHtml(athleteWithShowreels, false, true)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
       <form id="coach-athlete-profile-form" class="two-col-form">
         <div class="field"><label for="coach-athlete-spin">Spin Direction</label><select id="coach-athlete-spin" name="spinDirection"><option value="" ${!athlete.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${athlete.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${athlete.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${athlete.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${athlete.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
@@ -6156,6 +6220,7 @@ async function renderStudentProfile() {
   document.querySelector("#choose-avatar").addEventListener("click", () => document.querySelector("#avatar-file").click());
   document.querySelector("#avatar-file").addEventListener("change", updateAthleteAvatar);
   document.querySelector("#remove-avatar").addEventListener("click", () => saveAthleteAvatar(null));
+  document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
   document.querySelector("#delete-student-account").addEventListener("click", () => deleteSelectedAthlete(athlete));
 }
 
@@ -7274,11 +7339,13 @@ async function renderProfile() {
   let xpProfileSection = "";
   try {
     if (state.profile.role === "athlete") {
-      const [historyData, xpSummary, xpHistory] = await Promise.all([
+      const [historyData, xpSummary, xpHistory, showreels] = await Promise.all([
         getTricktionaryData(state.user.id),
         getXpSummary(state.user.id).catch(() => normalizeXpSummary({}, state.profile)),
         getXpHistory(state.user.id).catch(() => []),
+        getProfileShowreels(state.user.id).catch(() => showreelVideos(state.profile)),
       ]);
+      state.profile = { ...state.profile, showreel_videos: showreels };
       trainingHistorySection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">Training history</div><div class="panel-meta">Previous sheets moved here from Tricktionary</div></div></div>${previousTrainingSheetsHtml(historyData)}</section>`;
       xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}<div class="settings-divider"></div>${xpHistoryHtml(xpHistory)}</section>`;
     } else if (state.profile.role === "parent") {
@@ -7400,35 +7467,79 @@ async function saveOwnProfileMedia(update, message) {
 async function addShowreelVideo(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
+  if (!String(file.type || "").startsWith("video/")) {
+    event.currentTarget.value = "";
+    return notify("Choose a video file for the showreel.", "error");
+  }
   if (file.size > SHOWREEL_MAX_BYTES) {
     event.currentTarget.value = "";
-    return notify("Choose a showreel clip under 36MB. Short 30 second clips work best on phones.", "error");
+    return notify("Choose a showreel clip under 120MB. Short 10 second clips work best on phones.", "error");
   }
-  const current = showreelVideos(state.profile);
+  let current = showreelVideos(state.profile);
+  try {
+    current = await getProfileShowreels(state.user.id);
+  } catch (error) {
+    console.warn("Showreel count check failed", error);
+  }
   if (current.length >= 3) {
     event.currentTarget.value = "";
-    return notify("You can add up to 3 showreel videos.", "error");
+    return notify("You can only upload 3 showreel clips. Delete one to add a new clip.", "error");
   }
   try {
     const duration = await videoDurationSeconds(file);
     if (duration > SHOWREEL_MAX_SECONDS + 0.5) {
       event.currentTarget.value = "";
-      return notify("Showreel clips can be up to 30 seconds. Please trim this video and upload again.", "error");
+      return notify("Showreel clips can be up to 10 seconds. Please trim this video and upload again.", "error");
     }
-    const dataUrl = await fileToDataUrl(file);
-    current.push({ id: crypto.randomUUID(), dataUrl, name: file.name, durationSeconds: Math.round(duration), addedAt: new Date().toISOString() });
-    await saveOwnProfileMedia({ showreel_videos: current }, "Showreel video added.");
-  } catch (_error) {
-    notify("Could not read that video. Try another short clip.", "error");
+    const uploaded = await uploadShowreelVideoFile(state.user.id, file);
+    const { error } = await client.from("profile_showreels").insert({
+      rider_id: state.user.id,
+      uploaded_by: state.user.id,
+      video_url: uploaded.publicUrl,
+      storage_path: uploaded.path,
+      duration_seconds: Math.round(duration * 10) / 10,
+      mime_type: uploaded.mimeType,
+      file_size_bytes: uploaded.size,
+    });
+    if (error) {
+      await client.storage.from(PROFILE_SHOWREEL_BUCKET).remove([uploaded.path]).catch(() => {});
+      throw error;
+    }
+    state.profile = { ...state.profile, showreel_videos: await getProfileShowreels(state.user.id) };
+    notify("Showreel clip added.");
+    await renderProfile();
+  } catch (error) {
+    notify(messageFrom(error) || "Could not save that showreel clip. Try another short video.", "error");
   } finally {
     event.currentTarget.value = "";
   }
 }
 
 async function removeShowreelVideo(event) {
-  const index = Number(event.currentTarget.dataset.removeShowreel);
-  const videos = showreelVideos(state.profile).filter((_video, videoIndex) => videoIndex !== index);
-  await saveOwnProfileMedia({ showreel_videos: videos }, "Showreel video removed.");
+  const id = event.currentTarget.dataset.removeShowreel || "";
+  const storagePath = event.currentTarget.dataset.showreelPath || "";
+  if (!id) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Removing...";
+  const { error } = await client.from("profile_showreels").delete().eq("id", id);
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Remove";
+    return notify(messageFrom(error), "error");
+  }
+  if (storagePath) {
+    await client.storage.from(PROFILE_SHOWREEL_BUCKET).remove([storagePath]).catch((storageError) => {
+      console.warn("Showreel storage cleanup failed", storageError);
+    });
+  }
+  notify("Showreel clip removed.");
+  if (state.view === "publicProfile") return renderPublicAthleteProfile();
+  if (state.view === "student") return renderStudentProfile();
+  if (state.profile?.role === "athlete") {
+    state.profile = { ...state.profile, showreel_videos: await getProfileShowreels(state.user.id).catch(() => []) };
+  }
+  return renderProfile();
 }
 
 async function updateProfile(event) {
