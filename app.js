@@ -303,7 +303,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.10`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.11`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -512,6 +512,7 @@ function celebrate(message) {
 
 function showLevelUpModal(summary) {
   const xp = normalizeXpSummary(summary);
+  const unit = xp.unit_label || "XP";
   document.querySelector(".level-up-overlay")?.remove();
   const overlay = document.createElement("div");
   overlay.className = "level-up-overlay";
@@ -519,7 +520,7 @@ function showLevelUpModal(summary) {
     <div class="eyebrow">Level up</div>
     ${levelBadgeHtml(xp.current_badge)}
     <h2>Level ${xp.level}</h2>
-    <p>${xp.xp_total} XP earned. ${xp.level >= XP_LEVEL_CAP ? "You hit the current level cap." : `${xp.xp_needed} XP to Level ${xp.next_level}.`}</p>
+    <p>${xp.xp_total} ${escapeHtml(unit)} earned. ${xp.level >= XP_LEVEL_CAP ? "You hit the current level cap." : `${xp.xp_needed} ${escapeHtml(unit)} to Level ${xp.next_level}.`}</p>
     <button class="primary-btn" type="button">Continue</button>
   </div>`;
   document.body.appendChild(overlay);
@@ -530,7 +531,9 @@ async function refreshOwnXpAfterAction() {
   if (state.profile?.role !== "athlete" || !state.user?.id) return null;
   const beforeLevel = Number(state.profile.level || 1);
   try {
-    const summary = await getXpSummary(state.user.id);
+    const leaderboard = await getLeaderboard();
+    const row = leaderboard.find((entry) => entry.athlete_id === state.user.id);
+    const summary = scoreLevelSummary(row?.weekly_points || 0);
     state.profile = { ...state.profile, level: summary.level, xp_total: summary.xp_total };
     if (summary.level > beforeLevel) showLevelUpModal(summary);
     return summary;
@@ -609,7 +612,7 @@ async function init() {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.10" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.11" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -668,7 +671,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.10" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.11" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -787,14 +790,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.10" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.11" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${navHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.10" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.11" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2732,12 +2735,11 @@ async function renderParentTricktionary() {
 }
 
 async function renderAthleteHome() {
-  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, xpSummary, trickRequests] = await Promise.all([
+  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, trickRequests] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
     getDashboardItems(state.user.id),
-    getXpSummary(state.user.id).catch(() => normalizeXpSummary({}, state.profile)),
     getTrickRequestsForAthlete(state.user.id).catch(() => []),
   ]);
   const { assignments, awards, assignmentAttempts } = schedule;
