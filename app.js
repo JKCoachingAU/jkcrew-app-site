@@ -213,10 +213,14 @@ const linesHtml = (value = "", emptyText = "Not added yet") => {
   const lines = String(value || "").split(/\n|,/).map((line) => line.trim()).filter(Boolean);
   return lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="subcopy">${escapeHtml(emptyText)}</p>`;
 };
-const medalForRank = (row, index, total, pointsKey = "weekly_points") => {
+const pointsForKey = (row = {}, pointsKey = "weekly_points") => Number(row[pointsKey] ?? row.weekly_points ?? 0);
+const medalForRank = (row, index, rows = [], pointsKey = "weekly_points") => {
   const medals = ["🥇", "🥈", "🥉"];
-  if (index >= 0 && index < 3 && Number(row[pointsKey] || 0) > 0) return `<span class="rank-medal" title="Top ${index + 1}">${medals[index]}</span>`;
-  if (total > 1 && index === total - 1) return `<span class="rank-medal last-place" title="Last place">💩</span>`;
+  const points = pointsForKey(row, pointsKey);
+  if (index >= 0 && index < 3 && points > 0) return `<span class="rank-medal" title="Top ${index + 1}">${medals[index]}</span>`;
+  const scoredRows = rows.filter((entry) => pointsForKey(entry, pointsKey) > 0);
+  const lastScored = scoredRows[scoredRows.length - 1];
+  if (scoredRows.length > 1 && points > 0 && lastScored?.athlete_id === row.athlete_id) return `<span class="rank-medal last-place" title="Last place">💩</span>`;
   return "";
 };
 const earnedBadges = (value) => Array.isArray(value) ? value : [];
@@ -3393,7 +3397,7 @@ function goalsReadonlyHtml(profile = {}) {
 function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const realRows = rows;
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
-  const badge = medalForRank(row, realIndex, realRows.length, pointsKey);
+  const badge = medalForRank(row, realIndex, realRows, pointsKey);
   const badges = earnedBadges(row.earned_badges)
     .filter((earned) => earned?.icon !== "🔗" && !String(earned?.label || "").toLowerCase().includes("chain link"))
     .slice(0, 4)
@@ -4084,9 +4088,10 @@ async function renderPublicAthleteProfile() {
   }
   const scoreXp = scoreLevelSummary(profile.weekly_points || 0);
   const badges = earnedBadges(profile.badges);
+  const hasWeeklyPoints = Number(profile.weekly_points || 0) > 0;
   const badgeHtml = [
     profile.is_weekly_winner ? `<span class="public-badge"><span>🏅</span>Weekly leader</span>` : "",
-    profile.is_last_place ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
+    profile.is_last_place && hasWeeklyPoints ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
     badgeStripHtml(badges, ""),
   ].filter(Boolean).join("");
   document.querySelector("#view").innerHTML = `
