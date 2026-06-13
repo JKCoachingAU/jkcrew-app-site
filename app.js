@@ -1474,38 +1474,44 @@ async function getActiveCoachGroupSession() {
 
 async function getSessionViewerPlanData(athleteIds = []) {
   if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const [{ data: assignments, error }, { data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runs, error: runsError }, { data: runProgress, error: runProgressError }] = await Promise.all([
+  const safeAthleteIds = [...new Set(athleteIds.filter(Boolean))];
+  if (!safeAthleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
+  const weekStart = weekStartDate();
+  const [{ data: assignments, error }, { data: runs, error: runsError }] = await Promise.all([
     client.from("weekly_trick_assignments")
       .select("*")
-      .in("athlete_id", athleteIds)
-      .eq("week_start", weekStartDate())
+      .in("athlete_id", safeAthleteIds)
+      .eq("week_start", weekStart)
       .order("sort_order", { ascending: true }),
-    client.from("assignment_progress")
-      .select("*")
-      .in("athlete_id", athleteIds),
-    client.from("percentage_attempts")
-      .select("*")
-      .in("athlete_id", athleteIds)
-      .order("attempt_number", { ascending: true }),
-    client.from("assignment_attempts")
-      .select("*")
-      .in("athlete_id", athleteIds)
-      .eq("week_start", weekStartDate())
-      .order("attempted_at", { ascending: false }),
     client.from("run_plans")
       .select("*")
-      .in("athlete_id", athleteIds)
+      .in("athlete_id", safeAthleteIds)
       .is("archived_at", null)
       .order("updated_at", { ascending: false }),
-    client.from("run_checklist_progress")
-      .select("*")
-      .in("athlete_id", athleteIds),
   ]);
   if (error) throw error;
+  if (runsError) throw runsError;
+
+  const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category]);
+  const assignmentIds = currentAssignments.map((assignment) => assignment.id).filter(Boolean);
+  const runIds = (runs || []).map((run) => run.id).filter(Boolean);
+  const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runProgress, error: runProgressError }] = await Promise.all([
+    assignmentIds.length
+      ? client.from("assignment_progress").select("*").in("assignment_id", assignmentIds)
+      : { data: [], error: null },
+    assignmentIds.length
+      ? client.from("percentage_attempts").select("*").in("assignment_id", assignmentIds).order("attempt_number", { ascending: true })
+      : { data: [], error: null },
+    assignmentIds.length
+      ? client.from("assignment_attempts").select("*").in("assignment_id", assignmentIds).eq("week_start", weekStart).order("attempted_at", { ascending: false })
+      : { data: [], error: null },
+    runIds.length
+      ? client.from("run_checklist_progress").select("*").in("run_plan_id", runIds)
+      : { data: [], error: null },
+  ]);
   if (progressError) throw progressError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
-  if (runsError) throw runsError;
   if (runProgressError) throw runProgressError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
   const attemptsById = new Map();
@@ -1521,7 +1527,7 @@ async function getSessionViewerPlanData(athleteIds = []) {
     assignmentAttemptsById.set(attempt.assignment_id, rows);
   });
   const assignmentsByAthlete = new Map();
-  (assignments || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
+  currentAssignments.forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
     rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
@@ -5450,6 +5456,31 @@ async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStar
   return data || [];
 }
 
+async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const cacheKey = `planner-template:${athleteId}:${targetWeekStart}`;
+  const cached = cacheGet(cacheKey, 20000);
+  if (cached) return cached;
+  const { data, error } = await client.from("weekly_trick_assignments")
+    .select("*")
+    .eq("athlete_id", athleteId)
+    .lt("week_start", targetWeekStart)
+    .order("week_start", { ascending: false })
+    .order("sort_order", { ascending: true })
+    .limit(300);
+  if (error) throw error;
+  const rows = (data || []).filter((assignment) => categoryInfo[assignment.category]);
+  if (!rows.length) return cacheSet(cacheKey, []);
+  const latestWeekStart = rows[0].week_start;
+  return cacheSet(cacheKey, rows
+    .filter((assignment) => assignment.week_start === latestWeekStart)
+    .map((assignment, index) => ({
+      ...assignment,
+      id: `planner-${assignment.id}`,
+      week_start: targetWeekStart,
+      sort_order: Number.isFinite(Number(assignment.sort_order)) ? Number(assignment.sort_order) : index,
+    })));
+}
+
 function plannerSummaryHtml(roster = [], plannedRows = []) {
   const summaryByAthlete = plannedRows.reduce((map, row) => {
     const entry = map.get(row.athlete_id) || { total: 0, categories: new Map(), updatedAt: row.updated_at };
@@ -5496,16 +5527,11 @@ async function renderPlanner() {
 
   if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
-  const [currentSchedule, plannedAssignments, plannerRequests] = await Promise.all([
-    getWeeklyAssignments(athlete.id),
+  const [plannedAssignments, plannerRequests] = await Promise.all([
     getWeeklyAssignmentPlan(athlete.id, targetWeekStart),
     getTrickRequestsForAthlete(athlete.id, ["pending"]),
   ]);
-  const templateAssignments = plannedAssignments.length ? plannedAssignments : currentSchedule.assignments.map((assignment) => ({
-    ...assignment,
-    id: `planner-${assignment.id}`,
-    week_start: targetWeekStart,
-  }));
+  const templateAssignments = plannedAssignments.length ? plannedAssignments : await getPlannerTemplateAssignments(athlete.id, targetWeekStart);
   if (!state.coachPlanVenue) {
     state.coachPlanVenue = venueLabel(templateAssignments.find((assignment) => assignment.category === "daily")?.venue || "");
   }
@@ -5525,7 +5551,7 @@ async function renderPlanner() {
         <p>Choose a rider, start from their current active list, then save the edited version as next week's private draft.</p>
       </div>
       <div class="field planner-athlete-picker"><label for="planner-athlete-select">Student</label><select id="planner-athlete-select">${studentOptions}</select></div>
-      <div class="planner-status-pill">${plannedCount ? `${plannedCount} planned tricks saved` : "Using current week as template"}</div>
+      <div class="planner-status-pill">${plannedCount ? `${plannedCount} planned tricks saved` : templateAssignments.length ? "Using latest saved week as template" : "No previous tricks found"}</div>
     </section>
     <section class="panel planner-request-panel">
       <div class="panel-head"><div><div class="panel-title">Requested tricks</div><div class="panel-meta">Accepting adds the trick to next week's private draft</div></div></div>
