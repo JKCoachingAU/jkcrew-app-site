@@ -1555,6 +1555,20 @@ const categoryInfo = {
   foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
   bonus: { label: "Bonus Tricks", description: "Gold challenge · 5 points each" },
 };
+const plannerEditableStatuses = ["draft", "draft_next_week", "scheduled_next_week", "published"];
+const plannerSummaryStatuses = ["draft", "draft_next_week", "scheduled_next_week", "published"];
+const plannerStatusLabels = {
+  draft: "Legacy draft",
+  draft_next_week: "Draft",
+  scheduled_next_week: "Scheduled",
+  published: "Scheduled",
+};
+const plannerStatusRank = {
+  scheduled_next_week: 0,
+  published: 1,
+  draft_next_week: 2,
+  draft: 3,
+};
 
 const sessionViewerListTabs = [
   { id: "daily", label: "Daily Tricks" },
@@ -2378,40 +2392,8 @@ async function acceptTrickRequest(event) {
   button.disabled = true;
   button.textContent = "Accepting...";
   try {
-    const { data: request, error: requestError } = await client.from("trick_requests").select("*").eq("id", requestId).maybeSingle();
-    if (requestError) throw requestError;
-    if (!request) throw new Error("Could not find that trick request.");
-    const { data: existingRows, error: maxError } = await client.from("weekly_assignment_plans")
-      .select("sort_order")
-      .eq("coach_id", state.user.id)
-      .eq("athlete_id", request.athlete_id)
-      .eq("target_week_start", request.target_week_start)
-      .eq("status", "draft")
-      .order("sort_order", { ascending: false })
-      .limit(1);
-    if (maxError) throw maxError;
-    const sortOrder = Number(existingRows?.[0]?.sort_order || 0) + 1;
-    const { data: inserted, error: insertError } = await client.from("weekly_assignment_plans").insert({
-      coach_id: state.user.id,
-      athlete_id: request.athlete_id,
-      target_week_start: request.target_week_start,
-      trick_name: request.trick_name,
-      category: request.category,
-      target_reps: request.category === "dialled" ? 3 : request.category === "percentage" ? 10 : 1,
-      notes: request.notes || "",
-      sort_order: sortOrder,
-      venue: request.category === "daily" ? request.venue || "" : "",
-      status: "draft",
-    }).select("id").single();
-    if (insertError) throw insertError;
-    const { error: updateError } = await client.from("trick_requests").update({
-      status: "accepted",
-      planned_assignment_id: inserted.id,
-      reviewed_by: state.user.id,
-      reviewed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq("id", requestId);
-    if (updateError) throw updateError;
+    const { error } = await client.rpc("accept_trick_request_into_plan", { p_request_id: requestId });
+    if (error) throw error;
     notify("Request accepted and added to next week's private plan.");
     cacheClear("coach-command");
     if (context === "planner") await renderPlanner();
@@ -5450,42 +5432,123 @@ async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStar
     .eq("coach_id", state.user.id)
     .eq("athlete_id", athleteId)
     .eq("target_week_start", targetWeekStart)
-    .eq("status", "draft")
+    .in("status", plannerEditableStatuses)
     .order("sort_order", { ascending: true });
   if (error) throw error;
-  return data || [];
+  const rows = data || [];
+  const scheduled = rows.filter((row) => row.status === "scheduled_next_week");
+  if (scheduled.length) return scheduled;
+  const published = rows.filter((row) => row.status === "published");
+  if (published.length) return published;
+  const draft = rows.filter((row) => row.status === "draft_next_week");
+  if (draft.length) return draft;
+  return rows.filter((row) => row.status === "draft");
+}
+
+function assignmentDraftKey(assignment = {}) {
+  return [
+    assignment.category || "daily",
+    assignment.category === "daily" ? venueKey(assignment.venue).toLowerCase() : "",
+    String(assignment.trick_name || "").trim().toLowerCase(),
+  ].join("|");
+}
+
+function completedKeysFromPlannerSource(assignments = [], progressRows = [], attemptRows = []) {
+  const byAssignmentId = new Map(assignments.map((assignment) => [assignment.id, assignment]));
+  const completedIds = new Set();
+  (progressRows || []).forEach((progress) => {
+    if (progress?.completed_at) completedIds.add(progress.assignment_id);
+  });
+  (attemptRows || []).forEach((attempt) => {
+    if (attempt?.assignment_id) completedIds.add(attempt.assignment_id);
+  });
+  const completedKeys = new Set();
+  completedIds.forEach((assignmentId) => {
+    const assignment = byAssignmentId.get(assignmentId);
+    if (assignment) completedKeys.add(assignmentDraftKey(assignment));
+  });
+  return completedKeys;
+}
+
+function withPlannerCompletionFlags(assignments = [], completedKeys = new Set()) {
+  return assignments.map((assignment) => ({
+    ...assignment,
+    completed_this_week: completedKeys.has(assignmentDraftKey(assignment)),
+  }));
+}
+
+function plannerCompletedStrip(assignments = [], show = false) {
+  if (!show) return "";
+  const completed = (assignments || []).filter((assignment) => assignment.completed_this_week);
+  if (!completed.length) {
+    return `<div class="planner-completed-strip empty">No completed tricks in this section yet this week.</div>`;
+  }
+  return `<div class="planner-completed-strip">
+    <strong>Completed this week</strong>
+    <div class="planner-completed-chips">${completed.map((assignment) => `<span class="planner-completed-chip">${escapeHtml(assignment.trick_name)}</span>`).join("")}</div>
+  </div>`;
 }
 
 async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWeekStartDate()) {
   const cacheKey = `planner-template:${athleteId}:${targetWeekStart}`;
   const cached = cacheGet(cacheKey, 20000);
   if (cached) return cached;
-  const { data, error } = await client.from("weekly_trick_assignments")
+  const currentWeek = weekStartDate();
+  const { data: currentRows, error: currentError } = await client.from("weekly_trick_assignments")
     .select("*")
     .eq("athlete_id", athleteId)
-    .lt("week_start", targetWeekStart)
-    .order("week_start", { ascending: false })
+    .eq("week_start", currentWeek)
     .order("sort_order", { ascending: true })
     .limit(300);
-  if (error) throw error;
-  const rows = (data || []).filter((assignment) => categoryInfo[assignment.category]);
-  if (!rows.length) return cacheSet(cacheKey, []);
+  if (currentError) throw currentError;
+  let rows = (currentRows || []).filter((assignment) => categoryInfo[assignment.category]);
+  let completedKeys = new Set();
+
+  if (rows.length) {
+    const assignmentIds = rows.map((assignment) => assignment.id);
+    const [progressResult, attemptsResult] = await Promise.all([
+      client.from("assignment_progress").select("assignment_id, completed_at, progress_date").in("assignment_id", assignmentIds),
+      client.from("assignment_attempts").select("assignment_id").eq("athlete_id", athleteId).eq("week_start", currentWeek).in("assignment_id", assignmentIds),
+    ]);
+    if (progressResult.error) throw progressResult.error;
+    if (attemptsResult.error) throw attemptsResult.error;
+    completedKeys = completedKeysFromPlannerSource(rows, progressResult.data || [], attemptsResult.data || []);
+  } else {
+    const { data, error } = await client.from("weekly_trick_assignments")
+      .select("*")
+      .eq("athlete_id", athleteId)
+      .lt("week_start", targetWeekStart)
+      .order("week_start", { ascending: false })
+      .order("sort_order", { ascending: true })
+      .limit(300);
+    if (error) throw error;
+    rows = (data || []).filter((assignment) => categoryInfo[assignment.category]);
+  }
+
+  if (!rows.length) return cacheSet(cacheKey, { assignments: [], completedKeys: [] });
   const latestWeekStart = rows[0].week_start;
-  return cacheSet(cacheKey, rows
+  const assignments = rows
     .filter((assignment) => assignment.week_start === latestWeekStart)
     .map((assignment, index) => ({
       ...assignment,
       id: `planner-${assignment.id}`,
       week_start: targetWeekStart,
+      source_week_start: assignment.week_start,
+      completed_this_week: completedKeys.has(assignmentDraftKey(assignment)),
       sort_order: Number.isFinite(Number(assignment.sort_order)) ? Number(assignment.sort_order) : index,
-    })));
+    }));
+  return cacheSet(cacheKey, {
+    assignments,
+    completedKeys: [...completedKeys],
+  });
 }
 
 function plannerSummaryHtml(roster = [], plannedRows = []) {
   const summaryByAthlete = plannedRows.reduce((map, row) => {
-    const entry = map.get(row.athlete_id) || { total: 0, categories: new Map(), updatedAt: row.updated_at };
+    const entry = map.get(row.athlete_id) || { total: 0, categories: new Map(), updatedAt: row.updated_at, status: row.status };
     entry.total += 1;
     entry.updatedAt = entry.updatedAt && new Date(entry.updatedAt) > new Date(row.updated_at) ? entry.updatedAt : row.updated_at;
+    if (!entry.status || (plannerStatusRank[row.status] ?? 99) < (plannerStatusRank[entry.status] ?? 99)) entry.status = row.status;
     entry.categories.set(row.category, (entry.categories.get(row.category) || 0) + 1);
     map.set(row.athlete_id, entry);
     return map;
@@ -5496,9 +5559,10 @@ function plannerSummaryHtml(roster = [], plannedRows = []) {
     const detail = summary ? [...summary.categories.entries()]
       .map(([category, count]) => `${categoryInfo[category]?.label || category}: ${count}`)
       .join(" · ") : "No private plan saved yet";
+    const status = summary ? plannerStatusLabels[summary.status] || "Planned" : "Not scheduled";
     return `<button class="planner-summary-row ${state.plannerAthleteId === athlete.id ? "active" : ""}" type="button" data-planner-athlete="${athlete.id}">
       ${avatarHtml(athlete)}
-      <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(detail)}</small></span>
+      <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(status)} · ${escapeHtml(detail)}</small></span>
       <b>${summary ? `${summary.total}` : "0"}</b>
     </button>`;
   }).join("");
@@ -5514,10 +5578,10 @@ async function renderPlanner() {
     getCoachRoster(),
     getCoachVenues(),
     client.from("weekly_assignment_plans")
-      .select("athlete_id, category, updated_at")
+      .select("athlete_id, category, updated_at, status")
       .eq("coach_id", state.user.id)
       .eq("target_week_start", targetWeekStart)
-      .eq("status", "draft"),
+      .in("status", plannerSummaryStatuses),
   ]);
   if (plannedRowsError) throw plannedRowsError;
   if (!roster.length) {
@@ -5527,39 +5591,45 @@ async function renderPlanner() {
 
   if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
-  const [plannedAssignments, plannerRequests] = await Promise.all([
+  const [plannedAssignments, plannerRequests, templateSource] = await Promise.all([
     getWeeklyAssignmentPlan(athlete.id, targetWeekStart),
     getTrickRequestsForAthlete(athlete.id, ["pending"]),
+    getPlannerTemplateAssignments(athlete.id, targetWeekStart),
   ]);
-  const templateAssignments = plannedAssignments.length ? plannedAssignments : await getPlannerTemplateAssignments(athlete.id, targetWeekStart);
+  const completedKeys = new Set(templateSource.completedKeys || []);
+  const templateAssignments = plannedAssignments.length
+    ? withPlannerCompletionFlags(plannedAssignments, completedKeys)
+    : templateSource.assignments || [];
   if (!state.coachPlanVenue) {
     state.coachPlanVenue = venueLabel(templateAssignments.find((assignment) => assignment.category === "daily")?.venue || "");
   }
   const studentOptions = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
   const editor = scheduleEditorHtml(templateAssignments, coachVenues, {
     dailyTitle: "Next Week Daily Tricks",
-    dailyMeta: "Private draft · copied from this week unless already planned",
-    tip: "This is hidden from the rider until Sunday reset. Edit the draft freely without changing this week.",
+    dailyMeta: "Hidden plan · copied from this week unless already scheduled",
+    tip: "Completed tricks are highlighted below each editor. Edit freely here without changing this week.",
     openWeeklySections: false,
+    showCompletedHighlights: true,
   });
   const plannedCount = plannedAssignments.length;
+  const planStatus = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published") ? "Scheduled" : plannedAssignments.length ? "Draft" : "Template";
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
     <section class="panel planner-hero">
       <div class="planner-hero-copy">
         <div class="panel-title">Plan for week starting ${escapeHtml(targetWeekStart)}</div>
-        <p>Choose a rider, start from their current active list, then save the edited version as next week's private draft.</p>
+        <p>Choose a rider, start from their current active list, then schedule the edited version for next week.</p>
       </div>
       <div class="field planner-athlete-picker"><label for="planner-athlete-select">Student</label><select id="planner-athlete-select">${studentOptions}</select></div>
-      <div class="planner-status-pill">${plannedCount ? `${plannedCount} planned tricks saved` : templateAssignments.length ? "Using latest saved week as template" : "No previous tricks found"}</div>
+      <div class="planner-status-pill ${plannedCount ? "scheduled" : ""}">${plannedCount ? `${planStatus} · ${plannedCount} tricks` : templateAssignments.length ? "Using current week as template" : "No current tricks found"}</div>
     </section>
     <section class="panel planner-request-panel">
       <div class="panel-head"><div><div class="panel-title">Requested tricks</div><div class="panel-meta">Accepting adds the trick to next week's private draft</div></div></div>
       ${trickRequestRowsHtml(plannerRequests, roster, "planner")}
     </section>
     <section class="panel planner-editor-panel">
-      <div class="panel-head"><div><div class="panel-title">${escapeHtml(athlete.display_name)} · next week draft</div><div class="panel-meta">Draft only · students cannot see this before Sunday</div></div></div>
-      <form id="planner-form">${editor}<button class="primary-btn wide" type="submit">Save private plan for next week</button></form>
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(athlete.display_name)} · next week draft</div><div class="panel-meta">Hidden from the rider until Sunday reset</div></div></div>
+      <form id="planner-form">${editor}<button class="primary-btn wide" type="submit">Schedule for Next Week</button></form>
     </section>
     <section class="panel planner-summary-panel">
       <div class="panel-head"><div><div class="panel-title">Scheduled plans</div><div class="panel-meta">Week starting ${escapeHtml(targetWeekStart)}</div></div></div>
@@ -5590,7 +5660,7 @@ async function savePlannedWeeklyAssignments(event) {
   const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.plannerAthleteId, targetWeekStart);
   const button = event.currentTarget.querySelector("button[type='submit']");
   button.disabled = true;
-  button.textContent = "Saving private plan...";
+  button.textContent = "Scheduling...";
   const { error } = await client.rpc("save_weekly_assignment_plan", {
     p_athlete_id: state.plannerAthleteId,
     p_target_week_start: targetWeekStart,
@@ -5601,7 +5671,8 @@ async function savePlannedWeeklyAssignments(event) {
     notify(messageFrom(error), "error");
     return renderPlanner();
   }
-  notify("Private next-week plan saved.");
+  cacheClear(`planner-template:${state.plannerAthleteId}:`);
+  notify("Next-week schedule saved.");
   await renderPlanner();
 }
 
@@ -6328,8 +6399,9 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
     return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
   }).join("");
   const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
-    const venueDailyCount = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
-    const assignmentText = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).map((assignment) => {
+    const venueAssignments = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue);
+    const venueDailyCount = venueAssignments.length;
+    const assignmentText = venueAssignments.map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
@@ -6337,7 +6409,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="category-count">${venueDailyCount}</div></div>
       <div class="compact-venue-editor-grid">
         <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
-        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea></div>
+        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(venueAssignments, options.showCompletedHighlights)}</div>
       </div>
     </div>`;
   }).join("");
@@ -6349,13 +6421,14 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
     </div>
   </details>`;
   const otherCategoryEditor = Object.entries(categoryInfo).filter(([category]) => category !== "daily").map(([category, info]) => {
-    const assignmentText = assignments.filter((assignment) => assignment.category === category).map((assignment) => {
+    const categoryAssignments = assignments.filter((assignment) => assignment.category === category);
+    const assignmentText = categoryAssignments.map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
-    return planAccordionSection(info.label, `${assignments.filter((assignment) => assignment.category === category).length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
-      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${assignments.filter((assignment) => assignment.category === category).length}</div></div>
-      <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea></div>
+    return planAccordionSection(info.label, `${categoryAssignments.length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
+      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${categoryAssignments.length}</div></div>
+      <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
     </div>`, options.openWeeklySections ?? (category === "one_bang" || category === "dialled"));
   }).join("");
   return `<div class="plan-accordion-stack">

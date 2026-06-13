@@ -1041,6 +1041,49 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   text-transform: uppercase;
   white-space: nowrap;
 }
+.planner-status-pill.scheduled {
+  border-color: rgba(255,214,10,0.34);
+  background: rgba(255,214,10,0.1);
+  color: #ffe66d;
+}
+.planner-completed-strip {
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid rgba(32,227,195,0.2);
+  border-radius: 12px;
+  background: rgba(32,227,195,0.055);
+}
+.planner-completed-strip strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--aqua);
+  font: 900 0.62rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.planner-completed-strip.empty {
+  color: var(--muted);
+  font: 800 0.68rem var(--mono);
+  letter-spacing: 0.04em;
+}
+.planner-completed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.planner-completed-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(32,227,195,0.24);
+  border-radius: 999px;
+  background: rgba(32,227,195,0.1);
+  color: var(--aqua);
+  font: 900 0.66rem var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .planner-summary-list {
   display: grid;
   gap: 8px;
