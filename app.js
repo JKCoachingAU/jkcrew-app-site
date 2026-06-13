@@ -214,6 +214,18 @@ const linesHtml = (value = "", emptyText = "Not added yet") => {
   return lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="subcopy">${escapeHtml(emptyText)}</p>`;
 };
 const pointsForKey = (row = {}, pointsKey = "weekly_points") => Number(row[pointsKey] ?? row.weekly_points ?? 0);
+const leaderboardRankForRow = (row = {}, index = 0, pointsKey = "weekly_points") => {
+  const key = pointsKey === "all_time_points" ? "all_time_rank_number" : "rank_number";
+  const rank = Number(row[key]);
+  return Number.isFinite(rank) && rank > 0 ? rank : index + 1;
+};
+const ghostModeLabelHtml = (row = {}) => {
+  if (!row.ghost_mode) return "";
+  const message = row.athlete_id === state.user?.id
+    ? "Ghost Mode Active — only you and coaches can see this"
+    : "Ghost Mode";
+  return `<small class="ghost-mode-label">${escapeHtml(message)}</small>`;
+};
 const medalForRank = (row, index, rows = [], pointsKey = "weekly_points") => {
   const medals = ["🥇", "🥈", "🥉"];
   const points = pointsForKey(row, pointsKey);
@@ -1028,7 +1040,8 @@ function scheduleRealtimeRefresh(reason = "sync") {
 }
 
 async function getLeaderboard() {
-  const cached = cacheGet("leaderboard:weekly", 7000);
+  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}`;
+  const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
   const { data, error } = await client.rpc("get_weekly_leaderboard");
   if (error) {
@@ -1039,21 +1052,21 @@ async function getLeaderboard() {
   const rows = data || [];
   const ids = rows.map((row) => row.athlete_id).filter(Boolean);
   if (!ids.length) return rows;
-  const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary, xp_total, level").in("id", ids);
+  const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary, xp_total, level, ghost_mode").in("id", ids);
   if (profileError) console.warn("Leaderboard profile extras failed", profileError);
   const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
-  return cacheSet("leaderboard:weekly", rows.map((row) => {
+  return cacheSet(cacheKey, rows.map((row) => {
     const profile = byId.get(row.athlete_id) || {};
     const weeklyScore = Number(row.weekly_points || 0);
     const scoreLevel = scoreLevelSummary(weeklyScore);
-    return { ...row, daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: weeklyScore, xp_level: scoreLevel.level, level_badge: scoreLevel.current_badge };
+    return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: weeklyScore, xp_level: scoreLevel.level, level_badge: scoreLevel.current_badge };
   }));
 }
 
 async function getLeaderboardFallback(cause) {
   const { data: profiles, error } = await client
     .from("profiles")
-    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, xp_total, level")
+    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, xp_total, level, ghost_mode")
     .eq("role", "athlete")
     .order("display_name", { ascending: true });
   if (error) {
@@ -1062,7 +1075,10 @@ async function getLeaderboardFallback(cause) {
     return [];
   }
 
-  const rows = (profiles || []).map((profile) => ({
+  const isCoach = isCoachRole(state.profile?.role);
+  const rows = (profiles || [])
+    .filter((profile) => !profile.ghost_mode || profile.id === state.user?.id || isCoach)
+    .map((profile, index) => ({
     athlete_id: profile.id,
     display_name: profile.display_name || "Athlete",
     level: 1,
@@ -1078,6 +1094,9 @@ async function getLeaderboardFallback(cause) {
     session_count: 0,
     earned_badges: [],
     daily_pb_seconds: profile.daily_pb_seconds ?? null,
+    ghost_mode: Boolean(profile.ghost_mode),
+    rank_number: index + 1,
+    all_time_rank_number: index + 1,
   }));
 
   if (!state.leaderboardFallbackNotified) {
@@ -3408,9 +3427,11 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const country = countryBadge(row);
   const hasStarted = points > 0 || Boolean(row.daily_pb_seconds);
   const meta = row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "";
+  const rank = leaderboardRankForRow(row, index, pointsKey);
+  const ghostLabel = ghostModeLabelHtml(row);
   const content = `
-    <div class="rank">#${index + 1}</div>
-    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="rank">#${rank}</div>
+    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
     <div class="points ${hasStarted ? "" : "dns-points"}">${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
@@ -3433,10 +3454,11 @@ function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
       ${previewRows.map((row, index) => {
         const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
         const xp = scoreLevelSummary(points);
+        const rank = leaderboardRankForRow(row, index, pointsKey);
         return `<button class="command-leader-row" type="button" ${row.isBenchmarkBot ? "" : `data-public-athlete="${escapeHtml(row.athlete_id)}"`}>
-          <span class="command-rank">#${index + 1}</span>
+          <span class="command-rank">#${rank}</span>
           ${avatarHtml(row)}
-          <strong>${escapeHtml(row.display_name)}</strong>
+          <strong>${escapeHtml(row.display_name)}${row.ghost_mode ? ` <span class="ghost-mode-mini">Ghost</span>` : ""}</strong>
           <span class="command-level">L${xp.level}</span>
           <span class="command-points">${points} pts</span>
         </button>`;
@@ -3446,7 +3468,10 @@ function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
 }
 
 function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
-  return rows.filter((row) => !row.isBenchmarkBot);
+  return rows.filter((row) => {
+    const name = String(row.display_name || "").trim().toLowerCase();
+    return !row.isBenchmarkBot && name !== "anonymous rider";
+  });
 }
 
 function pointsHelpHtml() {
@@ -7367,6 +7392,17 @@ async function renderProfile() {
           <div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div>
           <div class="field"><label for="profile-phone">Phone number</label><input id="profile-phone" name="phone" type="tel" value="${escapeHtml(state.profile.phone || "")}" placeholder="Optional"></div>
           ${state.profile.role === "athlete" ? `
+            <div class="ghost-mode-card ${state.profile.ghost_mode ? "active" : ""}">
+              <div>
+                <strong>Ghost Mode</strong>
+                <small>${state.profile.ghost_mode ? "Hidden from public leaderboards. You still earn points, XP and badges." : "Show me on the public leaderboard."}</small>
+                <span>${state.profile.ghost_mode ? "Hidden From Public Leaderboard" : "Public Leaderboard Visible"}</span>
+              </div>
+              <label class="toggle-switch" aria-label="Toggle Ghost Mode">
+                <input name="ghostMode" type="checkbox" ${state.profile.ghost_mode ? "checked" : ""}>
+                <b></b>
+              </label>
+            </div>
             <div class="two-col-form">
               <div class="field"><label for="profile-stance">Stance</label><select id="profile-stance" name="stance"><option value="">Not set</option><option value="regular" ${state.profile.stance === "regular" ? "selected" : ""}>Regular</option><option value="goofy" ${state.profile.stance === "goofy" ? "selected" : ""}>Goofy</option></select></div>
               <div class="field"><label for="profile-age">Age</label><input id="profile-age" name="age" type="number" min="3" max="99" value="${state.profile.age || ""}" placeholder="Age"></div>
@@ -7541,6 +7577,7 @@ async function updateProfile(event) {
   if (state.profile.role === "athlete") {
     const age = Number(form.get("age"));
     const countryCode = String(form.get("countryCode") || "");
+    updates.ghost_mode = form.get("ghostMode") === "on";
     updates.stance = form.get("stance") || "";
     updates.spin_direction = form.get("spinDirection") || "";
     updates.favourite_trick = String(form.get("favouriteTrick") || "").trim().slice(0, 120);
@@ -7559,6 +7596,8 @@ async function updateProfile(event) {
   const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select().single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
+  cacheClear("leaderboard");
+  cacheClear("coach-command:");
   applyTheme(data.app_theme);
   notify("Profile updated.");
   renderShell();
