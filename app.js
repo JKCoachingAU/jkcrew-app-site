@@ -3829,7 +3829,7 @@ async function renderBoard() {
   state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets Sunday evening in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
+    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at Sunday midnight in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
     <section class="panel board-rankings-panel">
       <div class="panel-head board-rankings-head">
