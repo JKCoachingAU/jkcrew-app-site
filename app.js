@@ -3391,20 +3391,23 @@ function goalsReadonlyHtml(profile = {}) {
 }
 
 function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
-  const realRows = rows.filter((entry) => !entry.isBenchmarkBot);
+  const realRows = rows;
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
-  const badge = !row.isBenchmarkBot ? medalForRank(row, realIndex, realRows.length, pointsKey) : "";
-  const badges = earnedBadges(row.earned_badges).slice(0, 4).map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`).join("");
+  const badge = medalForRank(row, realIndex, realRows.length, pointsKey);
+  const badges = earnedBadges(row.earned_badges)
+    .filter((earned) => earned?.icon !== "🔗" && !String(earned?.label || "").toLowerCase().includes("chain link"))
+    .slice(0, 4)
+    .map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`)
+    .join("");
   const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
   const xp = scoreLevelSummary(points);
   const country = countryBadge(row);
   const hasStarted = points > 0 || Boolean(row.daily_pb_seconds);
-  const meta = row.isBenchmarkBot ? `${row.benchmark_completion}% weekly benchmark · fake guide rider` : (row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "");
+  const meta = row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "";
   const content = `
     <div class="rank">#${index + 1}</div>
     <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
     <div class="points ${hasStarted ? "" : "dns-points"}">${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
-  if (row.isBenchmarkBot) return `<article class="list-row leader-row benchmark-row">${content}</article>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
 
@@ -3439,31 +3442,7 @@ function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
 }
 
 function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
-  const realRows = rows.filter((row) => !row.isBenchmarkBot);
-  const topPoints = Number(realRows[0]?.[pointsKey] || 0);
-  const benchmarkPoints = topPoints > 2 ? Math.max(1, Math.min(topPoints - 1, Math.round(topPoints * 0.55))) : 0;
-  const bot = {
-    athlete_id: "__jkcrew_benchmark__",
-    display_name: "Anonymous Rider",
-    level: scoreLevelFromPoints(benchmarkPoints),
-    xp_level: scoreLevelFromPoints(benchmarkPoints),
-    xp_total: benchmarkPoints,
-    level_badge: scoreLevelSummary(benchmarkPoints).current_badge,
-    avatar: {},
-    country_code: "AU",
-    country_name: "Australia",
-    weekly_points: benchmarkPoints,
-    all_time_points: benchmarkPoints,
-    session_count: 3,
-    earned_badges: [{ icon: "🎯", label: "55% guide" }],
-    isBenchmarkBot: true,
-    benchmark_completion: 55,
-  };
-  if (!realRows.length) return [bot];
-  const output = [...realRows];
-  const insertAt = topPoints > 0 ? output.findIndex((row) => Number(row[pointsKey] || 0) < benchmarkPoints) : output.length;
-  output.splice(insertAt === -1 ? output.length : Math.max(1, insertAt), 0, bot);
-  return output;
+  return rows.filter((row) => !row.isBenchmarkBot);
 }
 
 function pointsHelpHtml() {
