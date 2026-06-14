@@ -1084,6 +1084,15 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.planner-save-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.planner-save-actions .wide {
+  width: 100%;
+}
 .planner-summary-list {
   display: grid;
   gap: 8px;

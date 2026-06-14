@@ -5445,6 +5445,20 @@ async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStar
   return rows.filter((row) => row.status === "draft");
 }
 
+async function ensurePlannerDraft(athleteId, targetWeekStart = nextWeekStartDate()) {
+  try {
+    const { error } = await client.rpc("ensure_weekly_assignment_draft", {
+      p_athlete_id: athleteId,
+      p_target_week_start: targetWeekStart,
+    });
+    if (error) throw error;
+  } catch (error) {
+    // Keep the planner usable if the database migration has not reached the live project yet.
+    if (String(error?.message || error).toLowerCase().includes("ensure_weekly_assignment_draft")) return;
+    throw error;
+  }
+}
+
 function assignmentDraftKey(assignment = {}) {
   return [
     assignment.category || "daily",
@@ -5574,16 +5588,10 @@ async function renderPlanner() {
     return;
   }
   const targetWeekStart = nextWeekStartDate();
-  const [roster, coachVenues, { data: plannedRows, error: plannedRowsError }] = await Promise.all([
+  const [roster, coachVenues] = await Promise.all([
     getCoachRoster(),
     getCoachVenues(),
-    client.from("weekly_assignment_plans")
-      .select("athlete_id, category, updated_at, status")
-      .eq("coach_id", state.user.id)
-      .eq("target_week_start", targetWeekStart)
-      .in("status", plannerSummaryStatuses),
   ]);
-  if (plannedRowsError) throw plannedRowsError;
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Add students first, then you can schedule their next weekly plans.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
@@ -5591,11 +5599,19 @@ async function renderPlanner() {
 
   if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
-  const [plannedAssignments, plannerRequests, templateSource] = await Promise.all([
+  await ensurePlannerDraft(athlete.id, targetWeekStart);
+  const [plannedAssignments, plannerRequests, templateSource, plannedRowsResult] = await Promise.all([
     getWeeklyAssignmentPlan(athlete.id, targetWeekStart),
     getTrickRequestsForAthlete(athlete.id, ["pending"]),
     getPlannerTemplateAssignments(athlete.id, targetWeekStart),
+    client.from("weekly_assignment_plans")
+      .select("athlete_id, category, updated_at, status")
+      .eq("coach_id", state.user.id)
+      .eq("target_week_start", targetWeekStart)
+      .in("status", plannerSummaryStatuses),
   ]);
+  if (plannedRowsResult.error) throw plannedRowsResult.error;
+  const plannedRows = plannedRowsResult.data || [];
   const completedKeys = new Set(templateSource.completedKeys || []);
   const templateAssignments = plannedAssignments.length
     ? withPlannerCompletionFlags(plannedAssignments, completedKeys)
@@ -5612,7 +5628,9 @@ async function renderPlanner() {
     showCompletedHighlights: true,
   });
   const plannedCount = plannedAssignments.length;
-  const planStatus = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published") ? "Scheduled" : plannedAssignments.length ? "Draft" : "Template";
+  const planIsScheduled = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published");
+  const planStatus = planIsScheduled ? "Scheduled" : plannedAssignments.length ? "Draft" : "Template";
+  const draftAction = planIsScheduled ? "" : `<button class="secondary-btn wide" type="submit" data-plan-save-status="draft_next_week">Save Draft</button>`;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
     <section class="panel planner-hero">
@@ -5629,7 +5647,7 @@ async function renderPlanner() {
     </section>
     <section class="panel planner-editor-panel">
       <div class="panel-head"><div><div class="panel-title">${escapeHtml(athlete.display_name)} · next week draft</div><div class="panel-meta">Hidden from the rider until Sunday reset</div></div></div>
-      <form id="planner-form">${editor}<button class="primary-btn wide" type="submit">Schedule for Next Week</button></form>
+      <form id="planner-form">${editor}<div class="planner-save-actions">${draftAction}<button class="primary-btn wide" type="submit" data-plan-save-status="scheduled_next_week">${planIsScheduled ? "Update Scheduled Plan" : "Schedule for Next Week"}</button></div></form>
     </section>
     <section class="panel planner-summary-panel">
       <div class="panel-head"><div><div class="panel-title">Scheduled plans</div><div class="panel-meta">Week starting ${escapeHtml(targetWeekStart)}</div></div></div>
@@ -5658,10 +5676,13 @@ async function savePlannedWeeklyAssignments(event) {
   const form = new FormData(event.currentTarget);
   const targetWeekStart = nextWeekStartDate();
   const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.plannerAthleteId, targetWeekStart);
-  const button = event.currentTarget.querySelector("button[type='submit']");
+  const saveStatus = event.submitter?.dataset?.planSaveStatus || "scheduled_next_week";
+  const isDraftSave = saveStatus === "draft_next_week";
+  const button = event.submitter || event.currentTarget.querySelector("button[type='submit']");
   button.disabled = true;
-  button.textContent = "Scheduling...";
-  const { error } = await client.rpc("save_weekly_assignment_plan", {
+  button.textContent = isDraftSave ? "Saving Draft..." : "Scheduling...";
+  const rpcName = isDraftSave ? "save_weekly_assignment_draft" : "save_weekly_assignment_plan";
+  const { error } = await client.rpc(rpcName, {
     p_athlete_id: state.plannerAthleteId,
     p_target_week_start: targetWeekStart,
     p_assignments: assignments,
@@ -5672,7 +5693,7 @@ async function savePlannedWeeklyAssignments(event) {
     return renderPlanner();
   }
   cacheClear(`planner-template:${state.plannerAthleteId}:`);
-  notify("Next-week schedule saved.");
+  notify(isDraftSave ? "Next-week draft saved privately." : "Next-week schedule saved.");
   await renderPlanner();
 }
 
