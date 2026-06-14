@@ -5445,6 +5445,29 @@ async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStar
   return rows.filter((row) => row.status === "draft");
 }
 
+async function getRecoverablePlannerDraft(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const currentWeekStart = weekStartDate();
+  if (currentWeekStart === targetWeekStart) return [];
+  const { data, error } = await client.from("weekly_assignment_plans")
+    .select("*")
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .eq("target_week_start", currentWeekStart)
+    .in("status", ["draft", "draft_next_week"])
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data || [])
+    .filter((assignment) => categoryInfo[assignment.category])
+    .map((assignment, index) => ({
+      ...assignment,
+      id: `recover-${assignment.id}`,
+      status: "draft_next_week",
+      target_week_start: targetWeekStart,
+      recovered_from_week_start: assignment.target_week_start,
+      sort_order: Number.isFinite(Number(assignment.sort_order)) ? Number(assignment.sort_order) : index,
+    }));
+}
+
 async function ensurePlannerDraft(athleteId, targetWeekStart = nextWeekStartDate()) {
   try {
     const { error } = await client.rpc("ensure_weekly_assignment_draft", {
@@ -5557,16 +5580,38 @@ async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWe
   });
 }
 
-function plannerSummaryHtml(roster = [], plannedRows = []) {
-  const summaryByAthlete = plannedRows.reduce((map, row) => {
-    const entry = map.get(row.athlete_id) || { total: 0, categories: new Map(), updatedAt: row.updated_at, status: row.status };
-    entry.total += 1;
-    entry.updatedAt = entry.updatedAt && new Date(entry.updatedAt) > new Date(row.updated_at) ? entry.updatedAt : row.updated_at;
-    if (!entry.status || (plannerStatusRank[row.status] ?? 99) < (plannerStatusRank[entry.status] ?? 99)) entry.status = row.status;
-    entry.categories.set(row.category, (entry.categories.get(row.category) || 0) + 1);
-    map.set(row.athlete_id, entry);
+function plannerSummaryPriority(row = {}, targetWeekStart = nextWeekStartDate()) {
+  const weekPenalty = row.target_week_start === targetWeekStart ? 0 : 10;
+  return weekPenalty + (plannerStatusRank[row.status] ?? 99);
+}
+
+function plannerSummaryHtml(roster = [], plannedRows = [], targetWeekStart = nextWeekStartDate()) {
+  const rowsByAthlete = plannedRows.reduce((map, row) => {
+    if (!map.has(row.athlete_id)) map.set(row.athlete_id, []);
+    map.get(row.athlete_id).push(row);
     return map;
   }, new Map());
+
+  const summaryByAthlete = new Map();
+  rowsByAthlete.forEach((rows, athleteId) => {
+    const bestRow = [...rows].sort((a, b) => plannerSummaryPriority(a, targetWeekStart) - plannerSummaryPriority(b, targetWeekStart))[0];
+    if (!bestRow) return;
+    const planRows = rows.filter((row) => row.target_week_start === bestRow.target_week_start && row.status === bestRow.status);
+    const categories = planRows.reduce((map, row) => {
+      map.set(row.category, (map.get(row.category) || 0) + 1);
+      return map;
+    }, new Map());
+    const updatedAt = planRows.reduce((latest, row) => (
+      latest && new Date(latest) > new Date(row.updated_at) ? latest : row.updated_at
+    ), bestRow.updated_at);
+    summaryByAthlete.set(athleteId, {
+      total: planRows.length,
+      categories,
+      updatedAt,
+      status: bestRow.status,
+      weekStart: bestRow.target_week_start,
+    });
+  });
 
   return roster.map((athlete) => {
     const summary = summaryByAthlete.get(athlete.id);
@@ -5574,9 +5619,10 @@ function plannerSummaryHtml(roster = [], plannedRows = []) {
       .map(([category, count]) => `${categoryInfo[category]?.label || category}: ${count}`)
       .join(" · ") : "No private plan saved yet";
     const status = summary ? plannerStatusLabels[summary.status] || "Planned" : "Not scheduled";
+    const weekNote = summary?.weekStart && summary.weekStart !== targetWeekStart ? ` · saved under ${summary.weekStart}` : "";
     return `<button class="planner-summary-row ${state.plannerAthleteId === athlete.id ? "active" : ""}" type="button" data-planner-athlete="${athlete.id}">
       ${avatarHtml(athlete)}
-      <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(status)} · ${escapeHtml(detail)}</small></span>
+      <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(status)}${escapeHtml(weekNote)} · ${escapeHtml(detail)}</small></span>
       <b>${summary ? `${summary.total}` : "0"}</b>
     </button>`;
   }).join("");
@@ -5599,37 +5645,46 @@ async function renderPlanner() {
 
   if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
-  await ensurePlannerDraft(athlete.id, targetWeekStart);
-  const [plannedAssignments, plannerRequests, templateSource, plannedRowsResult] = await Promise.all([
-    getWeeklyAssignmentPlan(athlete.id, targetWeekStart),
+  let plannedAssignments = await getWeeklyAssignmentPlan(athlete.id, targetWeekStart);
+  const recoverableDraft = plannedAssignments.length ? [] : await getRecoverablePlannerDraft(athlete.id, targetWeekStart);
+  if (!plannedAssignments.length && !recoverableDraft.length) {
+    await ensurePlannerDraft(athlete.id, targetWeekStart);
+    plannedAssignments = await getWeeklyAssignmentPlan(athlete.id, targetWeekStart);
+  }
+  const [plannerRequests, templateSource, plannedRowsResult] = await Promise.all([
     getTrickRequestsForAthlete(athlete.id, ["pending"]),
     getPlannerTemplateAssignments(athlete.id, targetWeekStart),
     client.from("weekly_assignment_plans")
-      .select("athlete_id, category, updated_at, status")
+      .select("athlete_id, category, updated_at, status, target_week_start")
       .eq("coach_id", state.user.id)
-      .eq("target_week_start", targetWeekStart)
+      .in("target_week_start", [...new Set([targetWeekStart, weekStartDate()])])
       .in("status", plannerSummaryStatuses),
   ]);
   if (plannedRowsResult.error) throw plannedRowsResult.error;
   const plannedRows = plannedRowsResult.data || [];
   const completedKeys = new Set(templateSource.completedKeys || []);
-  const templateAssignments = plannedAssignments.length
-    ? withPlannerCompletionFlags(plannedAssignments, completedKeys)
-    : templateSource.assignments || [];
+  const plannerSourceAssignments = plannedAssignments.length
+    ? plannedAssignments
+    : recoverableDraft.length
+      ? recoverableDraft
+      : templateSource.assignments || [];
+  const templateAssignments = plannedAssignments.length || recoverableDraft.length
+    ? withPlannerCompletionFlags(plannerSourceAssignments, completedKeys)
+    : plannerSourceAssignments;
   if (!state.coachPlanVenue) {
     state.coachPlanVenue = venueLabel(templateAssignments.find((assignment) => assignment.category === "daily")?.venue || "");
   }
   const studentOptions = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
+  const plannedCount = plannedAssignments.length || recoverableDraft.length;
+  const planIsScheduled = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published");
+  const planStatus = planIsScheduled ? "Scheduled" : recoverableDraft.length ? "Recovered draft" : plannedAssignments.length ? "Draft" : "Template";
   const editor = scheduleEditorHtml(templateAssignments, coachVenues, {
     dailyTitle: "Next Week Daily Tricks",
     dailyMeta: "Hidden plan · copied from this week unless already scheduled",
     tip: "Completed tricks are highlighted below each editor. Edit freely here without changing this week.",
-    openWeeklySections: false,
+    openWeeklySections: Boolean(plannedAssignments.length || recoverableDraft.length),
     showCompletedHighlights: true,
   });
-  const plannedCount = plannedAssignments.length;
-  const planIsScheduled = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published");
-  const planStatus = planIsScheduled ? "Scheduled" : plannedAssignments.length ? "Draft" : "Template";
   const draftAction = planIsScheduled ? "" : `<button class="secondary-btn wide" type="submit" data-plan-save-status="draft_next_week">Save Draft</button>`;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
@@ -5641,6 +5696,7 @@ async function renderPlanner() {
       <div class="field planner-athlete-picker"><label for="planner-athlete-select">Student</label><select id="planner-athlete-select">${studentOptions}</select></div>
       <div class="planner-status-pill ${plannedCount ? "scheduled" : ""}">${plannedCount ? `${planStatus} · ${plannedCount} tricks` : templateAssignments.length ? "Using current week as template" : "No current tricks found"}</div>
     </section>
+    ${recoverableDraft.length ? `<section class="panel planner-recovery-note"><div class="panel-title">Recovered planner draft</div><p>This rider had a draft saved under ${escapeHtml(weekStartDate())}. It is shown here as next week's editable draft. Press Save Draft or Schedule for Next Week to store it under ${escapeHtml(targetWeekStart)}.</p></section>` : ""}
     <section class="panel planner-request-panel">
       <div class="panel-head"><div><div class="panel-title">Requested tricks</div><div class="panel-meta">Accepting adds the trick to next week's private draft</div></div></div>
       ${trickRequestRowsHtml(plannerRequests, roster, "planner")}
@@ -5651,7 +5707,7 @@ async function renderPlanner() {
     </section>
     <section class="panel planner-summary-panel">
       <div class="panel-head"><div><div class="panel-title">Scheduled plans</div><div class="panel-meta">Week starting ${escapeHtml(targetWeekStart)}</div></div></div>
-      <div class="planner-summary-list">${plannerSummaryHtml(roster, plannedRows || [])}</div>
+      <div class="planner-summary-list">${plannerSummaryHtml(roster, plannedRows || [], targetWeekStart)}</div>
     </section>`;
 
   document.querySelector("#planner-athlete-select").addEventListener("change", (event) => {
