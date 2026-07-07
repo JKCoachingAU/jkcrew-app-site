@@ -6556,24 +6556,31 @@ async function saveWeeklyAssignments(event) {
   const form = new FormData(event.currentTarget);
   const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.selectedAthleteId, weekStartDate());
   const button = event.submitter || event.currentTarget.querySelector("button[type='submit']") || event.currentTarget.querySelector("button");
+  const originalText = button.textContent;
   button.disabled = true;
   button.textContent = "Saving...";
-  const { error } = await client.rpc("save_weekly_assignments", {
-    p_athlete_id: state.selectedAthleteId,
-    p_week_start: weekStartDate(),
-    p_assignments: assignments,
-    p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
-  });
-  if (error) {
-    button.disabled = false;
-    button.textContent = "Save complete schedule";
-    const errorMessage = messageFrom(error);
-    notify(errorMessage.includes("part of the weekly schedule") ? `${errorMessage} Use the small Save buttons above when you only want to edit one list.` : errorMessage, "error");
-    return;
-  }
+  try {
+    const { error } = await client.rpc("save_weekly_assignments", {
+      p_athlete_id: state.selectedAthleteId,
+      p_week_start: weekStartDate(),
+      p_assignments: assignments,
+      p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+    });
+    if (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      const errorMessage = messageFrom(error);
+      notify(errorMessage.includes("part of the weekly schedule") ? `${errorMessage} Use the small Save buttons above when you only want to edit one list.` : errorMessage, "error");
+      return;
+    }
 
-  notify("Weekly schedule saved for this student.");
-  await renderStudentProfile();
+    notify("Weekly schedule saved for this student.");
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error) || "Unable to save this schedule. Please try again.", "error");
+  }
 }
 
 async function saveDailyVenueFromStudentProfile(event) {
@@ -6596,40 +6603,46 @@ async function saveDailyVenueFromStudentProfile(event) {
   const originalText = button.textContent;
   button.textContent = "Saving...";
 
-  const { error } = await client.rpc("save_weekly_assignment_list", {
-    p_athlete_id: state.selectedAthleteId,
-    p_week_start: weekStartDate(),
-    p_category: "daily",
-    p_venue: venueKey(venueName).slice(0, 80),
-    p_assignments: editedLines,
-  });
-
-  if (error) {
-    button.disabled = false;
-    button.textContent = originalText;
-    return notify(messageFrom(error), "error");
-  }
-
-  if (originalVenue && venueKey(originalVenue).toLowerCase() !== venueKey(venueName).toLowerCase()) {
-    const { error: clearOldVenueError } = await client.rpc("save_weekly_assignment_list", {
+  try {
+    const { error } = await client.rpc("save_weekly_assignment_list", {
       p_athlete_id: state.selectedAthleteId,
       p_week_start: weekStartDate(),
       p_category: "daily",
-      p_venue: venueKey(originalVenue).slice(0, 80),
-      p_assignments: [],
+      p_venue: venueKey(venueName).slice(0, 80),
+      p_assignments: editedLines,
     });
-    if (clearOldVenueError) {
+
+    if (error) {
       button.disabled = false;
       button.textContent = originalText;
-      return notify(`Saved ${venueName}, but could not remove the old ${originalVenue} list: ${messageFrom(clearOldVenueError)}`, "error");
+      return notify(messageFrom(error), "error");
     }
-  }
 
-  state.coachPlanVenue = venueName;
-  clearCoachCaches();
-  state.sessionViewerPlanMemory = null;
-  notify(`${venueName} Daily Tricks saved.`);
-  await renderStudentProfile();
+    if (originalVenue && venueKey(originalVenue).toLowerCase() !== venueKey(venueName).toLowerCase()) {
+      const { error: clearOldVenueError } = await client.rpc("save_weekly_assignment_list", {
+        p_athlete_id: state.selectedAthleteId,
+        p_week_start: weekStartDate(),
+        p_category: "daily",
+        p_venue: venueKey(originalVenue).slice(0, 80),
+        p_assignments: [],
+      });
+      if (clearOldVenueError) {
+        button.disabled = false;
+        button.textContent = originalText;
+        return notify(`Saved ${venueName}, but could not remove the old ${originalVenue} list: ${messageFrom(clearOldVenueError)}`, "error");
+      }
+    }
+
+    state.coachPlanVenue = venueName;
+    clearCoachCaches();
+    state.sessionViewerPlanMemory = null;
+    notify(`${venueName} Daily Tricks saved.`);
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error) || "Unable to save this Daily list. Please try again.", "error");
+  }
 }
 
 async function saveCategoryListFromStudentProfile(event) {
@@ -6650,24 +6663,30 @@ async function saveCategoryListFromStudentProfile(event) {
   const originalText = button.textContent;
   button.textContent = "Saving...";
 
-  const { error } = await client.rpc("save_weekly_assignment_list", {
-    p_athlete_id: state.selectedAthleteId,
-    p_week_start: weekStartDate(),
-    p_category: category,
-    p_venue: "",
-    p_assignments: editedLines,
-  });
+  try {
+    const { error } = await client.rpc("save_weekly_assignment_list", {
+      p_athlete_id: state.selectedAthleteId,
+      p_week_start: weekStartDate(),
+      p_category: category,
+      p_venue: "",
+      p_assignments: editedLines,
+    });
 
-  if (error) {
+    if (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      return notify(messageFrom(error), "error");
+    }
+
+    clearCoachCaches();
+    state.sessionViewerPlanMemory = null;
+    notify(`${info.label} saved.`);
+    await renderStudentProfile();
+  } catch (error) {
     button.disabled = false;
     button.textContent = originalText;
-    return notify(messageFrom(error), "error");
+    notify(messageFrom(error) || `Unable to save ${info.label}. Please try again.`, "error");
   }
-
-  clearCoachCaches();
-  state.sessionViewerPlanMemory = null;
-  notify(`${info.label} saved.`);
-  await renderStudentProfile();
 }
 
 async function saveCoachAthleteProfile(event) {
