@@ -6380,6 +6380,8 @@ async function renderStudentProfile() {
   document.querySelectorAll("[data-preview-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.previewView)));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
+  document.querySelectorAll("[data-save-daily-venue]").forEach((button) => button.addEventListener("click", saveDailyVenueFromStudentProfile));
+  document.querySelectorAll("[data-save-category-list]").forEach((button) => button.addEventListener("click", saveCategoryListFromStudentProfile));
   document.querySelector("#daily-venue-select")?.addEventListener("change", (event) => {
     const selectedIndex = event.currentTarget.value;
     const selectedPanel = document.querySelector(`[data-venue-panel="${selectedIndex}"]`);
@@ -6469,21 +6471,29 @@ function dailyVenueRowsFromForm(form) {
 function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
   const savedVenueNames = (coachVenues || []).map((venue) => venue.name).filter(Boolean);
   const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
-  const venueNames = [...new Set([...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))])];
-  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue) === venueKey(state.coachPlanVenue || "")));
+  const venueNameMap = new Map();
+  [...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))]
+    .filter(Boolean)
+    .forEach((venue) => {
+      const key = venueKey(venue).toLowerCase();
+      if (!venueNameMap.has(key)) venueNameMap.set(key, venueLabel(venue));
+    });
+  const venueNames = [...venueNameMap.values()];
+  const assignmentsForVenue = (venue) => assignments.filter((assignment) => assignment.category === "daily" && venueKey(assignment.venue).toLowerCase() === venueKey(venue).toLowerCase());
+  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue).toLowerCase() === venueKey(state.coachPlanVenue || "").toLowerCase()));
   const venueOptions = venueNames.map((venue, venueIndex) => {
-    const count = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue).length;
+    const count = assignmentsForVenue(venue).length;
     return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
   }).join("");
   const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
-    const venueAssignments = assignments.filter((assignment) => assignment.category === "daily" && venueLabel(assignment.venue) === venue);
+    const venueAssignments = assignmentsForVenue(venue);
     const venueDailyCount = venueAssignments.length;
     const assignmentText = venueAssignments.map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
     return `<div class="schedule-editor compact-schedule-editor venue-edit-panel compact-venue-editor ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
-      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="category-count">${venueDailyCount}</div></div>
+      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="venue-head-actions"><div class="category-count">${venueDailyCount}</div><button class="secondary-btn compact-btn" type="button" data-save-daily-venue="${venueIndex}" data-original-venue="${escapeHtml(venue)}">Save this Daily list</button></div></div>
       <div class="compact-venue-editor-grid">
         <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
         <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(venueAssignments, options.showCompletedHighlights)}</div>
@@ -6504,7 +6514,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
     return planAccordionSection(info.label, `${categoryAssignments.length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
-      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${categoryAssignments.length}</div></div>
+      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="venue-head-actions"><div class="category-count">${categoryAssignments.length}</div><button class="secondary-btn compact-btn" type="button" data-save-category-list="${escapeHtml(category)}">Save ${escapeHtml(info.label)}</button></div></div>
       <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
     </div>`, options.openWeeklySections ?? (category === "one_bang" || category === "dialled"));
   }).join("");
@@ -6512,7 +6522,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
     ${planAccordionSection(options.dailyTitle || "Venue-Specific Daily Tricks", options.dailyMeta || "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
       <div class="compact-venue-controls">
         <div class="field compact-location-field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select></div>
-        <div class="compact-editor-tip">${escapeHtml(options.tip || "Only one location is open at a time. Rename the venue, add tricks, then save the full schedule.")}</div>
+        <div class="compact-editor-tip">${escapeHtml(options.tip || "Only one location is open at a time. Use the small Save button for quick edits, or save the full schedule for bigger changes.")}</div>
       </div>
       <div class="venue-edit-panels">${dailyVenueEditors}</div>
       ${customVenueEditor}
@@ -6545,7 +6555,7 @@ async function saveWeeklyAssignments(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.selectedAthleteId, weekStartDate());
-  const button = event.currentTarget.querySelector("button");
+  const button = event.submitter || event.currentTarget.querySelector("button[type='submit']") || event.currentTarget.querySelector("button");
   button.disabled = true;
   button.textContent = "Saving...";
   const { error } = await client.rpc("save_weekly_assignments", {
@@ -6555,11 +6565,108 @@ async function saveWeeklyAssignments(event) {
     p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
   });
   if (error) {
-    notify(messageFrom(error), "error");
-    return renderStudentProfile();
+    button.disabled = false;
+    button.textContent = "Save complete schedule";
+    const errorMessage = messageFrom(error);
+    notify(errorMessage.includes("part of the weekly schedule") ? `${errorMessage} Use the small Save buttons above when you only want to edit one list.` : errorMessage, "error");
+    return;
   }
 
   notify("Weekly schedule saved for this student.");
+  await renderStudentProfile();
+}
+
+async function saveDailyVenueFromStudentProfile(event) {
+  const button = event.currentTarget;
+  const venueIndex = button.dataset.saveDailyVenue;
+  const panel = document.querySelector(`[data-venue-panel="${venueIndex}"]`);
+  if (!panel) return notify("Could not find that Daily Tricks venue editor.", "error");
+
+  const venueInput = panel.querySelector(`[name="dailyVenueName:${venueIndex}"]`);
+  const tricksInput = panel.querySelector(`[name="dailyVenueTricks:${venueIndex}"]`);
+  const venueName = String(venueInput?.value || "").trim().slice(0, 80);
+  if (!venueName) return notify("Add a venue name before saving this Daily list.", "error");
+
+  const originalVenue = String(button.dataset.originalVenue || "").trim().slice(0, 80);
+  const editedLines = String(tricksInput?.value || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), index, "daily", venueName))
+    .filter(Boolean);
+
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Saving...";
+
+  const { error } = await client.rpc("save_weekly_assignment_list", {
+    p_athlete_id: state.selectedAthleteId,
+    p_week_start: weekStartDate(),
+    p_category: "daily",
+    p_venue: venueKey(venueName).slice(0, 80),
+    p_assignments: editedLines,
+  });
+
+  if (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    return notify(messageFrom(error), "error");
+  }
+
+  if (originalVenue && venueKey(originalVenue).toLowerCase() !== venueKey(venueName).toLowerCase()) {
+    const { error: clearOldVenueError } = await client.rpc("save_weekly_assignment_list", {
+      p_athlete_id: state.selectedAthleteId,
+      p_week_start: weekStartDate(),
+      p_category: "daily",
+      p_venue: venueKey(originalVenue).slice(0, 80),
+      p_assignments: [],
+    });
+    if (clearOldVenueError) {
+      button.disabled = false;
+      button.textContent = originalText;
+      return notify(`Saved ${venueName}, but could not remove the old ${originalVenue} list: ${messageFrom(clearOldVenueError)}`, "error");
+    }
+  }
+
+  state.coachPlanVenue = venueName;
+  clearCoachCaches();
+  state.sessionViewerPlanMemory = null;
+  notify(`${venueName} Daily Tricks saved.`);
+  await renderStudentProfile();
+}
+
+async function saveCategoryListFromStudentProfile(event) {
+  const button = event.currentTarget;
+  const category = button.dataset.saveCategoryList;
+  const info = categoryInfo[category];
+  if (!info || category === "daily") return notify("Could not save that trick list.", "error");
+
+  const textarea = document.querySelector(`#assignment-${category}`);
+  if (!textarea) return notify(`Could not find the ${info.label} editor.`, "error");
+
+  const editedLines = String(textarea.value || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), index, category))
+    .filter(Boolean)
+    .slice(0, category === "percentage" ? 3 : undefined);
+
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Saving...";
+
+  const { error } = await client.rpc("save_weekly_assignment_list", {
+    p_athlete_id: state.selectedAthleteId,
+    p_week_start: weekStartDate(),
+    p_category: category,
+    p_venue: "",
+    p_assignments: editedLines,
+  });
+
+  if (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    return notify(messageFrom(error), "error");
+  }
+
+  clearCoachCaches();
+  state.sessionViewerPlanMemory = null;
+  notify(`${info.label} saved.`);
   await renderStudentProfile();
 }
 
