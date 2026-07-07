@@ -266,3 +266,169 @@ begin
   return v_count;
 end;
 $function$;
+
+create or replace function public.save_weekly_assignment_list(
+  p_athlete_id uuid,
+  p_week_start date,
+  p_category text,
+  p_venue text default ''::text,
+  p_assignments jsonb default '[]'::jsonb
+)
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_coach uuid := auth.uid();
+  v_category text := lower(btrim(coalesce(p_category, '')));
+  v_venue text := left(btrim(coalesce(p_venue, '')), 80);
+  v_count integer := 0;
+  v_index integer := 0;
+  v_item jsonb;
+  v_trick_name text;
+  v_notes text;
+  v_target_reps integer;
+  v_existing_id uuid;
+  v_used_ids uuid[] := array[]::uuid[];
+  v_base_order integer := 0;
+begin
+  if v_coach is null then
+    raise exception 'You must be signed in to save a schedule.';
+  end if;
+
+  if v_category not in ('daily', 'dialled', 'one_bang', 'percentage', 'foam_pit', 'bonus') then
+    raise exception 'Unsupported trick list category.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = v_coach
+      and p.role::text in ('coach', 'admin')
+  ) then
+    raise exception 'Only coaches can save rider schedules.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.coach_athletes ca
+    where ca.coach_id = v_coach
+      and ca.athlete_id = p_athlete_id
+  ) then
+    raise exception 'This rider is not linked to your coach account.';
+  end if;
+
+  with target_rows as (
+    select
+      wta.id,
+      row_number() over (order by wta.sort_order, wta.id) as row_number
+    from public.weekly_trick_assignments wta
+    where wta.coach_id = v_coach
+      and wta.athlete_id = p_athlete_id
+      and wta.week_start = p_week_start
+      and wta.category = v_category
+      and (
+        v_category <> 'daily'
+        or btrim(coalesce(wta.venue, '')) = v_venue
+      )
+  )
+  update public.weekly_trick_assignments wta
+  set sort_order = -200000000 - target_rows.row_number,
+      updated_at = now()
+  from target_rows
+  where wta.id = target_rows.id;
+
+  select coalesce(max(wta.sort_order) + 1, 0) into v_base_order
+  from public.weekly_trick_assignments wta
+  where wta.coach_id = v_coach
+    and wta.athlete_id = p_athlete_id
+    and wta.week_start = p_week_start
+    and wta.sort_order >= 0;
+
+  for v_item in
+    select value
+    from jsonb_array_elements(coalesce(p_assignments, '[]'::jsonb))
+  loop
+    v_existing_id := null;
+    v_trick_name := left(btrim(coalesce(v_item->>'trick_name', '')), 120);
+    if v_trick_name = '' then
+      continue;
+    end if;
+
+    v_notes := left(coalesce(v_item->>'notes', ''), 500);
+    v_target_reps := case
+      when v_category = 'dialled' then 3
+      when v_category = 'percentage' then 10
+      else 1
+    end;
+
+    select wta.id into v_existing_id
+    from public.weekly_trick_assignments wta
+    where wta.coach_id = v_coach
+      and wta.athlete_id = p_athlete_id
+      and wta.week_start = p_week_start
+      and wta.category = v_category
+      and (
+        v_category <> 'daily'
+        or btrim(coalesce(wta.venue, '')) = v_venue
+      )
+      and lower(btrim(wta.trick_name)) = lower(v_trick_name)
+      and not (wta.id = any(v_used_ids))
+    order by wta.sort_order
+    limit 1;
+
+    if v_existing_id is null then
+      insert into public.weekly_trick_assignments (
+        coach_id,
+        athlete_id,
+        week_start,
+        trick_name,
+        category,
+        target_reps,
+        notes,
+        sort_order,
+        venue
+      )
+      values (
+        v_coach,
+        p_athlete_id,
+        p_week_start,
+        v_trick_name,
+        v_category,
+        v_target_reps,
+        v_notes,
+        v_base_order + v_index,
+        case when v_category = 'daily' then v_venue else '' end
+      )
+      returning id into v_existing_id;
+    else
+      update public.weekly_trick_assignments wta
+      set trick_name = v_trick_name,
+          target_reps = v_target_reps,
+          notes = v_notes,
+          sort_order = v_base_order + v_index,
+          venue = case when v_category = 'daily' then v_venue else '' end,
+          updated_at = now()
+      where wta.id = v_existing_id;
+    end if;
+
+    v_used_ids := array_append(v_used_ids, v_existing_id);
+    v_index := v_index + 1;
+  end loop;
+
+  delete from public.weekly_trick_assignments wta
+  where wta.coach_id = v_coach
+    and wta.athlete_id = p_athlete_id
+    and wta.week_start = p_week_start
+    and wta.category = v_category
+    and (
+      v_category <> 'daily'
+      or btrim(coalesce(wta.venue, '')) = v_venue
+    )
+    and not (wta.id = any(v_used_ids));
+
+  v_count := coalesce(array_length(v_used_ids, 1), 0);
+  return v_count;
+end;
+$function$;

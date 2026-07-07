@@ -6560,12 +6560,12 @@ async function saveWeeklyAssignments(event) {
   button.disabled = true;
   button.textContent = "Saving...";
   try {
-    const { error } = await client.rpc("save_weekly_assignments", {
+    const { error } = await withTimeout(client.rpc("save_weekly_assignments", {
       p_athlete_id: state.selectedAthleteId,
       p_week_start: weekStartDate(),
       p_assignments: assignments,
       p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
-    });
+    }), "Saving schedule", 15000);
     if (error) {
       button.disabled = false;
       button.textContent = originalText;
@@ -6575,6 +6575,7 @@ async function saveWeeklyAssignments(event) {
     }
 
     notify("Weekly schedule saved for this student.");
+    button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {
     button.disabled = false;
@@ -6604,13 +6605,13 @@ async function saveDailyVenueFromStudentProfile(event) {
   button.textContent = "Saving...";
 
   try {
-    const { error } = await client.rpc("save_weekly_assignment_list", {
+    const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
       p_athlete_id: state.selectedAthleteId,
       p_week_start: weekStartDate(),
       p_category: "daily",
       p_venue: venueKey(venueName).slice(0, 80),
       p_assignments: editedLines,
-    });
+    }), "Saving Daily list", 15000);
 
     if (error) {
       button.disabled = false;
@@ -6619,13 +6620,13 @@ async function saveDailyVenueFromStudentProfile(event) {
     }
 
     if (originalVenue && venueKey(originalVenue).toLowerCase() !== venueKey(venueName).toLowerCase()) {
-      const { error: clearOldVenueError } = await client.rpc("save_weekly_assignment_list", {
+      const { error: clearOldVenueError } = await withTimeout(client.rpc("save_weekly_assignment_list", {
         p_athlete_id: state.selectedAthleteId,
         p_week_start: weekStartDate(),
         p_category: "daily",
         p_venue: venueKey(originalVenue).slice(0, 80),
         p_assignments: [],
-      });
+      }), "Removing old Daily list", 15000);
       if (clearOldVenueError) {
         button.disabled = false;
         button.textContent = originalText;
@@ -6637,6 +6638,7 @@ async function saveDailyVenueFromStudentProfile(event) {
     clearCoachCaches();
     state.sessionViewerPlanMemory = null;
     notify(`${venueName} Daily Tricks saved.`);
+    button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {
     button.disabled = false;
@@ -6664,13 +6666,13 @@ async function saveCategoryListFromStudentProfile(event) {
   button.textContent = "Saving...";
 
   try {
-    const { error } = await client.rpc("save_weekly_assignment_list", {
+    const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
       p_athlete_id: state.selectedAthleteId,
       p_week_start: weekStartDate(),
       p_category: category,
       p_venue: "",
       p_assignments: editedLines,
-    });
+    }), `Saving ${info.label}`, 15000);
 
     if (error) {
       button.disabled = false;
@@ -6681,6 +6683,7 @@ async function saveCategoryListFromStudentProfile(event) {
     clearCoachCaches();
     state.sessionViewerPlanMemory = null;
     notify(`${info.label} saved.`);
+    button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {
     button.disabled = false;
