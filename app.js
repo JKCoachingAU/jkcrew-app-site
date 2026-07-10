@@ -1980,10 +1980,11 @@ function dailyVenueGroups(assignments, interactive = false) {
   const info = categoryInfo.daily;
   const venues = dailyVenues(dailyAssignments);
   const complete = dailyAssignments.filter(isAssignmentComplete).length;
+  const selectedVenueKey = venueKey(state.selectedVenue);
   const body = venues.length ? venues.map((venue, index) => {
     const items = assignmentsForVenue(dailyAssignments, venue);
     const venueComplete = items.filter(isAssignmentComplete).length;
-    const open = venueKey(venue) === venueKey(state.selectedVenue) || index === 0;
+    const open = selectedVenueKey ? venueKey(venue) === selectedVenueKey : index === 0;
     return `<details class="daily-venue-accordion" ${open ? "open" : ""}>
       <summary><span><strong>${escapeHtml(venueLabel(venue))} Daily Tricks</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
       <div class="assignment-list">${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
@@ -3556,7 +3557,6 @@ async function renderSession() {
   const { assignments, awards } = schedule;
   const latestDailyTraining = (todayTrainingResult.data || []).find((session) => session.daily_completed_seconds) || null;
   const selectedVenue = selectedVenueFor(assignments);
-  const sessionAssignments = assignmentsForVenue(assignments, selectedVenue);
   const boardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
   const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
   const statBar = sessionStatBarHtml({
@@ -3570,7 +3570,7 @@ async function renderSession() {
       ${statBar}
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
-      ${assignmentGroups(sessionAssignments, true)}
+      ${assignmentGroups(assignments, true)}
       ${extraTricksSection(state.profile, true)}
       ${helpUploadSection(helpRequests)}`;
     bindVenueSelector();
@@ -3591,7 +3591,7 @@ async function renderSession() {
     ${statBar}
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
-    ${assignmentGroups(sessionAssignments, true)}
+    ${assignmentGroups(assignments, true)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
