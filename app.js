@@ -1984,7 +1984,7 @@ function dailyVenueGroups(assignments, interactive = false) {
   const body = venues.length ? venues.map((venue, index) => {
     const items = assignmentsForVenue(dailyAssignments, venue);
     const venueComplete = items.filter(isAssignmentComplete).length;
-    const open = selectedVenueKey ? venueKey(venue) === selectedVenueKey : index === 0;
+    const open = true;
     return `<details class="daily-venue-accordion" ${open ? "open" : ""}>
       <summary><span><strong>${escapeHtml(venueLabel(venue))} Daily Tricks</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
       <div class="assignment-list">${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
