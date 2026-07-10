@@ -1016,6 +1016,14 @@ function invalidateCachesForRealtime(table) {
   }
 }
 
+function clearCoachCaches({ roster = false, command = true, sessionViewer = true, leaderboard = false } = {}) {
+  if (roster) cacheClear("roster");
+  if (command) cacheClear("coach-command:");
+  if (sessionViewer) cacheClear("coach-live:");
+  if (leaderboard) cacheClear("leaderboard");
+  cacheClear("schedule:");
+}
+
 function scheduleRealtimeRefresh(reason = "sync") {
   if (!state.user?.id || !state.profile) return;
   if (state.syncRefreshTimer) clearTimeout(state.syncRefreshTimer);
