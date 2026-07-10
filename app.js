@@ -1635,7 +1635,8 @@ function dailyOrderKey(venue = "") {
 
 function orderedAssignments(assignments = []) {
   if (state.profile?.role !== "athlete") return assignments;
-  const order = state.profile.daily_trick_order?.[dailyOrderKey(state.selectedVenue)] || [];
+  const dailyVenue = assignments.find((assignment) => assignment.category === "daily")?.venue || state.selectedVenue;
+  const order = state.profile.daily_trick_order?.[dailyOrderKey(dailyVenue)] || [];
   if (!Array.isArray(order) || !order.length) return assignments;
   const rank = new Map(order.map((id, index) => [id, index]));
   return [...assignments].sort((a, b) => {
@@ -1746,8 +1747,8 @@ function bindVenueSelector() {
 
 let dailyReorderDrag = null;
 
-function dailyRowOrder() {
-  return [...document.querySelectorAll("[data-daily-row]")].map((row) => row.dataset.dailyRow).filter(Boolean);
+function dailyRowOrder(container = document) {
+  return [...container.querySelectorAll("[data-daily-row]")].map((row) => row.dataset.dailyRow).filter(Boolean);
 }
 
 function bindDailyReorder() {
@@ -1761,10 +1762,14 @@ function startDailyReorder(event) {
   if (event.target.closest("button, a, input, select, textarea")) return;
   const row = event.currentTarget.closest("[data-daily-row]");
   if (!row) return;
+  const container = row.closest("[data-daily-venue-list]") || row.parentElement || document;
+  const venue = row.closest("[data-daily-venue]")?.dataset.dailyVenue || state.selectedVenue;
   event.stopPropagation();
   dailyReorderDrag = {
     row,
-    originalOrder: dailyRowOrder(),
+    container,
+    venue,
+    originalOrder: dailyRowOrder(container),
     moved: false,
     armed: false,
     startX: event.clientX,
@@ -1796,7 +1801,7 @@ function moveDailyReorder(event) {
   document.querySelectorAll("[data-daily-row].drag-over-row").forEach((element) => {
     if (element !== target) element.classList.remove("drag-over-row");
   });
-  if (!target || target === row || target.parentElement !== row.parentElement) return;
+  if (!target || target === row || target.closest("[data-daily-venue-list]") !== dailyReorderDrag.container) return;
   const targetRect = target.getBoundingClientRect();
   const placeBefore = event.clientY < targetRect.top + targetRect.height / 2;
   target.classList.add("drag-over-row");
@@ -1809,9 +1814,9 @@ async function finishDailyReorder() {
   const drag = dailyReorderDrag;
   clearDailyReorder();
   if (!drag?.armed || !drag?.moved) return;
-  const nextOrder = dailyRowOrder();
+  const nextOrder = dailyRowOrder(drag.container);
   if (nextOrder.join("|") === drag.originalOrder.join("|")) return;
-  await saveDailyDisplayOrder(nextOrder);
+  await saveDailyDisplayOrder(nextOrder, drag.venue);
 }
 
 function cancelDailyReorder() {
@@ -1827,9 +1832,9 @@ function clearDailyReorder() {
   dailyReorderDrag = null;
 }
 
-async function saveDailyDisplayOrder(rows = dailyRowOrder()) {
+async function saveDailyDisplayOrder(rows = dailyRowOrder(), venue = state.selectedVenue) {
   if (!rows.length || !state.profile || !state.user?.id) return;
-  const dailyOrder = { ...(state.profile.daily_trick_order || {}), [dailyOrderKey(state.selectedVenue)]: rows };
+  const dailyOrder = { ...(state.profile.daily_trick_order || {}), [dailyOrderKey(venue)]: rows };
   state.profile = { ...state.profile, daily_trick_order: dailyOrder };
   const { error } = await client.from("profiles").update({ daily_trick_order: dailyOrder, updated_at: new Date().toISOString() }).eq("id", state.user.id);
   if (error) return notify(messageFrom(error), "error");
@@ -1985,9 +1990,9 @@ function dailyVenueGroups(assignments, interactive = false) {
     const items = assignmentsForVenue(dailyAssignments, venue);
     const venueComplete = items.filter(isAssignmentComplete).length;
     const open = true;
-    return `<details class="daily-venue-accordion" ${open ? "open" : ""}>
+    return `<details class="daily-venue-accordion" data-daily-venue="${escapeHtml(venue)}" ${open ? "open" : ""}>
       <summary><span><strong>${escapeHtml(venueLabel(venue))} Daily Tricks</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
-      <div class="assignment-list">${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
+      <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
     </details>`;
   }).join("") : `<div class="empty">No Daily Tricks assigned for this week yet.</div>`;
   return `<section class="assignment-group daily-venue-group">
