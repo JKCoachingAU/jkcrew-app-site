@@ -64,6 +64,9 @@ const state = {
   pendingAssignmentProgress: new Map(),
   pendingPercentageAttempts: new Map(),
   coachRosterIds: new Set(),
+  sessionRenderVersion: 0,
+  sessionViewerRenderVersion: 0,
+  parkKingRequestSerial: 0,
 };
 
 function cacheGet(key, ttlMs = 8000) {
@@ -425,6 +428,7 @@ const motivationalQuotes = [
 const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
 const defaultVenues = ["Pizzey", "Beenleigh", "Elanora", "Nerang", "RampFest", "Other / Custom Venue"];
 const venueKey = (venue = "") => String(venue || "").trim();
+const venueIdentityKey = (venue = "") => venueKey(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 const venueLabel = (venue = "") => venueKey(venue) || "Default Daily List";
 
 function avatarHtml(profile = {}, className = "") {
@@ -1894,12 +1898,12 @@ function venueSelectorHtml(assignments = []) {
 async function getParkKing(venue = "", { force = false } = {}) {
   const selected = venueKey(venue);
   if (!selected) return null;
-  const cacheKey = `park-king:${selected.toLowerCase()}`;
+  const cacheKey = `park-king:${venueIdentityKey(selected)}`;
   if (!force) {
     const cached = cacheGet(cacheKey, 12000);
     if (cached) return cached.king;
   }
-  const existingRequest = state.inFlight.get(cacheKey);
+  const existingRequest = !force ? state.inFlight.get(cacheKey) : null;
   if (existingRequest) return existingRequest;
 
   const request = (async () => {
@@ -1912,20 +1916,22 @@ async function getParkKing(venue = "", { force = false } = {}) {
     cacheSet(cacheKey, { king });
     return king;
   })();
-  state.inFlight.set(cacheKey, request);
+  if (!force) state.inFlight.set(cacheKey, request);
   try {
     return await request;
   } finally {
-    state.inFlight.delete(cacheKey);
+    if (!force) state.inFlight.delete(cacheKey);
   }
 }
 
-function parkKingCardHtml(king, venue = "", { id = "", compact = false } = {}) {
-  const selectedVenue = king?.venue_name || venueLabel(venue);
-  const content = king
+function parkKingCardHtml(king, venue = "", { id = "", compact = false, loading = false, requestId = "" } = {}) {
+  const selectedVenue = venueLabel(venue);
+  const content = loading
+    ? `<div class="park-king-empty"><strong>Loading park record...</strong><small>Checking ${escapeHtml(selectedVenue)}.</small></div>`
+    : king
     ? `<div class="park-king-rider">${avatarHtml(king, "park-king-avatar")}<div><strong>${escapeHtml(king.display_name)}</strong><small>${Number(king.points || 0)} park points</small></div></div>`
-    : `<div class="park-king-empty"><strong>No leader yet</strong><small>Complete scored work at this park to take the title.</small></div>`;
-  return `<section ${id ? `id="${escapeHtml(id)}"` : ""} class="park-king-card ${compact ? "compact" : ""}">
+    : `<div class="park-king-empty"><strong>No King of the Park yet</strong><small>Complete a scored session at this park to take the title.</small></div>`;
+  return `<section ${id ? `id="${escapeHtml(id)}"` : ""} class="park-king-card ${compact ? "compact" : ""}" data-park-venue-key="${escapeHtml(venueIdentityKey(venue))}" ${requestId ? `data-park-request-id="${escapeHtml(requestId)}"` : ""}>
     <div class="park-king-label"><span>King of the Park</span><small>${escapeHtml(selectedVenue)}</small></div>
     ${content}
   </section>`;
@@ -1934,10 +1940,17 @@ function parkKingCardHtml(king, venue = "", { id = "", compact = false } = {}) {
 async function refreshParkKingCard(id, venue = "", compact = true) {
   const element = document.getElementById(id);
   if (!element || !venueKey(venue)) return;
+  const expectedVenueKey = venueIdentityKey(venue);
+  const requestId = String(++state.parkKingRequestSerial);
+  const loadingWrapper = document.createElement("div");
+  loadingWrapper.innerHTML = parkKingCardHtml(null, venue, { id, compact, loading: true, requestId });
+  element.replaceWith(loadingWrapper.firstElementChild);
   const king = await getParkKing(venue, { force: true });
+  const current = document.getElementById(id);
+  if (!current || current.dataset.parkRequestId !== requestId || current.dataset.parkVenueKey !== expectedVenueKey) return;
   const wrapper = document.createElement("div");
-  wrapper.innerHTML = parkKingCardHtml(king, venue, { id, compact });
-  element.replaceWith(wrapper.firstElementChild);
+  wrapper.innerHTML = parkKingCardHtml(king, venue, { id, compact, requestId });
+  current.replaceWith(wrapper.firstElementChild);
 }
 
 function sessionStatBarHtml({ points = 0, percent = 0, rank = 0 } = {}) {
@@ -1988,7 +2001,13 @@ function nextTrainingOptionsHtml() {
 function bindVenueSelector() {
   document.querySelector("#session-venue")?.addEventListener("change", (event) => {
     state.selectedVenue = event.target.value;
-    renderSession();
+    const currentCard = document.querySelector("#session-park-king");
+    if (currentCard) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = parkKingCardHtml(null, state.selectedVenue, { id: "session-park-king", compact: true, loading: true });
+      currentCard.replaceWith(wrapper.firstElementChild);
+    }
+    renderSession({ forceParkKing: true });
   });
 }
 
@@ -3887,7 +3906,8 @@ async function getActiveSession() {
   return data?.[0] || null;
 }
 
-async function renderSession() {
+async function renderSession({ forceParkKing = false } = {}) {
+  const renderVersion = ++state.sessionRenderVersion;
   const todayStartIso = new Date(`${localDate()}T00:00:00+10:00`).toISOString();
   const [schedule, helpRequests, leaderboard, todayTrainingResult] = await Promise.all([
     getWeeklyAssignments(state.user.id),
@@ -3895,6 +3915,7 @@ async function renderSession() {
     getLeaderboard(),
     client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at").eq("athlete_id", state.user.id).gte("started_at", todayStartIso).order("started_at", { ascending: false }).limit(8),
   ]);
+  if (state.view !== "session" || renderVersion !== state.sessionRenderVersion) return;
   const { assignments, awards } = schedule;
   const latestDailyTraining = (todayTrainingResult.data || []).find((session) => session.daily_completed_seconds) || null;
   const selectedVenue = selectedVenueFor(assignments);
@@ -3905,9 +3926,11 @@ async function renderSession() {
     percent: weeklyCompletionPercent(assignments, awards),
     rank,
   });
-  const parkKingPromise = getParkKing(selectedVenue);
+  const requestedVenueKey = venueIdentityKey(selectedVenue);
+  const parkKingPromise = getParkKing(selectedVenue, { force: forceParkKing });
   await loadActiveSession();
   const parkKing = await parkKingPromise;
+  if (state.view !== "session" || renderVersion !== state.sessionRenderVersion || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       ${statBar}
@@ -4710,7 +4733,8 @@ async function renderCoachCommand() {
   }));
 }
 
-async function renderSessionViewer() {
+async function renderSessionViewer({ forceParkKing = false } = {}) {
+  const renderVersion = ++state.sessionViewerRenderVersion;
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
@@ -4720,13 +4744,14 @@ async function renderSessionViewer() {
     state.sessionViewerClock = null;
   }
   const roster = await getCoachRoster();
-  if (state.view !== "sessionViewer") return;
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Add students first, then you can manage group Daily Tricks from here.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
   const activeGroupSession = await getActiveCoachGroupSession();
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   state.sessionViewerRosterCache = roster;
   state.sessionViewerActiveSessionCache = activeGroupSession;
   if (activeGroupSession) {
@@ -4743,6 +4768,7 @@ async function renderSessionViewer() {
   }
   const athleteIds = filteredRoster.map((athlete) => athlete.id);
   const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(athleteIds);
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
       const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
@@ -4764,8 +4790,10 @@ async function renderSessionViewer() {
     });
   }
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
-  const parkKing = await getParkKing(state.sessionViewerVenue);
-  if (state.view !== "sessionViewer") return;
+  const requestedVenue = state.sessionViewerVenue;
+  const requestedVenueKey = venueIdentityKey(requestedVenue);
+  const parkKing = await getParkKing(requestedVenue, { force: forceParkKing });
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map((entry) => {
     const { athlete, daily, venue, participant } = entry;
@@ -4966,13 +4994,19 @@ function bindSessionViewerActions() {
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "daily";
-    renderSessionViewer();
+    renderSessionViewer({ forceParkKing: true });
   });
   document.querySelector("#viewer-venue")?.addEventListener("change", (event) => {
     state.sessionViewerVenue = event.target.value;
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "daily";
-    renderSessionViewer();
+    const currentCard = document.querySelector("#session-viewer-park-king");
+    if (currentCard) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: true });
+      currentCard.replaceWith(wrapper.firstElementChild);
+    }
+    renderSessionViewer({ forceParkKing: true });
   });
   document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
     state.sessionViewerSearch = event.target.value;
