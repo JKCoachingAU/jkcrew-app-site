@@ -2514,14 +2514,43 @@ function highPriorityTasks(roster = [], commandData = {}, groupedCalendar = []) 
 }
 
 function highPriorityTodoHtml(tasks = []) {
-  const rows = tasks.length ? tasks.map((task) => `<div class="priority-task-row">
+  if (!tasks.length) return "";
+  const taskRow = (task) => `<div class="priority-task-row">
     <button class="priority-task ${task.priority}" type="button" ${task.athleteId ? `data-open-student="${task.athleteId}"` : ""} ${task.target ? `data-command-scroll="${task.target}"` : ""}>
       <span>${task.priority === "high" ? "!" : task.priority === "medium" ? "•" : "→"}</span>
       <strong>${escapeHtml(task.label)}</strong>
     </button>
     <button class="dismiss-task-btn" type="button" data-dismiss-task="${escapeHtml(task.key)}" aria-label="Remove ${escapeHtml(task.label)} from this week's to do list">×</button>
-  </div>`).join("") : `<div class="empty compact-empty">No urgent coach tasks right now.</div>`;
-  return `<section class="panel high-priority-panel"><div class="panel-head"><div><div class="panel-title">High Priority To Do List</div><div class="panel-meta">Private coach actions for this week</div></div></div><div class="priority-list">${rows}</div></section>`;
+  </div>`;
+  const visibleRows = tasks.slice(0, 3).map(taskRow).join("");
+  const extraTasks = tasks.slice(3);
+  const overflow = extraTasks.length ? `<details class="priority-more"><summary>View ${extraTasks.length} more task${extraTasks.length === 1 ? "" : "s"}</summary><div class="priority-list">${extraTasks.map(taskRow).join("")}</div></details>` : "";
+  return `<section class="panel high-priority-panel"><div class="panel-head"><div><div class="panel-title">Priority Actions</div><div class="panel-meta">${tasks.length} private coach task${tasks.length === 1 ? "" : "s"} this week</div></div></div><div class="priority-list">${visibleRows}</div>${overflow}</section>`;
+}
+
+function commandMetricCard(label, value, meta, action = {}) {
+  const attributes = action.view
+    ? `data-view="${escapeHtml(action.view)}"`
+    : action.target
+      ? `data-command-scroll="${escapeHtml(action.target)}"`
+      : "";
+  return `<button class="command-metric-card" type="button" ${attributes}>
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    <small>${escapeHtml(meta)}</small>
+  </button>`;
+}
+
+function commandHubAccordion(id, number, title, meta, summary, body) {
+  return `<details id="${escapeHtml(id)}" class="command-hub-accordion">
+    <summary>
+      <span class="command-hub-number">${escapeHtml(number)}</span>
+      <span class="command-hub-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>
+      <span class="command-hub-summary">${escapeHtml(summary)}</span>
+      <span class="command-hub-chevron" aria-hidden="true">+</span>
+    </summary>
+    <div class="command-hub-body"><div class="command-accordion-stack compact-command-stack">${body}</div></div>
+  </details>`;
 }
 
 function commandNotificationsHtml(roster = [], commandData = {}, groupedCalendar = []) {
@@ -4533,6 +4562,7 @@ async function renderCoachCommand() {
   const groupedCalendar = groupCoachCalendarItems(calendarFeed, roster);
   const upcoming = groupedCalendar.filter((event) => new Date(event.starts_at) >= new Date()).length;
   const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
+  const pendingRequests = commandData.trickRequests?.length || 0;
   const teamSections = [
     commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
     commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
@@ -4550,32 +4580,28 @@ async function renderCoachCommand() {
     commandAccordionSection("settings-section", "Settings", "Coach account and app settings", `<button class="secondary-btn" data-view="profile" type="button">Open Coach Profile</button>`),
   ].join("");
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>JKCoaching <span>HQ</span></h1><p>Calendar, rider heat map, attendance, reimbursements, and athlete alerts in one coach-only area.</p></div></div>
-    ${coachBroadcastComposerHtml(roster, broadcastHistory)}
+    <section class="command-page-hero">
+      <div><div class="eyebrow">Coach command centre</div><h1>Coach <span>HQ</span></h1><p>Your riders, priorities and weekly operations at a glance.</p></div>
+      <button class="command-start-button" data-view="sessionViewer" type="button"><span>Start Coaching</span><small>Open live Session Viewer</small><b aria-hidden="true">→</b></button>
+    </section>
+    <section class="command-metrics" aria-label="Coach overview">
+      ${commandMetricCard("Students", roster.length, "In your crew", { view: "crew" })}
+      ${commandMetricCard("Attention", attentionCount, "Rider flags", { target: "rider-heat-map-section" })}
+      ${commandMetricCard("Upcoming", upcoming, "Events", { target: "upcoming-events-section" })}
+      ${commandMetricCard("Modified", injuredCount, "Training plans", { target: "rider-heat-map-section" })}
+    </section>
     ${highPriorityTodoHtml(priorityTasks)}
-    <section class="stats-grid command-stats-grid">
-      ${statCard("Students", roster.length, "", "In your crew")}
-      ${statCard("Need attention", attentionCount, "", "Auto flags")}
-      ${statCard("Upcoming", upcoming, "", "Grouped events")}
-      ${statCard("Modified", injuredCount, "", "Injured / modified")}
-    </section>
-    <section class="coach-tools-row">
-      <button class="coach-tool-card start-coaching-card" data-view="sessionViewer"><strong>Start Coaching</strong><small>Jump straight to live Session Viewer</small></button>
-      <button class="coach-tool-card" data-view="crew"><strong>Riders</strong><small>Groups, profiles, programs</small></button>
-      <button class="coach-tool-card" data-view="coachTools"><strong>Coach Tools</strong><small>Planner, video, trick libraries</small></button>
-      <button class="coach-tool-card" data-view="more"><strong>More</strong><small>Parents, account and admin links</small></button>
-    </section>
+    <details class="command-message-accordion">
+      <summary><span><strong>Message the Crew</strong><small>Send a rider, group or parent update</small></span><span class="command-message-count">${broadcastHistory.length ? `${broadcastHistory.length} recent` : "Compose"}</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
+      <div class="command-message-body">${coachBroadcastComposerHtml(roster, broadcastHistory)}</div>
+    </details>
     <section class="panel command-leaderboard-panel">
       <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top riders this week · full board lives under More</div></div></div>
       ${commandLeaderboardPreviewHtml(leaderboard, "weekly_points")}
     </section>
-    <section class="command-section-group">
-      <div class="command-section-heading"><span>01</span><div><strong>Team Management</strong><small>Upcoming events, rider heat map, and parent updates</small></div></div>
-      <div class="command-accordion-stack compact-command-stack">${teamSections}</div>
-    </section>
-    <section class="command-section-group">
-      <div class="command-section-heading"><span>02</span><div><strong>Admin & Records</strong><small>Attendance, payments, injuries, records, and settings</small></div></div>
-      <div class="command-accordion-stack compact-command-stack">${adminSections}</div>
+    <section class="command-management-stack">
+      ${commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events, rider status and parent updates", `${pendingRequests} request${pendingRequests === 1 ? "" : "s"} · ${upcoming} event${upcoming === 1 ? "" : "s"}`, teamSections)}
+      ${commandHubAccordion("admin-records-hub", "02", "Admin & Records", "Attendance, payments, injuries, records and settings", `${injuredCount} modified · ${commandData.attendanceSessions?.length || 0} sessions`, adminSections)}
     </section>`;
   document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
   document.querySelector("#coach-broadcast-form")?.addEventListener("submit", sendCoachBroadcast);
@@ -4605,6 +4631,8 @@ async function renderCoachCommand() {
   document.querySelectorAll("[data-command-scroll]").forEach((button) => button.addEventListener("click", () => {
     const target = document.querySelector(`#${button.dataset.commandScroll}`);
     if (!target) return notify("Could not find that command section.", "error");
+    const parentHub = target.closest(".command-hub-accordion");
+    if (parentHub) parentHub.open = true;
     target.open = true;
     target.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
