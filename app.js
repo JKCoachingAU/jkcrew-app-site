@@ -67,6 +67,9 @@ const state = {
   sessionRenderVersion: 0,
   sessionViewerRenderVersion: 0,
   parkKingRequestSerial: 0,
+  commandParkKingVenue: "",
+  commandParkKingRows: [],
+  commandParkKingVenues: [],
 };
 
 function cacheGet(key, ttlMs = 8000) {
@@ -1152,11 +1155,13 @@ async function setupRealtimeSync() {
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "park_king_events" }, (payload) => {
     const event = payload.new || {};
     cacheClear("park-king:");
+    cacheClear("park-kings:");
     if (state.profile?.role === "athlete" && event.display_name && event.venue_name) {
       notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
     }
     if (state.view === "session") refreshParkKingCard("session-park-king", state.selectedVenue, true);
     if (state.view === "sessionViewer") refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
+    if (state.view === "command") refreshCommandParkKings();
   });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
@@ -1377,7 +1382,8 @@ async function getPublicAthleteProfile(athleteId) {
 }
 
 async function getWeeklyAssignments(athleteId) {
-  const weekStart = weekStartDate();
+  const athleteCountryCode = await getAthleteCountryCode(athleteId);
+  const weekStart = weekStartDateForCountry(athleteCountryCode);
   const cacheKey = `schedule:${athleteId}:${weekStart}`;
   const cached = state.view === "session" ? null : cacheGet(cacheKey, 6500);
   if (cached) return cached;
@@ -1390,21 +1396,26 @@ async function getWeeklyAssignments(athleteId) {
       throw rolloverError;
     }
   }
-  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: athleteProfile, error: athleteProfileError }] = await Promise.all([
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
-    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", weekStartIso()),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString()),
     client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
     client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("attempted_at", { ascending: false }),
-    client.from("profiles").select("id, country_code").eq("id", athleteId).maybeSingle(),
   ]);
   if (error) throw error;
   if (progressError) throw progressError;
   if (awardsError) throw awardsError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
-  if (athleteProfileError) throw athleteProfileError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
+  const awardsByAssignmentId = new Map();
+  (awards || []).forEach((award) => {
+    if (!award.assignment_id || Number(award.points || 0) <= 0) return;
+    const entries = awardsByAssignmentId.get(award.assignment_id) || [];
+    entries.push(award);
+    awardsByAssignmentId.set(award.assignment_id, entries);
+  });
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
     const entries = attemptsById.get(attempt.assignment_id) || [];
@@ -1419,8 +1430,9 @@ async function getWeeklyAssignments(athleteId) {
   });
   return cacheSet(cacheKey, {
     assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => {
-      const contextualAssignment = { ...assignment, athlete_country_code: athleteProfile?.country_code || state.profile?.country_code || "AU" };
-      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id)), percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] };
+      const contextualAssignment = { ...assignment, athlete_country_code: athleteCountryCode };
+      const normalizedProgress = normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id));
+      return { ...contextualAssignment, progress: reconcileAwardedProgress(contextualAssignment, normalizedProgress, awardsByAssignmentId.get(assignment.id) || []), percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] };
     }),
     awards: awards || [],
     percentageAttempts: percentageAttempts || [],
@@ -1456,7 +1468,9 @@ async function getCoachVenues() {
 
 async function getCoachCommandData(roster = []) {
   const ids = roster.map((athlete) => athlete.id);
-  const cacheKey = `coach-command:${ids.slice().sort().join(",")}:${weekStartDate()}`;
+  const weekStartByAthlete = new Map(roster.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
+  const rosterWeekStarts = [...new Set(weekStartByAthlete.values())];
+  const cacheKey = `coach-command:${ids.slice().sort().join(",")}:${rosterWeekStarts.slice().sort().join(",")}`;
   const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
@@ -1465,9 +1479,9 @@ async function getCoachCommandData(roster = []) {
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
     ids.length ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
-    ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category").in("athlete_id", ids).eq("week_start", weekStartDate()) : { data: [], error: null },
+    ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category, venue, week_start").in("athlete_id", ids).in("week_start", rosterWeekStarts) : { data: [], error: null },
     ids.length ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
-    ids.length ? client.from("assignment_attempts").select("*").in("athlete_id", ids).eq("week_start", weekStartDate()).order("attempted_at", { ascending: false }) : { data: [], error: null },
+    ids.length ? client.from("assignment_attempts").select("*").in("athlete_id", ids).in("week_start", rosterWeekStarts).order("attempted_at", { ascending: false }) : { data: [], error: null },
     client.from("attendance_sessions").select("*, attendance_records(*)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
     ids.length ? client.from("parent_athletes").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
@@ -1481,9 +1495,9 @@ async function getCoachCommandData(roster = []) {
     statuses: statusRows.data || [],
     dashboardItems: dashboardItems.data || [],
     sessions: sessions.data || [],
-    scheduleRows: scheduleRows.data || [],
+    scheduleRows: (scheduleRows.data || []).filter((row) => row.week_start === weekStartByAthlete.get(row.athlete_id)),
     awards: awards.data || [],
-    assignmentAttempts: assignmentAttempts.data || [],
+    assignmentAttempts: (assignmentAttempts.data || []).filter((row) => row.week_start === weekStartByAthlete.get(row.athlete_id)),
     attendanceSessions: attendanceSessions.data || [],
     parentLinks: parentLinks.data || [],
     weeklySettings: weeklySettings.data || null,
@@ -1656,6 +1670,22 @@ function dateForTimezone(timeZone = "Australia/Brisbane", date = new Date()) {
 function dateForCountryCode(countryCode = "") {
   return dateForTimezone(countryTimezones[String(countryCode || "").toUpperCase()] || "Australia/Brisbane");
 }
+function weekStartDateForCountry(countryCode = "", date = new Date()) {
+  const timeZone = countryTimezones[String(countryCode || "").toUpperCase()] || "Australia/Brisbane";
+  const [year, month, day] = dateForTimezone(timeZone, date).split("-").map(Number);
+  const localCalendarDate = new Date(Date.UTC(year, month - 1, day));
+  localCalendarDate.setUTCDate(localCalendarDate.getUTCDate() - localCalendarDate.getUTCDay());
+  return localCalendarDate.toISOString().slice(0, 10);
+}
+async function getAthleteCountryCode(athleteId) {
+  if (athleteId === state.profile?.id || athleteId === state.user?.id) return state.profile?.country_code || "AU";
+  const cacheKey = `athlete-country:${athleteId}`;
+  const cached = cacheGet(cacheKey, 5 * 60 * 1000);
+  if (cached) return cached;
+  const { data, error } = await client.from("profiles").select("country_code").eq("id", athleteId).maybeSingle();
+  if (error) throw error;
+  return cacheSet(cacheKey, data?.country_code || "AU");
+}
 function assignmentLocalDate(assignment = {}) {
   return dateForCountryCode(assignment.athlete_country_code || assignment.country_code || state.profile?.country_code || "AU");
 }
@@ -1682,16 +1712,18 @@ async function getActiveCoachGroupSession() {
   return data?.[0] || null;
 }
 
-async function getSessionViewerPlanData(athleteIds = []) {
-  if (!athleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const safeAthleteIds = [...new Set(athleteIds.filter(Boolean))];
+async function getSessionViewerPlanData(athletes = []) {
+  if (!athletes.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
+  const athleteRows = athletes.map((athlete) => typeof athlete === "string" ? { id: athlete, country_code: "AU" } : athlete).filter((athlete) => athlete?.id);
+  const safeAthleteIds = [...new Set(athleteRows.map((athlete) => athlete.id))];
   if (!safeAthleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
-  const weekStart = weekStartDate();
+  const weekStartByAthlete = new Map(athleteRows.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
+  const weekStarts = [...new Set(weekStartByAthlete.values())];
   const [{ data: assignments, error }, { data: runs, error: runsError }] = await Promise.all([
     client.from("weekly_trick_assignments")
       .select("*")
       .in("athlete_id", safeAthleteIds)
-      .eq("week_start", weekStart)
+      .in("week_start", weekStarts)
       .order("sort_order", { ascending: true }),
     client.from("run_plans")
       .select("*")
@@ -1702,10 +1734,10 @@ async function getSessionViewerPlanData(athleteIds = []) {
   if (error) throw error;
   if (runsError) throw runsError;
 
-  const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category]);
+  const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category] && assignment.week_start === weekStartByAthlete.get(assignment.athlete_id));
   const assignmentIds = currentAssignments.map((assignment) => assignment.id).filter(Boolean);
   const runIds = (runs || []).map((run) => run.id).filter(Boolean);
-  const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runProgress, error: runProgressError }] = await Promise.all([
+  const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runProgress, error: runProgressError }, { data: awards, error: awardsError }] = await Promise.all([
     assignmentIds.length
       ? client.from("assignment_progress").select("*").in("assignment_id", assignmentIds)
       : { data: [], error: null },
@@ -1713,17 +1745,28 @@ async function getSessionViewerPlanData(athleteIds = []) {
       ? client.from("percentage_attempts").select("*").in("assignment_id", assignmentIds).order("attempt_number", { ascending: true })
       : { data: [], error: null },
     assignmentIds.length
-      ? client.from("assignment_attempts").select("*").in("assignment_id", assignmentIds).eq("week_start", weekStart).order("attempted_at", { ascending: false })
+      ? client.from("assignment_attempts").select("*").in("assignment_id", assignmentIds).in("week_start", weekStarts).order("attempted_at", { ascending: false })
       : { data: [], error: null },
     runIds.length
       ? client.from("run_checklist_progress").select("*").in("run_plan_id", runIds)
+      : { data: [], error: null },
+    assignmentIds.length
+      ? client.from("assignment_point_awards").select("assignment_id, points, created_at").in("assignment_id", assignmentIds).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString())
       : { data: [], error: null },
   ]);
   if (progressError) throw progressError;
   if (percentageError) throw percentageError;
   if (attemptError) throw attemptError;
   if (runProgressError) throw runProgressError;
+  if (awardsError) throw awardsError;
   const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
+  const awardsByAssignmentId = new Map();
+  (awards || []).forEach((award) => {
+    if (!award.assignment_id || Number(award.points || 0) <= 0) return;
+    const rows = awardsByAssignmentId.get(award.assignment_id) || [];
+    rows.push(award);
+    awardsByAssignmentId.set(award.assignment_id, rows);
+  });
   const attemptsById = new Map();
   (percentageAttempts || []).forEach((attempt) => {
     const rows = attemptsById.get(attempt.assignment_id) || [];
@@ -1739,7 +1782,8 @@ async function getSessionViewerPlanData(athleteIds = []) {
   const assignmentsByAthlete = new Map();
   currentAssignments.forEach((assignment) => {
     const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-    rows.push({ ...assignment, progress: progressById.get(assignment.id) || null, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
+    const assignmentProgress = reconcileAwardedProgress(assignment, progressById.get(assignment.id) || null, awardsByAssignmentId.get(assignment.id) || []);
+    rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
     assignmentsByAthlete.set(assignment.athlete_id, rows);
   });
   const runsByAthlete = new Map();
@@ -1822,6 +1866,19 @@ function normalizeAssignmentProgress(assignment, progress) {
     return { ...progress, progress_date: null, completed: false };
   }
   return progress;
+}
+
+function reconcileAwardedProgress(assignment, progress, awards = []) {
+  if (progress?.completed_at || !["dialled", "one_bang", "bonus"].includes(assignment?.category)) return progress;
+  const earnedAward = awards.find((award) => Number(award.points || 0) > 0);
+  if (!earnedAward) return progress;
+  return {
+    ...(progress || {}),
+    assignment_id: assignment.id,
+    athlete_id: assignment.athlete_id,
+    completed_at: earnedAward.created_at,
+    restored_from_award: true,
+  };
 }
 const spinDirectionLabels = {
   "": "Not set",
@@ -1921,6 +1978,93 @@ async function getParkKing(venue = "", { force = false } = {}) {
     return await request;
   } finally {
     if (!force) state.inFlight.delete(cacheKey);
+  }
+}
+
+async function getAllParkKings({ force = false } = {}) {
+  const cacheKey = "park-kings:all";
+  if (!force) {
+    const cached = cacheGet(cacheKey, 30000);
+    if (cached) return cached;
+  }
+  const existingRequest = !force ? state.inFlight.get(cacheKey) : null;
+  if (existingRequest) return existingRequest;
+  const request = (async () => {
+    const { data, error } = await client
+      .from("park_king_snapshots")
+      .select("venue_key, venue_name, athlete_id, display_name, points, updated_at")
+      .order("venue_name", { ascending: true });
+    if (error) {
+      console.warn("Park Kings list could not load", error);
+      return [];
+    }
+    return cacheSet(cacheKey, data || []);
+  })();
+  if (!force) state.inFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    if (!force) state.inFlight.delete(cacheKey);
+  }
+}
+
+function commandParkKingVenueList(scheduleRows = [], parkKings = []) {
+  const venuesByKey = new Map();
+  [...scheduleRows.filter((row) => row.category === "daily").map((row) => row.venue), ...parkKings.map((row) => row.venue_name)]
+    .map(venueKey)
+    .filter(Boolean)
+    .forEach((venue) => {
+      const key = venueIdentityKey(venue);
+      if (!venuesByKey.has(key)) venuesByKey.set(key, venue);
+    });
+  return [...venuesByKey.values()].sort((a, b) => venueLabel(a).localeCompare(venueLabel(b)));
+}
+
+function parkKingForVenue(parkKings = [], venue = "") {
+  const selectedKey = venueIdentityKey(venue);
+  return parkKings.find((row) => venueIdentityKey(row.venue_name || row.venue_key) === selectedKey) || null;
+}
+
+function commandParkKingsAccordionHtml(scheduleRows = [], parkKings = []) {
+  const venues = commandParkKingVenueList(scheduleRows, parkKings);
+  if (!venues.includes(state.commandParkKingVenue)) state.commandParkKingVenue = venues[0] || "";
+  state.commandParkKingRows = parkKings;
+  state.commandParkKingVenues = venues;
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.commandParkKingVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  const king = parkKingForVenue(parkKings, state.commandParkKingVenue);
+  return `<details id="command-park-kings" class="command-park-kings-accordion">
+    <summary><span><strong>Park Kings</strong><small>Filter Daily venues and see each permanent park record</small></span><span class="command-message-count">${parkKings.length} claimed</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
+    <div class="command-park-kings-body">
+      ${venues.length ? `<label class="command-park-kings-filter"><span>Daily venue</span><select id="command-park-king-filter">${options}</select></label><div id="command-park-king-result">${parkKingCardHtml(king, state.commandParkKingVenue, { compact: true })}</div>` : `<div class="empty compact-empty">No Daily venues are assigned yet.</div>`}
+    </div>
+  </details>`;
+}
+
+function renderCommandParkKingSelection() {
+  const select = document.querySelector("#command-park-king-filter");
+  const target = document.querySelector("#command-park-king-result");
+  if (!select || !target) return;
+  state.commandParkKingVenue = select.value;
+  const king = parkKingForVenue(state.commandParkKingRows, state.commandParkKingVenue);
+  target.innerHTML = parkKingCardHtml(king, state.commandParkKingVenue, { compact: true });
+}
+
+async function refreshCommandParkKings() {
+  const accordion = document.querySelector("#command-park-kings");
+  if (!accordion) return;
+  try {
+    const parkKings = await getAllParkKings({ force: true });
+    const venues = commandParkKingVenueList(state.commandParkKingVenues.map((venue) => ({ category: "daily", venue })), parkKings);
+    state.commandParkKingRows = parkKings;
+    state.commandParkKingVenues = venues;
+    if (!venues.includes(state.commandParkKingVenue)) state.commandParkKingVenue = venues[0] || "";
+    const select = accordion.querySelector("#command-park-king-filter");
+    if (select) {
+      select.innerHTML = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.commandParkKingVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+    }
+    renderCommandParkKingSelection();
+  } catch (error) {
+    console.warn("Coach Park Kings could not refresh", error);
   }
 }
 
@@ -4642,13 +4786,14 @@ async function renderCoachCommand() {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>No <span>riders</span></h1><p>Add students first, then this becomes your calendar, heat map, attendance, and parent-update hub.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  const [commandData, rawLeaderboard, broadcastHistory] = await Promise.all([
+  const [commandData, rawLeaderboard, broadcastHistory, parkKings] = await Promise.all([
     getCoachCommandData(roster),
     getLeaderboard(),
     client.from("coach_broadcasts").select("id, target_label, message, recipient_count, push_count, sent_at").eq("coach_id", state.user.id).order("sent_at", { ascending: false }).limit(5).then((result) => {
       if (result.error) throw result.error;
       return result.data || [];
     }),
+    getAllParkKings(),
   ]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
   const attentionCount = roster.filter((athlete) => athleteAttention(athlete, commandData).flags.length).length;
@@ -4694,6 +4839,7 @@ async function renderCoachCommand() {
       <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top riders this week · full board lives under More</div></div></div>
       ${commandLeaderboardPreviewHtml(leaderboard, "weekly_points")}
     </section>
+    ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
     <section class="command-management-stack">
       ${commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events, rider status and parent updates", `${pendingRequests} request${pendingRequests === 1 ? "" : "s"} · ${upcoming} event${upcoming === 1 ? "" : "s"}`, teamSections)}
       ${commandHubAccordion("admin-records-hub", "02", "Admin & Records", "Attendance, payments, injuries, records and settings", `${injuredCount} modified · ${commandData.attendanceSessions?.length || 0} sessions`, adminSections)}
@@ -4709,6 +4855,7 @@ async function renderCoachCommand() {
   });
   document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
   document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
+  document.querySelector("#command-park-king-filter")?.addEventListener("change", renderCommandParkKingSelection);
   document.querySelector("#generate-weekly-previews")?.addEventListener("click", () => generateWeeklyNotificationPreviews(roster, commandData));
   document.querySelectorAll("[data-dismiss-task]").forEach((button) => button.addEventListener("click", dismissCoachTask));
   document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
@@ -4766,8 +4913,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
     state.sessionViewerOpenAthleteId = "";
   }
-  const athleteIds = filteredRoster.map((athlete) => athlete.id);
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(athleteIds);
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster);
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
@@ -5286,7 +5432,7 @@ async function refreshSessionViewerLight() {
   const filteredRoster = roster
     .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
     .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster.map((athlete) => athlete.id));
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster);
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
       const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
