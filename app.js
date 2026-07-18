@@ -29,6 +29,7 @@ const state = {
   selectedAthleteId: null,
   publicAthleteId: null,
   selectedVenue: "",
+  sessionOpenDailyVenues: new Set(),
   sessionViewerGroup: "monday",
   sessionViewerVenue: "",
   sessionViewerSearch: "",
@@ -868,8 +869,8 @@ function renderShell() {
   const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
-        <details class="sidebar-nav-group" ${coachPrimaryView(state.view) === group.id ? "open" : ""}>
-          <summary><button class="nav-btn group-nav-btn" type="button" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span></button></summary>
+        <details class="sidebar-nav-group">
+          <summary class="nav-btn group-nav-btn" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span></summary>
           <div class="sidebar-subnav">
             ${group.links.map(([id, label]) => `<button class="nav-sub-btn" type="button" data-view="${id}">${escapeHtml(label)}</button>`).join("")}
           </div>
@@ -896,6 +897,7 @@ function renderShell() {
 }
 
 async function navigate(view) {
+  const previousView = state.view;
   clearInterval(state.timer);
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
@@ -905,6 +907,8 @@ async function navigate(view) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
+  if (view === "session" && previousView !== "session") state.sessionOpenDailyVenues.clear();
+  if (view === "sessionViewer" && previousView !== "sessionViewer") state.sessionViewerOpenAthleteId = "";
   state.view = view;
   const activeView = isCoachRole(state.profile?.role) ? coachPrimaryView(view) : view;
   document.querySelectorAll("[data-view]").forEach((button) => {
@@ -912,10 +916,6 @@ async function navigate(view) {
     const buttonActiveView = isCoachRole(state.profile?.role) ? coachPrimaryView(buttonView) : buttonView;
     const isSubnav = button.classList.contains("nav-sub-btn");
     button.classList.toggle("active", buttonView === view || (!isSubnav && buttonActiveView === activeView));
-  });
-  document.querySelectorAll(".sidebar-nav-group").forEach((group) => {
-    const groupView = group.querySelector(".group-nav-btn")?.dataset.view;
-    group.open = groupView === activeView;
   });
   setLoading();
   const renders = {
@@ -1998,11 +1998,10 @@ function dailyVenueGroups(assignments, interactive = false) {
   const info = categoryInfo.daily;
   const venues = dailyVenues(dailyAssignments);
   const complete = dailyAssignments.filter(isAssignmentComplete).length;
-  const selectedVenueKey = venueKey(state.selectedVenue);
-  const body = venues.length ? venues.map((venue, index) => {
+  const body = venues.length ? venues.map((venue) => {
     const items = assignmentsForVenue(dailyAssignments, venue);
     const venueComplete = items.filter(isAssignmentComplete).length;
-    const open = true;
+    const open = state.sessionOpenDailyVenues.has(venue);
     return `<details class="daily-venue-accordion" data-daily-venue="${escapeHtml(venue)}" ${open ? "open" : ""}>
       <summary><span><strong>${escapeHtml(venueLabel(venue))} Daily Tricks</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
       <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
@@ -3592,6 +3591,7 @@ async function renderSession() {
       ${extraTricksSection(state.profile, true)}
       ${helpUploadSection(helpRequests)}`;
     bindVenueSelector();
+    bindDailyVenueAccordions();
     bindExtraTrickActions();
     bindDailyReorder();
     document.querySelector("#create-session").addEventListener("click", startSession);
@@ -3614,6 +3614,7 @@ async function renderSession() {
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
   bindVenueSelector();
+  bindDailyVenueAccordions();
   bindExtraTrickActions();
   bindDailyReorder();
   document.querySelector("#end-session").addEventListener("click", endSession);
@@ -3624,6 +3625,17 @@ async function renderSession() {
   bindSessionQuickJumps();
   updateTimer();
   state.timer = setInterval(updateTimer, 1000);
+}
+
+function bindDailyVenueAccordions() {
+  document.querySelectorAll(".daily-venue-accordion[data-daily-venue]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      const venue = details.dataset.dailyVenue;
+      if (!venue) return;
+      if (details.open) state.sessionOpenDailyVenues.add(venue);
+      else state.sessionOpenDailyVenues.delete(venue);
+    });
+  });
 }
 
 function bindSessionQuickJumps() {
@@ -5708,7 +5720,7 @@ async function renderPlanner() {
     dailyTitle: "Next Week Daily Tricks",
     dailyMeta: "Hidden plan · copied from this week unless already scheduled",
     tip: "Completed tricks are highlighted below each editor. Edit freely here without changing this week.",
-    openWeeklySections: Boolean(plannedAssignments.length || recoverableDraft.length),
+    openWeeklySections: false,
     showCompletedHighlights: true,
   });
   const draftAction = planIsScheduled ? "" : `<button class="secondary-btn wide" type="submit" data-plan-save-status="draft_next_week">Save Draft</button>`;
@@ -6542,7 +6554,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
     return planAccordionSection(info.label, `${categoryAssignments.length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
       <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="venue-head-actions"><div class="category-count">${categoryAssignments.length}</div><button class="secondary-btn compact-btn" type="button" data-save-category-list="${escapeHtml(category)}">Save ${escapeHtml(info.label)}</button></div></div>
       <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
-    </div>`, options.openWeeklySections ?? (category === "one_bang" || category === "dialled"));
+    </div>`, options.openWeeklySections ?? false);
   }).join("");
   return `<div class="plan-accordion-stack">
     ${planAccordionSection(options.dailyTitle || "Venue-Specific Daily Tricks", options.dailyMeta || "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
@@ -6552,7 +6564,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       </div>
       <div class="venue-edit-panels">${dailyVenueEditors}</div>
       ${customVenueEditor}
-    </div>`, options.dailyOpen ?? true)}
+    </div>`, options.dailyOpen ?? false)}
     ${otherCategoryEditor}
   </div>`;
 }
