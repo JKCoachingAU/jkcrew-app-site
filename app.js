@@ -982,6 +982,7 @@ function setupRealtimeSync() {
     "run_checklist_progress",
     "xp_ledger",
     "trick_requests",
+    "coach_broadcast_recipients",
     "profiles",
   ].forEach((table) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
@@ -1012,6 +1013,7 @@ function realtimeAthleteId(table, payload = {}) {
 function isRelevantRealtimePayload(table, payload = {}) {
   const row = realtimeRow(payload);
   if (!state.user?.id || !state.profile) return false;
+  if (table === "coach_broadcast_recipients") return row.recipient_id === state.user.id;
   if (table === "profiles") {
     return [state.user.id, state.selectedAthleteId, state.publicAthleteId].filter(Boolean).includes(row.id)
       || (isCoachRole(state.profile.role) && state.coachRosterIds?.has(row.id));
@@ -1024,6 +1026,7 @@ function isRelevantRealtimePayload(table, payload = {}) {
 }
 
 function invalidateCachesForRealtime(table) {
+  if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
   if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "leaderboard_point_adjustments", "training_sessions", "xp_ledger"].includes(table)) {
     cacheClear("leaderboard");
     cacheClear("schedule:");
@@ -3107,6 +3110,87 @@ function bindTricktionaryBoard({ athleteId, refresh }) {
   });
 }
 
+async function getMyCoachMessages(limit = 3) {
+  if (!state.user?.id) return [];
+  const cacheKey = `coach-messages:${state.user.id}:${limit}`;
+  const cached = cacheGet(cacheKey, 5000);
+  if (cached) return cached;
+  const { data, error } = await client.rpc("get_my_coach_messages", { p_limit: limit });
+  if (error) throw error;
+  return cacheSet(cacheKey, data || []);
+}
+
+function coachMessagesHtml(messages = []) {
+  if (!messages.length) return "";
+  return `<section class="coach-message-banner" aria-label="Coach messages">
+    <div class="coach-message-banner-title"><span>Coach message</span><small>Latest update from JK Coaching</small></div>
+    <div class="coach-message-banner-list">
+      ${messages.map((message) => `<article><p>${escapeHtml(message.message)}</p><small>${escapeHtml(message.sender_name || "Coach")} · ${dateLabel(message.sent_at)}</small></article>`).join("")}
+    </div>
+  </section>`;
+}
+
+function coachBroadcastComposerHtml(roster = [], history = []) {
+  const riderOptions = roster.map((athlete) => `<option value="${escapeHtml(athlete.id)}">${escapeHtml(athlete.display_name)}</option>`).join("");
+  const historyRows = history.length ? history.map((message) => `<div class="coach-broadcast-history-row"><div><strong>${escapeHtml(message.target_label)}</strong><small>${dateLabel(message.sent_at)} · ${Number(message.recipient_count || 0)} account${Number(message.recipient_count || 0) === 1 ? "" : "s"}</small></div><p>${escapeHtml(message.message)}</p></div>`).join("") : `<div class="empty compact-empty">No coach messages sent yet.</div>`;
+  return `<section class="panel coach-broadcast-panel">
+    <div class="panel-head"><div><div class="panel-title">Message the crew</div><div class="panel-meta">Saved to Home and sent as push to enabled devices</div></div></div>
+    <form id="coach-broadcast-form" class="coach-broadcast-form">
+      <div class="field"><label for="coach-broadcast-target">Send to</label><select id="coach-broadcast-target" name="audience" required>
+        <option value="everyone">Everyone · riders and parents</option>
+        <option value="riders">All riders</option>
+        <option value="parents">All parents</option>
+        <option value="group:monday">Monday Team</option>
+        <option value="group:tuesday">Tuesday Team</option>
+        <option value="group:wednesday">Wednesday Team</option>
+        <option value="group:online">Online Training</option>
+        <option value="athlete">Individual rider</option>
+      </select></div>
+      <div class="field coach-broadcast-rider-field" id="coach-broadcast-rider-field" hidden><label for="coach-broadcast-rider">Rider</label><select id="coach-broadcast-rider" name="athleteId" disabled>${riderOptions}</select></div>
+      <div class="field coach-broadcast-message-field"><label for="coach-broadcast-message">Message</label><textarea id="coach-broadcast-message" name="message" maxlength="500" rows="2" placeholder="Write a quick update for the crew..." required></textarea></div>
+      <button class="primary-btn coach-broadcast-send" type="submit">Send message</button>
+    </form>
+    <p class="coach-broadcast-note">The Home message stays visible for 7 days. Push delivery requires notifications to be enabled on that device.</p>
+    <details class="coach-broadcast-history"><summary>Recent coach messages <span>${history.length}</span></summary><div>${historyRows}</div></details>
+  </section>`;
+}
+
+async function sendCoachBroadcast(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type='submit']");
+  const values = new FormData(form);
+  const audience = String(values.get("audience") || "everyone");
+  const message = String(values.get("message") || "").trim();
+  let targetType = audience;
+  let targetValue = "";
+  if (audience.startsWith("group:")) [targetType, targetValue] = audience.split(":");
+  if (audience === "athlete") targetValue = String(values.get("athleteId") || "");
+  if (!message) return notify("Write a message first.", "error");
+  if (targetType === "athlete" && !targetValue) return notify("Choose a rider first.", "error");
+
+  button.disabled = true;
+  button.textContent = "Sending...";
+  try {
+    const { data, error } = await client.rpc("send_coach_broadcast", {
+      p_target_type: targetType,
+      p_target_value: targetValue,
+      p_message: message,
+    });
+    if (error) throw error;
+    cacheClear("coach-messages:");
+    cacheClear("coach-broadcasts:");
+    const recipients = Number(data?.recipient_count || 0);
+    const pushes = Number(data?.push_count || 0);
+    notify(`Coach message sent to ${recipients} account${recipients === 1 ? "" : "s"}. ${pushes ? `${pushes} push notification${pushes === 1 ? "" : "s"} queued.` : "It is now visible on their Home page."}`);
+    await renderCoachCommand();
+  } catch (error) {
+    notify(messageFrom(error, "Unable to send the coach message."), "error");
+    button.disabled = false;
+    button.textContent = "Send message";
+  }
+}
+
 function previousTrainingSheetsHtml(data = {}) {
   const attemptsByAssignment = (data.attempts || []).reduce((map, attempt) => {
     map.set(attempt.assignment_id, (map.get(attempt.assignment_id) || 0) + 1);
@@ -3278,12 +3362,16 @@ async function renderCoachTricktionary() {
 }
 
 async function renderAthleteHome() {
-  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, trickRequests] = await Promise.all([
+  const [{ data: sessions, error }, leaderboard, schedule, dashboardItems, trickRequests, coachMessages] = await Promise.all([
     client.from("training_sessions").select("*").eq("athlete_id", state.user.id).order("started_at", { ascending: false }).limit(12),
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
     getDashboardItems(state.user.id),
     getTrickRequestsForAthlete(state.user.id).catch(() => []),
+    getMyCoachMessages(3).catch((error) => {
+      console.warn("Coach messages unavailable", error);
+      return [];
+    }),
   ]);
   const { assignments, awards, assignmentAttempts } = schedule;
   if (error) throw error;
@@ -3301,6 +3389,7 @@ async function renderAthleteHome() {
   }
 
   document.querySelector("#view").innerHTML = `
+    ${coachMessagesHtml(coachMessages)}
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats">
@@ -3349,11 +3438,18 @@ function weeklyCompletionPercent(assignments, awards) {
 }
 
 async function renderParentHome() {
-  const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
+  const [{ data: links, error }, coachMessages] = await Promise.all([
+    client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id),
+    getMyCoachMessages(3).catch((messageError) => {
+      console.warn("Coach messages unavailable", messageError);
+      return [];
+    }),
+  ]);
   if (error) throw error;
   const ids = (links || []).map((link) => link.athlete_id);
   if (!ids.length) {
     document.querySelector("#view").innerHTML = `
+      ${coachMessagesHtml(coachMessages)}
       <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your parent account is ready, but it is not connected to a rider yet.</p></div></div>
       <section class="panel parent-waiting-card">
         ${avatarHtml(state.profile, "profile-avatar")}
@@ -3425,6 +3521,7 @@ async function renderParentHome() {
     </section>`;
   }));
   document.querySelector("#view").innerHTML = `
+    ${coachMessagesHtml(coachMessages)}
     <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Linked <span>riders</span></h1><p>Read-only progress for the riders your coach has linked to this parent account.</p></div></div>
     ${cards.join("")}`;
 }
@@ -4297,9 +4394,13 @@ async function renderCoachCommand() {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>No <span>riders</span></h1><p>Add students first, then this becomes your calendar, heat map, attendance, and parent-update hub.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  const [commandData, rawLeaderboard] = await Promise.all([
+  const [commandData, rawLeaderboard, broadcastHistory] = await Promise.all([
     getCoachCommandData(roster),
     getLeaderboard(),
+    client.from("coach_broadcasts").select("id, target_label, message, recipient_count, push_count, sent_at").eq("coach_id", state.user.id).order("sent_at", { ascending: false }).limit(5).then((result) => {
+      if (result.error) throw result.error;
+      return result.data || [];
+    }),
   ]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
   const attentionCount = roster.filter((athlete) => athleteAttention(athlete, commandData).flags.length).length;
@@ -4326,6 +4427,7 @@ async function renderCoachCommand() {
   ].join("");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>JKCoaching <span>HQ</span></h1><p>Calendar, rider heat map, attendance, reimbursements, and athlete alerts in one coach-only area.</p></div></div>
+    ${coachBroadcastComposerHtml(roster, broadcastHistory)}
     ${highPriorityTodoHtml(priorityTasks)}
     <section class="stats-grid command-stats-grid">
       ${statCard("Students", roster.length, "", "In your crew")}
@@ -4352,6 +4454,14 @@ async function renderCoachCommand() {
       <div class="command-accordion-stack compact-command-stack">${adminSections}</div>
     </section>`;
   document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
+  document.querySelector("#coach-broadcast-form")?.addEventListener("submit", sendCoachBroadcast);
+  document.querySelector("#coach-broadcast-target")?.addEventListener("change", (event) => {
+    const individual = event.currentTarget.value === "athlete";
+    const riderField = document.querySelector("#coach-broadcast-rider-field");
+    const riderSelect = document.querySelector("#coach-broadcast-rider");
+    if (riderField) riderField.hidden = !individual;
+    if (riderSelect) riderSelect.disabled = !individual;
+  });
   document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
   document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
   document.querySelector("#generate-weekly-previews")?.addEventListener("click", () => generateWeeklyNotificationPreviews(roster, commandData));
@@ -7711,13 +7821,14 @@ async function getPushNotificationState() {
     leaderboard_overtaken: true,
     crew_chat: true,
     parent_weekly_summary: true,
+    coach_messages: true,
   };
   if (!state.user?.id || !supportsPushNotifications()) {
     return { supported: false, enabled: false, permission: "unsupported", preferences: defaults };
   }
 
   const { data: preferences, error } = await client.from("push_preferences")
-    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary")
+    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary, coach_messages")
     .eq("user_id", state.user.id)
     .maybeSingle();
   if (error) throw error;
@@ -7756,9 +7867,10 @@ function pushNotificationSettingsHtml(pushState) {
         ${role === "athlete" ? `
           <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
           <label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>
+          <label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my coach</label>
         ` : ""}
         ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>` : ""}
-        ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label>` : ""}
+        ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label><label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my child's coach</label>` : ""}
       </div>
       <p>Notifications are set separately on each phone, tablet, or computer. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
     </section>`;
@@ -7774,6 +7886,7 @@ function currentPushPreferences() {
     leaderboard_overtaken: checkboxValue("leaderboard_overtaken"),
     crew_chat: checkboxValue("crew_chat"),
     parent_weekly_summary: checkboxValue("parent_weekly_summary"),
+    coach_messages: checkboxValue("coach_messages"),
     updated_at: new Date().toISOString(),
   };
 }
@@ -7880,7 +7993,7 @@ async function renderProfile() {
       supported: supportsPushNotifications(),
       enabled: false,
       permission: supportsPushNotifications() ? Notification.permission : "unsupported",
-      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true },
+      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true, coach_messages: true },
     };
   });
   try {
