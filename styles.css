@@ -3599,28 +3599,6 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   gap: 16px;
 }
 .public-detail ul { margin: 12px 0 0; padding-left: 18px; color: #d7ddda; line-height: 1.55; }
-.showreel-panel { margin-top: 14px; }
-.showreel-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.showreel-tile {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #000;
-}
-.showreel-tile video {
-  width: 100%;
-  aspect-ratio: 9 / 14;
-  display: block;
-  object-fit: cover;
-  background: #000;
-}
-.showreel-tile .compact-btn { width: 100%; border-radius: 0; }
-.showreel-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.showreel-form small { color: var(--muted); }
 .social-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .two-col-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .quote-panel {
@@ -4126,8 +4104,6 @@ html[data-theme="light"] .success-burst {
   .venue-editor-grid { grid-template-columns: 1fr; }
   .go-mark { font-size: 3.4rem; }
   .start-session-btn { width: 100%; min-height: 60px; }
-  .showreel-grid { grid-template-columns: 1fr; }
-  .showreel-tile video { aspect-ratio: 16 / 10; max-height: 250px; }
   .crew-chat-panel {
     min-height: calc(100dvh - 190px);
     display: flex;
