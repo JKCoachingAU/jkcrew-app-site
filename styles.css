@@ -925,6 +925,24 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .athlete-scoreboard h1 { margin: 3px 0 4px; font: italic 900 clamp(2.5rem, 5vw, 4.8rem)/0.82 var(--display); letter-spacing: -0.045em; text-transform: uppercase; }
 .athlete-scoreboard p { margin: 0; color: var(--muted); }
 .scoreboard-stats { margin-top: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.scoreboard-stats.home-scoreboard-summary { grid-template-columns: minmax(0, 1fr); }
+.score-ranking-card {
+  min-height: 128px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+}
+.score-ranking-stat {
+  min-width: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+.score-ranking-stat + .score-ranking-stat { border-left: 1px solid var(--line); }
+.score-ranking-stat .stat-value { font-size: clamp(2.65rem, 7vw, 3.3rem); }
 .coach-dashboard-top {
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(320px, 1fr);
