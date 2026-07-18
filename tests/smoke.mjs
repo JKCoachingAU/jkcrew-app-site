@@ -11,17 +11,19 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.46";
+const version = "2.11.47";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
   assert.notEqual(start, -1, `${name} should exist`);
-  const next = app.indexOf("\nfunction ", start + 10);
+  const tail = app.slice(start + 10);
+  const nextMatch = tail.match(/\n(?:async )?function /);
+  const next = nextMatch ? start + 10 + nextMatch.index : -1;
   return app.slice(start, next === -1 ? app.length : next);
 }
 
 for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, manifestText })) {
-  assert(!/2\.11\.(16|44|45)/.test(contents), `${name} contains a stale asset version`);
+  assert(!/2\.11\.(16|44|45|46)/.test(contents), `${name} contains a stale asset version`);
 }
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
 assert(serviceWorker.includes(`jkcrew-shell-v${version}`), "service worker cache should use the current version");
@@ -65,6 +67,22 @@ const planLoader = functionBody("getSessionViewerPlanData");
 assert(!planLoader.includes('.from("run_plans")'), "Session Viewer should not fetch run plans");
 assert(!planLoader.includes('.from("run_checklist_progress")'), "Session Viewer should not fetch run progress");
 assert(planLoader.includes("cacheGet(cacheKey, 12000)"), "Session Viewer plan data should be short-term cached");
+assert(planLoader.includes('rpc("get_coach_session_viewer_plan_data"'), "Session Viewer should use the combined bounded plan read");
+assert(!planLoader.includes('.from("assignment_progress")'), "Session Viewer progress should not need another database round trip");
+
+const sessionViewerRoster = functionBody("getSessionViewerRoster");
+assert(sessionViewerRoster.includes('select("id,display_name,avatar,country_code")'), "Session Viewer should load compact rider profiles");
+assert(!sessionViewerRoster.includes('.from("training_sessions")'), "Session Viewer roster should not load session history");
+
+const sessionViewerRender = functionBody("renderSessionViewer");
+assert(sessionViewerRender.includes("Promise.all(["), "Session Viewer should load roster and active session in parallel");
+assert(sessionViewerRender.indexOf("document.querySelector(\"#view\").innerHTML") < sessionViewerRender.indexOf("refreshParkKingCard("), "Park King must not block the Session Viewer render");
+
+const sessionViewerMigration = read("supabase/migrations/202607190345_combine_session_viewer_plan_reads.sql");
+assert(sessionViewerMigration.includes("security definer"), "Combined Session Viewer read must enforce coach authorization");
+assert(sessionViewerMigration.includes("from anon"), "Anonymous users must not execute the coach Session Viewer read");
+assert(sessionViewerMigration.includes("not sources.has_current_daily"), "Missing current Daily lists should use the bounded visibility fallback");
+assert(sessionViewerMigration.includes("assignment.category = 'daily'"), "Fallback must remain Daily-only to protect weekly point logic");
 
 for (const name of [
   "recordViewerAssignmentAction",

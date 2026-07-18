@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.46`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.47`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.46" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.47" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.46" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.47" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -950,14 +950,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.46" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.47" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.46" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.47" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1255,13 +1255,17 @@ function invalidateCachesForRealtime(table) {
   }
   if (["weekly_trick_assignments", "coach_group_session_participants", "trick_requests", "profiles"].includes(table)) {
     cacheClear("roster");
+    cacheClear("session-viewer-roster:");
     cacheClear("schedule:");
     cacheClear("coach-command:");
   }
 }
 
 function clearCoachCaches({ roster = false, command = true, sessionViewer = true, leaderboard = false } = {}) {
-  if (roster) cacheClear("roster");
+  if (roster) {
+    cacheClear("roster");
+    cacheClear("session-viewer-roster:");
+  }
   if (command) cacheClear("coach-command:");
   if (sessionViewer) invalidateSessionViewerData();
   if (leaderboard) cacheClear("leaderboard");
@@ -1744,7 +1748,7 @@ function countryBadge(profile = {}) {
 
 async function getActiveCoachGroupSession() {
   const { data, error } = await client.from("coach_group_sessions")
-    .select("*, coach_group_session_participants(*)")
+    .select("id,coach_id,group_name,venue,status,started_at,paused_at,total_paused_seconds,ended_at,coach_group_session_participants(id,group_session_id,athlete_id,last_activity_at,daily_finish_seconds,created_at)")
     .eq("coach_id", state.user.id)
     .in("status", ["running", "paused"])
     .order("started_at", { ascending: false })
@@ -1769,58 +1773,18 @@ async function getSessionViewerPlanData(athletes = [], { force = false } = {}) {
 
   const requestKey = force ? `${cacheKey}:force` : cacheKey;
   const request = (async () => {
-    const { data: assignments, error } = await client.from("weekly_trick_assignments")
-      .select("*")
-      .in("athlete_id", safeAthleteIds)
-      .in("week_start", weekStarts)
-      .order("sort_order", { ascending: true });
+    const { data: assignments, error } = await client.rpc("get_coach_session_viewer_plan_data", {
+      p_athlete_ids: safeAthleteIds,
+      p_week_starts: safeAthleteIds.map((athleteId) => weekStartByAthlete.get(athleteId)),
+    });
     if (error) throw error;
 
-    const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category] && assignment.week_start === weekStartByAthlete.get(assignment.athlete_id));
-    const assignmentIds = currentAssignments.map((assignment) => assignment.id).filter(Boolean);
-    const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: awards, error: awardsError }] = await Promise.all([
-    assignmentIds.length
-      ? client.from("assignment_progress").select("*").in("assignment_id", assignmentIds)
-      : { data: [], error: null },
-    assignmentIds.length
-      ? client.from("percentage_attempts").select("*").in("assignment_id", assignmentIds).order("attempt_number", { ascending: true })
-      : { data: [], error: null },
-    assignmentIds.length
-      ? client.from("assignment_attempts").select("*").in("assignment_id", assignmentIds).in("week_start", weekStarts).order("attempted_at", { ascending: false })
-      : { data: [], error: null },
-    assignmentIds.length
-      ? client.from("assignment_point_awards").select("assignment_id, points, created_at").in("assignment_id", assignmentIds).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString())
-      : { data: [], error: null },
-    ]);
-    if (progressError) throw progressError;
-    if (percentageError) throw percentageError;
-    if (attemptError) throw attemptError;
-    if (awardsError) throw awardsError;
-    const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
-    const awardsByAssignmentId = new Map();
-    (awards || []).forEach((award) => {
-      if (!award.assignment_id || Number(award.points || 0) <= 0) return;
-      const rows = awardsByAssignmentId.get(award.assignment_id) || [];
-      rows.push(award);
-      awardsByAssignmentId.set(award.assignment_id, rows);
-    });
-    const attemptsById = new Map();
-    (percentageAttempts || []).forEach((attempt) => {
-      const rows = attemptsById.get(attempt.assignment_id) || [];
-      rows.push(attempt);
-      attemptsById.set(attempt.assignment_id, rows);
-    });
-    const assignmentAttemptsById = new Map();
-    (assignmentAttempts || []).forEach((attempt) => {
-      const rows = assignmentAttemptsById.get(attempt.assignment_id) || [];
-      rows.push(attempt);
-      assignmentAttemptsById.set(attempt.assignment_id, rows);
-    });
+    const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category]);
     const assignmentsByAthlete = new Map();
     currentAssignments.forEach((assignment) => {
       const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-      const assignmentProgress = reconcileAwardedProgress(assignment, progressById.get(assignment.id) || null, awardsByAssignmentId.get(assignment.id) || []);
-      rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
+      const assignmentProgress = reconcileAwardedProgress(assignment, assignment.progress || null, assignment.awards || []);
+      rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: assignment.percentage_attempts || [], assignmentAttempts: assignment.assignment_attempts || [] });
       assignmentsByAthlete.set(assignment.athlete_id, rows);
     });
     return cacheSet(cacheKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() });
@@ -2113,7 +2077,7 @@ function parkKingCardHtml(king, venue = "", { id = "", compact = false, loading 
   </section>`;
 }
 
-async function refreshParkKingCard(id, venue = "", compact = true) {
+async function refreshParkKingCard(id, venue = "", compact = true, force = false) {
   const element = document.getElementById(id);
   if (!element || !venueKey(venue)) return;
   const expectedVenueKey = venueIdentityKey(venue);
@@ -2121,7 +2085,7 @@ async function refreshParkKingCard(id, venue = "", compact = true) {
   const loadingWrapper = document.createElement("div");
   loadingWrapper.innerHTML = parkKingCardHtml(null, venue, { id, compact, loading: true, requestId });
   element.replaceWith(loadingWrapper.firstElementChild);
-  const king = await getParkKing(venue, { force: true });
+  const king = await getParkKing(venue, { force });
   const current = document.getElementById(id);
   if (!current || current.dataset.parkRequestId !== requestId || current.dataset.parkVenueKey !== expectedVenueKey) return;
   const wrapper = document.createElement("div");
@@ -4922,15 +4886,16 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
-  const roster = await getCoachRoster();
+  const [roster, activeGroupSession] = await Promise.all([
+    getSessionViewerRoster(),
+    getActiveCoachGroupSession(),
+  ]);
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Add students first, then you can manage group Daily Tricks from here.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  const activeGroupSession = await getActiveCoachGroupSession();
-  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   state.sessionViewerRosterCache = roster;
   state.sessionViewerActiveSessionCache = activeGroupSession;
   if (activeGroupSession) {
@@ -4970,7 +4935,6 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
   const requestedVenue = state.sessionViewerVenue;
   const requestedVenueKey = venueIdentityKey(requestedVenue);
-  const parkKing = await getParkKing(requestedVenue, { force: forceParkKing });
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map((entry) => {
@@ -5017,10 +4981,11 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     <section class="session-viewer-layout">
       <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>
-    ${parkKingCardHtml(parkKing, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true })}`;
+    ${parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}`;
   bindSessionViewerActions();
   updateGroupSessionTimerDom();
   state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
+  if (requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
 }
 
 function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
@@ -5172,7 +5137,7 @@ function bindSessionViewerActions() {
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "daily";
-    renderSessionViewer({ forceParkKing: true });
+    renderSessionViewer();
   });
   document.querySelector("#viewer-venue")?.addEventListener("change", (event) => {
     state.sessionViewerVenue = event.target.value;
@@ -5184,12 +5149,12 @@ function bindSessionViewerActions() {
       wrapper.innerHTML = parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: true });
       currentCard.replaceWith(wrapper.firstElementChild);
     }
-    renderSessionViewer({ forceParkKing: true });
+    renderSessionViewer();
   });
   document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
     state.sessionViewerSearch = event.target.value;
     clearTimeout(state.sessionViewerSearchTimer);
-    state.sessionViewerSearchTimer = setTimeout(() => renderSessionViewer(), 250);
+    state.sessionViewerSearchTimer = setTimeout(() => refreshSessionViewerLight(), 200);
   });
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
@@ -5212,7 +5177,7 @@ function bindSessionViewerActions() {
 async function startViewerGroupSession(event) {
   const restoreButton = setButtonBusy(event?.currentTarget, "Starting...");
   try {
-    const roster = await withTimeout(getCoachRoster(), "Load group riders", 15000);
+    const roster = await withTimeout(getSessionViewerRoster(), "Load group riders", 15000);
     const athleteIds = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup)).map((athlete) => athlete.id);
     if (!athleteIds.length) return notify("No riders in this group yet.", "error");
     const { data, error } = await withTimeout(client.rpc("start_coach_group_session", {
@@ -5345,7 +5310,7 @@ async function recordViewerAssignmentAction(event) {
     const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
     const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
     notify(`${result?.message || "Trick progress updated"}${pointsNote}${timeNote}.`);
-    await refreshSessionViewerLight({ force: true, forceParkKing: true });
+    await refreshSessionViewerLight({ force: true });
   } catch (error) {
     clearPendingAssignmentProgress(button.dataset.assignmentId);
     row?.classList.toggle("complete", Boolean(wasComplete));
@@ -5413,7 +5378,7 @@ async function recordViewerPercentageAttempt(event) {
     cacheClear("park-king:");
     const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
     notify(clearAttempt ? `Attempt cleared. New result: ${result?.percentage || 0}%.` : (result?.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result?.attempt_number || attemptNumber} ${actionText}. ${result?.attempts || 0}/10 saved.`));
-    await refreshSessionViewerLight({ force: true, forceParkKing: true });
+    await refreshSessionViewerLight({ force: true });
   } catch (error) {
     clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
     notify(messageFrom(error), "error");
@@ -5467,7 +5432,7 @@ async function toggleViewerGoal(event) {
   const button = event.currentTarget;
   const athleteId = button.dataset.athleteId;
   const goalIndex = Number(button.dataset.goalIndex);
-  const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
+  const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getSessionViewerRoster();
   const athlete = roster.find((entry) => entry.id === athleteId);
   if (!athlete || !Array.isArray(athlete.goals) || !athlete.goals[goalIndex]) return notify("Could not find that goal.", "error");
   button.disabled = true;
@@ -5542,7 +5507,7 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   bindSessionViewerFastActions();
-  refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, forceParkKing);
+  if (forceParkKing) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true, true);
 }
 
 function bindSessionViewerFastActions() {
@@ -5941,6 +5906,46 @@ function runBuilderPanel(runs = []) {
     </form>
     <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>
   </section>`;
+}
+
+async function getSessionViewerRoster() {
+  const cacheKey = `session-viewer-roster:${state.user.id}`;
+  const cached = cacheGet(cacheKey, 30000);
+  if (cached) {
+    state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
+    return cached;
+  }
+
+  const { data: links, error } = await client.from("coach_athletes")
+    .select("athlete_id,group_name")
+    .eq("coach_id", state.user.id);
+  if (error) throw error;
+  const ids = [...new Set((links || []).map((link) => link.athlete_id).filter(Boolean))];
+  if (!ids.length) {
+    state.coachRosterIds = new Set();
+    return cacheSet(cacheKey, []);
+  }
+
+  const [{ data: athletes, error: athleteError }, { data: groupLinks, error: groupError }] = await Promise.all([
+    client.from("profiles").select("id,display_name,avatar,country_code").in("id", ids).order("display_name"),
+    client.from("coach_athlete_groups").select("athlete_id,group_name,membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
+  ]);
+  if (athleteError) throw athleteError;
+  if (groupError) throw groupError;
+
+  const primaryGroupByAthlete = new Map((links || []).map((link) => [link.athlete_id, link.group_name || "monday"]));
+  const groupsByAthlete = (groupLinks || []).reduce((map, link) => {
+    const groups = map.get(link.athlete_id) || [];
+    if (!groups.includes(link.group_name)) groups.push(link.group_name);
+    map.set(link.athlete_id, groups);
+    return map;
+  }, new Map());
+  const roster = (athletes || []).map((athlete) => {
+    const groupNames = groupsByAthlete.get(athlete.id) || [primaryGroupByAthlete.get(athlete.id) || "monday"];
+    return { ...athlete, groupName: groupNames[0] || "monday", groupNames };
+  });
+  state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
+  return cacheSet(cacheKey, roster);
 }
 
 async function getCoachRoster() {
