@@ -3212,6 +3212,11 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   box-shadow: 0 0 0 3px rgba(32,227,195,0.08);
 }
 .viewer-rider-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 10px 12px;
+  align-items: center;
   width: 100%;
   min-height: 124px;
   padding: 15px;
@@ -3246,6 +3251,16 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   gap: 10px;
   min-width: 0;
 }
+.viewer-rider-card .viewer-card-head {
+  grid-column: 1;
+  grid-row: 1;
+}
+.viewer-rider-card .accordion-caret {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  margin-top: 0;
+}
 .viewer-card-head strong { display: block; font: 900 1rem var(--display); text-transform: uppercase; }
 .viewer-card-head small { color: var(--muted); }
 .accordion-caret {
@@ -3263,8 +3278,10 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   text-transform: uppercase;
 }
 .viewer-progress {
+  grid-column: 1 / -1;
+  grid-row: 2;
   height: 8px;
-  margin-top: 14px;
+  margin-top: 2px;
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
   overflow: hidden;
@@ -3275,6 +3292,45 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   border-radius: inherit;
   background: var(--aqua);
 }
+.park-king-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 78px;
+  margin-top: 14px;
+  padding: 13px 16px;
+  border: 1px solid rgba(32,227,195,0.26);
+  border-radius: 16px;
+  background: linear-gradient(110deg, rgba(32,227,195,0.08), rgba(255,255,255,0.018));
+}
+.park-king-card.compact { min-height: 68px; }
+.park-king-label,
+.park-king-rider,
+.park-king-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.park-king-label { flex-direction: column; align-items: flex-start; gap: 2px; }
+.park-king-label span {
+  color: var(--aqua);
+  font: 900 0.7rem var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.park-king-label small,
+.park-king-rider small,
+.park-king-empty small { color: var(--muted); }
+.park-king-rider strong,
+.park-king-empty strong {
+  display: block;
+  font: 900 1rem var(--display);
+  text-transform: uppercase;
+}
+.park-king-avatar { width: 40px; height: 40px; flex: 0 0 40px; }
+.park-king-empty { flex-direction: column; align-items: flex-end; gap: 1px; text-align: right; }
 .viewer-group-empty { min-height: 240px; display: grid; place-items: center; }
 .viewer-inline-list {
   padding: 0 12px 14px;
@@ -4212,6 +4268,13 @@ html[data-theme="light"] .success-burst {
   .group-session-timer { font-size: clamp(3.3rem, 18vw, 5.6rem); }
   .viewer-roster-head { align-items: start; flex-direction: column; }
   .viewer-rider-card { min-height: 96px; }
+  .park-king-card { min-height: 64px; padding: 11px 13px; }
+  .park-king-card .park-king-label small { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .park-king-rider strong,
+  .park-king-empty strong { font-size: 0.88rem; }
+  .park-king-rider small,
+  .park-king-empty small { font-size: 0.72rem; }
+  .park-king-empty small { display: none; }
   .viewer-list-tab { min-height: 40px; padding: 9px 12px; }
   .viewer-trick-row { min-height: 56px; grid-template-columns: auto auto minmax(0, 1fr); }
   .viewer-trick-row .assignment-check { width: 34px; height: 34px; }

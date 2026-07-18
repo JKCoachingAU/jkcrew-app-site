@@ -1145,6 +1145,15 @@ async function setupRealtimeSync() {
     { table: "coach_broadcast_recipients", filter: `recipient_id=eq.${state.user.id}` },
     { table: "profiles", filter: profileFilter },
   );
+  channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "park_king_events" }, (payload) => {
+    const event = payload.new || {};
+    cacheClear("park-king:");
+    if (state.profile?.role === "athlete" && event.display_name && event.venue_name) {
+      notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
+    }
+    if (state.view === "session") refreshParkKingCard("session-park-king", state.selectedVenue, true);
+    if (state.view === "sessionViewer") refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
+  });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
       if (!isRelevantRealtimePayload(table, payload)) return;
@@ -1880,6 +1889,55 @@ function venueSelectorHtml(assignments = []) {
     <div class="panel-head"><div><div class="panel-title">Training venue</div><div class="panel-meta">Choose the skate park for today's Daily Tricks</div></div></div>
     <div class="venue-select-wrap"><select id="session-venue">${options}</select></div>
   </section>`;
+}
+
+async function getParkKing(venue = "", { force = false } = {}) {
+  const selected = venueKey(venue);
+  if (!selected) return null;
+  const cacheKey = `park-king:${selected.toLowerCase()}`;
+  if (!force) {
+    const cached = cacheGet(cacheKey, 12000);
+    if (cached) return cached.king;
+  }
+  const existingRequest = state.inFlight.get(cacheKey);
+  if (existingRequest) return existingRequest;
+
+  const request = (async () => {
+    const { data, error } = await client.rpc("get_park_king", { p_venue: selected });
+    if (error) {
+      console.warn("King of the Park could not load", error);
+      return null;
+    }
+    const king = Array.isArray(data) ? data[0] || null : data || null;
+    cacheSet(cacheKey, { king });
+    return king;
+  })();
+  state.inFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    state.inFlight.delete(cacheKey);
+  }
+}
+
+function parkKingCardHtml(king, venue = "", { id = "", compact = false } = {}) {
+  const selectedVenue = king?.venue_name || venueLabel(venue);
+  const content = king
+    ? `<div class="park-king-rider">${avatarHtml(king, "park-king-avatar")}<div><strong>${escapeHtml(king.display_name)}</strong><small>${Number(king.points || 0)} park points</small></div></div>`
+    : `<div class="park-king-empty"><strong>No leader yet</strong><small>Complete scored work at this park to take the title.</small></div>`;
+  return `<section ${id ? `id="${escapeHtml(id)}"` : ""} class="park-king-card ${compact ? "compact" : ""}">
+    <div class="park-king-label"><span>King of the Park</span><small>${escapeHtml(selectedVenue)}</small></div>
+    ${content}
+  </section>`;
+}
+
+async function refreshParkKingCard(id, venue = "", compact = true) {
+  const element = document.getElementById(id);
+  if (!element || !venueKey(venue)) return;
+  const king = await getParkKing(venue, { force: true });
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = parkKingCardHtml(king, venue, { id, compact });
+  element.replaceWith(wrapper.firstElementChild);
 }
 
 function sessionStatBarHtml({ points = 0, percent = 0, rank = 0 } = {}) {
@@ -3841,12 +3899,15 @@ async function renderSession() {
     percent: weeklyCompletionPercent(assignments, awards),
     rank,
   });
+  const parkKingPromise = getParkKing(selectedVenue);
   await loadActiveSession();
+  const parkKing = await parkKingPromise;
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       ${statBar}
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
+      ${parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true)}
       ${extraTricksSection(state.profile, true)}
       ${helpUploadSection(helpRequests)}`;
@@ -3869,6 +3930,7 @@ async function renderSession() {
     ${statBar}
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
+    ${parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
     ${assignmentGroups(assignments, true)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
@@ -3944,9 +4006,10 @@ async function recordAssignmentAction(event) {
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.assignmentAction === "landed");
-  const { data, error } = await client.rpc("record_assignment_action", {
+  const { data, error } = await client.rpc("record_assignment_action_at_venue", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
+    p_venue: state.selectedVenue || "",
   });
   if (error) {
     clearPendingAssignmentProgress(button.dataset.assignmentId);
@@ -3958,6 +4021,7 @@ async function recordAssignmentAction(event) {
   const result = Array.isArray(data) ? data[0] : data;
   cacheClear(`schedule:${state.user.id}:`);
   cacheClear("leaderboard");
+  cacheClear("park-king:");
   const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
   const message = `${result.message}${pointsNote}.`;
   const dailyCompleteResult = result.category === "daily" && (result.daily_complete || (result.progress_date === assignmentLocalDate({ athlete_country_code: state.profile?.country_code }) && Number(result.points_awarded || 0) > 0));
@@ -4007,10 +4071,11 @@ async function recordPercentageAttempt(event) {
     : button.dataset.percentageAction === "true";
   const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
   setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
-  const { data, error } = await client.rpc("set_percentage_attempt", {
+  const { data, error } = await client.rpc("set_percentage_attempt_at_venue", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: attemptNumber,
     p_landed: clearAttempt ? null : landed,
+    p_venue: state.selectedVenue || "",
   });
   if (error) {
     clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
@@ -4020,6 +4085,7 @@ async function recordPercentageAttempt(event) {
   const result = Array.isArray(data) ? data[0] : data;
   cacheClear(`schedule:${state.user.id}:`);
   cacheClear("leaderboard");
+  cacheClear("park-king:");
   const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
   notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempt_number} ${actionText}. ${result.attempts}/10 saved.`));
   await refreshOwnXpAfterAction();
@@ -4692,6 +4758,8 @@ async function renderSessionViewer() {
     });
   }
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
+  const parkKing = await getParkKing(state.sessionViewerVenue);
+  if (state.view !== "sessionViewer") return;
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map((entry) => {
     const { athlete, daily, venue, participant } = entry;
@@ -4736,7 +4804,8 @@ async function renderSessionViewer() {
     ${extraRiderForm}
     <section class="session-viewer-layout">
       <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
-    </section>`;
+    </section>
+    ${parkKingCardHtml(parkKing, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true })}`;
   bindSessionViewerActions();
   updateGroupSessionTimerDom();
   state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
@@ -5011,9 +5080,10 @@ async function recordViewerAssignmentAction(event) {
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
-  const { data, error } = await client.rpc("record_assignment_action", {
+  const { data, error } = await client.rpc("record_assignment_action_at_venue", {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.viewerAssignmentAction,
+    p_venue: state.sessionViewerVenue || "",
   });
   if (error) {
     clearPendingAssignmentProgress(button.dataset.assignmentId);
@@ -5026,6 +5096,7 @@ async function recordViewerAssignmentAction(event) {
   const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
   if (athleteId) cacheClear(`schedule:${athleteId}:`);
   cacheClear("leaderboard");
+  cacheClear("park-king:");
   const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
   const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
   const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
@@ -5067,10 +5138,11 @@ async function recordViewerPercentageAttempt(event) {
     : button.dataset.percentageAction === "true";
   const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
   setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
-  const { data, error } = await client.rpc("set_percentage_attempt", {
+  const { data, error } = await client.rpc("set_percentage_attempt_at_venue", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: attemptNumber,
     p_landed: clearAttempt ? null : landed,
+    p_venue: state.sessionViewerVenue || "",
   });
   if (error) {
     clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
@@ -5081,6 +5153,7 @@ async function recordViewerPercentageAttempt(event) {
   const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
   if (athleteId) cacheClear(`schedule:${athleteId}:`);
   cacheClear("leaderboard");
+  cacheClear("park-king:");
   const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
   notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempt_number} ${actionText}. ${result.attempts}/10 saved.`));
   await refreshSessionViewerLight();
@@ -5202,6 +5275,7 @@ async function refreshSessionViewerLight() {
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   bindSessionViewerFastActions();
+  refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
 }
 
 function bindSessionViewerFastActions() {
