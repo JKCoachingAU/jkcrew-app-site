@@ -66,6 +66,7 @@ const state = {
   coachRosterIds: new Set(),
   sessionRenderVersion: 0,
   sessionViewerRenderVersion: 0,
+  sessionViewerDataVersion: 0,
   parkKingRequestSerial: 0,
   commandParkKingVenue: "",
   commandParkKingRows: [],
@@ -87,6 +88,11 @@ function cacheClear(prefix = "") {
   Object.keys(state.cache || {}).forEach((key) => {
     if (!prefix || key.startsWith(prefix)) delete state.cache[key];
   });
+}
+
+function invalidateSessionViewerData() {
+  state.sessionViewerDataVersion += 1;
+  cacheClear("coach-live:");
 }
 
 const athleteNav = [
@@ -359,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.16`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.46`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -629,7 +635,10 @@ async function installApp() {
 
 function setLoading(label = "Loading") {
   const view = document.querySelector("#view");
-  if (view) view.innerHTML = `<div class="loading">${escapeHtml(label)}...</div>`;
+  if (view) {
+    view.setAttribute("aria-busy", "true");
+    view.innerHTML = `<div class="loading" role="status">${escapeHtml(label)}...</div>`;
+  }
 }
 
 function withTimeout(promise, label = "Request", ms = 6000) {
@@ -638,6 +647,19 @@ function withTimeout(promise, label = "Request", ms = 6000) {
     timeoutId = setTimeout(() => reject(new Error(`${label} timed out. Check your connection and try again.`)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+function setButtonBusy(button, label) {
+  if (!button) return () => {};
+  const previousText = button.textContent;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  if (label) button.textContent = label;
+  return () => {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    if (label) button.textContent = previousText;
+  };
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -718,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.16" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.46" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -784,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.16" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.46" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -799,8 +821,8 @@ function renderAuth(mode = "login", message = "") {
           <h2>${mode === "login" ? "Sign in" : "Join the crew"}</h2>
           <p class="subcopy">${mode === "login" ? "Pick up where you left off." : "Create your athlete or parent account."}</p>
           <div class="auth-tabs">
-            <button class="auth-tab ${mode === "login" ? "active" : ""}" data-auth-mode="login">Sign in</button>
-            <button class="auth-tab ${mode === "signup" ? "active" : ""}" data-auth-mode="signup">Create account</button>
+            <button class="auth-tab ${mode === "login" ? "active" : ""}" type="button" data-auth-mode="login">Sign in</button>
+            <button class="auth-tab ${mode === "signup" ? "active" : ""}" type="button" data-auth-mode="signup">Create account</button>
           </div>
           <form id="auth-form">
             <div class="field ${mode === "signup" ? "" : "hidden"}">
@@ -915,7 +937,7 @@ function renderShell() {
   const role = state.profile.role;
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
   const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
-  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
+  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
         <details class="sidebar-nav-group">
@@ -928,14 +950,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.16" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.46" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.16" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.46" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1078,10 +1100,27 @@ async function navigate(view) {
     profile: renderProfile,
   };
   try {
+    if (!renders[view]) throw new Error("That screen is not available.");
     await renders[view]();
   } catch (error) {
-    document.querySelector("#view").innerHTML = `<div class="empty">Could not load this screen.</div>`;
+    const fallbackView = isCoachRole(state.profile?.role) ? "command" : "home";
+    const viewElement = document.querySelector("#view");
+    if (viewElement) {
+      viewElement.innerHTML = `<section class="panel view-error" role="alert">
+        <div class="eyebrow">Connection interrupted</div>
+        <h2>This screen did not finish loading</h2>
+        <p>Your information is safe. Check your connection, then retry this screen.</p>
+        <div class="view-error-actions">
+          <button id="retry-current-view" class="primary-btn" type="button">Retry</button>
+          ${view !== fallbackView ? `<button id="return-to-safe-view" class="secondary-btn" type="button">${isCoachRole(state.profile?.role) ? "Coach dashboard" : "Home"}</button>` : ""}
+        </div>
+      </section>`;
+      viewElement.querySelector("#retry-current-view")?.addEventListener("click", () => navigate(view));
+      viewElement.querySelector("#return-to-safe-view")?.addEventListener("click", () => navigate(fallbackView));
+    }
     notify(messageFrom(error), "error");
+  } finally {
+    document.querySelector("#view")?.removeAttribute("aria-busy");
   }
 }
 
@@ -1206,10 +1245,12 @@ function isRelevantRealtimePayload(table, payload = {}) {
 
 function invalidateCachesForRealtime(table) {
   if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
+  if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "weekly_trick_assignments", "coach_group_session_participants"].includes(table)) {
+    invalidateSessionViewerData();
+  }
   if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "leaderboard_point_adjustments", "training_sessions", "xp_ledger"].includes(table)) {
     cacheClear("leaderboard");
     cacheClear("schedule:");
-    cacheClear("coach-live:");
     cacheClear("coach-command:");
   }
   if (["weekly_trick_assignments", "coach_group_session_participants", "trick_requests", "profiles"].includes(table)) {
@@ -1222,7 +1263,7 @@ function invalidateCachesForRealtime(table) {
 function clearCoachCaches({ roster = false, command = true, sessionViewer = true, leaderboard = false } = {}) {
   if (roster) cacheClear("roster");
   if (command) cacheClear("coach-command:");
-  if (sessionViewer) cacheClear("coach-live:");
+  if (sessionViewer) invalidateSessionViewerData();
   if (leaderboard) cacheClear("leaderboard");
   cacheClear("schedule:");
 }
@@ -1712,32 +1753,32 @@ async function getActiveCoachGroupSession() {
   return data?.[0] || null;
 }
 
-async function getSessionViewerPlanData(athletes = []) {
+async function getSessionViewerPlanData(athletes = [], { force = false } = {}) {
   if (!athletes.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
   const athleteRows = athletes.map((athlete) => typeof athlete === "string" ? { id: athlete, country_code: "AU" } : athlete).filter((athlete) => athlete?.id);
   const safeAthleteIds = [...new Set(athleteRows.map((athlete) => athlete.id))];
   if (!safeAthleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
   const weekStartByAthlete = new Map(athleteRows.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
   const weekStarts = [...new Set(weekStartByAthlete.values())];
-  const [{ data: assignments, error }, { data: runs, error: runsError }] = await Promise.all([
-    client.from("weekly_trick_assignments")
+  const cacheKey = `coach-live:plans:${state.sessionViewerDataVersion}:${[...safeAthleteIds].sort().join(",")}:${[...weekStarts].sort().join(",")}`;
+  if (!force) {
+    const cached = cacheGet(cacheKey, 12000);
+    if (cached) return cached;
+    if (state.inFlight.has(cacheKey)) return state.inFlight.get(cacheKey);
+  }
+
+  const requestKey = force ? `${cacheKey}:force` : cacheKey;
+  const request = (async () => {
+    const { data: assignments, error } = await client.from("weekly_trick_assignments")
       .select("*")
       .in("athlete_id", safeAthleteIds)
       .in("week_start", weekStarts)
-      .order("sort_order", { ascending: true }),
-    client.from("run_plans")
-      .select("*")
-      .in("athlete_id", safeAthleteIds)
-      .is("archived_at", null)
-      .order("updated_at", { ascending: false }),
-  ]);
-  if (error) throw error;
-  if (runsError) throw runsError;
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
 
-  const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category] && assignment.week_start === weekStartByAthlete.get(assignment.athlete_id));
-  const assignmentIds = currentAssignments.map((assignment) => assignment.id).filter(Boolean);
-  const runIds = (runs || []).map((run) => run.id).filter(Boolean);
-  const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: runProgress, error: runProgressError }, { data: awards, error: awardsError }] = await Promise.all([
+    const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category] && assignment.week_start === weekStartByAthlete.get(assignment.athlete_id));
+    const assignmentIds = currentAssignments.map((assignment) => assignment.id).filter(Boolean);
+    const [{ data: progress, error: progressError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }, { data: awards, error: awardsError }] = await Promise.all([
     assignmentIds.length
       ? client.from("assignment_progress").select("*").in("assignment_id", assignmentIds)
       : { data: [], error: null },
@@ -1747,58 +1788,49 @@ async function getSessionViewerPlanData(athletes = []) {
     assignmentIds.length
       ? client.from("assignment_attempts").select("*").in("assignment_id", assignmentIds).in("week_start", weekStarts).order("attempted_at", { ascending: false })
       : { data: [], error: null },
-    runIds.length
-      ? client.from("run_checklist_progress").select("*").in("run_plan_id", runIds)
-      : { data: [], error: null },
     assignmentIds.length
       ? client.from("assignment_point_awards").select("assignment_id, points, created_at").in("assignment_id", assignmentIds).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString())
       : { data: [], error: null },
-  ]);
-  if (progressError) throw progressError;
-  if (percentageError) throw percentageError;
-  if (attemptError) throw attemptError;
-  if (runProgressError) throw runProgressError;
-  if (awardsError) throw awardsError;
-  const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
-  const awardsByAssignmentId = new Map();
-  (awards || []).forEach((award) => {
-    if (!award.assignment_id || Number(award.points || 0) <= 0) return;
-    const rows = awardsByAssignmentId.get(award.assignment_id) || [];
-    rows.push(award);
-    awardsByAssignmentId.set(award.assignment_id, rows);
-  });
-  const attemptsById = new Map();
-  (percentageAttempts || []).forEach((attempt) => {
-    const rows = attemptsById.get(attempt.assignment_id) || [];
-    rows.push(attempt);
-    attemptsById.set(attempt.assignment_id, rows);
-  });
-  const assignmentAttemptsById = new Map();
-  (assignmentAttempts || []).forEach((attempt) => {
-    const rows = assignmentAttemptsById.get(attempt.assignment_id) || [];
-    rows.push(attempt);
-    assignmentAttemptsById.set(attempt.assignment_id, rows);
-  });
-  const assignmentsByAthlete = new Map();
-  currentAssignments.forEach((assignment) => {
-    const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-    const assignmentProgress = reconcileAwardedProgress(assignment, progressById.get(assignment.id) || null, awardsByAssignmentId.get(assignment.id) || []);
-    rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
-    assignmentsByAthlete.set(assignment.athlete_id, rows);
-  });
-  const runsByAthlete = new Map();
-  (runs || []).forEach((run) => {
-    const rows = runsByAthlete.get(run.athlete_id) || [];
-    rows.push(run);
-    runsByAthlete.set(run.athlete_id, rows);
-  });
-  const runProgressByPlan = new Map();
-  (runProgress || []).forEach((row) => {
-    const rows = runProgressByPlan.get(row.run_plan_id) || [];
-    rows.push(row);
-    runProgressByPlan.set(row.run_plan_id, rows);
-  });
-  return { assignmentsByAthlete, runsByAthlete, runProgressByPlan };
+    ]);
+    if (progressError) throw progressError;
+    if (percentageError) throw percentageError;
+    if (attemptError) throw attemptError;
+    if (awardsError) throw awardsError;
+    const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
+    const awardsByAssignmentId = new Map();
+    (awards || []).forEach((award) => {
+      if (!award.assignment_id || Number(award.points || 0) <= 0) return;
+      const rows = awardsByAssignmentId.get(award.assignment_id) || [];
+      rows.push(award);
+      awardsByAssignmentId.set(award.assignment_id, rows);
+    });
+    const attemptsById = new Map();
+    (percentageAttempts || []).forEach((attempt) => {
+      const rows = attemptsById.get(attempt.assignment_id) || [];
+      rows.push(attempt);
+      attemptsById.set(attempt.assignment_id, rows);
+    });
+    const assignmentAttemptsById = new Map();
+    (assignmentAttempts || []).forEach((attempt) => {
+      const rows = assignmentAttemptsById.get(attempt.assignment_id) || [];
+      rows.push(attempt);
+      assignmentAttemptsById.set(attempt.assignment_id, rows);
+    });
+    const assignmentsByAthlete = new Map();
+    currentAssignments.forEach((assignment) => {
+      const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
+      const assignmentProgress = reconcileAwardedProgress(assignment, progressById.get(assignment.id) || null, awardsByAssignmentId.get(assignment.id) || []);
+      rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] });
+      assignmentsByAthlete.set(assignment.athlete_id, rows);
+    });
+    return cacheSet(cacheKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() });
+  })();
+  state.inFlight.set(requestKey, request);
+  try {
+    return await request;
+  } finally {
+    state.inFlight.delete(requestKey);
+  }
 }
 
 const categoryInfo = {
@@ -2645,7 +2677,7 @@ function athleteOverviewHtml(roster = [], commandData = {}) {
     const attention = athleteAttention(athlete, commandData);
     const alert = status.coach_alert || attention.flags[0] || "No urgent alert";
     return `<article class="overview-card">
-      <button class="student-chip overview-person" data-open-student="${athlete.id}">${avatarHtml(athlete, "student-chip-avatar")}<span>${escapeHtml(athlete.display_name)}</span></button>
+      <button class="student-chip overview-person" type="button" data-open-student="${athlete.id}">${avatarHtml(athlete, "student-chip-avatar")}<span>${escapeHtml(athlete.display_name)}</span></button>
       <div>${heatChip(status.heat_status || "on_track")}<small>${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))} · ${escapeHtml(status.training_focus || "No focus set")}</small><p>${escapeHtml(alert)}</p></div>
       <form class="heat-form" data-heat-athlete="${athlete.id}">
         <select name="heatStatus">${Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}" ${(status.heat_status || "on_track") === value ? "selected" : ""}>${info.label}</option>`).join("")}</select>
@@ -3016,7 +3048,7 @@ function dashboardItemsHtml(items, editable = true) {
   return items.map((item) => `
     <div class="list-row dashboard-item ${item.completed ? "complete" : ""}">
       <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.item_type)}${dashboardDateLabel(item)}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div>
-      ${editable ? `<div class="item-actions"><button class="secondary-btn compact-btn" data-toggle-item="${item.id}">${item.completed ? "Reopen" : "Done"}</button><button class="danger-btn compact-btn" data-delete-item="${item.id}">Delete</button></div>` : ""}
+      ${editable ? `<div class="item-actions"><button class="secondary-btn compact-btn" type="button" data-toggle-item="${item.id}">${item.completed ? "Reopen" : "Done"}</button><button class="danger-btn compact-btn" type="button" data-delete-item="${item.id}">Delete</button></div>` : ""}
     </div>`).join("");
 }
 
@@ -4645,7 +4677,7 @@ async function renderPublicAthleteProfile() {
     badgeStripHtml(badges, ""),
   ].filter(Boolean).join("");
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, medals, badges, and weekly points history.</p></div><button class="secondary-btn" id="back-to-board">Back to board</button></div>
+    <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, medals, badges, and weekly points history.</p></div><button class="secondary-btn" type="button" id="back-to-board">Back to board</button></div>
     <section class="panel public-profile-card">
       ${avatarHtml(profile, "public-profile-avatar")}
       <div>
@@ -4758,10 +4790,10 @@ async function renderCoachTools() {
     <section class="command-section-group">
       <div class="command-section-heading"><span>01</span><div><strong>Weekly schedule tools</strong><small>Fast shortcuts for planning and feedback</small></div></div>
       <div class="coach-tools-row">
-        <button class="coach-tool-card" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
-        <button class="coach-tool-card" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
-        <button class="coach-tool-card" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
-        <button class="coach-tool-card" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
+        <button class="coach-tool-card" type="button" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
+        <button class="coach-tool-card" type="button" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
+        <button class="coach-tool-card" type="button" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
+        <button class="coach-tool-card" type="button" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
       </div>
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -4969,7 +5001,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       </form>
     </section>` : "";
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" id="viewer-refresh">Refresh</button></div>
+    <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" type="button" id="viewer-refresh">Refresh</button></div>
     <section class="panel group-session-control ${activeGroupSession?.status || "ready"}">
       <div class="group-timer-block"><div class="timer-label">${started ? `${escapeHtml(coachGroupLabel(activeGroupSession.group_name))} · ${escapeHtml(venueLabel(activeGroupSession.venue))}` : "Ready for group session"}</div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? `${escapeHtml(activeGroupSession.status)} · ${schedules.length} riders · ${idleCount} not logged yet` : "Only coach/admin can start, pause, resume or end."}</small></div>
       <div class="group-session-actions">
@@ -5177,83 +5209,113 @@ function bindSessionViewerActions() {
   document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
 }
 
-async function startViewerGroupSession() {
-  const roster = await getCoachRoster();
-  const athleteIds = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup)).map((athlete) => athlete.id);
-  if (!athleteIds.length) return notify("No riders in this group yet.", "error");
-  const { data, error } = await client.rpc("start_coach_group_session", {
-    p_group_name: state.sessionViewerGroup,
-    p_venue: state.sessionViewerVenue || "",
-    p_athlete_ids: athleteIds,
-  });
-  if (error) return notify(messageFrom(error), "error");
-  const result = Array.isArray(data) ? data[0] : data;
-  notify(`Group session started for ${result.participant_count || athleteIds.length} riders.`);
-  state.sessionViewerOpenAthleteId = "";
-  await renderSessionViewer();
+async function startViewerGroupSession(event) {
+  const restoreButton = setButtonBusy(event?.currentTarget, "Starting...");
+  try {
+    const roster = await withTimeout(getCoachRoster(), "Load group riders", 15000);
+    const athleteIds = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup)).map((athlete) => athlete.id);
+    if (!athleteIds.length) return notify("No riders in this group yet.", "error");
+    const { data, error } = await withTimeout(client.rpc("start_coach_group_session", {
+      p_group_name: state.sessionViewerGroup,
+      p_venue: state.sessionViewerVenue || "",
+      p_athlete_ids: athleteIds,
+    }), "Start group session", 20000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify(`Group session started for ${result.participant_count || athleteIds.length} riders.`);
+    state.sessionViewerOpenAthleteId = "";
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
 }
 
 async function addExtraRiderToGroupSession(event) {
   event.preventDefault();
-  const session = await getActiveCoachGroupSession();
-  if (!session) return notify("Start the group session first.", "error");
-  const athleteId = new FormData(event.currentTarget).get("athleteId");
-  if (!athleteId) return notify("Choose a rider to add.", "error");
   const button = event.currentTarget.querySelector("button");
-  button.disabled = true;
-  button.textContent = "Adding...";
-  const { error } = await client.rpc("add_coach_group_session_rider", {
-    p_group_session_id: session.id,
-    p_athlete_id: athleteId,
-  });
-  if (error) {
-    button.disabled = false;
-    button.textContent = "Add to this session";
-    return notify(messageFrom(error), "error");
+  const restoreButton = setButtonBusy(button, "Adding...");
+  try {
+    const session = await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("Start the group session first.", "error");
+    const athleteId = new FormData(event.currentTarget).get("athleteId");
+    if (!athleteId) return notify("Choose a rider to add.", "error");
+    const { error } = await withTimeout(client.rpc("add_coach_group_session_rider", {
+      p_group_session_id: session.id,
+      p_athlete_id: athleteId,
+    }), "Add rider to session", 15000);
+    if (error) throw error;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify("Rider added to this session only.");
+    state.sessionViewerOpenAthleteId = athleteId;
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
   }
-  notify("Rider added to this session only.");
-  state.sessionViewerOpenAthleteId = athleteId;
-  await renderSessionViewer();
 }
 
-async function toggleViewerGroupSessionPause() {
-  const session = await getActiveCoachGroupSession();
-  if (!session) return notify("No live group session to pause.", "error");
-  const action = session.status === "paused" ? "resume" : "pause";
-  const { error } = await client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: action });
-  if (error) return notify(messageFrom(error), "error");
-  notify(action === "pause" ? "Group session paused." : "Group session resumed.");
-  await renderSessionViewer();
+async function toggleViewerGroupSessionPause(event) {
+  const restoreButton = setButtonBusy(event?.currentTarget, "Updating...");
+  try {
+    const session = await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("No live group session to pause.", "error");
+    const action = session.status === "paused" ? "resume" : "pause";
+    const { error } = await withTimeout(client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: action }), `${action} group session`, 15000);
+    if (error) throw error;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify(action === "pause" ? "Group session paused." : "Group session resumed.");
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
 }
 
-async function endViewerGroupSession() {
-  const session = await getActiveCoachGroupSession();
-  if (!session) return notify("No live group session to end.", "error");
-  const { error } = await client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: "end" });
-  if (error) return notify(messageFrom(error), "error");
-  notify("Group session ended and saved.");
-  state.sessionViewerOpenAthleteId = "";
-  await renderSessionViewer();
+async function endViewerGroupSession(event) {
+  const restoreButton = setButtonBusy(event?.currentTarget, "Ending...");
+  try {
+    const session = await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("No live group session to end.", "error");
+    const { error } = await withTimeout(client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: "end" }), "End group session", 15000);
+    if (error) throw error;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify("Group session ended and saved.");
+    state.sessionViewerOpenAthleteId = "";
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
 }
 
 async function finishViewerDailyTimer(event) {
   const button = event.currentTarget;
-  const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
-  if (!session) return notify("Start the group session first.", "error");
-  const seconds = groupSessionElapsedSeconds(session);
-  button.disabled = true;
-  const { data, error } = await client.rpc("finish_group_session_daily", {
-    p_group_session_id: session.id,
-    p_athlete_id: button.dataset.finishDailyAthlete,
-    p_seconds: seconds,
-  });
-  if (error) {
-    button.disabled = false;
-    return notify(messageFrom(error), "error");
+  const restoreButton = setButtonBusy(button, "Saving...");
+  try {
+    const session = state.sessionViewerActiveSessionCache || await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("Start the group session first.", "error");
+    const seconds = groupSessionElapsedSeconds(session);
+    const { data, error } = await withTimeout(client.rpc("finish_group_session_daily", {
+      p_group_session_id: session.id,
+      p_athlete_id: button.dataset.finishDailyAthlete,
+      p_seconds: seconds,
+    }), "Save Daily finish", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    clearCoachCaches({ command: true, sessionViewer: true, leaderboard: true });
+    notify(result?.is_new_pb ? `New Daily PB saved: ${formatPbTime(result.daily_finish_seconds)}` : `Daily finish saved: ${formatPbTime(result?.daily_finish_seconds || seconds)}`);
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
   }
-  const result = Array.isArray(data) ? data[0] : data;
-  notify(result?.is_new_pb ? `New Daily PB saved: ${formatPbTime(result.daily_finish_seconds)}` : `Daily finish saved: ${formatPbTime(result?.daily_finish_seconds || seconds)}`);
-  await renderSessionViewer();
 }
 
 async function recordViewerAssignmentAction(event) {
@@ -5262,61 +5324,72 @@ async function recordViewerAssignmentAction(event) {
   const button = event.currentTarget;
   const row = button.closest(".viewer-trick-row");
   const wasComplete = row?.classList.contains("complete");
-  button.disabled = true;
+  const restoreButton = setButtonBusy(button);
   row?.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
-  const { data, error } = await client.rpc("record_assignment_action_at_venue", {
-    p_assignment_id: button.dataset.assignmentId,
-    p_action: button.dataset.viewerAssignmentAction,
-    p_venue: state.sessionViewerVenue || "",
-  });
-  if (error) {
+  try {
+    const { data, error } = await withTimeout(client.rpc("record_assignment_action_at_venue", {
+      p_assignment_id: button.dataset.assignmentId,
+      p_action: button.dataset.viewerAssignmentAction,
+      p_venue: state.sessionViewerVenue || "",
+    }), "Update trick progress", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
+    if (athleteId) cacheClear(`schedule:${athleteId}:`);
+    invalidateSessionViewerData();
+    cacheClear("leaderboard");
+    cacheClear("park-king:");
+    const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
+    const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
+    const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
+    notify(`${result?.message || "Trick progress updated"}${pointsNote}${timeNote}.`);
+    await refreshSessionViewerLight({ force: true, forceParkKing: true });
+  } catch (error) {
     clearPendingAssignmentProgress(button.dataset.assignmentId);
-    button.disabled = false;
     row?.classList.toggle("complete", Boolean(wasComplete));
     button.textContent = wasComplete ? "✓" : "";
-    return notify(messageFrom(error), "error");
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
   }
-  const result = Array.isArray(data) ? data[0] : data;
-  const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
-  if (athleteId) cacheClear(`schedule:${athleteId}:`);
-  cacheClear("leaderboard");
-  cacheClear("park-king:");
-  const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
-  const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
-  const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
-  notify(`${result?.message || "Trick progress updated"}${pointsNote}${timeNote}.`);
-  await refreshSessionViewerLight();
 }
 
 async function recordViewerAssignmentAttempt(event) {
   const button = event.currentTarget;
   const currentCount = Number(button.querySelector(".attempt-pill")?.textContent || 0);
-  button.disabled = true;
+  const previousHtml = button.innerHTML;
+  const restoreButton = setButtonBusy(button);
   button.classList.add("attempted");
   button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
-  const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
-  const { data, error } = await client.rpc("record_assignment_attempt", {
-    p_assignment_id: button.dataset.viewerAssignmentAttempt,
-    p_group_session_id: session?.id || null,
-  });
-  if (error) {
-    button.disabled = false;
-    return notify(messageFrom(error), "error");
+  try {
+    const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
+    const { data, error } = await withTimeout(client.rpc("record_assignment_attempt", {
+      p_assignment_id: button.dataset.viewerAssignmentAttempt,
+      p_group_session_id: session?.id || null,
+    }), "Save trick attempt", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
+    if (athleteId) cacheClear(`schedule:${athleteId}:`);
+    invalidateSessionViewerData();
+    notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
+    await refreshSessionViewerLight({ force: true });
+  } catch (error) {
+    button.innerHTML = previousHtml;
+    button.classList.toggle("attempted", currentCount > 0);
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
   }
-  const result = Array.isArray(data) ? data[0] : data;
-  const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
-  if (athleteId) cacheClear(`schedule:${athleteId}:`);
-  notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
-  await refreshSessionViewerLight();
 }
 
 async function recordViewerPercentageAttempt(event) {
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
-  button.disabled = true;
+  const restoreButton = setButtonBusy(button);
   const cycleState = button.dataset.percentageCycle || "";
   const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
   const landed = cycleState
@@ -5324,25 +5397,29 @@ async function recordViewerPercentageAttempt(event) {
     : button.dataset.percentageAction === "true";
   const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
   setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
-  const { data, error } = await client.rpc("set_percentage_attempt_at_venue", {
-    p_assignment_id: button.dataset.assignmentId,
-    p_attempt_number: attemptNumber,
-    p_landed: clearAttempt ? null : landed,
-    p_venue: state.sessionViewerVenue || "",
-  });
-  if (error) {
+  try {
+    const { data, error } = await withTimeout(client.rpc("set_percentage_attempt_at_venue", {
+      p_assignment_id: button.dataset.assignmentId,
+      p_attempt_number: attemptNumber,
+      p_landed: clearAttempt ? null : landed,
+      p_venue: state.sessionViewerVenue || "",
+    }), "Save percentage attempt", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
+    if (athleteId) cacheClear(`schedule:${athleteId}:`);
+    invalidateSessionViewerData();
+    cacheClear("leaderboard");
+    cacheClear("park-king:");
+    const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
+    notify(clearAttempt ? `Attempt cleared. New result: ${result?.percentage || 0}%.` : (result?.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result?.attempt_number || attemptNumber} ${actionText}. ${result?.attempts || 0}/10 saved.`));
+    await refreshSessionViewerLight({ force: true, forceParkKing: true });
+  } catch (error) {
     clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
-    button.disabled = false;
-    return notify(messageFrom(error), "error");
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
   }
-  const result = Array.isArray(data) ? data[0] : data;
-  const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
-  if (athleteId) cacheClear(`schedule:${athleteId}:`);
-  cacheClear("leaderboard");
-  cacheClear("park-king:");
-  const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
-  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempt_number} ${actionText}. ${result.attempts}/10 saved.`));
-  await refreshSessionViewerLight();
 }
 
 function selectViewerListTab(event) {
@@ -5358,28 +5435,32 @@ async function saveSessionViewerAssignments(event) {
   const venue = formElement.dataset.venue || "";
   if (!athleteId || !categoryInfo[listId]) return notify("Could not save that list.", "error");
   const button = formElement.querySelector("button");
-  button.disabled = true;
-  button.textContent = "Saving...";
+  const restoreButton = setButtonBusy(button, "Saving...");
 
   const editedLines = String(new FormData(formElement).get("assignmentLines") || "").split("\n")
     .map((line, index) => parseAssignmentLine(line.trim(), index, listId, listId === "daily" ? venue : ""))
     .filter(Boolean)
     .slice(0, listId === "percentage" ? 3 : undefined);
 
-  const { error } = await client.rpc("save_weekly_assignment_list", {
-    p_athlete_id: athleteId,
-    p_week_start: weekStartDate(),
-    p_category: listId,
-    p_venue: listId === "daily" ? venue : "",
-    p_assignments: editedLines,
-  });
-  if (error) {
-    button.disabled = false;
-    button.textContent = `Save ${categoryInfo[listId].label}`;
-    return notify(messageFrom(error), "error");
+  try {
+    const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
+    const athleteWeekStart = weekStartDateForCountry(athlete?.country_code || "AU");
+    const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
+      p_athlete_id: athleteId,
+      p_week_start: athleteWeekStart,
+      p_category: listId,
+      p_venue: listId === "daily" ? venue : "",
+      p_assignments: editedLines,
+    }), `Save ${categoryInfo[listId].label}`, 20000);
+    if (error) throw error;
+    clearCoachCaches({ roster: false, command: true, sessionViewer: true, leaderboard: false });
+    notify(`${categoryInfo[listId].label} saved for this rider.`);
+    await refreshSessionViewerLight({ force: true });
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
   }
-  notify(`${categoryInfo[listId].label} saved for this rider.`);
-  await refreshSessionViewerLight();
 }
 
 async function toggleViewerGoal(event) {
@@ -5421,7 +5502,7 @@ async function toggleViewerRunPoint(event) {
   await refreshSessionViewerLight();
 }
 
-async function refreshSessionViewerLight() {
+async function refreshSessionViewerLight({ force = false, forceParkKing = false } = {}) {
   if (state.view !== "sessionViewer") return;
   const rosterGrid = document.querySelector(".viewer-rider-grid");
   if (!rosterGrid) return renderSessionViewer();
@@ -5432,7 +5513,7 @@ async function refreshSessionViewerLight() {
   const filteredRoster = roster
     .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
     .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster);
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, { force });
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
       const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
@@ -5461,7 +5542,7 @@ async function refreshSessionViewerLight() {
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   bindSessionViewerFastActions();
-  refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
+  refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, forceParkKing);
 }
 
 function bindSessionViewerFastActions() {
@@ -6340,7 +6421,7 @@ async function renderCrew() {
       const status = statuses.get(athlete.id) || {};
       return `
       <div class="student-chip-wrap">
-        <button class="student-chip" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
+        <button class="student-chip" type="button" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
           ${avatarHtml(athlete, "student-chip-avatar")}
           <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small></span>
         </button>
@@ -6488,7 +6569,7 @@ async function renderCoachPreview(mode = "student") {
     tricktionaryData,
   });
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" data-view="student">Back to profile</button><button class="secondary-btn" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
+    <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" type="button" data-view="student">Back to profile</button><button class="secondary-btn" type="button" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
     <section class="coach-preview-shell">
       <div class="phone-preview-frame">
         <div class="preview-phone-tabs">${tabs.map(([id, label]) => `<button class="${id === activeTab ? "active" : ""}" type="button" data-preview-tab="${id}">${escapeHtml(label)}</button>`).join("")}</div>
@@ -6688,7 +6769,7 @@ async function renderParents() {
         const parent = parents.find((entry) => entry.id === link.parent_id);
         return parent ? `${parent.display_name}${link.relationship ? ` (${link.relationship})` : ""}` : "Parent";
       }).join(", ") : "No linked parents";
-      return `<div class="list-row"><button class="student-chip compact-student-chip" data-open-student="${athlete.id}">${avatarHtml(athlete)}<span>${escapeHtml(athlete.display_name)}</span></button><small>${escapeHtml(parentNames)}</small></div>`;
+      return `<div class="list-row"><button class="student-chip compact-student-chip" type="button" data-open-student="${athlete.id}">${avatarHtml(athlete)}<span>${escapeHtml(athlete.display_name)}</span></button><small>${escapeHtml(parentNames)}</small></div>`;
     }).join("") : `<div class="empty compact-empty">No riders in this group.</div>`;
     return `<section class="group-column parent-group-column"><div class="group-head"><div><div class="panel-title">${escapeHtml(label)}</div><div class="panel-meta">${athletes.length} rider${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${rows}</div></section>`;
   }).join("");
@@ -6861,7 +6942,7 @@ async function renderStudentProfile() {
   const linkedParentsHtml = linkedParents.length ? linkedParents.map((parent) => `
     <div class="list-row parent-link-row">
       <div class="person">${avatarHtml(parent)}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}${parent.phone ? ` · ${escapeHtml(parent.phone)}` : ""} · ${escapeHtml(linkByParent.get(parent.id)?.relationship || "Guardian")} · Linked</small></div></div>
-      <button class="danger-btn compact-btn" data-unlink-parent="${parent.id}">Unlink</button>
+      <button class="danger-btn compact-btn" type="button" data-unlink-parent="${parent.id}">Unlink</button>
     </div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
   const categoryEditor = scheduleEditorHtml(assignments, coachVenues);
@@ -6869,7 +6950,7 @@ async function renderStudentProfile() {
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
   const scoreXp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" id="back-to-students">All students</button></div></div>
+    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
       <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
@@ -8482,7 +8563,7 @@ async function renderProfile() {
           <button class="secondary-btn wide" type="submit">Change password</button>
         </form>
         <div class="settings-divider"></div>
-        <button class="danger-btn wide" id="sign-out">Sign out</button>
+        <button class="danger-btn wide" type="button" id="sign-out">Sign out</button>
       </section>
     </div>
     ${coachPbSection}
