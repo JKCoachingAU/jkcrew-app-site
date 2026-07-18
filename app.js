@@ -17,6 +17,7 @@ const PROFILE_SHOWREEL_BUCKET = "profile-showreels";
 const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
 const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const state = {
   session: null,
   user: null,
@@ -740,7 +741,14 @@ async function handleSession(session) {
   }
   state.profile = data;
   applyTheme(data.app_theme);
-  state.view = isCoachRole(data.role) ? "command" : "home";
+  const pushView = new URL(window.location.href).searchParams.get("push");
+  const allowedPushViews = new Set(["home", "board"]);
+  state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
+  if (pushView) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("push");
+    window.history.replaceState({}, "", cleanUrl.href);
+  }
   setupRealtimeSync();
   renderShell();
   navigate(state.view);
@@ -3331,7 +3339,7 @@ function statCardRaw(label, body, foot, className = "") {
   return `<article class="stat-card ${className}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${body}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
 }
 
-const completionCategories = new Set(["dialled", "one_bang", "foam", "bonus", "percentage"]);
+const completionCategories = new Set(["dialled", "one_bang", "foam", "foam_pit", "bonus", "percentage"]);
 const completionAssignments = (assignments = []) => assignments.filter((assignment) => completionCategories.has(assignment.category));
 
 function weeklyCompletionPercent(assignments, awards) {
@@ -7687,10 +7695,194 @@ async function clearCoachDailyPb(event) {
   await renderProfile();
 }
 
+function supportsPushNotifications() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+function urlBase64ToUint8Array(value = "") {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+}
+
+async function getPushNotificationState() {
+  const defaults = {
+    leaderboard_overtaken: true,
+    crew_chat: true,
+    parent_weekly_summary: true,
+  };
+  if (!state.user?.id || !supportsPushNotifications()) {
+    return { supported: false, enabled: false, permission: "unsupported", preferences: defaults };
+  }
+
+  const { data: preferences, error } = await client.from("push_preferences")
+    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary")
+    .eq("user_id", state.user.id)
+    .maybeSingle();
+  if (error) throw error;
+
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = registration ? await registration.pushManager.getSubscription() : null;
+  return {
+    supported: true,
+    enabled: Boolean(subscription) && Notification.permission === "granted",
+    permission: Notification.permission,
+    preferences: { ...defaults, ...(preferences || {}) },
+  };
+}
+
+function pushNotificationSettingsHtml(pushState) {
+  const role = state.profile?.role;
+  const status = !pushState.supported
+    ? "Not supported in this browser"
+    : pushState.enabled
+      ? "Enabled on this device"
+      : pushState.permission === "denied"
+        ? "Blocked in browser settings"
+        : "Off on this device";
+  const actionLabel = pushState.enabled ? "Turn off on this device" : "Enable push notifications";
+  const preference = pushState.preferences || {};
+  return `
+    <section class="push-settings-card ${pushState.enabled ? "active" : ""}">
+      <div class="push-settings-head">
+        <div>
+          <strong>Push notifications</strong>
+          <small>${escapeHtml(status)}</small>
+        </div>
+        <button class="${pushState.enabled ? "secondary-btn" : "primary-btn"}" type="button" id="toggle-push-notifications" ${pushState.supported ? "" : "disabled"}>${escapeHtml(actionLabel)}</button>
+      </div>
+      <div class="push-preference-list">
+        ${role === "athlete" ? `
+          <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
+          <label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>
+        ` : ""}
+        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>` : ""}
+        ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label>` : ""}
+      </div>
+      <p>Notifications are set separately on each phone, tablet, or computer. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
+    </section>`;
+}
+
+function currentPushPreferences() {
+  const checkboxValue = (name, fallback = true) => {
+    const input = document.querySelector(`[data-push-preference="${name}"]`);
+    return input ? input.checked : fallback;
+  };
+  return {
+    user_id: state.user.id,
+    leaderboard_overtaken: checkboxValue("leaderboard_overtaken"),
+    crew_chat: checkboxValue("crew_chat"),
+    parent_weekly_summary: checkboxValue("parent_weekly_summary"),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function savePushPreferences({ quiet = false } = {}) {
+  const { error } = await client.from("push_preferences")
+    .upsert(currentPushPreferences(), { onConflict: "user_id" });
+  if (error) throw error;
+  if (!quiet) notify("Notification preferences saved.");
+}
+
+async function enablePushNotifications(button) {
+  if (!supportsPushNotifications()) throw new Error("Push notifications are not supported in this browser.");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error("Notifications are blocked. Allow them in your browser or phone settings, then try again.");
+  }
+  const registration = await withTimeout(navigator.serviceWorker.ready, "Notification setup", 12000);
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(PUSH_VAPID_PUBLIC_KEY),
+    });
+  }
+  const json = subscription.toJSON();
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error("This device did not provide a complete push subscription.");
+  }
+  const { error } = await client.from("push_subscriptions").upsert({
+    user_id: state.user.id,
+    endpoint: json.endpoint,
+    p256dh: json.keys.p256dh,
+    auth: json.keys.auth,
+    enabled: true,
+    user_agent: navigator.userAgent.slice(0, 500),
+    device_label: navigator.platform || "JK Coaching device",
+    last_error: "",
+    failure_count: 0,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "endpoint" });
+  if (error) throw error;
+  await savePushPreferences({ quiet: true });
+  notify("Push notifications are on for this device.");
+  if (button) button.textContent = "Enabled";
+}
+
+async function disablePushNotifications() {
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = registration ? await registration.pushManager.getSubscription() : null;
+  if (subscription) {
+    const { error } = await client.from("push_subscriptions")
+      .delete()
+      .eq("user_id", state.user.id)
+      .eq("endpoint", subscription.endpoint);
+    if (error) throw error;
+    await subscription.unsubscribe();
+  }
+  notify("Push notifications are off on this device.");
+}
+
+async function signOutCurrentDevice() {
+  try {
+    if (supportsPushNotifications()) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = registration ? await registration.pushManager.getSubscription() : null;
+      if (subscription) {
+        await client.from("push_subscriptions")
+          .delete()
+          .eq("user_id", state.user.id)
+          .eq("endpoint", subscription.endpoint);
+        await subscription.unsubscribe();
+      }
+    }
+  } catch (error) {
+    console.warn("Push subscription cleanup failed during sign out", error);
+  }
+  await client.auth.signOut();
+}
+
+async function togglePushNotifications(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Updating...";
+  try {
+    const pushState = await getPushNotificationState();
+    if (pushState.enabled) await disablePushNotifications();
+    else await enablePushNotifications(button);
+    await renderProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Try again";
+    notify(messageFrom(error), "error");
+  }
+}
+
 async function renderProfile() {
   let trainingHistorySection = "";
   let coachPbSection = "";
   let xpProfileSection = "";
+  const pushState = await getPushNotificationState().catch((error) => {
+    console.warn("Push notification settings could not load", error);
+    return {
+      supported: supportsPushNotifications(),
+      enabled: false,
+      permission: supportsPushNotifications() ? Notification.permission : "unsupported",
+      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true },
+    };
+  });
   try {
     if (state.profile.role === "athlete") {
       const [historyData, xpSummary, xpHistory, showreels] = await Promise.all([
@@ -7728,6 +7920,8 @@ async function renderProfile() {
       <section class="panel">
         <div class="panel-head"><div class="panel-title">Account settings</div></div>
         <form id="own-avatar-form" class="avatar-settings"><input id="own-avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-own-avatar">Upload / change my picture</button><button class="danger-btn" type="button" id="remove-own-avatar">Remove picture</button></form>
+        <div class="settings-divider"></div>
+        ${pushNotificationSettingsHtml(pushState)}
         <div class="settings-divider"></div>
         ${state.profile.role === "athlete" ? `${showreelHtml(state.profile, true)}<div class="settings-divider"></div>` : ""}
         <form id="profile-form">
@@ -7791,11 +7985,15 @@ async function renderProfile() {
   document.querySelectorAll("[data-remove-showreel]").forEach((button) => button.addEventListener("click", removeShowreelVideo));
   document.querySelector("#open-contests-from-profile")?.addEventListener("click", () => navigate("contests"));
   document.querySelector("#profile-theme")?.addEventListener("change", (event) => applyTheme(event.target.value));
+  document.querySelector("#toggle-push-notifications")?.addEventListener("click", togglePushNotifications);
+  document.querySelectorAll("[data-push-preference]").forEach((input) => input.addEventListener("change", () => {
+    savePushPreferences().catch((error) => notify(messageFrom(error), "error"));
+  }));
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);
   document.querySelector("#password-form").addEventListener("submit", updatePassword);
   document.querySelector("#coach-daily-pb-form")?.addEventListener("submit", saveCoachDailyPb);
   document.querySelector("#clear-daily-pb")?.addEventListener("click", clearCoachDailyPb);
-  document.querySelector("#sign-out").addEventListener("click", () => client.auth.signOut());
+  document.querySelector("#sign-out").addEventListener("click", signOutCurrentDevice);
 }
 
 async function updateOwnAvatar(event) {
@@ -7995,3 +8193,11 @@ window.addEventListener("load", async () => {
     }
   }
 });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
+    const view = ["home", "board"].includes(event.data.view) ? event.data.view : "home";
+    navigate(view);
+  });
+}

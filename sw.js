@@ -1,17 +1,17 @@
-const CACHE_NAME = "jkcrew-shell-v2.11.33";
+const CACHE_NAME = "jkcrew-shell-v2.11.34";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.11.33",
-  "./app.js?v=2.11.33",
-  "./manifest.webmanifest?v=2.11.33",
-  "./icons/jkc-logo.png?v=2.11.33",
-  "./icons/jkcoaching-wordmark.png?v=2.11.33",
+  "./styles.css?v=2.11.34",
+  "./app.js?v=2.11.34",
+  "./manifest.webmanifest?v=2.11.34",
+  "./icons/jkc-logo.png?v=2.11.34",
+  "./icons/jkcoaching-wordmark.png?v=2.11.34",
   "./icons/app-icon.svg",
-  "./icons/app-icon-192.png?v=2.11.33",
-  "./icons/app-icon-512.png?v=2.11.33",
-  "./icons/app-icon-maskable-512.png?v=2.11.33",
-  "./icons/apple-touch-icon.png?v=2.11.33",
+  "./icons/app-icon-192.png?v=2.11.34",
+  "./icons/app-icon-512.png?v=2.11.34",
+  "./icons/app-icon-maskable-512.png?v=2.11.34",
+  "./icons/apple-touch-icon.png?v=2.11.34",
 ];
 
 self.addEventListener("install", (event) => {
@@ -61,4 +61,41 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => caches.match(event.request)),
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json() || {};
+  } catch (_error) {
+    payload = { body: event.data?.text() || "You have a new JKCREW update." };
+  }
+  const title = payload.title || "JK Coaching";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: payload.body || "You have a new JKCREW update.",
+    icon: "./icons/app-icon-192.png?v=2.11.34",
+    badge: "./icons/app-icon-192.png?v=2.11.34",
+    tag: payload.notificationId || payload.type || "jkcrew-update",
+    renotify: payload.type === "crew_chat",
+    data: {
+      url: payload.url || "./",
+      view: payload.view || (payload.type === "parent_weekly_summary" ? "home" : "board"),
+    },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "./", self.registration.scope).href;
+  const view = event.notification.data?.view || "home";
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = clients.find((client) => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      await existing.focus();
+      existing.postMessage({ type: "JKCREW_PUSH_NAVIGATE", view });
+      return;
+    }
+    await self.clients.openWindow(targetUrl);
+  })());
 });
