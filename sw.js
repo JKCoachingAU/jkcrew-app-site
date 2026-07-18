@@ -1,17 +1,16 @@
-const CACHE_NAME = "jkcrew-shell-v2.11.38";
+const CACHE_NAME = "jkcrew-shell-v2.11.39";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.11.38",
-  "./app.js?v=2.11.38",
-  "./manifest.webmanifest?v=2.11.38",
-  "./icons/jkc-logo.png?v=2.11.38",
-  "./icons/jkcoaching-wordmark.png?v=2.11.38",
-  "./icons/app-icon.svg",
-  "./icons/app-icon-192.png?v=2.11.38",
-  "./icons/app-icon-512.png?v=2.11.38",
-  "./icons/app-icon-maskable-512.png?v=2.11.38",
-  "./icons/apple-touch-icon.png?v=2.11.38",
+  "./styles.css?v=2.11.39",
+  "./app.js?v=2.11.39",
+  "./manifest.webmanifest?v=2.11.39",
+  "./icons/jkc-logo.png?v=2.11.39",
+  "./icons/jkcoaching-wordmark.png?v=2.11.39",
+  "./icons/app-icon-192.png?v=2.11.39",
+  "./icons/app-icon-512.png?v=2.11.39",
+  "./icons/app-icon-maskable-512.png?v=2.11.39",
+  "./icons/apple-touch-icon.png?v=2.11.39",
 ];
 
 self.addEventListener("install", (event) => {
@@ -73,8 +72,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "JK Coaching";
   event.waitUntil(self.registration.showNotification(title, {
     body: payload.body || "You have a new JKCREW update.",
-    icon: "./icons/app-icon-192.png?v=2.11.38",
-    badge: "./icons/app-icon-192.png?v=2.11.38",
+    icon: "./icons/app-icon-192.png?v=2.11.39",
+    badge: "./icons/app-icon-192.png?v=2.11.39",
     tag: payload.notificationId || payload.type || "jkcrew-update",
     renotify: payload.type === "crew_chat",
     data: {
