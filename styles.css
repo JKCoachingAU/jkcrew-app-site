@@ -2487,6 +2487,67 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 }
 .push-preference-list input { width: 19px; height: 19px; accent-color: var(--aqua); }
 .push-settings-card p { margin: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+
+.push-setup-prompt {
+  margin: 14px clamp(16px, 3vw, 42px) 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--aqua) 42%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--aqua) 6%);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.push-setup-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.push-setup-copy strong {
+  font: 800 1.05rem var(--display);
+  text-transform: uppercase;
+}
+
+.push-setup-copy span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.push-setup-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.push-setup-actions button {
+  min-height: 40px;
+  padding: 9px 13px;
+}
+
+.push-setup-dismiss {
+  min-height: 40px;
+  padding: 8px 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.push-setup-dismiss input {
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--aqua);
+}
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .simple-summary strong { color: var(--aqua); font: 900 1.3rem var(--display); }
 .simple-summary p { margin: 10px 0 0; color: var(--muted); line-height: 1.45; }
@@ -4141,6 +4202,10 @@ html[data-theme="light"] .success-burst {
   .topbar-meta { display: none; }
   .push-settings-head { align-items: stretch; flex-direction: column; }
   .push-settings-head button { width: 100%; }
+  .push-setup-prompt { align-items: stretch; flex-direction: column; gap: 10px; }
+  .push-setup-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .push-setup-actions button { width: 100%; }
+  .push-setup-dismiss { grid-column: 1 / -1; justify-content: center; white-space: normal; }
 }
 
 .boot-recovery {

@@ -902,6 +902,95 @@ function renderShell() {
       <nav class="bottom-nav">${bottomNavHtml}</nav>
     </div>`;
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  mountPushSetupPrompt();
+}
+
+function pushSetupDismissKey() {
+  return `jkcrew-push-setup-dismissed:${state.user?.id || "signed-in"}:v1`;
+}
+
+function pushSetupDismissed() {
+  try {
+    return localStorage.getItem(pushSetupDismissKey()) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberPushSetupDismissal() {
+  try {
+    localStorage.setItem(pushSetupDismissKey(), "1");
+  } catch (error) {
+    console.warn("Unable to remember the notification reminder preference.", error);
+  }
+}
+
+async function currentDevicePushEnabled() {
+  if (!supportsPushNotifications() || Notification.permission !== "granted") return false;
+  const registration = await navigator.serviceWorker.getRegistration();
+  return Boolean(registration && await registration.pushManager.getSubscription());
+}
+
+async function mountPushSetupPrompt() {
+  document.querySelector("#push-setup-prompt")?.remove();
+  if (!state.user?.id || pushSetupDismissed()) return;
+
+  try {
+    if (await currentDevicePushEnabled()) return;
+  } catch (error) {
+    console.warn("Push notification status could not be checked.", error);
+  }
+
+  const mainWrap = document.querySelector(".main-wrap");
+  if (!mainWrap) return;
+  const supported = supportsPushNotifications();
+  const needsIosInstall = isIos() && !isStandalone();
+  const actionLabel = supported ? "Turn on notifications" : needsIosInstall ? "Install app first" : "Open notification setup";
+  const prompt = document.createElement("section");
+  prompt.id = "push-setup-prompt";
+  prompt.className = "push-setup-prompt";
+  prompt.setAttribute("aria-label", "Push notification setup");
+  prompt.innerHTML = `
+    <div class="push-setup-copy">
+      <strong>Stay in the loop</strong>
+      <span>Turn on JK Coaching notifications for coach messages, Crew Chat and leaderboard updates.</span>
+    </div>
+    <div class="push-setup-actions">
+      <button class="primary-btn" type="button" id="push-setup-enable">${escapeHtml(actionLabel)}</button>
+      <button class="secondary-btn" type="button" id="push-setup-later">Not now</button>
+      <label class="push-setup-dismiss"><input type="checkbox" id="push-setup-never"> Don't show this again</label>
+    </div>`;
+  mainWrap.querySelector(".topbar")?.insertAdjacentElement("afterend", prompt);
+
+  prompt.querySelector("#push-setup-enable")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (!supported) {
+      if (needsIosInstall) await installApp();
+      else {
+        prompt.remove();
+        await navigate("profile");
+        document.querySelector(".push-settings-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Turning on...";
+    try {
+      await enablePushNotifications(button);
+      prompt.remove();
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Try again";
+      notify(messageFrom(error), "error");
+    }
+  });
+  prompt.querySelector("#push-setup-later")?.addEventListener("click", () => prompt.remove());
+  prompt.querySelector("#push-setup-never")?.addEventListener("change", (event) => {
+    if (!event.currentTarget.checked) return;
+    rememberPushSetupDismissal();
+    prompt.remove();
+    notify("Notification reminder hidden on this device.");
+  });
 }
 
 async function navigate(view) {
