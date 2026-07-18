@@ -18,6 +18,7 @@ const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
 const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
+const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
   session: null,
   user: null,
@@ -58,6 +59,9 @@ const state = {
   realtimeChannel: null,
   syncRefreshTimer: null,
   cache: {},
+  inFlight: new Map(),
+  sessionHandlePromise: null,
+  sessionHandleUserId: "",
   pendingAssignmentProgress: new Map(),
   pendingPercentageAttempts: new Map(),
   coachRosterIds: new Set(),
@@ -664,6 +668,36 @@ function withTimeout(promise, label = "Request", ms = 6000) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isTransientRequestError(error) {
+  const message = messageFrom(error, "");
+  const status = Number(error?.status || error?.statusCode || 0);
+  const code = String(error?.code || "");
+  return status >= 500
+    || /timeout|timed out|failed to fetch|network|connection|load failed|lockmanager|temporarily unavailable/i.test(message)
+    || /^(08|53|57P01|PGRST0)/i.test(code);
+}
+
+async function retryNetworkRequest(factory, label, { attempts = 3, timeoutMs = 15000 } = {}) {
+  let lastResult = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const result = await withTimeout(factory(), label, timeoutMs);
+      if (!result?.error || !isTransientRequestError(result.error) || attempt === attempts - 1) return result;
+      lastResult = result;
+      lastError = result.error;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientRequestError(error) || attempt === attempts - 1) throw error;
+    }
+    await wait(400 * (attempt + 1));
+  }
+  if (lastResult) return lastResult;
+  throw lastError || new Error(`${label} failed.`);
+}
+
 function clearLocalAuthSession() {
   try {
     Object.keys(window.localStorage || {}).forEach((key) => {
@@ -678,16 +712,35 @@ async function init() {
   renderAuth("login", "Checking JKCREW connection...");
   let session = null;
   try {
-    const result = await withTimeout(client.auth.getSession(), "Sign in check", 10000);
+    const result = await retryNetworkRequest(() => client.auth.getSession(), "Sign in check", { attempts: 3, timeoutMs: 15000 });
     session = result.data?.session || null;
   } catch (error) {
     renderAuth("login", messageFrom(error));
     return;
   }
-  await handleSession(session);
-  client.auth.onAuthStateChange(async (_event, nextSession) => {
-    if (nextSession?.user?.id !== state.user?.id || !nextSession) await handleSession(nextSession);
+  await handleSessionOnce(session);
+  client.auth.onAuthStateChange((_event, nextSession) => {
+    if (nextSession?.user?.id === state.user?.id && nextSession) return;
+    // Leave the auth callback immediately; profile queries inside this callback can
+    // block Supabase's auth lock and make a successful sign-in appear frozen.
+    setTimeout(() => {
+      handleSessionOnce(nextSession).catch((error) => {
+        console.error("Session setup failed", error);
+        renderBootRecovery(messageFrom(error));
+      });
+    }, 0);
   });
+}
+
+function handleSessionOnce(session) {
+  const userId = session?.user?.id || "signed-out";
+  if (state.sessionHandlePromise && state.sessionHandleUserId === userId) return state.sessionHandlePromise;
+  state.sessionHandleUserId = userId;
+  state.sessionHandlePromise = handleSession(session).finally(() => {
+    state.sessionHandlePromise = null;
+    state.sessionHandleUserId = "";
+  });
+  return state.sessionHandlePromise;
 }
 
 function renderBootRecovery(message = "The app could not finish loading.") {
@@ -721,10 +774,10 @@ async function handleSession(session) {
     renderAuth();
     return;
   }
-  let { data, error } = await withTimeout(
-    client.from("profiles").select("*").eq("id", state.user.id).maybeSingle(),
+  let { data, error } = await retryNetworkRequest(
+    () => client.from("profiles").select(PROFILE_SELECT).eq("id", state.user.id).maybeSingle(),
     "Profile load",
-    10000
+    { attempts: 3, timeoutMs: 15000 }
   );
   if (error || !data) {
     const { data: recovered, error: recoveryError } = await withTimeout(
@@ -749,7 +802,7 @@ async function handleSession(session) {
     cleanUrl.searchParams.delete("push");
     window.history.replaceState({}, "", cleanUrl.href);
   }
-  setupRealtimeSync();
+  await setupRealtimeSync();
   renderShell();
   navigate(state.view);
 }
@@ -815,21 +868,29 @@ async function handleAuth(event, mode) {
 
   try {
     if (mode === "login") {
-      const { data, error } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in", 15000);
+      const { data, error } = await retryNetworkRequest(
+        () => client.auth.signInWithPassword({ email, password }),
+        "Sign in",
+        { attempts: 3, timeoutMs: 15000 }
+      );
       if (error) {
         renderAuth(mode, messageFrom(error, "Unable to sign in right now. Please check your email and password, then try again."));
         return;
       }
       let nextSession = data?.session || null;
       if (!nextSession) {
-        const { data: sessionData, error: sessionError } = await withTimeout(client.auth.getSession(), "Session refresh", 10000);
+        const { data: sessionData, error: sessionError } = await retryNetworkRequest(
+          () => client.auth.getSession(),
+          "Session refresh",
+          { attempts: 3, timeoutMs: 15000 }
+        );
         if (sessionError) {
           renderAuth(mode, messageFrom(sessionError, "Sign in worked, but JKCREW could not finish loading your session. Please try again."));
           return;
         }
         nextSession = sessionData?.session || null;
       }
-      if (nextSession) await handleSession(nextSession);
+      if (nextSession) await handleSessionOnce(nextSession);
       else renderAuth("login", "Sign in did not finish loading. Please tap Enter JKCREW again.");
       return;
     }
@@ -852,17 +913,25 @@ async function handleAuth(event, mode) {
       return;
     }
 
-    const { data: signInData, error: signInError } = await withTimeout(client.auth.signInWithPassword({ email, password }), "Sign in", 15000);
+    const { data: signInData, error: signInError } = await retryNetworkRequest(
+      () => client.auth.signInWithPassword({ email, password }),
+      "Sign in",
+      { attempts: 3, timeoutMs: 15000 }
+    );
     if (signInError) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
       return;
     }
     let createdSession = signInData?.session || null;
     if (!createdSession) {
-      const { data: sessionData } = await withTimeout(client.auth.getSession(), "Session refresh", 10000);
+      const { data: sessionData } = await retryNetworkRequest(
+        () => client.auth.getSession(),
+        "Session refresh",
+        { attempts: 3, timeoutMs: 15000 }
+      );
       createdSession = sessionData?.session || null;
     }
-    if (createdSession) await handleSession(createdSession);
+    if (createdSession) await handleSessionOnce(createdSession);
     else renderAuth("login", "Account created. Sign in with your new email and password.");
     notify("Welcome to JKCREW. Your account is ready.");
   } catch (error) {
@@ -1055,11 +1124,46 @@ function teardownRealtimeSync() {
   }
 }
 
-function setupRealtimeSync() {
+async function realtimeVisibleAthleteIds() {
+  if (state.profile?.role === "athlete") return [state.user.id];
+  if (state.profile?.role === "parent") {
+    const { data, error } = await client.from("parent_athletes").select("athlete_id").eq("parent_id", state.user.id);
+    if (error) {
+      console.warn("Parent realtime scope failed", error);
+      return [];
+    }
+    return [...new Set((data || []).map((row) => row.athlete_id).filter(Boolean))];
+  }
+  if (isCoachRole(state.profile?.role)) {
+    const { data, error } = await client.from("coach_athletes").select("athlete_id").eq("coach_id", state.user.id);
+    if (error) {
+      console.warn("Coach realtime scope failed", error);
+      return [];
+    }
+    const ids = [...new Set((data || []).map((row) => row.athlete_id).filter(Boolean))];
+    state.coachRosterIds = new Set(ids);
+    return ids;
+  }
+  return [];
+}
+
+function realtimeFilter(column, values = []) {
+  const safeValues = [...new Set(values.filter(Boolean))];
+  if (!safeValues.length) return "";
+  return safeValues.length === 1
+    ? `${column}=eq.${safeValues[0]}`
+    : `${column}=in.(${safeValues.join(",")})`;
+}
+
+async function setupRealtimeSync() {
   if (!state.user?.id || !state.session?.access_token) return;
   client.realtime.setAuth(state.session.access_token);
+  const athleteIds = await realtimeVisibleAthleteIds();
+  if (!state.user?.id || !state.session?.access_token) return;
   const channel = client.channel(`jkcrew-progress-sync:${state.user.id}`);
-  [
+  const athleteFilter = realtimeFilter("athlete_id", athleteIds);
+  const profileFilter = realtimeFilter("id", [state.user.id, ...athleteIds]);
+  const subscriptions = [
     "assignment_progress",
     "assignment_point_awards",
     "percentage_attempts",
@@ -1071,10 +1175,13 @@ function setupRealtimeSync() {
     "run_checklist_progress",
     "xp_ledger",
     "trick_requests",
-    "coach_broadcast_recipients",
-    "profiles",
-  ].forEach((table) => {
-    channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+  ].map((table) => ({ table, filter: athleteFilter })).filter((entry) => entry.filter);
+  subscriptions.push(
+    { table: "coach_broadcast_recipients", filter: `recipient_id=eq.${state.user.id}` },
+    { table: "profiles", filter: profileFilter },
+  );
+  subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
+    channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
       if (!isRelevantRealtimePayload(table, payload)) return;
       if (table === "profiles" && payload.new?.id === state.user.id) state.profile = { ...state.profile, ...payload.new };
       invalidateCachesForRealtime(table);
@@ -1164,24 +1271,36 @@ async function getLeaderboard() {
   const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
-  const { data, error } = await client.rpc("get_weekly_leaderboard");
-  if (error) {
-    console.error("Leaderboard RPC failed", error);
-    return getLeaderboardFallback(error);
-  }
-  state.leaderboardFallbackNotified = false;
-  const rows = data || [];
-  const ids = rows.map((row) => row.athlete_id).filter(Boolean);
-  if (!ids.length) return rows;
-  const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary, xp_total, level, ghost_mode").in("id", ids);
-  if (profileError) console.warn("Leaderboard profile extras failed", profileError);
-  const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
-  return cacheSet(cacheKey, rows.map((row) => {
-    const profile = byId.get(row.athlete_id) || {};
-    const permanentScore = permanentScorePoints({ ...profile, ...row });
-    const scoreLevel = permanentScoreSummary({ ...profile, ...row, all_time_points: permanentScore });
-    return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: permanentScore, xp_level: scoreLevel.level, level: scoreLevel.level, level_badge: scoreLevel.current_badge };
-  }));
+  const existingRequest = state.inFlight.get(cacheKey);
+  if (existingRequest) return existingRequest;
+
+  const request = (async () => {
+    const { data, error } = await retryNetworkRequest(
+      () => client.rpc("get_weekly_leaderboard"),
+      "Leaderboard load",
+      { attempts: 2, timeoutMs: 15000 }
+    );
+    if (error) {
+      console.error("Leaderboard RPC failed", error);
+      return getLeaderboardFallback(error);
+    }
+    state.leaderboardFallbackNotified = false;
+    const rows = data || [];
+    const ids = rows.map((row) => row.athlete_id).filter(Boolean);
+    if (!ids.length) return cacheSet(cacheKey, rows);
+    const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary, xp_total, level, ghost_mode").in("id", ids);
+    if (profileError) console.warn("Leaderboard profile extras failed", profileError);
+    const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    return cacheSet(cacheKey, rows.map((row) => {
+      const profile = byId.get(row.athlete_id) || {};
+      const permanentScore = permanentScorePoints({ ...profile, ...row });
+      const scoreLevel = permanentScoreSummary({ ...profile, ...row, all_time_points: permanentScore });
+      return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: permanentScore, xp_level: scoreLevel.level, level: scoreLevel.level, level_badge: scoreLevel.current_badge };
+    }));
+  })().finally(() => state.inFlight.delete(cacheKey));
+
+  state.inFlight.set(cacheKey, request);
+  return request;
 }
 
 async function getLeaderboardFallback(cause) {
@@ -1253,7 +1372,7 @@ async function getAssignmentAttempts(athleteId, sinceIso = weekStartIso()) {
 
 async function getTricktionaryData(athleteId) {
   const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult] = await Promise.all([
-    client.from("profiles").select("*").eq("id", athleteId).single(),
+    client.from("profiles").select(PROFILE_SELECT).eq("id", athleteId).single(),
     client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).limit(400),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
     client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).order("attempted_at", { ascending: false }).limit(600),
@@ -2633,7 +2752,7 @@ function normalizedGoals() {
 }
 
 async function saveGoals(goals, message = "Goals saved.") {
-  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify(message);
@@ -2682,7 +2801,7 @@ function extraTricksSection(profile = state.profile, editable = true) {
 }
 
 async function saveExtraTricks(tricks, message = "Working On saved.") {
-  const { data, error } = await client.from("profiles").update({ rider_extra_tricks: tricks, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update({ rider_extra_tricks: tricks, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify(message);
@@ -3037,7 +3156,7 @@ async function saveTricktionaryProfileUpdate(athleteId, updater) {
   const { data: profile, error: fetchError } = await client.from("profiles").select("id, manual_tricktionary, tricktionary_meta").eq("id", athleteId).single();
   if (fetchError) throw fetchError;
   const patch = updater(profile || {}) || {};
-  const { data, error } = await client.from("profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", athleteId).select("*").single();
+  const { data, error } = await client.from("profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", athleteId).select(PROFILE_SELECT).single();
   if (error) throw error;
   if (state.user?.id === athleteId) state.profile = data;
   cacheClear("roster");
@@ -3371,7 +3490,7 @@ async function saveManualTrick(event) {
     tricktionaryCategory: guessedCategory,
   }, ...current];
   const tricktionary_meta = buildTricktionaryMeta(state.profile, { [normalizeTrickKey(title)]: guessedCategory });
-  const { data, error } = await client.from("profiles").update({ manual_tricktionary, tricktionary_meta, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, tricktionary_meta, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify("Trick added to your Tricktionary. No points were awarded.");
@@ -3381,7 +3500,7 @@ async function saveManualTrick(event) {
 async function removeManualTrick(event) {
   const id = event.currentTarget.dataset.removeManualTrick;
   const manual_tricktionary = manualTricktionary(state.profile).filter((trick) => trick.id !== id);
-  const { data, error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify("Manual Tricktionary trick removed. Historical session data was kept.");
@@ -3549,7 +3668,7 @@ async function renderParentHome() {
       </section>`;
     return;
   }
-  const { data: athletes, error: athleteError } = await client.from("profiles").select("*").in("id", ids).order("display_name");
+  const { data: athletes, error: athleteError } = await client.from("profiles").select(PROFILE_SELECT).in("id", ids).order("display_name");
   if (athleteError) throw athleteError;
   const leaderboard = await getLeaderboard();
   const linkByAthlete = new Map((links || []).map((link) => [link.athlete_id, link]));
@@ -3855,7 +3974,7 @@ async function saveOwnDailyCompletionTime(seconds) {
     await client.from("training_sessions").update({ daily_completed_seconds: value, daily_completed_at: new Date().toISOString() }).eq("id", state.activeTraining.id);
   }
   if (isNewPb) {
-    const { data, error } = await client.from("profiles").update(profileUpdate).eq("id", state.user.id).select().single();
+    const { data, error } = await client.from("profiles").update(profileUpdate).eq("id", state.user.id).select(PROFILE_SELECT).single();
     if (!error && data) state.profile = data;
   }
   return { previousPb, isNewPb, seconds: value };
@@ -5069,7 +5188,7 @@ async function toggleViewerGoal(event) {
   if (!athlete || !Array.isArray(athlete.goals) || !athlete.goals[goalIndex]) return notify("Could not find that goal.", "error");
   button.disabled = true;
   const goals = athlete.goals.map((goal, index) => index === goalIndex ? { ...goal, completed: !goal.completed, completedAt: !goal.completed ? new Date().toISOString() : null } : goal);
-  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", athleteId).select().single();
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", athleteId).select(PROFILE_SELECT).single();
   if (error) {
     button.disabled = false;
     return notify(messageFrom(error), "error");
@@ -5554,7 +5673,7 @@ async function getCoachRoster() {
     return cacheSet(cacheKey, []);
   }
   const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
-    client.from("profiles").select("*").in("id", ids).order("display_name"),
+    client.from("profiles").select(PROFILE_SELECT).in("id", ids).order("display_name"),
     client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
     client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
   ]);
@@ -8212,7 +8331,7 @@ async function updateOwnAvatar(event) {
 
 async function saveOwnAvatar(dataUrl) {
   const avatar = dataUrl ? { dataUrl, updatedAt: new Date().toISOString() } : {};
-  const { data, error } = await client.from("profiles").update({ avatar, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update({ avatar, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify(dataUrl ? "Your profile picture was updated." : "Your profile picture was removed.");
@@ -8221,7 +8340,7 @@ async function saveOwnAvatar(dataUrl) {
 }
 
 async function saveOwnProfileMedia(update, message) {
-  const { data, error } = await client.from("profiles").update({ ...update, updated_at: new Date().toISOString() }).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update({ ...update, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   notify(message);
@@ -8336,7 +8455,7 @@ async function updateProfile(event) {
       other: String(form.get("other") || "").trim(),
     };
   }
-  const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select().single();
+  const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select(PROFILE_SELECT).single();
   if (error) return notify(messageFrom(error), "error");
   state.profile = data;
   cacheClear("leaderboard");
