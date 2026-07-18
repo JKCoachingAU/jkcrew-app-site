@@ -3617,6 +3617,46 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   border-color: rgba(32,227,195,0.2);
   background: linear-gradient(145deg, rgba(20,24,23,0.96), rgba(7,12,11,0.96));
 }
+.rider-content-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+.rider-content-accordion > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 76px;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+.rider-content-accordion > summary::-webkit-details-marker { display: none; }
+.rider-content-accordion > summary strong {
+  display: block;
+  font: 900 1.35rem var(--display);
+  text-transform: uppercase;
+}
+.rider-content-accordion > summary small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font: 700 0.64rem/1.35 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rider-content-accordion[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.rider-content-accordion[open] > summary .accordion-caret {
+  border-color: var(--aqua);
+  background: var(--aqua);
+  color: #001d18;
+}
+.rider-toggle-open { display: none; }
+.rider-content-accordion[open] .rider-toggle-closed { display: none; }
+.rider-content-accordion[open] .rider-toggle-open { display: inline; }
+.rider-content-accordion-body { padding: 16px 18px 18px; }
 .goal-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

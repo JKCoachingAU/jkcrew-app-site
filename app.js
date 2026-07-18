@@ -2279,8 +2279,7 @@ function athleteTrickRequestSection(assignments = [], requests = []) {
       <strong>${escapeHtml(request.trick_name)}</strong>
       <small>${escapeHtml(trickRequestCategoryLabels[request.category] || request.category)} · ${escapeHtml(venueLabel(request.venue))}</small>
     </div>`).join("") : `<div class="empty compact-empty">No requests sent yet.</div>`;
-  return `<section class="panel trick-request-panel">
-    <div class="panel-head"><div><div class="panel-title">Request Tricks For Next Week</div><div class="panel-meta">Ask your coach to add a trick to your next schedule</div></div></div>
+  return riderAccordionSection("Request Tricks For Next Week", "Ask your coach to add a trick to your next schedule", `
     <form id="trick-request-form" class="trick-request-form">
       <div class="field"><label for="request-venue">Park / venue</label><select id="request-venue" name="venue">${venueOptions}</select></div>
       <div class="field"><label for="request-category">List</label><select id="request-category" name="category">${trickRequestCategoryOptions()}</select></div>
@@ -2290,7 +2289,7 @@ function athleteTrickRequestSection(assignments = [], requests = []) {
     </form>
     <div class="settings-divider"></div>
     <div class="request-list">${requestRows}</div>
-  </section>`;
+  `, "trick-request-panel");
 }
 
 function heatChip(status = "on_track", extra = "") {
@@ -2630,6 +2629,13 @@ async function declineTrickRequest(event) {
   else await renderCoachCommand();
 }
 
+function riderAccordionSection(title, meta, body, className = "") {
+  return `<details class="panel rider-content-accordion ${escapeHtml(className)}">
+    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret"><span class="rider-toggle-closed">Open</span><span class="rider-toggle-open">Close</span></span></summary>
+    <div class="rider-content-accordion-body">${body}</div>
+  </details>`;
+}
+
 function goalsSection(profile = {}) {
   const goals = Array.isArray(profile.goals) ? profile.goals : [];
   const openCount = goals.filter((goal) => !goal.completed).length;
@@ -2640,11 +2646,10 @@ function goalsSection(profile = {}) {
       <button class="secondary-btn compact-btn" type="button" data-goal-save="${escapeHtml(goal.id)}">Save</button>
       <button class="danger-btn compact-btn" type="button" data-goal-delete="${escapeHtml(goal.id)}">Delete</button>
     </div>`).join("") : `<div class="empty compact-empty">No goals yet. Add one thing you want to chase this week.</div>`;
-  return `<section class="panel goals-panel">
-    <div class="panel-head"><div><div class="panel-title">My Goals</div><div class="panel-meta">${openCount} active goals · keep your why in front of you</div></div></div>
+  return riderAccordionSection("My Goals", `${openCount} active goals · keep your why in front of you`, `
     <form id="goal-form" class="goal-form"><input name="goal" required maxlength="120" placeholder="Land barspin clean, qualify for state titles..."><button class="primary-btn" type="submit">Add goal</button></form>
     <div class="goal-list">${rows}</div>
-  </section>`;
+  `, "goals-panel");
 }
 
 function socialLinks(profile = {}) {
@@ -3508,7 +3513,6 @@ async function renderAthleteHome() {
   const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
   const openTasks = dashboardItems.filter((item) => item.item_type === "task" && !item.completed).length;
-  const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const activeSession = await getActiveSession();
   const xp = permanentScoreSummary({ ...state.profile, ...(leaderboardRow || {}), weekly_points: weeklyPoints });
   if (activeSession) {
@@ -3532,15 +3536,9 @@ async function renderAthleteHome() {
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Important tasks</div><div class="panel-meta">Events and run planner now live in Contests</div></div></div>
-      ${dashboardItemsHtml(taskItems)}
-      <div class="settings-divider"></div>
-      ${dashboardTaskForm(state.user.id)}
-    </section>
     ${goalsSection(state.profile)}
     ${athleteTrickRequestSection(assignments, trickRequests)}`;
   bindGoalActions();
-  bindDashboardItemActions(renderAthleteHome);
   document.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
   if (activeSession) {
     updateTimer();
@@ -6174,7 +6172,6 @@ async function renderCoachPreview(mode = "student") {
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
   const weeklyItems = completionAssignments(assignments);
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
-  const taskItems = dashboardItems.filter((item) => item.item_type === "task");
   const events = dashboardItems.filter((item) => item.item_type === "event");
   const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
   const tabs = coachPreviewTabs(mode);
@@ -6190,7 +6187,6 @@ async function renderCoachPreview(mode = "student") {
     assignmentAttempts,
     leaderboard,
     dashboardItems,
-    taskItems,
     events,
     sessions,
     runs,
@@ -6239,7 +6235,7 @@ function coachPreviewPageHtml(context) {
   return coachStudentPreviewHtml(context);
 }
 
-function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary }) {
+function coachStudentPreviewHtml({ athlete, assignments, awards, events, sessions, rank, weeklyRow, weeklyPercent, xpSummary }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
   const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
   return `<div class="phone-preview-content">
@@ -6250,11 +6246,10 @@ function coachStudentPreviewHtml({ athlete, assignments, awards, taskItems, even
         ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
       </div>
-      ${xpProgressHtml(xp, true)}
+    ${xpProgressHtml(xp, true)}
     </section>
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Important tasks</div><div class="panel-meta">Student can edit their tasks</div></div></div>${dashboardItemsHtml(taskItems, false)}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events</div><div class="panel-meta">Events live in Contests</div></div></div>${dashboardItemsHtml(events, false)}</section>
     ${goalsReadonlyHtml(athlete)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Session schedule preview</div><div class="panel-meta">Assigned tricks visible to this rider</div></div></div>${assignmentGroups(assignments, false)}</section>
@@ -8117,13 +8112,11 @@ async function renderProfile() {
   });
   try {
     if (state.profile.role === "athlete") {
-      const [historyData, xpSummary, xpHistory] = await Promise.all([
-        getTricktionaryData(state.user.id),
+      const [xpSummary, xpHistory] = await Promise.all([
         getXpSummary(state.user.id).catch(() => normalizeXpSummary({}, state.profile)),
         getXpHistory(state.user.id).catch(() => []),
       ]);
-      trainingHistorySection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">Training history</div><div class="panel-meta">Previous sheets moved here from Tricktionary</div></div></div>${previousTrainingSheetsHtml(historyData)}</section>`;
-      xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}<div class="settings-divider"></div>${xpHistoryHtml(xpHistory)}</section>`;
+      xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}</section>${riderAccordionSection("Recent XP Activity", `${xpHistory.length} recent update${xpHistory.length === 1 ? "" : "s"}`, xpHistoryHtml(xpHistory), "xp-activity-accordion")}`;
     } else if (state.profile.role === "parent") {
       const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
       if (error) throw error;
@@ -8134,7 +8127,11 @@ async function renderProfile() {
       trainingHistorySection = sections.length ? `<section class="panel"><div class="panel-head"><div><div class="panel-title">Linked rider training history</div><div class="panel-meta">Read-only previous sheets for your linked child/rider</div></div></div>${sections.join("")}</section>` : "";
     }
   } catch (error) {
-    trainingHistorySection = `<section class="panel"><div class="empty compact-empty">Training history could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
+    if (state.profile.role === "parent") {
+      trainingHistorySection = `<section class="panel"><div class="empty compact-empty">Training history could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
+    } else {
+      console.warn("Rider profile progression could not load", error);
+    }
   }
   if (isCoachRole(state.profile?.role)) {
     try {
