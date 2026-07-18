@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.47";
+const version = "2.11.48";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -74,6 +74,11 @@ const sessionViewerRoster = functionBody("getSessionViewerRoster");
 assert(sessionViewerRoster.includes('select("id,display_name,avatar,country_code")'), "Session Viewer should load compact rider profiles");
 assert(!sessionViewerRoster.includes('.from("training_sessions")'), "Session Viewer roster should not load session history");
 
+const activeGroupSession = functionBody("getActiveCoachGroupSession");
+assert(!activeGroupSession.includes("coach_group_session_participants(id,"), "Session Viewer must not request a nonexistent participant id");
+assert(!activeGroupSession.includes("daily_finish_seconds,created_at"), "Session Viewer must not request a nonexistent participant created_at");
+assert(activeGroupSession.includes("training_session_id,joined_at"), "Session Viewer should request the participant table's real identity fields");
+
 const sessionViewerRender = functionBody("renderSessionViewer");
 assert(sessionViewerRender.includes("Promise.all(["), "Session Viewer should load roster and active session in parallel");
 assert(sessionViewerRender.indexOf("document.querySelector(\"#view\").innerHTML") < sessionViewerRender.indexOf("refreshParkKingCard("), "Park King must not block the Session Viewer render");
@@ -83,6 +88,10 @@ assert(sessionViewerMigration.includes("security definer"), "Combined Session Vi
 assert(sessionViewerMigration.includes("from anon"), "Anonymous users must not execute the coach Session Viewer read");
 assert(sessionViewerMigration.includes("not sources.has_current_daily"), "Missing current Daily lists should use the bounded visibility fallback");
 assert(sessionViewerMigration.includes("assignment.category = 'daily'"), "Fallback must remain Daily-only to protect weekly point logic");
+
+const percentageContractMigration = read("supabase/migrations/202607190400_fix_percentage_and_session_viewer_contracts.sql");
+assert(percentageContractMigration.includes("returns jsonb"), "Percentage venue wrapper must match the canonical JSON result");
+assert(!percentageContractMigration.includes("returns table"), "Percentage venue wrapper must not declare the obsolete table result");
 
 for (const name of [
   "recordViewerAssignmentAction",
