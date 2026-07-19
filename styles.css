@@ -3994,6 +3994,30 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .extra-trick-copy strong, .extra-trick-copy small { display: block; overflow-wrap: anywhere; }
 .extra-trick-row.complete .extra-trick-copy strong { color: var(--muted); text-decoration: line-through; }
 .contests-overview { border-color: rgba(247,209,84,0.2); background: linear-gradient(145deg, rgba(247,209,84,0.075), rgba(20,24,23,0.96)); }
+.panel-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+.panel-accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+  cursor: pointer;
+  list-style: none;
+}
+.panel-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+.panel-accordion-body {
+  padding: 0 18px 18px;
+}
+.panel-accordion[open] .accordion-caret {
+  background: var(--aqua);
+  color: #001411;
+  border-color: transparent;
+}
 .badge-lock-note {
   margin: 2px 0 14px;
   padding: 11px 12px;

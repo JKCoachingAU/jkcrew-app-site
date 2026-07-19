@@ -3026,6 +3026,16 @@ function dashboardItemsHtml(items, editable = true) {
     </div>`).join("");
 }
 
+function closedPanelAccordion(title, meta, body, className = "") {
+  return `<details class="panel panel-accordion ${className}">
+    <summary class="panel-accordion-summary">
+      <div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div>
+      <span class="secondary-btn compact-btn accordion-caret">Open</span>
+    </summary>
+    <div class="panel-accordion-body">${body}</div>
+  </details>`;
+}
+
 function dashboardDateLabel(item) {
   if (item.due_at && item.end_at) return ` · ${dateLabel(item.due_at)} → ${dateLabel(item.end_at)}`;
   if (item.due_at) return ` · Starts ${dateLabel(item.due_at)}`;
@@ -4731,15 +4741,13 @@ async function renderContests() {
   ]);
   const events = items.filter((item) => item.item_type === "event");
   const upcoming = events.filter((item) => !item.due_at || new Date(item.end_at || item.due_at) >= new Date());
+  const contestsBody = `${dashboardItemsHtml(events, true)}
+      <div class="settings-divider"></div>
+      ${dashboardItemForm(state.user.id)}`;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Contests</div><h1>Events & <span>runs</span></h1><p>Plan competition lines, view upcoming contests, and keep old runs archived for later.</p></div></div>
-    <section class="panel contests-overview">
-      <div class="panel-head"><div><div class="panel-title">Upcoming events & contests</div><div class="panel-meta">${upcoming.length} upcoming · dates can include start and finish</div></div></div>
-      ${dashboardItemsHtml(events, true)}
-      <div class="settings-divider"></div>
-      ${dashboardItemForm(state.user.id)}
-    </section>
-    ${runBuilderPanel(runs)}`;
+    ${closedPanelAccordion("Upcoming events & contests", `${upcoming.length} upcoming · dates can include start and finish`, contestsBody, "contests-overview")}
+    ${runBuilderPanel(runs, { collapsed: true })}`;
   bindDashboardItemActions(renderContests);
   bindRunBuilderActions();
 }
@@ -5909,12 +5917,11 @@ function runPlansHtml(runs = []) {
   return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
 }
 
-function runBuilderPanel(runs = []) {
+function runBuilderPanel(runs = [], options = {}) {
   const builder = state.runBuilder || { points: [] };
   const points = builder.points || [];
   const submitLabel = builder.id ? "Save run changes" : "Save run plan";
-  return `<section class="panel"><div class="panel-head"><div><div class="panel-title">Visual run builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, then save</div></div></div>
-    <form id="run-builder-form" class="run-builder-form">
+  const body = `<form id="run-builder-form" class="run-builder-form">
       <div class="two-col-form">
         <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Competition run, safe line..."></div>
         <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" value="${escapeHtml(builder.venue || "")}" placeholder="Pizzey, Beenleigh..."></div>
@@ -5927,7 +5934,12 @@ function runBuilderPanel(runs = []) {
       <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
       <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">${submitLabel}</button></div>
     </form>
-    <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>
+    <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`;
+  if (options.collapsed) {
+    return closedPanelAccordion("Visual run builder", "Upload a park photo, tap points, name each trick, then save", body, "run-builder-panel");
+  }
+  return `<section class="panel"><div class="panel-head"><div><div class="panel-title">Visual run builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, then save</div></div></div>
+    ${body}
   </section>`;
 }
 
