@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.48";
+const version = "2.11.49";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -62,6 +62,14 @@ for (const tab of ["daily", "one_bang", "dialled", "percentage", "foam_pit", "bo
   assert(viewerTabs.includes(`id: "${tab}"`), `Session Viewer is missing ${tab}`);
 }
 assert(!/goals|contest_run/.test(viewerTabs), "Session Viewer should not expose Goals or Contest Run tabs");
+
+assert(app.includes('class="app-shell ${isCoachRole(role) ? "coach-shell" : ""}"'), "Coach visual system must be scoped to coach accounts");
+for (const tone of ["aqua", "purple", "blue", "coral", "gold"]) {
+  assert(css.includes(`--coach-${tone}:`), `Coach palette is missing ${tone}`);
+  assert(css.includes(`.coach-shell .coach-tone-${tone}`), `Coach semantic class is missing ${tone}`);
+}
+assert(css.includes(".coach-shell .group-session-control"), "Coach Session Viewer should use the coach visual system");
+assert(css.includes(".coach-shell .coach-hub-card"), "Coach tool cards should use the coach visual system");
 
 const planLoader = functionBody("getSessionViewerPlanData");
 assert(!planLoader.includes('.from("run_plans")'), "Session Viewer should not fetch run plans");

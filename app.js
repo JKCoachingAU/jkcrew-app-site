@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.48`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.49`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.48" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.49" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.48" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.49" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -948,16 +948,16 @@ function renderShell() {
         </details>`).join("")
     : bottomNavHtml;
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell ${isCoachRole(role) ? "coach-shell" : ""}">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.48" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.49" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.48" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.49" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -2742,16 +2742,22 @@ function highPriorityTodoHtml(tasks = []) {
   const visibleRows = tasks.slice(0, 3).map(taskRow).join("");
   const extraTasks = tasks.slice(3);
   const overflow = extraTasks.length ? `<details class="priority-more"><summary>View ${extraTasks.length} more task${extraTasks.length === 1 ? "" : "s"}</summary><div class="priority-list">${extraTasks.map(taskRow).join("")}</div></details>` : "";
-  return `<section class="panel high-priority-panel"><div class="panel-head"><div><div class="panel-title">Priority Actions</div><div class="panel-meta">${tasks.length} private coach task${tasks.length === 1 ? "" : "s"} this week</div></div></div><div class="priority-list">${visibleRows}</div>${overflow}</section>`;
+  return `<section class="panel high-priority-panel coach-tone-coral"><div class="panel-head"><div><div class="panel-title">Priority Actions</div><div class="panel-meta">${tasks.length} private coach task${tasks.length === 1 ? "" : "s"} this week</div></div></div><div class="priority-list">${visibleRows}</div>${overflow}</section>`;
 }
 
 function commandMetricCard(label, value, meta, action = {}) {
+  const tone = {
+    students: "aqua",
+    attention: "coral",
+    upcoming: "gold",
+    modified: "blue",
+  }[String(label || "").toLowerCase()] || "aqua";
   const attributes = action.view
     ? `data-view="${escapeHtml(action.view)}"`
     : action.target
       ? `data-command-scroll="${escapeHtml(action.target)}"`
       : "";
-  return `<button class="command-metric-card" type="button" ${attributes}>
+  return `<button class="command-metric-card coach-tone-${tone}" type="button" ${attributes}>
     <span>${escapeHtml(label)}</span>
     <strong>${escapeHtml(value)}</strong>
     <small>${escapeHtml(meta)}</small>
@@ -2759,7 +2765,8 @@ function commandMetricCard(label, value, meta, action = {}) {
 }
 
 function commandHubAccordion(id, number, title, meta, summary, body) {
-  return `<details id="${escapeHtml(id)}" class="command-hub-accordion">
+  const tone = number === "01" ? "purple" : "blue";
+  return `<details id="${escapeHtml(id)}" class="command-hub-accordion coach-tone-${tone}">
     <summary>
       <span class="command-hub-number">${escapeHtml(number)}</span>
       <span class="command-hub-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>
@@ -4734,8 +4741,21 @@ async function renderContests() {
   bindRunBuilderActions();
 }
 
+function coachHubTone(view) {
+  return ({
+    planner: "purple",
+    videoReviews: "coral",
+    tricktionary: "blue",
+    contests: "gold",
+    parents: "purple",
+    board: "gold",
+    profile: "blue",
+    command: "aqua",
+  })[view] || "aqua";
+}
+
 function coachHubCard(view, title, meta, icon = "•") {
-  return `<button class="coach-hub-card" type="button" data-view="${escapeHtml(view)}">
+  return `<button class="coach-hub-card coach-tone-${coachHubTone(view)}" type="button" data-view="${escapeHtml(view)}">
     <span>${escapeHtml(icon)}</span>
     <div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></div>
   </button>`;
@@ -4754,10 +4774,10 @@ async function renderCoachTools() {
     <section class="command-section-group">
       <div class="command-section-heading"><span>01</span><div><strong>Weekly schedule tools</strong><small>Fast shortcuts for planning and feedback</small></div></div>
       <div class="coach-tools-row">
-        <button class="coach-tool-card" type="button" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
-        <button class="coach-tool-card" type="button" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
-        <button class="coach-tool-card" type="button" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
-        <button class="coach-tool-card" type="button" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
+        <button class="coach-tool-card coach-tone-purple" type="button" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
+        <button class="coach-tool-card coach-tone-coral" type="button" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
+        <button class="coach-tool-card coach-tone-aqua" type="button" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
+        <button class="coach-tool-card coach-tone-blue" type="button" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
       </div>
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -4827,11 +4847,11 @@ async function renderCoachCommand() {
       ${commandMetricCard("Modified", injuredCount, "Training plans", { target: "rider-heat-map-section" })}
     </section>
     ${highPriorityTodoHtml(priorityTasks)}
-    <details class="command-message-accordion">
+    <details class="command-message-accordion coach-tone-purple">
       <summary><span><strong>Message the Crew</strong><small>Send a rider, group or parent update</small></span><span class="command-message-count">${broadcastHistory.length ? `${broadcastHistory.length} recent` : "Compose"}</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
       <div class="command-message-body">${coachBroadcastComposerHtml(roster, broadcastHistory)}</div>
     </details>
-    <section class="panel command-leaderboard-panel">
+    <section class="panel command-leaderboard-panel coach-tone-gold">
       <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top riders this week · full board lives under More</div></div></div>
       ${commandLeaderboardPreviewHtml(leaderboard, "weekly_points")}
     </section>
@@ -4966,13 +4986,13 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     </section>` : "";
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" type="button" id="viewer-refresh">Refresh</button></div>
-    <section class="panel group-session-control ${activeGroupSession?.status || "ready"}">
+    <section class="panel group-session-control coach-tone-aqua ${activeGroupSession?.status || "ready"}">
       <div class="group-timer-block"><div class="timer-label">${started ? `${escapeHtml(coachGroupLabel(activeGroupSession.group_name))} · ${escapeHtml(venueLabel(activeGroupSession.venue))}` : "Ready for group session"}</div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? `${escapeHtml(activeGroupSession.status)} · ${schedules.length} riders · ${idleCount} not logged yet` : "Only coach/admin can start, pause, resume or end."}</small></div>
       <div class="group-session-actions">
         ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session</button>`}
       </div>
     </section>
-    <section class="panel session-viewer-controls">
+    <section class="panel session-viewer-controls coach-tone-blue">
       <div class="field"><label for="viewer-group">Group/session</label><select id="viewer-group" ${started ? "disabled" : ""}>${groupOptions}</select></div>
       <div class="field"><label for="viewer-venue">Venue/skate park</label><select id="viewer-venue" ${started ? "disabled" : ""}>${venueOptions}</select></div>
       <div class="field"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
@@ -6053,7 +6073,7 @@ async function getCoachLiveActivity(roster = []) {
 
 function coachLiveRowsHtml(items = [], emptyText = "Live rider activity will show here.") {
   return items.length ? items.map((item) => `
-    <div class="coach-live-row">
+    <div class="coach-live-row activity-${escapeHtml(item.type || "progress")}">
       <span class="live-dot"></span>
       <div><strong>${escapeHtml(item.text)}</strong><small>${dateLabel(item.at)}</small></div>
     </div>`).join("") : `<div class="empty compact-empty">${escapeHtml(emptyText)}</div>`;
@@ -6062,7 +6082,7 @@ function coachLiveRowsHtml(items = [], emptyText = "Live rider activity will sho
 function coachLiveActivityHtml(items = []) {
   const previewItems = items.slice(0, 3);
   const remainingItems = items.slice(3);
-  return `<article class="coach-live-card">
+  return `<article class="coach-live-card coach-tone-aqua">
     <div class="coach-live-head"><div><div class="stat-label">Live feed</div><strong>Coach activity</strong></div><span>${items.length ? `${items.length} live` : "Live"}</span></div>
     <div class="coach-live-list coach-live-preview">${coachLiveRowsHtml(previewItems)}</div>
     ${remainingItems.length ? `<details class="coach-live-more"><summary>View more notifications <span>${remainingItems.length} more</span></summary><div class="coach-live-list">${coachLiveRowsHtml(remainingItems, "")}</div></details>` : ""}

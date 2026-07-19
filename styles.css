@@ -4846,3 +4846,373 @@ html[data-theme="light"] .success-burst {
     gap: 6px;
   }
 }
+
+/* Coach-only visual system: neutral graphite surfaces with semantic reward colours. */
+.coach-shell {
+  --bg: #030608;
+  --surface: #0a0f12;
+  --surface-2: #10171b;
+  --surface-3: #172027;
+  --line: rgba(183, 202, 211, 0.16);
+  --muted: #8b969d;
+  --text: #f4f6f7;
+  --aqua: #16dfcf;
+  --aqua-soft: rgba(22, 223, 207, 0.1);
+  --purple: #9254ff;
+  --red: #ff6c55;
+  --yellow: #f7c83e;
+  --coach-aqua: #16dfcf;
+  --coach-purple: #9254ff;
+  --coach-blue: #3a9cff;
+  --coach-coral: #ff6c55;
+  --coach-gold: #f7c83e;
+  --coach-tone: var(--coach-aqua);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% -8%, rgba(22, 223, 207, 0.09), transparent 31rem),
+    radial-gradient(circle at 96% 4%, rgba(146, 84, 255, 0.1), transparent 28rem),
+    #030608;
+}
+
+.coach-shell .main-wrap {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.009) 1px, transparent 1px),
+    radial-gradient(circle at 80% 8%, rgba(58, 156, 255, 0.05), transparent 30rem);
+  background-size: 42px 42px, 42px 42px, auto;
+}
+
+.coach-shell .sidebar,
+.coach-shell .topbar,
+.coach-shell .bottom-nav {
+  border-color: rgba(183, 202, 211, 0.14);
+  background: rgba(3, 7, 9, 0.9);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(24px) saturate(130%);
+}
+
+.coach-shell .topbar-title,
+.coach-shell .sidebar-brand.logo-sidebar-brand {
+  letter-spacing: 0.07em;
+}
+
+.coach-shell .topbar-logo,
+.coach-shell .logo-sidebar-brand img {
+  border: 1px solid transparent;
+  box-shadow:
+    0 0 0 1px rgba(22, 223, 207, 0.65),
+    0 0 0 2px rgba(146, 84, 255, 0.34),
+    0 0 24px rgba(22, 223, 207, 0.12);
+}
+
+.coach-shell .role-pill {
+  border: 1px solid rgba(22, 223, 207, 0.2);
+  background: linear-gradient(90deg, rgba(22, 223, 207, 0.14), rgba(58, 156, 255, 0.05));
+}
+
+.coach-shell .content { max-width: 1460px; }
+
+.coach-shell .page-head h1,
+.coach-shell .command-page-hero h1 {
+  text-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.coach-shell .page-head h1 span,
+.coach-shell .command-page-hero h1 span {
+  color: var(--coach-aqua);
+  background: linear-gradient(105deg, var(--coach-aqua), var(--coach-blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.coach-shell .eyebrow {
+  color: var(--coach-aqua);
+  letter-spacing: 0.2em;
+}
+
+.coach-shell .panel,
+.coach-shell .stat-card,
+.coach-shell .group-column,
+.coach-shell .coach-live-card,
+.coach-shell .coach-hub-card,
+.coach-shell .coach-tool-card,
+.coach-shell .command-metric-card,
+.coach-shell .command-message-accordion,
+.coach-shell .command-park-kings-accordion,
+.coach-shell .command-hub-accordion,
+.coach-shell .viewer-rider-accordion {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--coach-tone) 7%, transparent), transparent 44%),
+    linear-gradient(145deg, rgba(17, 24, 28, 0.96), rgba(7, 11, 13, 0.97));
+  border-color: color-mix(in srgb, var(--coach-tone) 23%, var(--line));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 16px 42px rgba(0, 0, 0, 0.2);
+}
+
+.coach-shell .coach-tone-aqua { --coach-tone: var(--coach-aqua); }
+.coach-shell .coach-tone-purple { --coach-tone: var(--coach-purple); }
+.coach-shell .coach-tone-blue { --coach-tone: var(--coach-blue); }
+.coach-shell .coach-tone-coral { --coach-tone: var(--coach-coral); }
+.coach-shell .coach-tone-gold { --coach-tone: var(--coach-gold); }
+
+.coach-shell .coach-tone-aqua,
+.coach-shell .coach-tone-purple,
+.coach-shell .coach-tone-blue,
+.coach-shell .coach-tone-coral,
+.coach-shell .coach-tone-gold {
+  border-color: color-mix(in srgb, var(--coach-tone) 34%, var(--line));
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--coach-tone) 85%, transparent),
+    0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.coach-shell .primary-btn,
+.coach-shell .command-start-button,
+.coach-shell #start-group-session {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(100deg, var(--coach-aqua), var(--coach-blue));
+  color: #02090b;
+  box-shadow: 0 12px 34px rgba(22, 223, 207, 0.16);
+}
+
+.coach-shell .primary-btn:hover,
+.coach-shell .command-start-button:hover,
+.coach-shell #start-group-session:hover {
+  filter: brightness(1.06) saturate(1.05);
+  transform: translateY(-1px);
+}
+
+.coach-shell .danger-btn {
+  border-color: rgba(255, 108, 85, 0.44);
+  background: rgba(255, 108, 85, 0.11);
+  color: #ff937f;
+}
+
+.coach-shell .secondary-btn,
+.coach-shell .accordion-caret,
+.coach-shell .compact-btn {
+  border-color: rgba(183, 202, 211, 0.2);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.coach-shell .field input,
+.coach-shell .field select,
+.coach-shell .field textarea {
+  border-color: rgba(183, 202, 211, 0.18);
+  background: rgba(3, 7, 9, 0.72);
+}
+
+.coach-shell .field input:focus,
+.coach-shell .field select:focus,
+.coach-shell .field textarea:focus {
+  border-color: var(--coach-aqua);
+  box-shadow: 0 0 0 3px rgba(22, 223, 207, 0.1), 0 0 24px rgba(22, 223, 207, 0.07);
+}
+
+.coach-shell .nav-btn.active,
+.coach-shell .nav-sub-btn.active {
+  color: var(--coach-aqua);
+}
+
+.coach-shell .nav-btn.active {
+  border-color: rgba(22, 223, 207, 0.22);
+  background: linear-gradient(90deg, rgba(22, 223, 207, 0.13), rgba(58, 156, 255, 0.05));
+}
+
+.coach-shell .command-page-hero {
+  align-items: stretch;
+}
+
+.coach-shell .command-start-button {
+  min-height: 104px;
+  border-radius: 16px;
+  padding: 20px 24px;
+}
+
+.coach-shell .command-start-button span { font-size: 1.65rem; }
+.coach-shell .command-start-button small { color: rgba(1, 11, 14, 0.72); }
+
+.coach-shell .command-metrics { gap: 14px; }
+.coach-shell .command-metric-card {
+  position: relative;
+  min-height: 122px;
+  overflow: hidden;
+}
+.coach-shell .command-metric-card::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 54px;
+  height: 54px;
+  border: 4px solid color-mix(in srgb, var(--coach-tone) 24%, transparent);
+  border-right-color: var(--coach-tone);
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.coach-shell .command-metric-card span,
+.coach-shell .command-metric-card small { color: color-mix(in srgb, var(--coach-tone) 86%, #b9c4c9); }
+.coach-shell .command-metric-card strong { position: relative; z-index: 1; }
+
+.coach-shell .command-message-accordion > summary,
+.coach-shell .command-hub-accordion > summary,
+.coach-shell .command-park-kings-accordion > summary {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--coach-tone) 6%, transparent), transparent 50%);
+}
+.coach-shell .command-hub-number,
+.coach-shell .command-hub-chevron { color: var(--coach-tone); border-color: color-mix(in srgb, var(--coach-tone) 48%, var(--line)); }
+.coach-shell .command-hub-accordion[open],
+.coach-shell .command-message-accordion[open] { border-color: color-mix(in srgb, var(--coach-tone) 55%, var(--line)); }
+
+.coach-shell .high-priority-panel .panel-title,
+.coach-shell .priority-task.high > span { color: var(--coach-coral); }
+
+.coach-shell .command-leaderboard-panel .panel-title,
+.coach-shell .command-leaderboard-panel .points,
+.coach-shell .command-leader-row:first-child .command-rank { color: var(--coach-gold); }
+.coach-shell .command-leader-row:first-child {
+  border-color: rgba(247, 200, 62, 0.28);
+  background: linear-gradient(90deg, rgba(247, 200, 62, 0.07), transparent);
+}
+
+.coach-shell .coach-hub-grid { gap: 16px; }
+.coach-shell .coach-hub-card {
+  position: relative;
+  min-height: 176px;
+  padding: 24px;
+  overflow: hidden;
+}
+.coach-shell .coach-hub-card::before,
+.coach-shell .coach-tool-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 58px;
+  height: 2px;
+  background: var(--coach-tone);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--coach-tone) 60%, transparent);
+}
+.coach-shell .coach-hub-card > span {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--coach-tone) 68%, var(--line));
+  border-radius: 50%;
+  color: var(--coach-tone);
+  background: color-mix(in srgb, var(--coach-tone) 8%, transparent);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--coach-tone) 12%, transparent);
+}
+.coach-shell .coach-hub-card strong { font-size: 1.45rem; }
+.coach-shell .coach-hub-card:hover,
+.coach-shell .coach-tool-card:hover {
+  border-color: color-mix(in srgb, var(--coach-tone) 64%, var(--line));
+  transform: translateY(-2px);
+}
+.coach-shell .coach-tool-card { position: relative; overflow: hidden; }
+
+.coach-shell .coach-live-card { padding: 22px; }
+.coach-shell .coach-live-head > span {
+  border-color: rgba(22, 223, 207, 0.32);
+  background: rgba(22, 223, 207, 0.06);
+}
+.coach-shell .coach-live-row .live-dot { background: var(--coach-aqua); box-shadow: 0 0 14px rgba(22, 223, 207, 0.7); }
+.coach-shell .coach-live-row.activity-one_bang .live-dot,
+.coach-shell .coach-live-row.activity-bonus .live-dot,
+.coach-shell .coach-live-row.activity-points .live-dot { background: var(--coach-gold); box-shadow: 0 0 14px rgba(247, 200, 62, 0.62); }
+.coach-shell .coach-live-row.activity-dialled .live-dot { background: var(--coach-purple); box-shadow: 0 0 14px rgba(146, 84, 255, 0.62); }
+.coach-shell .coach-live-row.activity-percentage .live-dot { background: var(--coach-blue); box-shadow: 0 0 14px rgba(58, 156, 255, 0.62); }
+
+.coach-shell .group-column { --coach-tone: var(--group-accent, var(--coach-aqua)); }
+.coach-shell .group-monday { --group-accent: var(--coach-purple); }
+.coach-shell .group-tuesday { --group-accent: var(--coach-aqua); }
+.coach-shell .group-wednesday { --group-accent: var(--coach-blue); }
+.coach-shell .group-online { --group-accent: var(--coach-gold); }
+.coach-shell .student-chip {
+  border-color: rgba(183, 202, 211, 0.14);
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
+}
+.coach-shell .student-chip:hover { border-color: color-mix(in srgb, var(--group-accent, var(--coach-aqua)) 46%, var(--line)); }
+.coach-shell .heat-chip.green { color: var(--coach-aqua); border-color: rgba(22, 223, 207, 0.34); background: rgba(22, 223, 207, 0.09); }
+.coach-shell .heat-chip.yellow,
+.coach-shell .heat-chip.red { color: #ff9a88; border-color: rgba(255, 108, 85, 0.38); background: rgba(255, 108, 85, 0.09); }
+.coach-shell .heat-chip.blue { color: #79bdff; border-color: rgba(58, 156, 255, 0.38); background: rgba(58, 156, 255, 0.09); }
+.coach-shell .heat-chip.purple { color: #bd94ff; border-color: rgba(146, 84, 255, 0.38); background: rgba(146, 84, 255, 0.09); }
+
+.coach-shell .group-session-control {
+  --coach-tone: var(--coach-aqua);
+  background:
+    radial-gradient(circle at 8% 8%, rgba(22, 223, 207, 0.14), transparent 32%),
+    radial-gradient(circle at 96% 92%, rgba(58, 156, 255, 0.1), transparent 38%),
+    linear-gradient(145deg, #0f171a, #070b0d);
+}
+.coach-shell .group-session-timer {
+  color: var(--text);
+  text-shadow: 0 0 34px rgba(22, 223, 207, 0.14);
+}
+.coach-shell .session-viewer-controls { --coach-tone: var(--coach-blue); }
+.coach-shell .session-viewer-controls .field:first-child label { color: var(--coach-purple); }
+.coach-shell .session-viewer-controls .field:nth-child(2) label { color: var(--coach-blue); }
+.coach-shell .viewer-rider-accordion { --coach-tone: var(--coach-aqua); }
+.coach-shell .viewer-rider-accordion.open { border-color: rgba(22, 223, 207, 0.52); box-shadow: 0 0 0 2px rgba(22, 223, 207, 0.07), 0 18px 44px rgba(0, 0, 0, 0.26); }
+.coach-shell .viewer-rider-card.active { background: linear-gradient(110deg, rgba(22, 223, 207, 0.09), rgba(58, 156, 255, 0.04)); }
+.coach-shell .viewer-progress span { background: linear-gradient(90deg, var(--coach-aqua), var(--coach-blue), var(--coach-purple)); }
+.coach-shell .park-king-card {
+  border-color: rgba(247, 200, 62, 0.34);
+  background: linear-gradient(110deg, rgba(247, 200, 62, 0.09), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(247, 200, 62, 0.13);
+}
+.coach-shell .park-king-label span { color: var(--coach-gold); }
+.coach-shell .viewer-list-tab.active { border-color: var(--coach-aqua); color: var(--coach-aqua); background: rgba(22, 223, 207, 0.08); }
+
+.coach-shell .bottom-nav .nav-btn.active .nav-icon {
+  color: #041013;
+  background: linear-gradient(135deg, var(--coach-aqua), var(--coach-blue) 58%, var(--coach-purple));
+  box-shadow: 0 0 26px rgba(22, 223, 207, 0.2);
+}
+.coach-shell .bottom-nav .nav-btn.active::after {
+  content: "";
+  width: 46px;
+  height: 2px;
+  margin: 5px auto -7px;
+  background: linear-gradient(90deg, var(--coach-aqua), var(--coach-blue), var(--coach-purple));
+  box-shadow: 0 0 12px rgba(22, 223, 207, 0.35);
+}
+
+@media (max-width: 780px) {
+  .coach-shell .topbar {
+    height: 72px;
+    padding-inline: 22px;
+  }
+  .coach-shell .content { padding: 22px 16px 118px; }
+  .coach-shell .command-page-hero { gap: 18px; }
+  .coach-shell .command-page-hero h1 { font-size: clamp(3.25rem, 16vw, 4.4rem); }
+  .coach-shell .command-start-button { min-height: 92px; }
+  .coach-shell .command-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .coach-shell .command-metric-card { min-height: 108px; padding: 14px; }
+  .coach-shell .command-metric-card strong { font-size: 2.65rem; }
+  .coach-shell .command-metric-card::after { width: 44px; height: 44px; right: 12px; bottom: 12px; }
+  .coach-shell .coach-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .coach-shell .coach-hub-card { min-height: 190px; padding: 18px 16px; align-content: space-between; }
+  .coach-shell .coach-hub-card > span { width: 50px; height: 50px; }
+  .coach-shell .coach-hub-card strong { font-size: 1.25rem; }
+  .coach-shell .coach-hub-card small { font-size: 0.82rem; line-height: 1.45; }
+  .coach-shell .coach-tools-row { grid-template-columns: 1fr; }
+  .coach-shell .coach-live-card { padding: 18px 16px; }
+  .coach-shell .group-column { padding: 16px; }
+  .coach-shell .viewer-rider-card { min-height: 104px; padding: 15px; }
+  .coach-shell .viewer-rider-card .accordion-caret { justify-self: end; }
+  .coach-shell .group-session-actions button { min-height: 58px; }
+  .coach-shell .bottom-nav {
+    padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+  }
+  .coach-shell .bottom-nav .nav-btn { gap: 5px; }
+}
+
+@media (max-width: 390px) {
+  .coach-shell .coach-hub-card { min-height: 172px; padding: 15px 13px; }
+  .coach-shell .coach-hub-card strong { font-size: 1.08rem; }
+  .coach-shell .coach-hub-card small { font-size: 0.75rem; }
+}
