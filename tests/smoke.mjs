@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.51";
+const version = "2.11.52";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -56,6 +56,24 @@ assert.equal((coachNavBody.match(/\["/g) || []).length, 5, "Coach mobile navigat
 for (const label of ["Command", "Session", "Riders", "Coach Tools", "More"]) {
   assert(coachNavBody.includes(`"${label}"`), `Coach navigation is missing ${label}`);
 }
+
+const parentNavBody = app.match(/const parentNav = \[([\s\S]*?)\];/)?.[1] || "";
+assert.equal((parentNavBody.match(/\["/g) || []).length, 3, "Parent navigation must keep three items");
+for (const label of ["Home", "Tricktionary", "Profile"]) {
+  assert(parentNavBody.includes(`"${label}"`), `Parent navigation is missing ${label}`);
+}
+assert(
+  css.includes(".parent-shell .bottom-nav {\n  grid-template-columns: repeat(3, minmax(0, 1fr));"),
+  "Parent bottom navigation must remain a three-column layout",
+);
+for (const tone of ["aqua", "blue", "violet", "gold", "coral"]) {
+  assert(css.includes(`--parent-${tone}:`), `Parent palette is missing ${tone}`);
+}
+assert(css.includes(".parent-shell .parent-child-card"), "Parent linked-rider cards should use the parent visual system");
+assert(css.includes(".parent-shell .push-settings-card"), "Parent profile controls should use the parent visual system");
+assert(!css.includes(".parent-shell .parent-readonly { pointer-events: none; }"), "Read-only parent content must still allow accordion navigation");
+assert(functionBody("renderParentHome").includes("assignmentGroups(assignments, false)"), "Parent schedules must remain read-only");
+assert(!functionBody("renderParentTricktionary").includes("editable: true"), "Parent Tricktionary must remain read-only");
 
 const viewerTabs = app.match(/const sessionViewerListTabs = \[([\s\S]*?)\];/)?.[1] || "";
 for (const tab of ["daily", "one_bang", "dialled", "percentage", "foam_pit", "bonus"]) {
