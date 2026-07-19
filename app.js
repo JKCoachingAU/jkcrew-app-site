@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.52`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.53`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.52" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.53" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.52" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.53" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -951,14 +951,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell ${shellClass}">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.52" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.53" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.52" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.53" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1201,8 +1201,8 @@ async function setupRealtimeSync() {
     if (state.profile?.role === "athlete" && event.display_name && event.venue_name) {
       notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
     }
-    if (state.view === "session") refreshParkKingCard("session-park-king", state.selectedVenue, true);
-    if (state.view === "sessionViewer") refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
+    if (state.view === "session" && !isContestPrepProfile(state.profile)) refreshParkKingCard("session-park-king", state.selectedVenue, true);
+    if (state.view === "sessionViewer" && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
     if (state.view === "command") refreshCommandParkKings();
   });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
@@ -1808,6 +1808,17 @@ const categoryInfo = {
   foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
   bonus: { label: "Bonus Tricks", description: "Gold challenge · 5 points each" },
 };
+
+const contestPrepGroupId = "contest_prep";
+
+const contestPrepCategoryInfo = {
+  daily: { label: "Practice 1", description: "Contest prep · 1 point per completed item" },
+  one_bang: { label: "Practice 2", description: "Contest prep · 1 point per completed item" },
+  dialled: { label: "Practice 3", description: "Contest prep · 1 point per completed item" },
+  percentage: { label: "Warm Up", description: "Contest prep warm up · 1 point per completed item" },
+  foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
+  bonus: { label: "Run 1 / Run 2", description: "Contest prep run work · 1 point per completed item" },
+};
 const plannerEditableStatuses = ["draft", "draft_next_week", "scheduled_next_week", "published"];
 const plannerSummaryStatuses = ["draft", "draft_next_week", "scheduled_next_week", "published"];
 const plannerStatusLabels = {
@@ -1832,11 +1843,44 @@ const sessionViewerListTabs = [
   { id: "bonus", label: "Bonus Trick" },
 ];
 
+function profileGroupNames(profile = {}) {
+  const values = [];
+  const add = (value) => {
+    if (Array.isArray(value)) return value.forEach(add);
+    if (value) values.push(String(value));
+    return undefined;
+  };
+  add(profile.groupNames);
+  add(profile.group_names);
+  add(profile.groupName);
+  add(profile.group_name);
+  return [...new Set(values.filter(Boolean))];
+}
+
+function isContestPrepProfile(profile = {}) {
+  return profileGroupNames(profile).some((group) => {
+    const key = group.toLowerCase().replace(/[\s-]+/g, "_");
+    return key === contestPrepGroupId || key === "contest_preparation";
+  });
+}
+
+function categoryDisplayInfo(category, profileOrContestPrep = false) {
+  const contestPrep = typeof profileOrContestPrep === "boolean"
+    ? profileOrContestPrep
+    : isContestPrepProfile(profileOrContestPrep);
+  return (contestPrep && contestPrepCategoryInfo[category]) || categoryInfo[category] || { label: "Tricks", description: "" };
+}
+
+function sessionViewerTabsForEntry(entry) {
+  return sessionViewerListTabs.map((tab) => ({ ...tab, label: categoryDisplayInfo(tab.id, entry?.athlete).label }));
+}
+
 const coachGroups = [
   ["monday", "Monday Team"],
   ["tuesday", "Tuesday Team"],
   ["wednesday", "Wednesday Team"],
   ["online", "Online Training"],
+  [contestPrepGroupId, "Contest Preparation"],
 ];
 const heatStatuses = {
   on_track: { label: "On track", dot: "green", icon: "●" },
@@ -2389,9 +2433,9 @@ function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks
   }).join("");
 }
 
-function dailyVenueGroups(assignments, interactive = false) {
+function dailyVenueGroups(assignments, interactive = false, profile = null) {
   const dailyAssignments = assignments.filter((assignment) => assignment.category === "daily");
-  const info = categoryInfo.daily;
+  const info = categoryDisplayInfo("daily", profile);
   const venues = dailyVenues(dailyAssignments);
   const complete = dailyAssignments.filter(isAssignmentComplete).length;
   const body = venues.length ? venues.map((venue) => {
@@ -2399,19 +2443,20 @@ function dailyVenueGroups(assignments, interactive = false) {
     const venueComplete = items.filter(isAssignmentComplete).length;
     const open = state.sessionOpenDailyVenues.has(venue);
     return `<details class="daily-venue-accordion" data-daily-venue="${escapeHtml(venue)}" ${open ? "open" : ""}>
-      <summary><span><strong>${escapeHtml(venueLabel(venue))} Daily Tricks</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
-      <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No daily tricks assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
+      <summary><span><strong>${escapeHtml(`${venueLabel(venue)} ${info.label}`)}</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
+      <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No ${info.label.toLowerCase()} assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
     </details>`;
-  }).join("") : `<div class="empty">No Daily Tricks assigned for this week yet.</div>`;
+  }).join("") : `<div class="empty">No ${escapeHtml(info.label)} assigned for this week yet.</div>`;
   return `<section class="assignment-group daily-venue-group">
     <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="category-count">${complete}/${dailyAssignments.length}</div></div>
     <div class="daily-venue-stack">${body}</div>
   </section>`;
 }
 
-function assignmentGroups(assignments, interactive = false) {
-  return Object.entries(categoryInfo).map(([category, info]) => {
-    if (category === "daily") return dailyVenueGroups(assignments, interactive);
+function assignmentGroups(assignments, interactive = false, profile = null) {
+  return Object.keys(categoryInfo).map((category) => {
+    const info = categoryDisplayInfo(category, profile);
+    if (category === "daily") return dailyVenueGroups(assignments, interactive, profile);
     const items = assignments.filter((assignment) => assignment.category === category);
     const sectionKey = category === "one_bang" ? "one-bang" : category === "foam_pit" ? "foam" : category;
     const list = category === "percentage"
@@ -4085,13 +4130,14 @@ async function renderSession({ forceParkKing = false } = {}) {
   const selectedVenue = selectedVenueFor(assignments);
   const boardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
   const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
+  const contestPrepSession = isContestPrepProfile(state.profile);
   const statBar = sessionStatBarHtml({
     points: boardRow?.weekly_points || 0,
     percent: weeklyCompletionPercent(assignments, awards),
     rank,
   });
   const requestedVenueKey = venueIdentityKey(selectedVenue);
-  const parkKingPromise = getParkKing(selectedVenue, { force: forceParkKing });
+  const parkKingPromise = contestPrepSession ? Promise.resolve(null) : getParkKing(selectedVenue, { force: forceParkKing });
   await loadActiveSession();
   const parkKing = await parkKingPromise;
   if (state.view !== "session" || renderVersion !== state.sessionRenderVersion || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
@@ -4100,8 +4146,8 @@ async function renderSession({ forceParkKing = false } = {}) {
       ${statBar}
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
-      ${parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
-      ${assignmentGroups(assignments, true)}
+      ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
+      ${assignmentGroups(assignments, true, state.profile)}
       ${extraTricksSection(state.profile, true)}
       ${helpUploadSection(helpRequests)}`;
     bindVenueSelector();
@@ -4123,8 +4169,8 @@ async function renderSession({ forceParkKing = false } = {}) {
     ${statBar}
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
-    ${parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
-    ${assignmentGroups(assignments, true)}
+    ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
+    ${assignmentGroups(assignments, true, state.profile)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${helpUploadSection(helpRequests)}`;
@@ -4937,6 +4983,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     state.sessionViewerGroup = activeGroupSession.group_name || state.sessionViewerGroup;
     state.sessionViewerVenue = activeGroupSession.venue || state.sessionViewerVenue;
   }
+  const contestPrepViewer = state.sessionViewerGroup === contestPrepGroupId;
   const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}" ${state.sessionViewerGroup === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
   const search = state.sessionViewerSearch.toLowerCase().trim();
   const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
@@ -5016,11 +5063,11 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     <section class="session-viewer-layout">
       <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>
-    ${parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}`;
+    ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}`;
   bindSessionViewerActions();
   updateGroupSessionTimerDom();
   state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
-  if (requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
+  if (!contestPrepViewer && requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
 }
 
 function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
@@ -5063,7 +5110,7 @@ function sessionViewerAssignmentsForList(entry, listId) {
 
 function sessionViewerPlanList(entry, activeGroupSession) {
   const activeList = activeSessionViewerList();
-  const tabs = sessionViewerListTabs.map((tab) => {
+  const tabs = sessionViewerTabsForEntry(entry).map((tab) => {
     const count = sessionViewerListCount(entry, tab.id);
     return `<button class="viewer-list-tab ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
   }).join("");
@@ -5085,7 +5132,7 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
   const assignments = sessionViewerAssignmentsForList(entry, listId);
   const complete = assignments.filter(isAssignmentComplete).length;
   const isPaused = activeGroupSession?.status === "paused";
-  const info = categoryInfo[listId] || { label: "Tricks", description: "" };
+  const info = categoryDisplayInfo(listId, entry.athlete);
   const editor = isCoachRole(state.profile?.role) ? sessionViewerAssignmentEditor(entry, listId, assignments) : "";
   if (listId === "percentage") {
     const label = info.label;
@@ -5100,7 +5147,7 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
       <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}${attemptCount ? ` · ${attemptCount} attempt${attemptCount === 1 ? "" : "s"}` : ""}</small></span>
     </div>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
-  const label = listId === "daily" ? `${venueLabel(entry.venue)} Daily Tricks` : info.label;
+  const label = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
   return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-trick-list">${list}</div>`;
 }
 
@@ -5112,15 +5159,16 @@ function assignmentLinesForEditor(assignments = []) {
 }
 
 function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
-  if (!categoryInfo[listId]) return "";
-  const info = categoryInfo[listId];
+  const info = categoryDisplayInfo(listId, entry.athlete);
+  if (!info) return "";
+  const editLabel = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
   const helper = listId === "daily"
     ? `Editing ${venueLabel(entry.venue)} only. One trick per line.`
     : listId === "percentage"
       ? "Maximum 3 percentage tricks. One trick per line."
       : "One trick per line. Add notes after a dash.";
   return `<details class="viewer-edit-panel">
-    <summary>Edit ${escapeHtml(listId === "daily" ? `${venueLabel(entry.venue)} Daily` : info.label)}</summary>
+    <summary>Edit ${escapeHtml(editLabel)}</summary>
     <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
       <div class="field">
         <label>${escapeHtml(helper)}</label>
@@ -5178,7 +5226,7 @@ function bindSessionViewerActions() {
     state.sessionViewerVenue = event.target.value;
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "daily";
-    const currentCard = document.querySelector("#session-viewer-park-king");
+    const currentCard = state.sessionViewerGroup === contestPrepGroupId ? null : document.querySelector("#session-viewer-park-king");
     if (currentCard) {
       const wrapper = document.createElement("div");
       wrapper.innerHTML = parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: true });
@@ -5444,6 +5492,7 @@ async function saveSessionViewerAssignments(event) {
 
   try {
     const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
+    const info = categoryDisplayInfo(listId, athlete);
     const athleteWeekStart = weekStartDateForCountry(athlete?.country_code || "AU");
     const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
       p_athlete_id: athleteId,
@@ -5451,10 +5500,10 @@ async function saveSessionViewerAssignments(event) {
       p_category: listId,
       p_venue: listId === "daily" ? venue : "",
       p_assignments: editedLines,
-    }), `Save ${categoryInfo[listId].label}`, 20000);
+    }), `Save ${info.label}`, 20000);
     if (error) throw error;
     clearCoachCaches({ roster: false, command: true, sessionViewer: true, leaderboard: false });
-    notify(`${categoryInfo[listId].label} saved for this rider.`);
+    notify(`${info.label} saved for this rider.`);
     await refreshSessionViewerLight({ force: true });
   } catch (error) {
     notify(messageFrom(error), "error");
@@ -5542,7 +5591,7 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
     </article>`;
   }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   bindSessionViewerFastActions();
-  if (forceParkKing) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true, true);
+  if (forceParkKing && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true, true);
 }
 
 function bindSessionViewerFastActions() {
@@ -6372,6 +6421,7 @@ async function renderPlanner() {
   const planIsScheduled = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published");
   const planStatus = planIsScheduled ? "Scheduled" : recoverableDraft.length ? "Recovered draft" : plannedAssignments.length ? "Draft" : "Template";
   const editor = scheduleEditorHtml(templateAssignments, coachVenues, {
+    profile: athlete,
     dailyTitle: "Next Week Daily Tricks",
     dailyMeta: "Hidden plan · copied from this week unless already scheduled",
     tip: "Completed tricks are highlighted below each editor. Edit freely here without changing this week.",
@@ -6989,7 +7039,7 @@ async function renderStudentProfile() {
       <button class="danger-btn compact-btn" type="button" data-unlink-parent="${parent.id}">Unlink</button>
     </div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
-  const categoryEditor = scheduleEditorHtml(assignments, coachVenues);
+  const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete });
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
   const scoreXp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
@@ -7150,6 +7200,8 @@ function dailyVenueRowsFromForm(form) {
 }
 
 function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
+  const displayProfile = options.profile || null;
+  const dailyInfo = categoryDisplayInfo("daily", displayProfile);
   const savedVenueNames = (coachVenues || []).map((venue) => venue.name).filter(Boolean);
   const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
   const venueNameMap = new Map();
@@ -7174,10 +7226,10 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       return `${assignment.trick_name}${notes}`;
     }).join("\n");
     return `<div class="schedule-editor compact-schedule-editor venue-edit-panel compact-venue-editor ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
-      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} Daily Tricks</div><div class="panel-meta">Venue-specific list · one trick or line per row</div></div><div class="venue-head-actions"><div class="category-count">${venueDailyCount}</div><button class="secondary-btn compact-btn" type="button" data-save-daily-venue="${venueIndex}" data-original-venue="${escapeHtml(venue)}">Save this Daily list</button></div></div>
+      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} ${escapeHtml(dailyInfo.label)}</div><div class="panel-meta">${escapeHtml(dailyInfo.description)} · one trick or line per row</div></div><div class="venue-head-actions"><div class="category-count">${venueDailyCount}</div><button class="secondary-btn compact-btn" type="button" data-save-daily-venue="${venueIndex}" data-original-venue="${escapeHtml(venue)}">Save this ${escapeHtml(dailyInfo.label)} list</button></div></div>
       <div class="compact-venue-editor-grid">
         <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
-        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">Daily tricks for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add daily tricks here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(venueAssignments, options.showCompletedHighlights)}</div>
+        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">${escapeHtml(dailyInfo.label)} for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add ${escapeHtml(dailyInfo.label.toLowerCase())} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(venueAssignments, options.showCompletedHighlights)}</div>
       </div>
     </div>`;
   }).join("");
@@ -7188,7 +7240,8 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       <div class="field"><label for="custom-daily-list">Daily tricks</label><textarea id="custom-daily-list" name="customDaily" placeholder="One trick per line"></textarea></div>
     </div>
   </details>`;
-  const otherCategoryEditor = Object.entries(categoryInfo).filter(([category]) => category !== "daily").map(([category, info]) => {
+  const otherCategoryEditor = Object.keys(categoryInfo).filter((category) => category !== "daily").map((category) => {
+    const info = categoryDisplayInfo(category, displayProfile);
     const categoryAssignments = assignments.filter((assignment) => assignment.category === category);
     const assignmentText = categoryAssignments.map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";
@@ -7199,8 +7252,9 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
     </div>`, options.openWeeklySections ?? false);
   }).join("");
+  const dailySectionTitle = options.dailyTitle || (isContestPrepProfile(displayProfile) ? "Practice 1 Lists" : "Venue-Specific Daily Tricks");
   return `<div class="plan-accordion-stack">
-    ${planAccordionSection(options.dailyTitle || "Venue-Specific Daily Tricks", options.dailyMeta || "Select one riding location, then edit its Daily Tricks", `<div class="compact-venue-planner">
+    ${planAccordionSection(dailySectionTitle, options.dailyMeta || `Select one riding location, then edit its ${dailyInfo.label}`, `<div class="compact-venue-planner">
       <div class="compact-venue-controls">
         <div class="field compact-location-field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select></div>
         <div class="compact-editor-tip">${escapeHtml(options.tip || "Only one location is open at a time. Use the small Save button for quick edits, or save the full schedule for bigger changes.")}</div>

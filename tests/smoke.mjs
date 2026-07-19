@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.52";
+const version = "2.11.53";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
