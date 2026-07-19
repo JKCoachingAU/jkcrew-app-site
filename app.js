@@ -2417,10 +2417,10 @@ function assignmentGroups(assignments, interactive = false) {
     const list = category === "percentage"
       ? percentageAssignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive)
       : assignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive);
-    return `<section class="assignment-group ${category === "bonus" ? "bonus-assignment-group" : ""}" data-assignment-section="${sectionKey}">
-      <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="category-count">${items.filter(isAssignmentComplete).length}/${items.length}</div></div>
+    return `<details class="assignment-group session-assignment-accordion ${category === "bonus" ? "bonus-assignment-group" : ""}" data-assignment-section="${sectionKey}">
+      <summary class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="assignment-summary-actions"><div class="category-count">${items.filter(isAssignmentComplete).length}/${items.length}</div><span class="accordion-caret" aria-hidden="true">⌄</span></div></summary>
       <div class="assignment-list">${list}</div>
-    </section>`;
+    </details>`;
   }).join("");
 }
 
@@ -2460,18 +2460,20 @@ function helpRequestsHtml(requests, mode = "athlete") {
 }
 
 function helpUploadSection(requests) {
-  return `<section class="panel help-section">
-    <div class="panel-head"><div><div class="panel-title">Need Help With A Trick?</div><div class="panel-meta">Upload longer videos, save coach replies, and keep feedback in one place</div></div></div>
-    <div class="video-review-hint">Tip: trim if you can, but longer riding clips are supported. CoachNow-style drawing/voice-over needs a dedicated video annotation service later.</div>
-    <form id="help-request-form" class="help-form">
-      <div class="field"><label for="help-question">Short note or question</label><textarea id="help-question" name="question" required placeholder="I keep missing my barspin. What should I change?"></textarea></div>
-      <div class="field"><label for="help-video">Trick video</label><input id="help-video" name="video" type="file" accept="video/*" required></div>
-      <button class="primary-btn wide" type="submit">Submit to coach</button>
-    </form>
-    <div class="settings-divider"></div>
-    <div class="panel-title">My coach feedback</div>
-    <div class="help-list">${helpRequestsHtml(requests)}</div>
-  </section>`;
+  return `<details class="panel help-section session-panel-accordion">
+    <summary class="panel-head"><div><div class="panel-title">Need Help With A Trick?</div><div class="panel-meta">Upload longer videos, save coach replies, and keep feedback in one place</div></div><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
+    <div class="session-panel-accordion-body">
+      <div class="video-review-hint">Tip: trim if you can, but longer riding clips are supported. CoachNow-style drawing/voice-over needs a dedicated video annotation service later.</div>
+      <form id="help-request-form" class="help-form">
+        <div class="field"><label for="help-question">Short note or question</label><textarea id="help-question" name="question" required placeholder="I keep missing my barspin. What should I change?"></textarea></div>
+        <div class="field"><label for="help-video">Trick video</label><input id="help-video" name="video" type="file" accept="video/*" required></div>
+        <button class="primary-btn wide" type="submit">Submit to coach</button>
+      </form>
+      <div class="settings-divider"></div>
+      <div class="panel-title">My coach feedback</div>
+      <div class="help-list">${helpRequestsHtml(requests)}</div>
+    </div>
+  </details>`;
 }
 
 const trickRequestCategoryLabels = {
@@ -2974,11 +2976,13 @@ function extraTricksSection(profile = state.profile, editable = true) {
       <div class="extra-trick-copy"><strong>${escapeHtml(trick.title)}</strong><small>${escapeHtml(trick.note || "Personal practice · no points")}</small></div>
       ${editable ? `<button class="secondary-btn compact-btn" type="button" data-extra-edit="${escapeHtml(trick.id)}">Edit</button><button class="danger-btn compact-btn" type="button" data-extra-delete="${escapeHtml(trick.id)}">Delete</button>` : ""}
     </div>`).join("") : `<div class="empty compact-empty">No extra tricks yet. Add something you are personally working on.</div>`;
-  return `<section class="panel extra-tricks-panel">
-    <div class="panel-head"><div><div class="panel-title">Working On</div><div class="panel-meta">Personal tricks · no points · coach can view</div></div></div>
-    ${editable ? `<form id="extra-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="New trick I am working on"><input name="note" maxlength="180" placeholder="Optional note"><button class="primary-btn" type="submit">Add</button></form>` : ""}
-    <div class="goal-list">${rows}</div>
-  </section>`;
+  return `<details class="panel extra-tricks-panel session-panel-accordion">
+    <summary class="panel-head"><div><div class="panel-title">Working On</div><div class="panel-meta">Personal tricks · no points · coach can view</div></div><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
+    <div class="session-panel-accordion-body">
+      ${editable ? `<form id="extra-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="New trick I am working on"><input name="note" maxlength="180" placeholder="Optional note"><button class="primary-btn" type="submit">Add</button></form>` : ""}
+      <div class="goal-list">${rows}</div>
+    </div>
+  </details>`;
 }
 
 async function saveExtraTricks(tricks, message = "Working On saved.") {

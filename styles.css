@@ -921,6 +921,48 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   align-items: center;
   margin-bottom: 10px;
 }
+.session-assignment-accordion {
+  overflow: hidden;
+}
+.session-assignment-accordion > summary.assignment-group-head,
+.session-panel-accordion > summary.panel-head {
+  cursor: pointer;
+  list-style: none;
+}
+.session-assignment-accordion > summary.assignment-group-head::-webkit-details-marker,
+.session-panel-accordion > summary.panel-head::-webkit-details-marker {
+  display: none;
+}
+.session-assignment-accordion > summary.assignment-group-head {
+  margin-bottom: 0;
+}
+.session-assignment-accordion[open] > summary.assignment-group-head {
+  margin-bottom: 10px;
+}
+.assignment-summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.session-panel-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+.session-panel-accordion > summary.panel-head {
+  padding: 18px;
+  margin: 0;
+}
+.session-panel-accordion-body {
+  padding: 0 18px 18px;
+}
+.session-assignment-accordion[open] .accordion-caret,
+.session-panel-accordion[open] .accordion-caret {
+  background: var(--aqua);
+  color: #001411;
+  border-color: transparent;
+  transform: rotate(180deg);
+}
 .category-count {
   min-width: 40px;
   padding: 6px 8px;
