@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.49";
+const version = "2.11.50";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -70,6 +70,8 @@ for (const tone of ["aqua", "purple", "blue", "coral", "gold"]) {
 }
 assert(css.includes(".coach-shell .group-session-control"), "Coach Session Viewer should use the coach visual system");
 assert(css.includes(".coach-shell .coach-hub-card"), "Coach tool cards should use the coach visual system");
+assert(css.includes("--metric-ring-size: 72px"), "Coach dashboard metric values should share a fixed ring cell");
+assert(css.includes("place-items: center"), "Coach circular controls should center their contents");
 
 const planLoader = functionBody("getSessionViewerPlanData");
 assert(!planLoader.includes('.from("run_plans")'), "Session Viewer should not fetch run plans");

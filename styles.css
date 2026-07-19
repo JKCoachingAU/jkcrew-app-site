@@ -5036,25 +5036,59 @@ html[data-theme="light"] .success-burst {
 
 .coach-shell .command-metrics { gap: 14px; }
 .coach-shell .command-metric-card {
+  --metric-ring-size: 72px;
   position: relative;
   min-height: 122px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--metric-ring-size);
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 4px;
+  padding: 18px;
   overflow: hidden;
 }
 .coach-shell .command-metric-card::after {
   content: "";
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: 54px;
-  height: 54px;
+  top: 50%;
+  right: 18px;
+  width: var(--metric-ring-size);
+  height: var(--metric-ring-size);
+  box-sizing: border-box;
   border: 4px solid color-mix(in srgb, var(--coach-tone) 24%, transparent);
   border-right-color: var(--coach-tone);
   border-radius: 50%;
+  transform: translateY(-50%);
   opacity: 0.8;
+}
+.coach-shell .command-metric-card > span {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+}
+.coach-shell .command-metric-card > small {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
 }
 .coach-shell .command-metric-card span,
 .coach-shell .command-metric-card small { color: color-mix(in srgb, var(--coach-tone) 86%, #b9c4c9); }
-.coach-shell .command-metric-card strong { position: relative; z-index: 1; }
+.coach-shell .command-metric-card strong {
+  position: relative;
+  z-index: 1;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: var(--metric-ring-size);
+  height: var(--metric-ring-size);
+  display: grid;
+  place-items: center;
+  padding: 0 0 0.06em;
+  text-align: center;
+  line-height: 0.82;
+  font-size: clamp(2.1rem, 4vw, 2.8rem);
+}
 
 .coach-shell .command-message-accordion > summary,
 .coach-shell .command-hub-accordion > summary,
@@ -5080,8 +5114,12 @@ html[data-theme="light"] .success-burst {
 .coach-shell .coach-hub-grid { gap: 16px; }
 .coach-shell .coach-hub-card {
   position: relative;
-  min-height: 176px;
-  padding: 24px;
+  min-height: 154px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
   overflow: hidden;
 }
 .coach-shell .coach-hub-card::before,
@@ -5104,8 +5142,23 @@ html[data-theme="light"] .success-burst {
   color: var(--coach-tone);
   background: color-mix(in srgb, var(--coach-tone) 8%, transparent);
   box-shadow: 0 0 26px color-mix(in srgb, var(--coach-tone) 12%, transparent);
+  line-height: 1;
+  text-align: center;
 }
-.coach-shell .coach-hub-card strong { font-size: 1.45rem; }
+.coach-shell .coach-hub-card > div {
+  min-width: 0;
+  align-self: center;
+}
+.coach-shell .coach-hub-card strong {
+  margin: 0 0 8px;
+  font-size: 1.45rem;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+.coach-shell .coach-hub-card small {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .coach-shell .coach-hub-card:hover,
 .coach-shell .coach-tool-card:hover {
   border-color: color-mix(in srgb, var(--coach-tone) 64%, var(--line));
@@ -5188,16 +5241,34 @@ html[data-theme="light"] .success-burst {
   }
   .coach-shell .content { padding: 22px 16px 118px; }
   .coach-shell .command-page-hero { gap: 18px; }
-  .coach-shell .command-page-hero h1 { font-size: clamp(3.25rem, 16vw, 4.4rem); }
+  .coach-shell .command-page-hero h1,
+  .coach-shell .page-head h1 {
+    font-size: clamp(2.7rem, 11.5vw, 3.35rem);
+    line-height: 0.94;
+  }
   .coach-shell .command-start-button { min-height: 92px; }
   .coach-shell .command-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .coach-shell .command-metric-card { min-height: 108px; padding: 14px; }
-  .coach-shell .command-metric-card strong { font-size: 2.65rem; }
-  .coach-shell .command-metric-card::after { width: 44px; height: 44px; right: 12px; bottom: 12px; }
+  .coach-shell .command-metric-card {
+    --metric-ring-size: 64px;
+    min-height: 114px;
+    column-gap: 10px;
+    padding: 14px;
+  }
+  .coach-shell .command-metric-card strong { font-size: 2.35rem; }
+  .coach-shell .command-metric-card::after { right: 14px; }
   .coach-shell .coach-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .coach-shell .coach-hub-card { min-height: 190px; padding: 18px 16px; align-content: space-between; }
-  .coach-shell .coach-hub-card > span { width: 50px; height: 50px; }
-  .coach-shell .coach-hub-card strong { font-size: 1.25rem; }
+  .coach-shell .coach-hub-card {
+    min-height: 184px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: start;
+    align-items: start;
+    gap: 16px;
+    padding: 18px 16px;
+  }
+  .coach-shell .coach-hub-card > span { width: 52px; height: 52px; }
+  .coach-shell .coach-hub-card > div { align-self: start; }
+  .coach-shell .coach-hub-card strong { font-size: 1.25rem; line-height: 1.06; }
   .coach-shell .coach-hub-card small { font-size: 0.82rem; line-height: 1.45; }
   .coach-shell .coach-tools-row { grid-template-columns: 1fr; }
   .coach-shell .coach-live-card { padding: 18px 16px; }
@@ -5208,11 +5279,30 @@ html[data-theme="light"] .success-burst {
   .coach-shell .bottom-nav {
     padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
   }
-  .coach-shell .bottom-nav .nav-btn { gap: 5px; }
+  .coach-shell .bottom-nav .nav-btn {
+    min-width: 0;
+    grid-template-rows: 42px auto;
+    align-content: center;
+    justify-items: center;
+    gap: 6px;
+    padding: 6px 2px;
+    line-height: 1;
+  }
+  .coach-shell .bottom-nav .nav-icon {
+    width: 42px;
+    height: 42px;
+    margin: 0;
+    line-height: 1;
+  }
+  .coach-shell .bottom-nav .nav-btn > span:last-child {
+    width: 100%;
+    text-align: center;
+    line-height: 1.05;
+  }
 }
 
 @media (max-width: 390px) {
-  .coach-shell .coach-hub-card { min-height: 172px; padding: 15px 13px; }
+  .coach-shell .coach-hub-card { min-height: 172px; padding: 15px 13px; gap: 14px; }
   .coach-shell .coach-hub-card strong { font-size: 1.08rem; }
   .coach-shell .coach-hub-card small { font-size: 0.75rem; }
 }
