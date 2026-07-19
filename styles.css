@@ -5306,3 +5306,452 @@ html[data-theme="light"] .success-burst {
   .coach-shell .coach-hub-card strong { font-size: 1.08rem; }
   .coach-shell .coach-hub-card small { font-size: 0.75rem; }
 }
+
+/* Rider product theme ------------------------------------------------------
+   Visual-only layer. Rider workflows keep their existing DOM, handlers and
+   persistence paths; this scope supplies the shared product styling. */
+.rider-shell {
+  --bg: #020405;
+  --surface: #090e11;
+  --surface-2: #10161a;
+  --surface-3: #172027;
+  --line: rgba(183, 202, 211, 0.16);
+  --muted: #929ba0;
+  --text: #f4f1e8;
+  --aqua: #16dfcf;
+  --purple: #9254ff;
+  --red: #ff6c55;
+  --yellow: #f7c83e;
+  --rider-aqua: #16dfcf;
+  --rider-blue: #3a9cff;
+  --rider-violet: #9254ff;
+  --rider-gold: #f7c83e;
+  --rider-coral: #ff6c55;
+  --rider-tone: var(--rider-aqua);
+  background:
+    radial-gradient(circle at 8% 10%, rgba(22, 223, 207, 0.055), transparent 25rem),
+    radial-gradient(circle at 96% 18%, rgba(146, 84, 255, 0.055), transparent 27rem),
+    #020405;
+  color: var(--text);
+}
+
+.rider-shell .sidebar,
+.rider-shell .topbar,
+.rider-shell .bottom-nav {
+  background: rgba(2, 5, 7, 0.94);
+  border-color: var(--line);
+  backdrop-filter: blur(18px);
+}
+
+.rider-shell .brand-mark,
+.rider-shell .topbar-brand .brand-mark {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#050708, #050708) padding-box,
+    linear-gradient(135deg, var(--rider-aqua), var(--rider-blue), var(--rider-violet)) border-box;
+  box-shadow: 0 0 22px rgba(22, 223, 207, 0.1);
+}
+
+.rider-shell .content { width: min(100%, 1240px); margin-inline: auto; }
+.rider-shell .main-wrap {
+  background-image:
+    linear-gradient(rgba(61, 91, 105, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61, 91, 105, 0.035) 1px, transparent 1px);
+  background-size: 96px 96px;
+}
+
+.rider-shell .page-head {
+  position: relative;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+}
+.rider-shell .page-head::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--rider-tone), transparent 72%);
+  opacity: 0.85;
+}
+.rider-shell .eyebrow { color: var(--rider-tone); letter-spacing: 0.2em; }
+.rider-shell h1,
+.rider-shell h2,
+.rider-shell h3,
+.rider-shell .panel-title,
+.rider-shell .assignment-title,
+.rider-shell .leader-name,
+.rider-shell .nav-label,
+.rider-shell .stat-value {
+  color: var(--text);
+  font-family: var(--display);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.rider-shell .page-head h1,
+.rider-shell .hero-title {
+  color: var(--text);
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+}
+.rider-shell .page-head h1 span,
+.rider-shell .hero-title span {
+  color: transparent;
+  background: linear-gradient(108deg, var(--rider-tone), var(--rider-blue), var(--rider-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.rider-shell p,
+.rider-shell .muted,
+.rider-shell .helper,
+.rider-shell .assignment-meta,
+.rider-shell .panel-subtitle { color: var(--muted); }
+
+.rider-shell .panel,
+.rider-shell .stat-card,
+.rider-shell .assignment-row,
+.rider-shell .percentage-card,
+.rider-shell .daily-venue-accordion,
+.rider-shell .tricktionary-zone,
+.rider-shell .tricktionary-card,
+.rider-shell .leader-row,
+.rider-shell .board-chat-bubble,
+.rider-shell .park-king-card {
+  border-color: var(--line);
+  background:
+    linear-gradient(142deg, rgba(255, 255, 255, 0.024), transparent 38%),
+    linear-gradient(145deg, rgba(16, 23, 27, 0.98), rgba(7, 11, 13, 0.98));
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.2);
+}
+.rider-shell .panel,
+.rider-shell .stat-card,
+.rider-shell .assignment-group,
+.rider-shell .tricktionary-zone { position: relative; overflow: hidden; }
+.rider-shell .panel::before,
+.rider-shell .stat-card::before,
+.rider-shell .assignment-group::before,
+.rider-shell .tricktionary-zone::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto auto 0;
+  width: min(44%, 260px);
+  height: 2px;
+  background: linear-gradient(90deg, var(--rider-tone), transparent);
+  pointer-events: none;
+}
+
+.rider-shell .field,
+.rider-shell input,
+.rider-shell select,
+.rider-shell textarea {
+  border-color: rgba(183, 202, 211, 0.22);
+  background: rgba(5, 9, 11, 0.84);
+  color: var(--text);
+}
+.rider-shell .field:focus-within,
+.rider-shell input:focus,
+.rider-shell select:focus,
+.rider-shell textarea:focus {
+  border-color: var(--rider-aqua);
+  box-shadow: 0 0 0 3px rgba(22, 223, 207, 0.12);
+  outline: none;
+}
+.rider-shell .primary-btn,
+.rider-shell .start-session-btn,
+.rider-shell .chat-send-btn {
+  border-color: transparent;
+  background: linear-gradient(105deg, var(--rider-aqua), #27cbe0 55%, var(--rider-blue));
+  color: #031012;
+  box-shadow: 0 12px 26px rgba(22, 223, 207, 0.13);
+}
+.rider-shell .primary-btn:hover,
+.rider-shell .start-session-btn:hover,
+.rider-shell .chat-send-btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
+.rider-shell .secondary-btn,
+.rider-shell .ghost-btn {
+  border-color: rgba(183, 202, 211, 0.25);
+  background: rgba(12, 18, 21, 0.86);
+  color: var(--text);
+}
+.rider-shell .danger-btn,
+.rider-shell .remove-btn,
+.rider-shell [data-attempt-value="missed"] {
+  --rider-tone: var(--rider-coral);
+  border-color: color-mix(in srgb, var(--rider-coral) 72%, transparent);
+  color: var(--rider-coral);
+}
+
+/* Home: progress, ranking and level hierarchy. */
+.rider-shell #view[data-view="home"] { --rider-tone: var(--rider-aqua); }
+.rider-shell .athlete-scoreboard {
+  --rider-tone: var(--rider-aqua);
+  border-color: rgba(22, 223, 207, 0.28);
+}
+.rider-shell .score-ranking-card {
+  --rider-tone: var(--rider-violet);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-color: rgba(146, 84, 255, 0.25);
+}
+.rider-shell .score-ranking-stat + .score-ranking-stat { border-left-color: var(--line); }
+.rider-shell .score-ranking-stat:first-child .stat-value { color: var(--rider-aqua); }
+.rider-shell .score-ranking-stat:last-child .stat-value { color: var(--rider-violet); }
+.rider-shell .xp-panel,
+.rider-shell .xp-progress-card {
+  --rider-tone: var(--rider-gold);
+  border-color: rgba(247, 200, 62, 0.34);
+  background:
+    radial-gradient(circle at 7% 35%, rgba(247, 200, 62, 0.11), transparent 25%),
+    linear-gradient(145deg, rgba(16, 22, 24, 0.98), rgba(7, 11, 13, 0.98));
+}
+.rider-shell .xp-bar > span,
+.rider-shell .xp-progress-fill,
+.rider-shell .progress-fill {
+  background: linear-gradient(90deg, var(--rider-aqua), var(--rider-blue), var(--rider-violet));
+}
+.rider-shell .quote-panel {
+  --rider-tone: var(--rider-violet);
+  border-color: rgba(146, 84, 255, 0.4);
+  background:
+    radial-gradient(circle at 95% 25%, rgba(146, 84, 255, 0.17), transparent 31%),
+    linear-gradient(145deg, rgba(16, 22, 26, 0.98), rgba(7, 10, 13, 0.98));
+}
+.rider-shell .quote-panel .eyebrow,
+.rider-shell .quote-author { color: var(--rider-violet); }
+
+/* Session: each training mode has one stable semantic colour. */
+.rider-shell #view[data-view="session"] { --rider-tone: var(--rider-aqua); }
+.rider-shell .session-stat-bar article {
+  position: relative;
+  overflow: hidden;
+  border-top: 2px solid var(--rider-tone);
+}
+.rider-shell .session-stat-bar article:nth-child(1) { --rider-tone: var(--rider-aqua); }
+.rider-shell .session-stat-bar article:nth-child(2) { --rider-tone: var(--rider-blue); }
+.rider-shell .session-stat-bar article:nth-child(3) { --rider-tone: var(--rider-violet); }
+.rider-shell .session-stat-bar article strong { color: var(--rider-tone); }
+.rider-shell .daily-session-hub,
+.rider-shell .daily-venue-group {
+  --rider-tone: var(--rider-aqua);
+  border-color: rgba(22, 223, 207, 0.35);
+}
+.rider-shell .hub-timer,
+.rider-shell .daily-session-go {
+  border-color: rgba(22, 223, 207, 0.42);
+  background: radial-gradient(circle, rgba(22, 223, 207, 0.13), rgba(6, 12, 14, 0.9) 66%);
+}
+.rider-shell .hub-timer strong,
+.rider-shell .daily-session-go strong,
+.rider-shell .daily-time-value,
+.rider-shell .assignment-count { color: var(--rider-tone); }
+.rider-shell [data-assignment-section="dialled"] { --rider-tone: var(--rider-blue); }
+.rider-shell [data-assignment-section="one-bang"] { --rider-tone: var(--rider-violet); }
+.rider-shell [data-assignment-section="percentage"] { --rider-tone: var(--rider-violet); }
+.rider-shell [data-assignment-section="foam"] { --rider-tone: var(--rider-blue); }
+.rider-shell [data-assignment-section="bonus"] { --rider-tone: var(--rider-gold); }
+.rider-shell .assignment-group,
+.rider-shell .percentage-card { border-color: color-mix(in srgb, var(--rider-tone) 34%, var(--line)); }
+.rider-shell .assignment-row:hover,
+.rider-shell .assignment-row.complete { border-color: color-mix(in srgb, var(--rider-tone) 62%, var(--line)); }
+.rider-shell .assignment-row.complete {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--rider-tone) 13%, transparent), transparent 55%),
+    var(--surface-2);
+}
+.rider-shell .assignment-check.complete,
+.rider-shell .attempt-dot.landed {
+  border-color: var(--rider-aqua);
+  background: var(--rider-aqua);
+  color: #02110f;
+}
+.rider-shell .attempt-dot.missed {
+  border-color: var(--rider-coral);
+  background: rgba(255, 108, 85, 0.12);
+  color: var(--rider-coral);
+}
+.rider-shell .park-king-card {
+  --rider-tone: var(--rider-gold);
+  border-color: rgba(247, 200, 62, 0.42);
+  background:
+    radial-gradient(circle at 8% 45%, rgba(247, 200, 62, 0.12), transparent 24%),
+    linear-gradient(145deg, rgba(18, 20, 17, 0.98), rgba(7, 10, 11, 0.98));
+}
+.rider-shell .park-king-card .eyebrow,
+.rider-shell .park-king-card strong { color: var(--rider-gold); }
+
+/* Tricktionary: skill library categories stay easy to scan. */
+.rider-shell #view[data-view="tricktionary"] { --rider-tone: var(--rider-aqua); }
+.rider-shell [data-tricktionary-drop-category="new"] { --rider-tone: var(--rider-violet); }
+.rider-shell [data-tricktionary-drop-category="box"] { --rider-tone: var(--rider-blue); }
+.rider-shell [data-tricktionary-drop-category="spine"] { --rider-tone: var(--rider-aqua); }
+.rider-shell [data-tricktionary-drop-category="hip"] { --rider-tone: var(--rider-coral); }
+.rider-shell [data-tricktionary-drop-category="air"] { --rider-tone: var(--rider-gold); }
+.rider-shell .tricktionary-zone { border-color: color-mix(in srgb, var(--rider-tone) 38%, var(--line)); }
+.rider-shell .tricktionary-zone-icon,
+.rider-shell .tricktionary-zone-count {
+  border-color: color-mix(in srgb, var(--rider-tone) 54%, transparent);
+  background: color-mix(in srgb, var(--rider-tone) 13%, transparent);
+  color: var(--rider-tone);
+}
+
+/* Contests and board use gold for competitive hierarchy. */
+.rider-shell #view[data-view="contests"],
+.rider-shell #view[data-view="board"] { --rider-tone: var(--rider-gold); }
+.rider-shell #view[data-view="contests"] .panel,
+.rider-shell .board-rankings-panel { border-color: rgba(247, 200, 62, 0.3); }
+.rider-shell #view[data-view="contests"] .primary-btn {
+  background: linear-gradient(105deg, #f1ad26, var(--rider-gold));
+  color: #160f01;
+}
+.rider-shell .board-mode-toggle button.active {
+  border-color: transparent;
+  background: linear-gradient(105deg, var(--rider-aqua), var(--rider-blue));
+  color: #021012;
+}
+.rider-shell .leader-row:nth-child(1) { border-left: 2px solid var(--rider-gold); }
+.rider-shell .leader-row:nth-child(2) { border-left: 2px solid #cfd7db; }
+.rider-shell .leader-row:nth-child(3) { border-left: 2px solid #cf8242; }
+.rider-shell .leader-points,
+.rider-shell .leader-rank { color: var(--rider-gold); }
+.rider-shell .board-chat-panel {
+  --rider-tone: var(--rider-violet);
+  border-color: rgba(146, 84, 255, 0.3);
+}
+.rider-shell .board-chat-bubble { border-left: 3px solid rgba(146, 84, 255, 0.7); }
+.rider-shell .board-chat-message .chat-line-meta strong,
+.rider-shell .board-chat-bubble.is-coach,
+.rider-shell .board-chat-author.is-coach { color: var(--rider-violet); }
+.rider-shell .board-compose-shell {
+  border-color: rgba(146, 84, 255, 0.28);
+  background: rgba(7, 11, 13, 0.96);
+}
+
+/* Profile: information is blue, progress gold, destructive controls coral. */
+.rider-shell #view[data-view="profile"] { --rider-tone: var(--rider-blue); }
+.rider-shell .profile-card { border-color: rgba(58, 156, 255, 0.28); }
+.rider-shell .profile-avatar {
+  border: 2px solid var(--rider-blue);
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.92), 0 0 0 6px rgba(32, 157, 255, 0.65);
+}
+.rider-shell .profile-grid .xp-panel,
+.rider-shell .profile-grid .xp-progress-card { --rider-tone: var(--rider-gold); }
+.rider-shell .profile-card .danger-btn,
+.rider-shell .profile-card .remove-btn {
+  border-color: var(--rider-coral);
+  color: var(--rider-coral);
+}
+
+/* Rider navigation: exactly six destinations, with a compact native-app feel. */
+.rider-shell .bottom-nav {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-flow: initial;
+  gap: 3px;
+  padding-inline: max(8px, env(safe-area-inset-left));
+}
+.rider-shell .bottom-nav .nav-btn {
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.rider-shell .bottom-nav .nav-icon {
+  border: 1px solid rgba(183, 202, 211, 0.13);
+  background: rgba(15, 21, 24, 0.82);
+}
+.rider-shell .bottom-nav .nav-btn.active {
+  border-color: transparent;
+  background: transparent;
+  color: var(--rider-aqua);
+  box-shadow: inset 0 -3px 0 var(--rider-aqua);
+}
+.rider-shell .bottom-nav .nav-btn.active .nav-icon {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--rider-aqua), var(--rider-blue), var(--rider-violet));
+  color: #041012;
+  box-shadow: 0 0 18px rgba(58, 156, 255, 0.18);
+}
+.rider-shell .nav-btn:hover,
+.rider-shell .secondary-btn:hover,
+.rider-shell .ghost-btn:hover {
+  border-color: color-mix(in srgb, var(--rider-tone) 48%, var(--line));
+  background: color-mix(in srgb, var(--rider-tone) 8%, var(--surface-2));
+}
+
+/* Keep the user's existing light-mode choice while retaining colour meaning. */
+html[data-theme="light"] .rider-shell {
+  --bg: #f4f1e9;
+  --surface: #fbf9f3;
+  --surface-2: #f2eee6;
+  --surface-3: #e9e3d9;
+  --line: rgba(36, 50, 55, 0.15);
+  --muted: #667076;
+  --text: #101619;
+  background:
+    radial-gradient(circle at 8% 10%, rgba(22, 180, 169, 0.06), transparent 25rem),
+    radial-gradient(circle at 96% 18%, rgba(146, 84, 255, 0.05), transparent 27rem),
+    #f4f1e9;
+}
+html[data-theme="light"] .rider-shell .sidebar,
+html[data-theme="light"] .rider-shell .topbar,
+html[data-theme="light"] .rider-shell .bottom-nav { background: rgba(250, 248, 241, 0.95); }
+html[data-theme="light"] .rider-shell .main-wrap {
+  background-image:
+    linear-gradient(rgba(36, 50, 55, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 50, 55, 0.035) 1px, transparent 1px);
+}
+html[data-theme="light"] .rider-shell .panel,
+html[data-theme="light"] .rider-shell .stat-card,
+html[data-theme="light"] .rider-shell .assignment-row,
+html[data-theme="light"] .rider-shell .percentage-card,
+html[data-theme="light"] .rider-shell .daily-venue-accordion,
+html[data-theme="light"] .rider-shell .tricktionary-zone,
+html[data-theme="light"] .rider-shell .tricktionary-card,
+html[data-theme="light"] .rider-shell .leader-row,
+html[data-theme="light"] .rider-shell .board-chat-bubble,
+html[data-theme="light"] .rider-shell .park-king-card {
+  background:
+    linear-gradient(142deg, rgba(255, 255, 255, 0.6), transparent 38%),
+    linear-gradient(145deg, rgba(251, 249, 243, 0.99), rgba(241, 237, 228, 0.99));
+  box-shadow: 0 14px 30px rgba(55, 51, 42, 0.08);
+}
+html[data-theme="light"] .rider-shell .field,
+html[data-theme="light"] .rider-shell input,
+html[data-theme="light"] .rider-shell select,
+html[data-theme="light"] .rider-shell textarea {
+  background: rgba(255, 254, 250, 0.92);
+  color: var(--text);
+}
+
+@media (max-width: 780px) {
+  .rider-shell .content { padding-inline: 16px; }
+  .rider-shell .page-head { margin-bottom: 18px; }
+  .rider-shell .page-head h1 { font-size: clamp(2.35rem, 11vw, 4.2rem); }
+  .rider-shell .panel,
+  .rider-shell .stat-card { border-radius: 18px; }
+  .rider-shell .bottom-nav {
+    gap: 0;
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+  }
+  .rider-shell .bottom-nav .nav-btn {
+    min-height: 64px;
+    padding: 5px 2px;
+  }
+  .rider-shell .bottom-nav .nav-icon { width: 36px; height: 36px; }
+  .rider-shell .bottom-nav .nav-btn > span:last-child {
+    font-size: 0.5rem;
+    line-height: 1.05;
+    letter-spacing: 0.06em;
+  }
+  .rider-shell .assignment-row,
+  .rider-shell .percentage-card { border-radius: 15px; }
+}
+
+@media (max-width: 430px) {
+  .rider-shell .content { padding-inline: 12px; }
+  .rider-shell .score-ranking-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rider-shell .score-ranking-stat { padding-inline: 10px; }
+  .rider-shell .bottom-nav .nav-icon { width: 33px; height: 33px; }
+  .rider-shell .bottom-nav .nav-btn > span:last-child { font-size: 0.44rem; letter-spacing: 0.035em; }
+}
