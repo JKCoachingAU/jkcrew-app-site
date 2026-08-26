@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.59`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.60`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.59" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.60" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.59" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.60" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -951,14 +951,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell ${shellClass}">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.59" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.60" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.59" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.60" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -970,7 +970,7 @@ function renderShell() {
 }
 
 function pushSetupDismissKey() {
-  return `jkcrew-push-setup-dismissed:${state.user?.id || "signed-in"}:v1`;
+  return `jkcrew-push-setup-shown:${state.user?.id || "signed-in"}:v2`;
 }
 
 function pushSetupDismissed() {
@@ -985,7 +985,7 @@ function rememberPushSetupDismissal() {
   try {
     localStorage.setItem(pushSetupDismissKey(), "1");
   } catch (error) {
-    console.warn("Unable to remember the notification reminder preference.", error);
+    console.warn("Unable to remember that the notification prompt was shown.", error);
   }
 }
 
@@ -996,7 +996,7 @@ async function currentDevicePushEnabled() {
 }
 
 async function mountPushSetupPrompt() {
-  document.querySelector("#push-setup-prompt")?.remove();
+  document.querySelector("#push-setup-modal")?.remove();
   if (!state.user?.id || pushSetupDismissed()) return;
 
   try {
@@ -1005,33 +1005,41 @@ async function mountPushSetupPrompt() {
     console.warn("Push notification status could not be checked.", error);
   }
 
-  const mainWrap = document.querySelector(".main-wrap");
-  if (!mainWrap) return;
+  if (!document.querySelector(".main-wrap")) return;
   const supported = supportsPushNotifications();
   const needsIosInstall = isIos() && !isStandalone();
   const actionLabel = supported ? "Turn on notifications" : needsIosInstall ? "Install app first" : "Open notification setup";
+  const backdrop = document.createElement("div");
+  backdrop.id = "push-setup-modal";
+  backdrop.className = "push-setup-modal-backdrop";
   const prompt = document.createElement("section");
   prompt.id = "push-setup-prompt";
   prompt.className = "push-setup-prompt";
+  prompt.setAttribute("role", "dialog");
+  prompt.setAttribute("aria-modal", "true");
   prompt.setAttribute("aria-label", "Push notification setup");
   prompt.innerHTML = `
+    <div class="push-setup-icon" aria-hidden="true">🔔</div>
     <div class="push-setup-copy">
-      <strong>Stay in the loop</strong>
-      <span>Turn on JK Coaching notifications for coach messages, Crew Chat and leaderboard updates.</span>
+      <strong>Turn on JKCREW notifications</strong>
+      <span>Get daily Coach JK hype, trick completion updates, list requests and approval alerts.</span>
     </div>
     <div class="push-setup-actions">
       <button class="primary-btn" type="button" id="push-setup-enable">${escapeHtml(actionLabel)}</button>
       <button class="secondary-btn" type="button" id="push-setup-later">Not now</button>
-      <label class="push-setup-dismiss"><input type="checkbox" id="push-setup-never"> Don't show this again</label>
     </div>`;
-  mainWrap.querySelector(".topbar")?.insertAdjacentElement("afterend", prompt);
+  backdrop.append(prompt);
+  document.body.append(backdrop);
+  rememberPushSetupDismissal();
+  const closePrompt = () => backdrop.remove();
+  window.setTimeout(() => prompt.querySelector("#push-setup-enable")?.focus(), 50);
 
   prompt.querySelector("#push-setup-enable")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     if (!supported) {
       if (needsIosInstall) await installApp();
       else {
-        prompt.remove();
+        closePrompt();
         await navigate("profile");
         document.querySelector(".push-settings-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
       }
@@ -1041,20 +1049,14 @@ async function mountPushSetupPrompt() {
     button.textContent = "Turning on...";
     try {
       await enablePushNotifications(button);
-      prompt.remove();
+      closePrompt();
     } catch (error) {
       button.disabled = false;
       button.textContent = "Try again";
       notify(messageFrom(error), "error");
     }
   });
-  prompt.querySelector("#push-setup-later")?.addEventListener("click", () => prompt.remove());
-  prompt.querySelector("#push-setup-never")?.addEventListener("change", (event) => {
-    if (!event.currentTarget.checked) return;
-    rememberPushSetupDismissal();
-    prompt.remove();
-    notify("Notification reminder hidden on this device.");
-  });
+  prompt.querySelector("#push-setup-later")?.addEventListener("click", closePrompt);
 }
 
 async function navigate(view) {
