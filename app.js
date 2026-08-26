@@ -108,6 +108,7 @@ const coachNav = [
   ["command", "Command"],
   ["sessionViewer", "Session"],
   ["crew", "Riders"],
+  ["battleViewer", "Challenges"],
   ["coachTools", "Coach Tools"],
   ["more", "More"],
 ];
@@ -115,6 +116,7 @@ const coachNavGroups = [
   { id: "command", label: "Command", icon: "◇", links: [["command", "Dashboard"]] },
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
+  { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Live Battles"]] },
   { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Planner"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Run Planner"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
@@ -127,6 +129,7 @@ const parentNav = [
 function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
+  if (view === "battleViewer") return "battleViewer";
   if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
   if (["more", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
@@ -942,7 +945,7 @@ function renderShell() {
   const role = state.profile.role;
   const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
+  const navIcons = { home: "⌂", session: "↗", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
   const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
@@ -1094,6 +1097,7 @@ async function navigate(view) {
     tricktionary: renderTricktionary,
     command: renderCoachCommand,
     sessionViewer: renderSessionViewer,
+    battleViewer: renderCoachBattleViewer,
     coachTools: renderCoachTools,
     more: renderCoachMore,
     adminRecords: renderCoachAdminRecords,
@@ -4920,6 +4924,52 @@ async function renderContests() {
     ${runBuilderPanel(runs, { collapsed: true })}`;
   bindDashboardItemActions(renderContests);
   bindRunBuilderActions();
+}
+
+function coachBattleCardHtml(battle, pointsByRider = new Map()) {
+  const challengerPoints = Number(pointsByRider.get(battle.challenger_id) || 0);
+  const opponentPoints = Number(pointsByRider.get(battle.opponent_id) || 0);
+  const duration = Number(battle.duration_days || 7);
+  const statusLabel = battle.status === "accepted" ? "Live" : battle.status === "pending" ? "Waiting" : battle.status === "completed" ? "Complete" : battle.status;
+  const timing = battle.status === "accepted" && battle.ends_at
+    ? `Ends ${dateLabel(battle.ends_at)}`
+    : battle.status === "pending" ? `Requested ${dateLabel(battle.created_at)}`
+      : battle.responded_at ? `Updated ${dateLabel(battle.responded_at)}` : `${duration} day battle`;
+  const winner = battle.winner_id === battle.challenger_id ? battle.challenger_name : battle.winner_id === battle.opponent_id ? battle.opponent_name : "";
+  return `<article class="coach-battle-view-card ${escapeHtml(battle.status)}">
+    <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
+    <div class="coach-battle-riders">
+      <div>${avatarHtml({ display_name: battle.challenger_name }, "avatar")}<strong>${escapeHtml(battle.challenger_name || "Rider")}</strong><b>${challengerPoints} pts</b></div>
+      <span>VS</span>
+      <div>${avatarHtml({ display_name: battle.opponent_name }, "avatar")}<strong>${escapeHtml(battle.opponent_name || "Rider")}</strong><b>${opponentPoints} pts</b></div>
+    </div>
+    ${winner ? `<div class="coach-battle-winner">Winner: <strong>${escapeHtml(winner)}</strong> · ${Number(battle.reward_points || 5)} points transferred</div>` : ""}
+  </article>`;
+}
+
+function coachBattleSection(title, meta, battles, pointsByRider) {
+  return `<section class="panel coach-battle-view-section"><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill">${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map((battle) => coachBattleCardHtml(battle, pointsByRider)).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
+}
+
+async function renderCoachBattleViewer() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const [{ data: battles, error }, leaderboard] = await Promise.all([
+    client.rpc("get_coach_rider_battles", { p_limit: 100 }),
+    getLeaderboard(),
+  ]);
+  if (error) throw error;
+  const pointsByRider = new Map((leaderboard || []).map((row) => [row.athlete_id, Number(row.weekly_points || 0)]));
+  const rows = battles || [];
+  const live = rows.filter((battle) => battle.status === "accepted");
+  const pending = rows.filter((battle) => battle.status === "pending");
+  const completed = rows.filter((battle) => battle.status === "completed").slice(0, 20);
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach oversight</div><h1>Live <span>Challenges</span></h1><p>View rider battle requests, active scores and recent results. This screen is read-only.</p></div><button class="secondary-btn" type="button" id="refresh-coach-battles">Refresh</button></div>
+    <section class="stats-grid coach-battle-stats"><article class="stat-card"><div class="stat-label">Live now</div><div class="stat-value">${live.length}</div><div class="stat-foot">Accepted battles</div></article><article class="stat-card"><div class="stat-label">Waiting</div><div class="stat-value">${pending.length}</div><div class="stat-foot">Pending requests</div></article><article class="stat-card"><div class="stat-label">Completed</div><div class="stat-value">${completed.length}</div><div class="stat-foot">Recent results</div></article></section>
+    ${coachBattleSection("Live battles", "Current weekly scores and finish times", live, pointsByRider)}
+    ${coachBattleSection("Pending requests", "Waiting for a rider to accept or decline", pending, pointsByRider)}
+    ${coachBattleSection("Recent results", "Completed battles and transferred points", completed, pointsByRider)}`;
+  document.querySelector("#refresh-coach-battles")?.addEventListener("click", renderCoachBattleViewer);
 }
 
 function coachHubTone(view) {
@@ -8974,7 +9024,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js");
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.11.61", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
