@@ -1,11 +1,11 @@
 const CACHE_PREFIX = "jkcrew-riley-test-";
-const CACHE_NAME = `${CACHE_PREFIX}v2.11.78`;
+const CACHE_NAME = `${CACHE_PREFIX}v2.11.79`;
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.11.78",
-  "./app.js?v=2.11.78",
-  "./manifest.webmanifest?v=2.11.78",
+  "./styles.css?v=2.11.79",
+  "./app.js?v=2.11.79",
+  "./manifest.webmanifest?v=2.11.79",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",

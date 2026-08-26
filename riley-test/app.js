@@ -1012,7 +1012,74 @@ function renderShell() {
       <nav class="bottom-nav">${bottomNavHtml}</nav>
     </div>`;
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
-  mountPushSetupPrompt();
+  if (!mountBattleIntroPrompt()) mountPushSetupPrompt();
+}
+
+function battleIntroDismissKey() {
+  return `jkcrew-battle-intro:${state.user?.id || "signed-in"}:v1`;
+}
+
+function rememberBattleIntro() {
+  try { localStorage.setItem(battleIntroDismissKey(), "1"); } catch (_) {}
+}
+
+function battleIntroAlreadyShown() {
+  try { return localStorage.getItem(battleIntroDismissKey()) === "1"; } catch (_) { return false; }
+}
+
+function battleRulesMarkup({ welcome = false } = {}) {
+  return `<div class="battle-intro-icon" aria-hidden="true">VS</div>
+    <div class="eyebrow">${welcome ? "New in JKCREW" : "Battle rules"}</div>
+    <h2>${welcome ? "Your crew. Your rival. Your week." : "How rider battles work"}</h2>
+    <p>${welcome ? "Challenge another rider and turn every landed trick into a race up the leaderboard." : "Pick a rider, choose the battle length and let your weekly training points decide the winner."}</p>
+    <div class="battle-intro-steps">
+      <div><b>1</b><span><strong>Choose your rival</strong><small>Challenge up to three riders at once.</small></span></div>
+      <div><b>2</b><span><strong>Choose 1–7 days</strong><small>The battle begins when they accept.</small></span></div>
+      <div><b>3</b><span><strong>Stack your sheet points</strong><small>Highest score when time ends wins.</small></span></div>
+      <div><b>+5</b><span><strong>Take the win</strong><small>Five leaderboard points transfer from loser to winner.</small></span></div>
+    </div>`;
+}
+
+function showBattleRulesModal() {
+  document.querySelector("#battle-rules-modal")?.remove();
+  const backdrop = document.createElement("div");
+  backdrop.id = "battle-rules-modal";
+  backdrop.className = "battle-intro-backdrop";
+  backdrop.innerHTML = `<section class="battle-intro-card" role="dialog" aria-modal="true" aria-label="How rider battles work">
+    ${battleRulesMarkup()}
+    <button class="primary-btn wide" type="button" data-close-battle-rules>Ready to battle</button>
+  </section>`;
+  document.body.append(backdrop);
+  backdrop.querySelector("[data-close-battle-rules]")?.addEventListener("click", () => backdrop.remove());
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
+  window.setTimeout(() => backdrop.querySelector("[data-close-battle-rules]")?.focus(), 50);
+}
+
+function mountBattleIntroPrompt() {
+  if (!state.user?.id || battleIntroAlreadyShown() || !document.querySelector(".rider-shell")) return false;
+  const backdrop = document.createElement("div");
+  backdrop.id = "battle-intro-modal";
+  backdrop.className = "battle-intro-backdrop";
+  backdrop.innerHTML = `<section class="battle-intro-card battle-intro-welcome" role="dialog" aria-modal="true" aria-label="New rider battles">
+    ${battleRulesMarkup({ welcome: true })}
+    <div class="battle-intro-actions">
+      <button class="primary-btn" type="button" data-explore-battles>Show me Battles</button>
+      <button class="secondary-btn" type="button" data-dismiss-battle-intro>Maybe later</button>
+    </div>
+  </section>`;
+  document.body.append(backdrop);
+  rememberBattleIntro();
+  backdrop.querySelector("[data-dismiss-battle-intro]")?.addEventListener("click", () => {
+    backdrop.remove();
+    mountPushSetupPrompt();
+  });
+  backdrop.querySelector("[data-explore-battles]")?.addEventListener("click", async () => {
+    backdrop.remove();
+    await navigate("challenges");
+    showBattleRulesModal();
+  });
+  window.setTimeout(() => backdrop.querySelector("[data-explore-battles]")?.focus(), 50);
+  return true;
 }
 
 function pushSetupDismissKey() {
@@ -3927,7 +3994,8 @@ async function renderChallenges() {
         <button class="primary-btn wide" type="submit">Send battle request</button>
       </form>
       <div class="battle-list">${battles.length ? battles.map((battle) => weeklyBattleCardHtml(battle, pointsByRider, battleHistory)).join("") : `<div class="empty compact-empty">No battles this week yet. Pick a rider above to start one.</div>`}</div>
-    </section>`;
+    </section>
+    <button class="secondary-btn wide battle-rules-button" type="button" id="open-battle-rules"><span>VS</span> How Battles Work</button>`;
   document.querySelector("#battle-request-form")?.addEventListener("submit", requestWeeklyRiderBattle);
   document.querySelector("#toggle-battle-rider-list")?.addEventListener("click", (event) => {
     const picker = document.querySelector("#battle-request-form");
@@ -3936,6 +4004,7 @@ async function renderChallenges() {
     if (!picker?.classList.contains("hidden")) picker?.querySelector("input")?.focus();
   });
   document.querySelectorAll("[data-battle-response]").forEach((button) => button.addEventListener("click", respondWeeklyRiderBattle));
+  document.querySelector("#open-battle-rules")?.addEventListener("click", showBattleRulesModal);
 }
 
 async function requestWeeklyRiderBattle(event) {
