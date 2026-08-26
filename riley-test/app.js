@@ -342,7 +342,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.2" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.3" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -3939,17 +3939,43 @@ function riderBattleRecord(history = []) {
 function battleDashboardAlertsHtml(battles = []) {
   const incoming = battles.filter((battle) => battle.status === "pending" && (battle.participants || []).find((participant) => participant.athlete_id === state.user.id)?.response === "pending");
   if (!incoming.length) return "";
-  return `<section class="battle-dashboard-alerts" aria-label="Battle requests">${incoming.map((battle) => { const challengers = (battle.participants || []).filter((participant) => participant.team_number === 1).map((participant) => participant.display_name).join(" + "); return `<article class="battle-dashboard-alert">
+  return `<section class="battle-dashboard-alerts" aria-label="Battle requests">${incoming.map((battle) => { const challengers = (battle.participants || []).filter((participant) => participant.team_number === 1).map(battleParticipantFirstName).join(" + "); return `<article class="battle-dashboard-alert">
     <span class="battle-alert-icon">VS</span>
     <div><div class="eyebrow">New ${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} request</div><strong>${escapeHtml(challengers || "Your crew")} challenged you</strong><small>Tap to accept ✓ or decline ×.</small></div>
     <button class="primary-btn compact-btn" type="button" data-open-battle-request="${battle.id}">View challenge</button>
   </article>`; }).join("")}</section>`;
 }
 
+function battleParticipantFirstName(participant = {}) {
+  const name = String(participant.display_name || "").trim();
+  return name.split(/\s+/).filter(Boolean)[0] || "Rider";
+}
+
+function battleParticipantIdentity(participant = {}, fallback = {}) {
+  const displayName = String(participant.display_name || fallback.display_name || "").trim() || "Rider";
+  const participantAvatar = avatarUrl(participant) ? participant.avatar : null;
+  const fallbackAvatar = avatarUrl(fallback) ? fallback.avatar : null;
+  return {
+    ...fallback,
+    ...participant,
+    display_name: displayName,
+    avatar: participantAvatar || fallbackAvatar || participant.avatar || fallback.avatar || {},
+  };
+}
+
+function hydrateRiderBattleIdentities(battles = [], leaderboard = []) {
+  const profilesById = new Map(leaderboard.filter((rider) => rider.athlete_id).map((rider) => [rider.athlete_id, rider]));
+  if (state.user?.id && state.profile) profilesById.set(state.user.id, { ...(profilesById.get(state.user.id) || {}), ...state.profile });
+  return battles.map((battle) => ({
+    ...battle,
+    participants: (battle.participants || []).map((participant) => battleParticipantIdentity(participant, profilesById.get(participant.athlete_id) || {})),
+  }));
+}
+
 function battleTeamHtml(participants = [], teamNumber, myTeamNumber) {
   const team = participants.filter((participant) => participant.team_number === teamNumber);
   const score = team.reduce((sum, participant) => sum + Number(participant.weekly_points || 0), 0);
-  return `<div class="battle-team ${teamNumber === myTeamNumber ? "my-team" : ""}"><small>${teamNumber === myTeamNumber ? "Your team" : `Team ${teamNumber}`}</small><div class="battle-team-avatars">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(participant.athlete_id === state.user.id ? "You" : participant.display_name)).join(" + ")}</strong><b>${score} pts</b></div>`;
+  return `<div class="battle-team ${teamNumber === myTeamNumber ? "my-team" : ""}"><small>${teamNumber === myTeamNumber ? "Your team" : `Team ${teamNumber}`}</small><div class="battle-team-avatars">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(battleParticipantFirstName(participant))).join(" + ")}</strong><b>${score} pts</b></div>`;
 }
 
 function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory = []) {
@@ -3970,7 +3996,7 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
   return `<article class="battle-card ${battle.status}">
     <div class="battle-format-chip">${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)}</div>
     <div class="battle-riders battle-team-versus">${battleTeamHtml(participants, myTeam, myTeam)}<b>VS</b>${battleTeamHtml(participants, myTeam === 1 ? 2 : 1, myTeam)}</div>
-    ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(rivals[0].display_name)}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>5 points split across the winning team</strong></div>`}
+    ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(battleParticipantFirstName(rivals[0]))}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>5 points split across the winning team</strong></div>`}
     <div class="battle-status"><span class="status-chip">${escapeHtml(battle.status)}</span><small>${escapeHtml(statusCopy)}</small></div>
     ${pendingActions}
   </article>`;
@@ -3984,11 +4010,12 @@ async function getMyWeeklyChallenge() {
 
 async function renderChallenges() {
   if (state.profile?.role !== "athlete") return navigate("home");
-  const [leaderboard, battles, weeklyChallenge] = await Promise.all([
+  const [leaderboard, rawBattles, weeklyChallenge] = await Promise.all([
     getLeaderboard(),
     getWeeklyRiderBattles(),
     getMyWeeklyChallenge(),
   ]);
+  const battles = hydrateRiderBattleIdentities(rawBattles, leaderboard);
   const battleHistory = battles.filter((battle) => battle.status === "completed");
   const challengeTarget = Number(weeklyChallenge?.target_count || 0);
   const challengeProgress = Number(weeklyChallenge?.progress || 0);
@@ -9506,7 +9533,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.2", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.3", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

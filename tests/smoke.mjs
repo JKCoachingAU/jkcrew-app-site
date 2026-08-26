@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.2";
+const version = "2.13.3";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -159,9 +159,30 @@ assert(battleMigration.includes("battle_size between 1 and 3"), "Battle formats 
 assert(battleMigration.includes("response = 'pending'"), "All selected riders must accept before a team battle starts");
 assert(battleMigration.includes("maximum of 3 active battles"), "The three-active-battle limit must remain enforced in the database");
 assert(battleMigration.includes("row level security"), "New battle and challenge tables must enable RLS");
+assert(battleMigration.includes("'display_name', profile.display_name"), "Battle RPCs must return each participant's display name");
+assert(battleMigration.includes("'avatar', profile.avatar"), "Battle RPCs must return each participant's profile picture");
 assert(battleContractMigration.includes("'one_bang'"), "Weekly challenges must use the original One Bang category key");
 assert(battleContractMigration.includes("'foam_pit'"), "Weekly challenges must use the original Foam Pit category key");
 assert(functionBody("battleRulesMarkup").includes("1v1, 2v2 or 3v3"), "Rider battle help must explain every team format");
+const battleLoader = functionBody("getWeeklyRiderBattles");
+assert(battleLoader.includes('rpc("get_my_rider_battles")'), "Battle identities must load through the limited participant RPC");
+assert(!battleLoader.includes('challenger:profiles'), "Battle loading must not rely on profile joins hidden by rider RLS");
+const battleFirstName = new Function(`${functionBody("battleParticipantFirstName")}; return battleParticipantFirstName;`)();
+assert.equal(battleFirstName({ display_name: "Riley Chen" }), "Riley", "Battle cards should show riders' first names");
+assert.equal(battleFirstName({ display_name: "Lars Kindermann" }), "Lars", "Opponent cards should show the opponent's first name");
+assert.equal(battleFirstName({}), "Rider", "Missing identities need a safe fallback");
+const battleIdentity = new Function("avatarUrl", `${functionBody("battleParticipantIdentity")}; return battleParticipantIdentity;`)((profile = {}) => profile.avatar?.dataUrl || "");
+const larsAvatar = { dataUrl: "data:image/jpeg;base64,lars" };
+assert.deepEqual(
+  battleIdentity({ athlete_id: "lars" }, { athlete_id: "lars", display_name: "Lars Kindermann", avatar: larsAvatar }),
+  { athlete_id: "lars", display_name: "Lars Kindermann", avatar: larsAvatar },
+  "Battle cards should recover a missing RPC identity from the leaderboard",
+);
+assert.equal(battleIdentity({ athlete_id: "riley", display_name: "Riley Chen", avatar: {} }, {}).display_name, "Riley Chen", "Riders without a photo must keep their real name");
+assert(functionBody("battleTeamHtml").includes("battleParticipantFirstName(participant)"), "Battle teams must render first names instead of generic labels");
+assert(functionBody("battleTeamHtml").includes('avatarHtml(participant, "avatar")'), "Battle teams must render each participant's profile picture or initials fallback");
+assert(functionBody("weeklyBattleCardHtml").includes("battleParticipantFirstName(rivals[0])"), "Head-to-head copy must name the opposing rider");
+assert(functionBody("renderChallenges").includes("hydrateRiderBattleIdentities(rawBattles, leaderboard)"), "Challenge cards must hydrate any missing participant identity safely");
 const battleSelectionSizer = new Function(`${functionBody("riderBattleSelectionSize")}; return riderBattleSelectionSize;`)();
 assert.equal(battleSelectionSizer(1, 0, 0), 1, "An empty rider battle should remain 1v1");
 assert.equal(battleSelectionSizer(1, 1, 1), 2, "Adding one teammate should automatically grow the battle to 2v2");
