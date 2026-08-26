@@ -1,0 +1,9225 @@
+const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
+const RILEY_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57";
+const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+});
+
+const app = document.querySelector("#app");
+const toast = document.querySelector("#toast");
+const installButton = document.querySelector("#install-app");
+let deferredInstallPrompt = null;
+const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
+const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
+const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
+const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
+const state = {
+  session: null,
+  user: null,
+  profile: null,
+  view: "home",
+  activeTraining: null,
+  attempts: [],
+  trickStartedAt: Date.now(),
+  timer: null,
+  selectedAthleteId: null,
+  publicAthleteId: null,
+  selectedVenue: "",
+  sessionOpenDailyVenues: new Set(),
+  sessionViewerGroup: "monday",
+  sessionViewerVenue: "",
+  sessionViewerSearch: "",
+  sessionViewerOpenAthleteId: "",
+  sessionViewerActiveList: "daily",
+  sessionViewerTimer: null,
+  sessionViewerClock: null,
+  sessionViewerRosterCache: [],
+  sessionViewerActiveSessionCache: null,
+  runBuilder: null,
+  runPlaybackTimer: null,
+  draggedRunPoint: null,
+  coachPlanVenue: "",
+  plannerAthleteId: null,
+  coachTricktionaryAthleteId: null,
+  tricktionaryDrag: null,
+  coachPreviewTab: "home",
+  boardLeaderboardView: "weekly",
+  leaderboardFallbackNotified: false,
+  videoReviewStatus: "all",
+  videoReviewRider: "all",
+  videoReviewSearch: "",
+  videoReviewMedia: new Map(),
+  trickRequestSearchTimer: null,
+  realtimeChannel: null,
+  syncRefreshTimer: null,
+  cache: {},
+  inFlight: new Map(),
+  sessionHandlePromise: null,
+  sessionHandleUserId: "",
+  pendingAssignmentProgress: new Map(),
+  pendingPercentageAttempts: new Map(),
+  coachRosterIds: new Set(),
+  sessionRenderVersion: 0,
+  sessionViewerRenderVersion: 0,
+  sessionViewerDataVersion: 0,
+  parkKingRequestSerial: 0,
+  commandParkKingVenue: "",
+  commandParkKingRows: [],
+  commandParkKingVenues: [],
+};
+
+function cacheGet(key, ttlMs = 8000) {
+  const entry = state.cache?.[key];
+  if (!entry || Date.now() - entry.time > ttlMs) return null;
+  return entry.value;
+}
+
+function cacheSet(key, value) {
+  state.cache[key] = { value, time: Date.now() };
+  return value;
+}
+
+function cacheClear(prefix = "") {
+  Object.keys(state.cache || {}).forEach((key) => {
+    if (!prefix || key.startsWith(prefix)) delete state.cache[key];
+  });
+}
+
+function invalidateSessionViewerData() {
+  state.sessionViewerDataVersion += 1;
+  cacheClear("coach-live:");
+}
+
+const athleteNav = [
+  ["home", "Home"],
+  ["session", "Session"],
+  ["challenges", "Challenges"],
+  ["contests", "Contests"],
+  ["board", "Board"],
+  ["profile", "Profile"],
+];
+const coachNav = [
+  ["command", "Command"],
+  ["sessionViewer", "Session"],
+  ["crew", "Riders"],
+  ["coachTools", "Coach Tools"],
+  ["more", "More"],
+];
+const coachNavGroups = [
+  { id: "command", label: "Command", icon: "◇", links: [["command", "Dashboard"]] },
+  { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
+  { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Planner"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Run Planner"]] },
+  { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
+];
+const parentNav = [
+  ["home", "Home"],
+  ["tricktionary", "Tricktionary"],
+  ["profile", "Profile"],
+];
+
+function coachPrimaryView(view = "") {
+  if (view === "sessionViewer") return "sessionViewer";
+  if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
+  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
+  if (["more", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
+  return "command";
+}
+
+const escapeHtml = (value = "") => String(value)
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
+
+const initials = (name = "JK") => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "JK";
+const dateLabel = (value) => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+const formatPbTime = (seconds) => Number.isFinite(Number(seconds)) && Number(seconds) > 0 ? formatTime(Number(seconds)) : "-";
+const parsePbSeconds = (value = "") => {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text);
+  const match = text.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) return NaN;
+  return (Number(match[1]) * 60) + Number(match[2]);
+};
+const brisbaneDateParts = (date = new Date()) => new Intl.DateTimeFormat("en-AU", {
+  timeZone: "Australia/Brisbane",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  weekday: "short",
+}).formatToParts(date).reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {});
+const localDate = () => {
+  const parts = brisbaneDateParts();
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+const weekStartDate = () => {
+  const parts = brisbaneDateParts();
+  const date = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+  const day = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - day);
+  return date.toISOString().slice(0, 10);
+};
+const shiftDateString = (dateString, days) => {
+  const [year, month, day] = String(dateString).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+const nextWeekStartDate = () => shiftDateString(weekStartDate(), 7);
+const weekStartIso = () => `${weekStartDate()}T00:00:00+10:00`;
+const weekEndDate = () => new Date(new Date(weekStartIso()).getTime() + (6 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+const weekLabel = () => new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" }).format(new Date(`${weekStartDate()}T00:00:00+10:00`));
+const messageFrom = (error, fallback = "Something went wrong. Please try again.") => {
+  if (!error) return fallback;
+  if (typeof error === "string") {
+    const text = error.trim();
+    return text && text !== "{}" ? text : fallback;
+  }
+  const messageParts = [
+    error.message,
+    error.error_description,
+    error.error,
+    error.details,
+    error.hint,
+    error.statusText,
+  ].filter((part) => typeof part === "string" && part.trim());
+  let message = messageParts[0] || "";
+  if (!message && typeof error === "object") {
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== "{}") message = json;
+    } catch {
+      message = "";
+    }
+  }
+  if (!message) message = fallback;
+  if (/522|timed out|timeout|failed to fetch|network|connection/i.test(message)) {
+    return "JKCREW backend is not responding right now. Please try again in a minute.";
+  }
+  if (/invalid login credentials/i.test(message)) {
+    return "Email or password is incorrect. Please try again.";
+  }
+  return message;
+};
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+const isSafari = () => /safari/i.test(window.navigator.userAgent) && !/chrome|crios|android/i.test(window.navigator.userAgent);
+const avatarUrl = (profile = {}) => profile.avatar?.dataUrl || "";
+const normalizedTheme = (value) => value === "light" ? "light" : "dark";
+function applyTheme(value = "dark") {
+  const theme = normalizedTheme(value);
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f1ea" : "#050706");
+  try {
+    localStorage.setItem("jkcrew-theme", theme);
+  } catch {
+    // Theme still applies for this session if storage is blocked.
+  }
+}
+const firstName = (profile = {}) => String(profile.display_name || "This rider").split(/\s+/).filter(Boolean)[0] || "This rider";
+const isCoachRole = (role) => ["coach", "admin"].includes(role);
+const linesHtml = (value = "", emptyText = "Not added yet") => {
+  const lines = String(value || "").split(/\n|,/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="subcopy">${escapeHtml(emptyText)}</p>`;
+};
+const pointsForKey = (row = {}, pointsKey = "weekly_points") => Number(row[pointsKey] ?? row.weekly_points ?? 0);
+const leaderboardRankForRow = (row = {}, index = 0, pointsKey = "weekly_points") => {
+  const key = pointsKey === "all_time_points" ? "all_time_rank_number" : "rank_number";
+  const rank = Number(row[key]);
+  return Number.isFinite(rank) && rank > 0 ? rank : index + 1;
+};
+const ghostModeLabelHtml = (row = {}) => {
+  if (!row.ghost_mode) return "";
+  const message = row.athlete_id === state.user?.id
+    ? "Ghost Mode Active — only you and coaches can see this"
+    : "Ghost Mode";
+  return `<small class="ghost-mode-label">${escapeHtml(message)}</small>`;
+};
+const medalForRank = (row, index, rows = [], pointsKey = "weekly_points") => {
+  const medals = ["🥇", "🥈", "🥉"];
+  const points = pointsForKey(row, pointsKey);
+  if (index >= 0 && index < 3 && points > 0) return `<span class="rank-medal" title="Top ${index + 1}">${medals[index]}</span>`;
+  const scoredRows = rows.filter((entry) => pointsForKey(entry, pointsKey) > 0);
+  const lastScored = scoredRows[scoredRows.length - 1];
+  if (scoredRows.length > 1 && points > 0 && lastScored?.athlete_id === row.athlete_id) return `<span class="rank-medal last-place" title="Last place">💩</span>`;
+  return "";
+};
+const earnedBadges = (value) => Array.isArray(value) ? value : [];
+const badgeChipHtml = (badge, className = "") => {
+  if (!badge) return "";
+  const icon = badge.icon || "★";
+  const label = badge.label || badge;
+  return `<span class="public-badge ${className}" title="${escapeHtml(badge.description || label)}"><span>${escapeHtml(icon)}</span>${escapeHtml(label)}</span>`;
+};
+const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
+  const items = earnedBadges(badges);
+  if (items.length) return items.map((badge) => badgeChipHtml(badge)).join("");
+  return emptyText ? `<span class="public-badge muted-badge">${escapeHtml(emptyText)}</span>` : "";
+};
+const XP_LEVEL_CAP = 50;
+const SCORE_POINTS_PER_LEVEL = 5;
+function localXpRequiredForLevel(level = 1) {
+  const target = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
+  let total = 0;
+  for (let lvl = 2; lvl <= target; lvl += 1) {
+    if (lvl <= 20) total += 100 + ((lvl - 2) * 50);
+    else if (lvl <= 35) total += 1150 + ((lvl - 21) * 125);
+    else total += 3100 + ((lvl - 36) * 250);
+  }
+  return total;
+}
+function localLevelFromXp(xp = 0) {
+  const total = Math.max(0, Number(xp || 0));
+  let level = 1;
+  for (let lvl = 1; lvl <= XP_LEVEL_CAP; lvl += 1) {
+    if (localXpRequiredForLevel(lvl) <= total) level = lvl;
+  }
+  return level;
+}
+function localLevelBadge(level = 1) {
+  const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
+  const tones = safeLevel >= 41 ? "red" : safeLevel >= 36 ? "purple" : safeLevel >= 31 ? "aqua" : safeLevel >= 21 ? "gold" : safeLevel >= 11 ? "silver" : "aqua";
+  return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, tone: tones };
+}
+function scoreLevelFromPoints(points = 0) {
+  return Math.min(XP_LEVEL_CAP, Math.max(1, Math.floor(Math.max(0, Number(points || 0)) / SCORE_POINTS_PER_LEVEL) + 1));
+}
+function scoreLevelSummary(points = 0) {
+  const total = Math.max(0, Number(points || 0));
+  const level = scoreLevelFromPoints(total);
+  const current = (level - 1) * SCORE_POINTS_PER_LEVEL;
+  const nextLevel = Math.min(XP_LEVEL_CAP, level + 1);
+  const next = level >= XP_LEVEL_CAP ? current : level * SCORE_POINTS_PER_LEVEL;
+  const into = Math.max(0, total - current);
+  const span = Math.max(1, next - current);
+  return {
+    xp_total: total,
+    level,
+    level_cap: XP_LEVEL_CAP,
+    current_level_xp: current,
+    next_level: nextLevel,
+    next_level_xp: next,
+    xp_into_level: into,
+    xp_needed: level >= XP_LEVEL_CAP ? 0 : Math.max(0, next - total),
+    progress_percent: level >= XP_LEVEL_CAP ? 100 : Math.min(100, Math.round((into / span) * 100)),
+    current_badge: localLevelBadge(level),
+    badges: [],
+    unit_label: "pts",
+    progress_note: "Scoreboard points decide the visible level and badge.",
+  };
+}
+function permanentScorePoints(row = {}) {
+  if (row.all_time_points != null || row.xp_total != null) return Math.max(0, Number(row.all_time_points ?? row.xp_total ?? 0));
+  const level = Number(row.level || row.xp_level || 0);
+  if (level > 1) return Math.max(0, (level - 1) * SCORE_POINTS_PER_LEVEL);
+  return Math.max(0, Number(row.weekly_points || 0));
+}
+function permanentScoreSummary(row = {}) {
+  const summary = scoreLevelSummary(permanentScorePoints(row));
+  return {
+    ...summary,
+    progress_note: "Badges and levels follow all-time progress. Weekly points can reset without removing earned badges.",
+  };
+}
+function normalizeXpSummary(summary = {}, profile = {}) {
+  const xp = Number(summary.xp_total ?? profile.xp_total ?? 0);
+  const level = Number(summary.level ?? profile.level ?? localLevelFromXp(xp));
+  const current = Number(summary.current_level_xp ?? localXpRequiredForLevel(level));
+  const nextLevel = Math.min(XP_LEVEL_CAP, Number(summary.next_level ?? level + 1));
+  const next = Number(summary.next_level_xp ?? localXpRequiredForLevel(nextLevel));
+  const span = Math.max(1, next - current);
+  const into = Number(summary.xp_into_level ?? Math.max(0, xp - current));
+  return {
+    ...summary,
+    xp_total: xp,
+    level,
+    level_cap: XP_LEVEL_CAP,
+    current_level_xp: current,
+    next_level: nextLevel,
+    next_level_xp: next,
+    xp_into_level: into,
+    xp_needed: level >= XP_LEVEL_CAP ? 0 : Number(summary.xp_needed ?? Math.max(0, next - xp)),
+    progress_percent: level >= XP_LEVEL_CAP ? 100 : Number(summary.progress_percent ?? Math.min(100, Math.round((into / span) * 100))),
+    current_badge: summary.current_badge || localLevelBadge(level),
+    badges: Array.isArray(summary.badges) ? summary.badges : [],
+  };
+}
+function levelBadgeHtml(badge = {}, compact = false) {
+  const safe = badge || {};
+  const level = Math.min(XP_LEVEL_CAP, Math.max(1, Number(safe.level || 1)));
+  const tone = escapeHtml(safe.tone || "bronze");
+  const imageUrl = levelBadgeImageUrl(level);
+  return `<span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
+    ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
+    <strong>L${escapeHtml(level)}</strong>
+  </span>`;
+}
+function levelBadgeImageUrl(level = 1) {
+  const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
+  if (safeLevel > 45) return "";
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.77`;
+}
+function xpProgressHtml(summary, compact = false) {
+  const xp = normalizeXpSummary(summary);
+  const unit = xp.unit_label || "XP";
+  return `<div class="xp-panel ${compact ? "compact" : ""}">
+    <div class="xp-badge-wrap">${levelBadgeHtml(xp.current_badge)}</div>
+    <div class="xp-copy">
+      <div class="xp-title">Level ${xp.level}<span>${xp.xp_total} ${escapeHtml(unit)}</span></div>
+      <div class="xp-bar" aria-label="Level progress"><span style="width:${Math.max(0, Math.min(100, xp.progress_percent))}%"></span></div>
+      <div class="xp-meta">${xp.level >= XP_LEVEL_CAP ? "Max level reached" : `${xp.xp_needed} ${escapeHtml(unit)} to Level ${xp.next_level}`}</div>
+    </div>
+  </div>`;
+}
+function levelBadgesGridHtml(summary) {
+  const xp = normalizeXpSummary(summary);
+  const badges = xp.badges.length ? xp.badges : Array.from({ length: XP_LEVEL_CAP }, (_item, index) => {
+    const level = index + 1;
+    return { ...localLevelBadge(level), unlocked: level <= xp.level, current: level === xp.level, xp_required: localXpRequiredForLevel(level) };
+  });
+  return `<div class="level-badge-grid">${badges.map((badge) => `<div class="level-badge-cell ${badge.unlocked ? "unlocked" : "locked"} ${badge.current ? "current" : ""}" title="${escapeHtml(badge.label)} · ${badge.xp_required || 0} XP">
+    ${levelBadgeHtml(badge, true)}
+    <small>${badge.level > 45 ? "Artwork pending" : badge.unlocked ? `L${badge.level}` : "Locked"}</small>
+  </div>`).join("")}</div>`;
+}
+function levelBadgesAccordionHtml(summary, options = {}) {
+  const xp = normalizeXpSummary(summary);
+  const unlocked = Math.min(XP_LEVEL_CAP, Math.max(0, xp.level || 0));
+  const title = options.title || "Badges";
+  const meta = options.meta || `${unlocked}/${XP_LEVEL_CAP} unlocked · current Level ${xp.level}`;
+  return `<details class="badges-accordion" ${options.open ? "open" : ""}>
+    <summary>
+      <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>
+      <span class="badges-summary-current">${levelBadgeHtml(xp.current_badge, true)}<b>Open</b></span>
+    </summary>
+    <div class="badges-accordion-body">
+      <div class="badge-lock-note">${escapeHtml(xp.progress_note || "Level badges unlock automatically from the current scoreboard level. Riders cannot manually edit badges.")}</div>
+      ${levelBadgesGridHtml(xp)}
+    </div>
+  </details>`;
+}
+function xpHistoryHtml(rows = []) {
+  return rows.length ? `<div class="history-list xp-history-list">${rows.map((row) => `<div class="list-row">
+    <div><strong>${escapeHtml(row.item || row.reason || row.source_type)}</strong><small>${escapeHtml(row.reason || row.source_type)} · ${dateLabel(row.event_at)}${row.level_after > row.level_before ? ` · Level ${row.level_after}` : ""}</small></div>
+    <span class="points xp-points">${row.xp > 0 ? "+" : ""}${row.xp}<small> XP</small></span>
+  </div>`).join("")}</div>` : `<div class="empty compact-empty">No XP history yet.</div>`;
+}
+const motivationalQuotes = [
+  { quote: "Pressure is a privilege.", by: "Billie Jean King", role: "Tennis champion" },
+  { quote: "Do not count the days. Make the days count.", by: "Muhammad Ali", role: "Boxing champion" },
+  { quote: "You miss 100% of the shots you do not take.", by: "Wayne Gretzky", role: "Ice hockey champion" },
+  { quote: "Hard work beats talent when talent fails to work hard.", by: "Tim Notke", role: "Coach" },
+  { quote: "The more difficult the victory, the greater the happiness in winning.", by: "Pelé", role: "Football legend" },
+  { quote: "I am building a fire, and every day I train, I add more fuel.", by: "Mia Hamm", role: "Football champion" },
+  { quote: "I do not run away from a challenge because I am afraid.", by: "Nadia Comaneci", role: "Gymnastics champion" },
+  { quote: "The key is not the will to win. It is the will to prepare to win.", by: "Bobby Knight", role: "Basketball coach" },
+  { quote: "Excellence is the gradual result of always striving to do better.", by: "Pat Riley", role: "Basketball coach" },
+  { quote: "I have failed over and over again. That is why I succeed.", by: "Michael Jordan", role: "Basketball champion" },
+  { quote: "Everything negative is all an opportunity for me to rise.", by: "Kobe Bryant", role: "Basketball champion" },
+  { quote: "I really think a champion is defined by not giving up.", by: "Serena Williams", role: "Tennis champion" },
+  { quote: "I would like to be remembered as someone who was not afraid to do what she wanted.", by: "Simone Biles", role: "Gymnastics champion" },
+  { quote: "The biggest sin in the world would be if I lost my love for the ocean.", by: "Laird Hamilton", role: "Big-wave surfer" },
+  { quote: "Life is a lot like skateboarding.", by: "Tony Hawk", role: "Skateboarding legend" },
+  { quote: "Winning means you are willing to go longer, work harder, and give more.", by: "Vince Lombardi", role: "Football coach" },
+  { quote: "The difference between the impossible and the possible lies in determination.", by: "Tommy Lasorda", role: "Baseball coach" },
+  { quote: "The harder the battle, the sweeter the victory.", by: "Les Brown", role: "Coach and speaker" },
+  { quote: "A champion is afraid of losing. Everyone else is afraid of winning.", by: "Billie Jean King", role: "Tennis champion" },
+  { quote: "It is not whether you get knocked down. It is whether you get up.", by: "Vince Lombardi", role: "Football coach" },
+];
+const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
+const defaultVenues = ["Pizzey", "Beenleigh", "Elanora", "Nerang", "RampFest", "Other / Custom Venue"];
+const venueKey = (venue = "") => String(venue || "").trim();
+const venueIdentityKey = (venue = "") => venueKey(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const venueLabel = (venue = "") => venueKey(venue) || "Default Daily List";
+
+function avatarHtml(profile = {}, className = "") {
+  const image = avatarUrl(profile);
+  const safeName = escapeHtml(profile.display_name || "Athlete");
+  return image
+    ? `<div class="avatar image-avatar ${className}"><img src="${escapeHtml(image)}" alt="${safeName} profile picture"></div>`
+    : `<div class="avatar ${className}">${escapeHtml(initials(profile.display_name))}</div>`;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function safeFileName(value = "jkcrew-video") {
+  const clean = String(value || "jkcrew-video").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return clean || "jkcrew-video";
+}
+
+function dataUrlVideoExtension(dataUrl = "") {
+  const match = String(dataUrl).match(/^data:video\/([^;]+);/);
+  const ext = (match?.[1] || "mp4").toLowerCase();
+  return ext === "quicktime" ? "mov" : ext.replace(/[^a-z0-9]/g, "") || "mp4";
+}
+
+function videoFileExtension(file = {}) {
+  const fromName = String(file.name || "").split(".").pop()?.toLowerCase();
+  const cleanNameExt = fromName?.replace(/[^a-z0-9]/g, "");
+  if (cleanNameExt && cleanNameExt.length <= 8 && cleanNameExt !== String(file.name || "").toLowerCase()) return cleanNameExt;
+  const mimeExt = String(file.type || "").split("/").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (mimeExt === "quicktime") return "mov";
+  if (mimeExt === "x-m4v") return "m4v";
+  return mimeExt || "mp4";
+}
+
+function openDownloadUrl(url, filename = "jkcrew-video") {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeFileName(filename);
+  link.target = "_blank";
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function downloadDataUrl(dataUrl, filename = "jkcrew-video") {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = `${safeFileName(filename)}.${dataUrlVideoExtension(dataUrl)}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+async function uploadHelpVideoFile(file, kind = "student") {
+  if (!state.user?.id) throw new Error("Sign in again before uploading a video.");
+  const ext = videoFileExtension(file);
+  const path = `${state.user.id}/${kind}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await client.storage
+    .from(TRICK_HELP_VIDEO_BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      contentType: file.type || "video/mp4",
+      upsert: false,
+    });
+  if (error) throw error;
+  return {
+    path: data?.path || path,
+    fileName: file.name || `${kind}-video.${ext}`,
+    mimeType: file.type || "video/mp4",
+    size: file.size || 0,
+  };
+}
+
+async function signedHelpVideoUrl(path = "") {
+  if (!path) return "";
+  const { data, error } = await client.storage
+    .from(TRICK_HELP_VIDEO_BUCKET)
+    .createSignedUrl(path, HELP_VIDEO_SIGNED_URL_SECONDS);
+  if (error) throw error;
+  return data?.signedUrl || "";
+}
+
+async function hydrateHelpRequestMediaUrls(requests = []) {
+  return Promise.all((requests || []).map(async (request) => {
+    const hydrated = { ...request };
+    if (hydrated.video_storage_path) hydrated.video_url = await signedHelpVideoUrl(hydrated.video_storage_path);
+    else hydrated.video_url = hydrated.video_data_url || "";
+    if (hydrated.coach_video_storage_path) hydrated.coach_video_url = await signedHelpVideoUrl(hydrated.coach_video_storage_path);
+    else hydrated.coach_video_url = hydrated.coach_video_data_url || "";
+    return hydrated;
+  }));
+}
+
+function videoDurationSeconds(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(video.duration || 0);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read video duration."));
+    };
+    video.src = url;
+  });
+}
+
+function notify(message, type = "ok") {
+  toast.textContent = message;
+  toast.className = `toast show ${type === "error" ? "error" : ""}`;
+  clearTimeout(notify.timeout);
+  notify.timeout = setTimeout(() => { toast.className = "toast"; }, 3600);
+}
+
+function celebrate(message) {
+  notify(message);
+  const existing = document.querySelector(".success-burst");
+  existing?.remove();
+  const burst = document.createElement("div");
+  burst.className = "success-burst";
+  burst.innerHTML = `<strong>Daily Tricks Complete</strong><span>${escapeHtml(message)}</span>`;
+  document.body.appendChild(burst);
+  setTimeout(() => burst.remove(), 4200);
+}
+
+function showProgressPopup({ kind = "xp", title = "Progress updated", message = "", badge = null } = {}) {
+  let stack = document.querySelector(".progress-popup-stack");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.className = "progress-popup-stack";
+    stack.setAttribute("aria-live", "polite");
+    document.body.appendChild(stack);
+  }
+  const popup = document.createElement("div");
+  popup.className = `progress-popup ${kind === "badge" ? "badge-popup" : kind === "daily" ? "daily-popup" : kind === "score" ? "score-popup" : "xp-popup"}`;
+  const marker = kind === "badge"
+    ? `<span class="progress-popup-badge">${badge ? levelBadgeHtml(badge, true) : "★"}</span>`
+    : kind === "daily" ? `<span class="progress-popup-xp">✓</span>`
+    : kind === "score" ? `<span class="progress-popup-xp">PTS</span>`
+    : `<span class="progress-popup-xp">+XP</span>`;
+  popup.innerHTML = `${marker}<span class="progress-popup-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(message)}</small></span>`;
+  stack.appendChild(popup);
+  requestAnimationFrame(() => popup.classList.add("show"));
+  setTimeout(() => {
+    popup.classList.remove("show");
+    setTimeout(() => {
+      popup.remove();
+      if (!stack.children.length) stack.remove();
+    }, 220);
+  }, kind === "badge" ? 5000 : kind === "daily" ? 1600 : 3200);
+}
+
+function showLevelUpModal(summary) {
+  const xp = normalizeXpSummary(summary);
+  const unit = xp.unit_label || "XP";
+  showProgressPopup({
+    kind: "badge",
+    title: `New badge · Level ${xp.level}`,
+    message: xp.level >= XP_LEVEL_CAP ? `You reached the level cap with ${xp.xp_total} ${unit}.` : `${xp.xp_total} ${unit} total · ${xp.xp_needed} to Level ${xp.next_level}.`,
+    badge: xp.current_badge,
+  });
+}
+
+async function refreshOwnXpAfterAction({ announceXp = false, trickName = "" } = {}) {
+  if (state.profile?.role !== "athlete" || !state.user?.id) return null;
+  const beforeLevel = Number(state.profile.level || 1);
+  const beforeXp = Number(state.profile.xp_total || 0);
+  try {
+    const leaderboard = await getLeaderboard();
+    const row = leaderboard.find((entry) => entry.athlete_id === state.user.id);
+    const summary = permanentScoreSummary({ ...state.profile, ...(row || {}) });
+    state.profile = { ...state.profile, level: summary.level, xp_total: summary.xp_total };
+    const xpGained = Math.max(0, Number(summary.xp_total || 0) - beforeXp);
+    if (announceXp && xpGained > 0) {
+      showProgressPopup({
+        kind: "xp",
+        title: `+${xpGained} XP`,
+        message: trickName ? `${trickName} ticked off` : "Trick ticked off",
+      });
+    }
+    if (summary.level > beforeLevel) setTimeout(() => showLevelUpModal(summary), announceXp && xpGained > 0 ? 420 : 0);
+    return summary;
+  } catch (error) {
+    console.warn("XP refresh failed", error);
+    return null;
+  }
+}
+
+async function showUpdatedWeeklyScore(pointsChange = 0, trickName = "") {
+  if (!Number(pointsChange)) return;
+  const leaderboard = await getLeaderboard();
+  const row = leaderboard.find((entry) => entry.athlete_id === state.user.id);
+  showProgressPopup({
+    kind: "score",
+    title: `${pointsChange > 0 ? "+" : ""}${pointsChange} leaderboard point${Math.abs(pointsChange) === 1 ? "" : "s"}`,
+    message: `${trickName ? `${trickName} · ` : ""}Weekly score ${Number(row?.weekly_points || 0)}`,
+  });
+}
+
+function updateInstallButton() {
+  installButton.classList.toggle("hidden", isStandalone());
+}
+
+async function installApp() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    updateInstallButton();
+    if (outcome === "accepted") notify("JK Coaching is being installed.");
+    return;
+  }
+
+  if (isIos()) {
+    window.alert("To install JK Coaching: tap the Share button, then choose Add to Home Screen.");
+    return;
+  }
+
+  if (isSafari()) {
+    window.alert("To install JK Coaching in Safari: choose File, then Add to Dock.");
+    return;
+  }
+
+  window.alert("To install JK Coaching: open your browser menu and choose Install JK Coaching or Add to Home Screen.");
+}
+
+function setLoading(label = "Loading") {
+  const view = document.querySelector("#view");
+  if (view) {
+    view.setAttribute("aria-busy", "true");
+    view.innerHTML = `<div class="loading" role="status">${escapeHtml(label)}...</div>`;
+  }
+}
+
+function withTimeout(promise, label = "Request", ms = 6000) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out. Check your connection and try again.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+function setButtonBusy(button, label) {
+  if (!button) return () => {};
+  const previousText = button.textContent;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  if (label) button.textContent = label;
+  return () => {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    if (label) button.textContent = previousText;
+  };
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isTransientRequestError(error) {
+  const message = messageFrom(error, "");
+  const status = Number(error?.status || error?.statusCode || 0);
+  const code = String(error?.code || "");
+  return status >= 500
+    || /timeout|timed out|failed to fetch|network|connection|load failed|lockmanager|temporarily unavailable/i.test(message)
+    || /^(08|53|57P01|PGRST0)/i.test(code);
+}
+
+async function retryNetworkRequest(factory, label, { attempts = 3, timeoutMs = 15000 } = {}) {
+  let lastResult = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const result = await withTimeout(factory(), label, timeoutMs);
+      if (!result?.error || !isTransientRequestError(result.error) || attempt === attempts - 1) return result;
+      lastResult = result;
+      lastError = result.error;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientRequestError(error) || attempt === attempts - 1) throw error;
+    }
+    await wait(400 * (attempt + 1));
+  }
+  if (lastResult) return lastResult;
+  throw lastError || new Error(`${label} failed.`);
+}
+
+function clearLocalAuthSession() {
+  try {
+    Object.keys(window.localStorage || {}).forEach((key) => {
+      if (key.startsWith("sb-") || key.includes("supabase.auth")) localStorage.removeItem(key);
+    });
+  } catch (error) {
+    console.warn("Unable to clear saved JKCREW session.", error);
+  }
+}
+
+async function init() {
+  renderAuth("login", "Checking JKCREW connection...");
+  let session = null;
+  try {
+    const result = await retryNetworkRequest(() => client.auth.getSession(), "Sign in check", { attempts: 3, timeoutMs: 15000 });
+    session = result.data?.session || null;
+  } catch (error) {
+    renderAuth("login", messageFrom(error));
+    return;
+  }
+  await handleSessionOnce(session);
+  client.auth.onAuthStateChange((_event, nextSession) => {
+    if (nextSession?.user?.id === state.user?.id && nextSession) return;
+    // Leave the auth callback immediately; profile queries inside this callback can
+    // block Supabase's auth lock and make a successful sign-in appear frozen.
+    setTimeout(() => {
+      handleSessionOnce(nextSession).catch((error) => {
+        console.error("Session setup failed", error);
+        renderBootRecovery(messageFrom(error));
+      });
+    }, 0);
+  });
+}
+
+function handleSessionOnce(session) {
+  const userId = session?.user?.id || "signed-out";
+  if (state.sessionHandlePromise && state.sessionHandleUserId === userId) return state.sessionHandlePromise;
+  state.sessionHandleUserId = userId;
+  state.sessionHandlePromise = handleSession(session).finally(() => {
+    state.sessionHandlePromise = null;
+    state.sessionHandleUserId = "";
+  });
+  return state.sessionHandlePromise;
+}
+
+function renderBootRecovery(message = "The app could not finish loading.") {
+  app.innerHTML = `
+    <div class="boot-screen boot-recovery">
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.77" alt="JK Coaching logo"></div>
+      <h1>JKCREW is having trouble loading</h1>
+      <p>${escapeHtml(message)}</p>
+      <div class="boot-actions">
+        <button class="primary-btn" type="button" id="boot-retry">Try again</button>
+        <button class="secondary-btn" type="button" id="boot-signout">Reset login on this device</button>
+      </div>
+    </div>`;
+  document.querySelector("#boot-retry")?.addEventListener("click", () => window.location.reload());
+  document.querySelector("#boot-signout")?.addEventListener("click", async () => {
+    clearLocalAuthSession();
+    window.location.reload();
+  });
+}
+
+async function handleSession(session) {
+  clearInterval(state.timer);
+  teardownRealtimeSync();
+  state.session = session;
+  state.user = session?.user || null;
+  state.profile = null;
+  state.activeTraining = null;
+  state.attempts = [];
+  if (!state.user) {
+    applyTheme("dark");
+    renderAuth();
+    return;
+  }
+  if (state.user.id !== RILEY_TEST_ACCOUNT_ID) {
+    window.location.replace("../");
+    return;
+  }
+  let { data, error } = await retryNetworkRequest(
+    () => client.from("profiles").select(PROFILE_SELECT).eq("id", state.user.id).maybeSingle(),
+    "Profile load",
+    { attempts: 3, timeoutMs: 15000 }
+  );
+  if (error || !data) {
+    const { data: recovered, error: recoveryError } = await withTimeout(
+      client.rpc("ensure_current_profile"),
+      "Profile recovery",
+      12000
+    );
+    if (recoveryError || !recovered) {
+      renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
+      notify(messageFrom(recoveryError || error || "Profile failed to load."), "error");
+      return;
+    }
+    data = recovered;
+  }
+  state.profile = data;
+  applyTheme(data.app_theme);
+  const pushView = new URL(window.location.href).searchParams.get("push");
+  const allowedPushViews = new Set(["home", "board", "challenges", "command"]);
+  state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
+  if (pushView) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("push");
+    window.history.replaceState({}, "", cleanUrl.href);
+  }
+  await setupRealtimeSync();
+  renderShell();
+  navigate(state.view);
+}
+
+function renderAuth(mode = "login", message = "") {
+  app.innerHTML = `
+    <div class="auth-page">
+      <section class="auth-hero">
+        <div class="auth-logo-stack">
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.77" alt="JKCoaching logo"></div>
+        </div>
+        <div class="hero-copy">
+          <div class="eyebrow">JKCREW coaching academy</div>
+          <h1>Crafting <em>talent,</em><br> shaping futures.</h1>
+          <p>Weekly trick plans, attempt tracking, private progress history, and coach feedback built for serious BMX progression.</p>
+        </div>
+        <div class="feature-strip"><span>Weekly plans</span><span>Private progress</span><span>Coach feedback</span><span>Future focused</span></div>
+      </section>
+  <section class="auth-panel">
+        <div class="auth-card">
+          <div class="eyebrow">Welcome to JKCREW</div>
+          <h2>${mode === "login" ? "Sign in" : "Join the crew"}</h2>
+          <p class="subcopy">${mode === "login" ? "Pick up where you left off." : "Create your athlete or parent account."}</p>
+          <div class="auth-tabs">
+            <button class="auth-tab ${mode === "login" ? "active" : ""}" type="button" data-auth-mode="login">Sign in</button>
+            <button class="auth-tab ${mode === "signup" ? "active" : ""}" type="button" data-auth-mode="signup">Create account</button>
+          </div>
+          <form id="auth-form">
+            <div class="field ${mode === "signup" ? "" : "hidden"}">
+              <label for="display-name">Display name</label>
+              <input id="display-name" name="displayName" autocomplete="name" placeholder="Riley Chen">
+            </div>
+            <div class="field ${mode === "signup" ? "" : "hidden"}">
+              <label for="role">Account type</label>
+              <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option></select>
+            </div>
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com">
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password" required minlength="8" autocomplete="${mode === "login" ? "current-password" : "new-password"}" placeholder="At least 8 characters">
+            </div>
+            <button class="primary-btn wide" type="submit">${mode === "login" ? "Enter JKCREW" : "Create my account"}</button>
+            <div class="auth-message ${/backend|connection|timed out|responding|unable to sign in|did not finish/i.test(message) ? "auth-warning" : ""}">${escapeHtml(message)}</div>
+          </form>
+        </div>
+      </section>
+    </div>`;
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => renderAuth(button.dataset.authMode)));
+  document.querySelector("#auth-form").addEventListener("submit", (event) => handleAuth(event, mode));
+}
+
+async function handleAuth(event, mode) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const email = form.get("email").trim();
+  const password = form.get("password");
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  button.textContent = mode === "login" ? "Signing in..." : "Creating account...";
+
+  try {
+    if (mode === "login") {
+      const { data, error } = await retryNetworkRequest(
+        () => client.auth.signInWithPassword({ email, password }),
+        "Sign in",
+        { attempts: 3, timeoutMs: 15000 }
+      );
+      if (error) {
+        renderAuth(mode, messageFrom(error, "Unable to sign in right now. Please check your email and password, then try again."));
+        return;
+      }
+      let nextSession = data?.session || null;
+      if (!nextSession) {
+        const { data: sessionData, error: sessionError } = await retryNetworkRequest(
+          () => client.auth.getSession(),
+          "Session refresh",
+          { attempts: 3, timeoutMs: 15000 }
+        );
+        if (sessionError) {
+          renderAuth(mode, messageFrom(sessionError, "Sign in worked, but JKCREW could not finish loading your session. Please try again."));
+          return;
+        }
+        nextSession = sessionData?.session || null;
+      }
+      if (nextSession) await handleSessionOnce(nextSession);
+      else renderAuth("login", "Sign in did not finish loading. Please tap Enter JKCREW again.");
+      return;
+    }
+
+    const displayName = form.get("displayName").trim();
+    const role = form.get("role");
+    if (!displayName) {
+      renderAuth(mode, "Please add a display name.");
+      return;
+    }
+    const { data: signupData, error: signupError } = await withTimeout(
+      client.functions.invoke("create-jkcrew-account", {
+        body: { email, password, displayName, role, website: "" },
+      }),
+      "Create account"
+    );
+    if (signupError || signupData?.error) {
+      const signupMessage = signupData?.error || messageFrom(signupError, "Unable to create your account right now. Please try again.");
+      renderAuth(mode, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
+      return;
+    }
+
+    const { data: signInData, error: signInError } = await retryNetworkRequest(
+      () => client.auth.signInWithPassword({ email, password }),
+      "Sign in",
+      { attempts: 3, timeoutMs: 15000 }
+    );
+    if (signInError) {
+      renderAuth("login", "Account created. Sign in with your new email and password.");
+      return;
+    }
+    let createdSession = signInData?.session || null;
+    if (!createdSession) {
+      const { data: sessionData } = await retryNetworkRequest(
+        () => client.auth.getSession(),
+        "Session refresh",
+        { attempts: 3, timeoutMs: 15000 }
+      );
+      createdSession = sessionData?.session || null;
+    }
+    if (createdSession) await handleSessionOnce(createdSession);
+    else renderAuth("login", "Account created. Sign in with your new email and password.");
+    notify("Welcome to JKCREW. Your account is ready.");
+  } catch (error) {
+    renderAuth(mode, messageFrom(error, mode === "login" ? "Unable to sign in right now. Please check your email and password, then try again." : "Unable to create your account right now. Please try again."));
+  }
+}
+
+function renderShell() {
+  const role = state.profile.role;
+  const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
+  const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
+  const navIcons = { home: "⌂", session: "↗", challenges: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
+  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
+  const sidebarNavHtml = isCoachRole(role)
+    ? coachNavGroups.map((group) => `
+        <details class="sidebar-nav-group">
+          <summary class="nav-btn group-nav-btn" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span></summary>
+          <div class="sidebar-subnav">
+            ${group.links.map(([id, label]) => `<button class="nav-sub-btn" type="button" data-view="${id}">${escapeHtml(label)}</button>`).join("")}
+          </div>
+        </details>`).join("")
+    : bottomNavHtml;
+  app.innerHTML = `
+    <div class="app-shell ${shellClass}">
+      <aside class="sidebar">
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.77" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="role-pill">${escapeHtml(role)} account</div>
+        <nav class="nav-list">${sidebarNavHtml}</nav>
+        <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
+      </aside>
+      <div class="main-wrap">
+        <header class="topbar">
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.77" alt="">JKCREW live</div>
+          <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
+        </header>
+        <main id="view" class="content"></main>
+      </div>
+      <nav class="bottom-nav">${bottomNavHtml}</nav>
+    </div>`;
+  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  mountPushSetupPrompt();
+}
+
+function pushSetupDismissKey() {
+  return `jkcrew-push-setup-shown:${state.user?.id || "signed-in"}:v2`;
+}
+
+function pushSetupDismissed() {
+  try {
+    return localStorage.getItem(pushSetupDismissKey()) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberPushSetupDismissal() {
+  try {
+    localStorage.setItem(pushSetupDismissKey(), "1");
+  } catch (error) {
+    console.warn("Unable to remember that the notification prompt was shown.", error);
+  }
+}
+
+async function currentDevicePushEnabled() {
+  if (!supportsPushNotifications() || Notification.permission !== "granted") return false;
+  const registration = await navigator.serviceWorker.getRegistration();
+  return Boolean(registration && await registration.pushManager.getSubscription());
+}
+
+async function mountPushSetupPrompt() {
+  document.querySelector("#push-setup-modal")?.remove();
+  if (!state.user?.id || pushSetupDismissed()) return;
+
+  try {
+    if (await currentDevicePushEnabled()) return;
+  } catch (error) {
+    console.warn("Push notification status could not be checked.", error);
+  }
+
+  if (!document.querySelector(".main-wrap")) return;
+  const supported = supportsPushNotifications();
+  const needsIosInstall = isIos() && !isStandalone();
+  const actionLabel = supported ? "Turn on notifications" : needsIosInstall ? "Install app first" : "Open notification setup";
+  const backdrop = document.createElement("div");
+  backdrop.id = "push-setup-modal";
+  backdrop.className = "push-setup-modal-backdrop";
+  const prompt = document.createElement("section");
+  prompt.id = "push-setup-prompt";
+  prompt.className = "push-setup-prompt";
+  prompt.setAttribute("role", "dialog");
+  prompt.setAttribute("aria-modal", "true");
+  prompt.setAttribute("aria-label", "Push notification setup");
+  prompt.innerHTML = `
+    <div class="push-setup-icon" aria-hidden="true">🔔</div>
+    <div class="push-setup-copy">
+      <strong>Turn on JKCREW notifications</strong>
+      <span>Get daily Coach JK hype, trick completion updates, list requests and approval alerts.</span>
+    </div>
+    <div class="push-setup-actions">
+      <button class="primary-btn" type="button" id="push-setup-enable">${escapeHtml(actionLabel)}</button>
+      <button class="secondary-btn" type="button" id="push-setup-later">Not now</button>
+    </div>`;
+  backdrop.append(prompt);
+  document.body.append(backdrop);
+  rememberPushSetupDismissal();
+  const closePrompt = () => backdrop.remove();
+  window.setTimeout(() => prompt.querySelector("#push-setup-enable")?.focus(), 50);
+
+  prompt.querySelector("#push-setup-enable")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (!supported) {
+      if (needsIosInstall) await installApp();
+      else {
+        closePrompt();
+        await navigate("profile");
+        document.querySelector(".push-settings-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Turning on...";
+    try {
+      await enablePushNotifications(button);
+      closePrompt();
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Try again";
+      notify(messageFrom(error), "error");
+    }
+  });
+  prompt.querySelector("#push-setup-later")?.addEventListener("click", closePrompt);
+}
+
+async function navigate(view) {
+  const previousView = state.view;
+  clearInterval(state.timer);
+  if (state.sessionViewerTimer) {
+    clearInterval(state.sessionViewerTimer);
+    state.sessionViewerTimer = null;
+  }
+  if (state.sessionViewerClock) {
+    clearInterval(state.sessionViewerClock);
+    state.sessionViewerClock = null;
+  }
+  if (view === "session" && previousView !== "session") state.sessionOpenDailyVenues.clear();
+  if (view === "sessionViewer" && previousView !== "sessionViewer") state.sessionViewerOpenAthleteId = "";
+  state.view = view;
+  const viewElement = document.querySelector("#view");
+  if (viewElement) viewElement.dataset.view = view;
+  const activeView = isCoachRole(state.profile?.role) ? coachPrimaryView(view) : view;
+  document.querySelectorAll("[data-view]").forEach((button) => {
+    const buttonView = button.dataset.view;
+    const buttonActiveView = isCoachRole(state.profile?.role) ? coachPrimaryView(buttonView) : buttonView;
+    const isSubnav = button.classList.contains("nav-sub-btn");
+    button.classList.toggle("active", buttonView === view || (!isSubnav && buttonActiveView === activeView));
+  });
+  setLoading();
+  const renders = {
+    home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
+    session: renderSession,
+    challenges: renderChallenges,
+    tricktionary: renderTricktionary,
+    command: renderCoachCommand,
+    sessionViewer: renderSessionViewer,
+    coachTools: renderCoachTools,
+    more: renderCoachMore,
+    adminRecords: renderCoachAdminRecords,
+    planner: renderPlanner,
+    parents: renderParents,
+    videoReviews: renderVideoReviews,
+    board: renderBoard,
+    crew: isCoachRole(state.profile?.role) ? renderCrew : renderAthleteCrew,
+    contests: renderContests,
+    student: renderStudentProfile,
+    studentPreview: () => renderCoachPreview("student"),
+    parentPreview: () => renderCoachPreview("parent"),
+    publicProfile: renderPublicAthleteProfile,
+    notes: renderNotes,
+    profile: renderProfile,
+  };
+  try {
+    if (!renders[view]) throw new Error("That screen is not available.");
+    await renders[view]();
+  } catch (error) {
+    const fallbackView = isCoachRole(state.profile?.role) ? "command" : "home";
+    const viewElement = document.querySelector("#view");
+    if (viewElement) {
+      viewElement.innerHTML = `<section class="panel view-error" role="alert">
+        <div class="eyebrow">Connection interrupted</div>
+        <h2>This screen did not finish loading</h2>
+        <p>Your information is safe. Check your connection, then retry this screen.</p>
+        <div class="view-error-actions">
+          <button id="retry-current-view" class="primary-btn" type="button">Retry</button>
+          ${view !== fallbackView ? `<button id="return-to-safe-view" class="secondary-btn" type="button">${isCoachRole(state.profile?.role) ? "Coach dashboard" : "Home"}</button>` : ""}
+        </div>
+      </section>`;
+      viewElement.querySelector("#retry-current-view")?.addEventListener("click", () => navigate(view));
+      viewElement.querySelector("#return-to-safe-view")?.addEventListener("click", () => navigate(fallbackView));
+    }
+    notify(messageFrom(error), "error");
+  } finally {
+    document.querySelector("#view")?.removeAttribute("aria-busy");
+  }
+}
+
+function teardownRealtimeSync() {
+  if (state.syncRefreshTimer) {
+    clearTimeout(state.syncRefreshTimer);
+    state.syncRefreshTimer = null;
+  }
+  if (state.realtimeChannel) {
+    client.removeChannel(state.realtimeChannel).catch((error) => console.warn("Realtime channel cleanup failed", error));
+    state.realtimeChannel = null;
+  }
+}
+
+async function realtimeVisibleAthleteIds() {
+  if (state.profile?.role === "athlete") return [state.user.id];
+  if (state.profile?.role === "parent") {
+    const { data, error } = await client.from("parent_athletes").select("athlete_id").eq("parent_id", state.user.id);
+    if (error) {
+      console.warn("Parent realtime scope failed", error);
+      return [];
+    }
+    return [...new Set((data || []).map((row) => row.athlete_id).filter(Boolean))];
+  }
+  if (isCoachRole(state.profile?.role)) {
+    const { data, error } = await client.from("coach_athletes").select("athlete_id").eq("coach_id", state.user.id);
+    if (error) {
+      console.warn("Coach realtime scope failed", error);
+      return [];
+    }
+    const ids = [...new Set((data || []).map((row) => row.athlete_id).filter(Boolean))];
+    state.coachRosterIds = new Set(ids);
+    return ids;
+  }
+  return [];
+}
+
+function realtimeFilter(column, values = []) {
+  const safeValues = [...new Set(values.filter(Boolean))];
+  if (!safeValues.length) return "";
+  return safeValues.length === 1
+    ? `${column}=eq.${safeValues[0]}`
+    : `${column}=in.(${safeValues.join(",")})`;
+}
+
+async function setupRealtimeSync() {
+  if (!state.user?.id || !state.session?.access_token) return;
+  client.realtime.setAuth(state.session.access_token);
+  const athleteIds = await realtimeVisibleAthleteIds();
+  if (!state.user?.id || !state.session?.access_token) return;
+  const channel = client.channel(`jkcrew-progress-sync:${state.user.id}`);
+  const athleteFilter = realtimeFilter("athlete_id", athleteIds);
+  const profileFilter = realtimeFilter("id", [state.user.id, ...athleteIds]);
+  const subscriptions = [
+    "assignment_progress",
+    "assignment_point_awards",
+    "percentage_attempts",
+    "assignment_attempts",
+    "weekly_trick_assignments",
+    "leaderboard_point_adjustments",
+    "training_sessions",
+    "coach_group_session_participants",
+    "run_checklist_progress",
+    "xp_ledger",
+    "trick_requests",
+    "rider_sheet_proposals",
+  ].map((table) => ({ table, filter: athleteFilter })).filter((entry) => entry.filter);
+  subscriptions.push(
+    { table: "coach_broadcast_recipients", filter: `recipient_id=eq.${state.user.id}` },
+    { table: "profiles", filter: profileFilter },
+    { table: "weekly_rider_battles", filter: `challenger_id=eq.${state.user.id}` },
+    { table: "weekly_rider_battles", filter: `opponent_id=eq.${state.user.id}` },
+  );
+  channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "park_king_events" }, (payload) => {
+    const event = payload.new || {};
+    cacheClear("park-king:");
+    cacheClear("park-kings:");
+    if (state.profile?.role === "athlete" && event.display_name && event.venue_name) {
+      notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
+    }
+    if (state.view === "session" && !isContestPrepProfile(state.profile)) refreshParkKingCard("session-park-king", state.selectedVenue, true);
+    if (state.view === "sessionViewer" && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
+    if (state.view === "command") refreshCommandParkKings();
+  });
+  subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
+    channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
+      if (!isRelevantRealtimePayload(table, payload)) return;
+      if (table === "profiles" && payload.new?.id === state.user.id) state.profile = { ...state.profile, ...payload.new };
+      invalidateCachesForRealtime(table);
+      scheduleRealtimeRefresh(table);
+    });
+  });
+  channel.subscribe((status) => {
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime progress sync status:", status);
+  });
+  state.realtimeChannel = channel;
+}
+
+function realtimeRow(payload = {}) {
+  return payload.new || payload.old || {};
+}
+
+function realtimeAthleteId(table, payload = {}) {
+  const row = realtimeRow(payload);
+  if (row.athlete_id) return row.athlete_id;
+  if (row.owner_id) return row.owner_id;
+  if (table === "profiles") return row.id;
+  return "";
+}
+
+function isRelevantRealtimePayload(table, payload = {}) {
+  const row = realtimeRow(payload);
+  if (!state.user?.id || !state.profile) return false;
+  if (table === "coach_broadcast_recipients") return row.recipient_id === state.user.id;
+  if (table === "weekly_rider_battles") return row.challenger_id === state.user.id || row.opponent_id === state.user.id;
+  if (table === "profiles") {
+    return [state.user.id, state.selectedAthleteId, state.publicAthleteId].filter(Boolean).includes(row.id)
+      || (isCoachRole(state.profile.role) && state.coachRosterIds?.has(row.id));
+  }
+  const athleteId = realtimeAthleteId(table, payload);
+  if (!athleteId) return false;
+  if (athleteId === state.user.id || athleteId === state.selectedAthleteId || athleteId === state.publicAthleteId) return true;
+  if (isCoachRole(state.profile.role)) return state.coachRosterIds?.has(athleteId);
+  return false;
+}
+
+function invalidateCachesForRealtime(table) {
+  if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
+  if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "weekly_trick_assignments", "coach_group_session_participants"].includes(table)) {
+    invalidateSessionViewerData();
+  }
+  if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "leaderboard_point_adjustments", "training_sessions", "xp_ledger"].includes(table)) {
+    cacheClear("leaderboard");
+    cacheClear("schedule:");
+    cacheClear("coach-command:");
+  }
+  if (["weekly_trick_assignments", "coach_group_session_participants", "trick_requests", "rider_sheet_proposals", "profiles"].includes(table)) {
+    cacheClear("roster");
+    cacheClear("session-viewer-roster:");
+    cacheClear("schedule:");
+    cacheClear("coach-command:");
+  }
+}
+
+function clearCoachCaches({ roster = false, command = true, sessionViewer = true, leaderboard = false } = {}) {
+  if (roster) {
+    cacheClear("roster");
+    cacheClear("session-viewer-roster:");
+  }
+  if (command) cacheClear("coach-command:");
+  if (sessionViewer) invalidateSessionViewerData();
+  if (leaderboard) cacheClear("leaderboard");
+  cacheClear("schedule:");
+}
+
+function scheduleRealtimeRefresh(reason = "sync") {
+  if (!state.user?.id || !state.profile) return;
+  if (state.syncRefreshTimer) clearTimeout(state.syncRefreshTimer);
+  state.syncRefreshTimer = setTimeout(async () => {
+    state.syncRefreshTimer = null;
+    if (!state.user?.id || !state.profile) return;
+    try {
+      if (state.view === "session") await renderSession();
+      else if (state.view === "sessionViewer") await refreshSessionViewerLight();
+      else if (state.view === "board") await renderBoard();
+      else if (state.view === "challenges") await renderChallenges();
+      else if (state.view === "home") {
+        if (state.profile.role === "parent") await renderParentHome();
+        else if (state.profile.role === "athlete") await renderAthleteHome();
+      } else if (state.view === "crew" && isCoachRole(state.profile.role)) {
+        await renderCrew();
+      } else if (state.view === "student" && state.selectedAthleteId) await renderStudentProfile();
+      else if (state.view === "publicProfile" && state.publicAthleteId) await renderPublicAthleteProfile();
+    } catch (error) {
+      console.warn("Realtime refresh failed", reason, error);
+    }
+  }, 1200);
+}
+
+async function getLeaderboard() {
+  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}`;
+  const cached = cacheGet(cacheKey, 7000);
+  if (cached) return cached;
+  const existingRequest = state.inFlight.get(cacheKey);
+  if (existingRequest) return existingRequest;
+
+  const request = (async () => {
+    const { data, error } = await retryNetworkRequest(
+      () => client.rpc("get_weekly_leaderboard"),
+      "Leaderboard load",
+      { attempts: 2, timeoutMs: 15000 }
+    );
+    if (error) {
+      console.error("Leaderboard RPC failed", error);
+      return getLeaderboardFallback(error);
+    }
+    state.leaderboardFallbackNotified = false;
+    const rows = data || [];
+    const ids = rows.map((row) => row.athlete_id).filter(Boolean);
+    if (!ids.length) return cacheSet(cacheKey, rows);
+    const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary, xp_total, level, ghost_mode").in("id", ids);
+    if (profileError) console.warn("Leaderboard profile extras failed", profileError);
+    const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    return cacheSet(cacheKey, rows.map((row) => {
+      const profile = byId.get(row.athlete_id) || {};
+      const permanentScore = permanentScorePoints({ ...profile, ...row });
+      const scoreLevel = permanentScoreSummary({ ...profile, ...row, all_time_points: permanentScore });
+      return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: permanentScore, xp_level: scoreLevel.level, level: scoreLevel.level, level_badge: scoreLevel.current_badge };
+    }));
+  })().finally(() => state.inFlight.delete(cacheKey));
+
+  state.inFlight.set(cacheKey, request);
+  return request;
+}
+
+async function getLeaderboardFallback(cause) {
+  const { data: profiles, error } = await client
+    .from("profiles")
+    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, xp_total, level, ghost_mode")
+    .eq("role", "athlete")
+    .order("display_name", { ascending: true });
+  if (error) {
+    console.error("Leaderboard fallback failed", error);
+    notify(messageFrom(cause || error), "error");
+    return [];
+  }
+
+  const isCoach = isCoachRole(state.profile?.role);
+  const rows = (profiles || [])
+    .filter((profile) => !profile.ghost_mode || profile.id === state.user?.id || isCoach)
+    .map((profile, index) => ({
+    athlete_id: profile.id,
+    display_name: profile.display_name || "Athlete",
+    level: 1,
+    xp_level: 1,
+    xp_total: 0,
+    level_badge: localLevelBadge(1),
+    avatar_url: profile.avatar_url || "",
+    avatar: profile.avatar || {},
+    country_code: profile.country_code || "",
+    country_name: profile.country_name || "",
+    weekly_points: 0,
+    all_time_points: 0,
+    session_count: 0,
+    earned_badges: [],
+    daily_pb_seconds: profile.daily_pb_seconds ?? null,
+    ghost_mode: Boolean(profile.ghost_mode),
+    rank_number: index + 1,
+    all_time_rank_number: index + 1,
+  }));
+
+  if (!state.leaderboardFallbackNotified) {
+    state.leaderboardFallbackNotified = true;
+    notify("Leaderboard is temporarily using a safe fallback while scores reload.", "error");
+  }
+  return rows;
+}
+
+async function getPointHistory(athleteId) {
+  const { data, error } = await client.rpc("get_point_history", { p_athlete_id: athleteId });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getXpSummary(athleteId) {
+  const { data, error } = await client.rpc("get_xp_summary", { p_athlete_id: athleteId });
+  if (error) throw error;
+  return normalizeXpSummary(data || {});
+}
+
+async function getXpHistory(athleteId) {
+  const { data, error } = await client.rpc("get_xp_history", { p_athlete_id: athleteId });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getAssignmentAttempts(athleteId, sinceIso = weekStartIso()) {
+  const { data, error } = await client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).gte("attempted_at", sinceIso).order("attempted_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getTricktionaryData(athleteId) {
+  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult] = await Promise.all([
+    client.from("profiles").select(PROFILE_SELECT).eq("id", athleteId).single(),
+    client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).limit(400),
+    client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
+    client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).order("attempted_at", { ascending: false }).limit(600),
+    client.from("training_sessions").select("*").eq("athlete_id", athleteId).order("started_at", { ascending: false }).limit(60),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(600),
+    client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(900),
+  ]);
+  [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult].forEach((result) => { if (result.error) throw result.error; });
+  return {
+    profile: profileResult.data,
+    assignments: assignmentsResult.data || [],
+    progress: progressResult.data || [],
+    attempts: attemptsResult.data || [],
+    sessions: sessionsResult.data || [],
+    awards: awardsResult.data || [],
+    percentageAttempts: percentageAttemptsResult.data || [],
+  };
+}
+
+async function getPublicAthleteProfile(athleteId) {
+  const { data, error } = await client.rpc("get_public_athlete_profile", { p_athlete_id: athleteId });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
+async function getPublicRiderBattleRecord(athleteId) {
+  const { data, error } = await client.rpc("get_public_rider_battle_record", { p_athlete_id: athleteId });
+  if (error) throw error;
+  return (Array.isArray(data) ? data[0] : data) || { wins: 0, losses: 0, win_percent: 0 };
+}
+
+async function getWeeklyAssignments(athleteId) {
+  const athleteCountryCode = await getAthleteCountryCode(athleteId);
+  const weekStart = weekStartDateForCountry(athleteCountryCode);
+  const cacheKey = `schedule:${athleteId}:${weekStart}`;
+  const cached = state.view === "session" ? null : cacheGet(cacheKey, 6500);
+  if (cached) return cached;
+  if (state.user?.id) {
+    const { error: rolloverError } = await client.rpc("ensure_current_week_assignments", {
+      p_athlete_id: athleteId,
+      p_week_start: weekStart,
+    });
+    if (rolloverError && !/not allowed/i.test(rolloverError.message || "")) {
+      throw rolloverError;
+    }
+  }
+  const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
+    client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
+    client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
+    client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString()),
+    client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
+    client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("attempted_at", { ascending: false }),
+  ]);
+  if (error) throw error;
+  if (progressError) throw progressError;
+  if (awardsError) throw awardsError;
+  if (percentageError) throw percentageError;
+  if (attemptError) throw attemptError;
+  const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
+  const awardsByAssignmentId = new Map();
+  (awards || []).forEach((award) => {
+    if (!award.assignment_id || Number(award.points || 0) <= 0) return;
+    const entries = awardsByAssignmentId.get(award.assignment_id) || [];
+    entries.push(award);
+    awardsByAssignmentId.set(award.assignment_id, entries);
+  });
+  const attemptsById = new Map();
+  (percentageAttempts || []).forEach((attempt) => {
+    const entries = attemptsById.get(attempt.assignment_id) || [];
+    entries.push(attempt);
+    attemptsById.set(attempt.assignment_id, entries);
+  });
+  const assignmentAttemptsById = new Map();
+  (assignmentAttempts || []).forEach((attempt) => {
+    const entries = assignmentAttemptsById.get(attempt.assignment_id) || [];
+    entries.push(attempt);
+    assignmentAttemptsById.set(attempt.assignment_id, entries);
+  });
+  return cacheSet(cacheKey, {
+    assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => {
+      const contextualAssignment = { ...assignment, athlete_country_code: athleteCountryCode };
+      const normalizedProgress = normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id));
+      return { ...contextualAssignment, progress: reconcileAwardedProgress(contextualAssignment, normalizedProgress, awardsByAssignmentId.get(assignment.id) || []), percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] };
+    }),
+    awards: awards || [],
+    percentageAttempts: percentageAttempts || [],
+    assignmentAttempts: assignmentAttempts || [],
+  });
+}
+
+async function getHelpRequests(athleteId) {
+  const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return hydrateHelpRequestMediaUrls(data || []);
+}
+
+async function getTrickRequestsForAthlete(athleteId, statuses = []) {
+  let query = client.from("trick_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
+  if (statuses.length) query = query.in("status", statuses);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+async function getRiderSheetProposals(athleteId = state.user.id) {
+  const { data, error } = await client.from("rider_sheet_proposals")
+    .select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, coach_note, reviewed_at, created_at")
+    .eq("athlete_id", athleteId)
+    .order("created_at", { ascending: false })
+    .limit(12);
+  if (error) throw error;
+  return data || [];
+}
+
+async function getDashboardItems(athleteId) {
+  const { data, error } = await client.from("dashboard_items").select("*").eq("owner_id", athleteId).order("completed", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getCoachVenues() {
+  const { data, error } = await client.from("coach_venues").select("*").eq("coach_id", state.user.id).order("sort_order", { ascending: true }).order("name");
+  if (error) throw error;
+  return data || [];
+}
+
+async function getCoachCommandData(roster = []) {
+  const ids = roster.map((athlete) => athlete.id);
+  const weekStartByAthlete = new Map(roster.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
+  const rosterWeekStarts = [...new Set(weekStartByAthlete.values())];
+  const cacheKey = `coach-command:${ids.slice().sort().join(",")}:${rosterWeekStarts.slice().sort().join(",")}`;
+  const cached = cacheGet(cacheKey, 8000);
+  if (cached) return cached;
+  const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals] = await Promise.all([
+    client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
+    ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
+    ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
+    ids.length ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
+    ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category, venue, week_start").in("athlete_id", ids).in("week_start", rosterWeekStarts) : { data: [], error: null },
+    ids.length ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
+    ids.length ? client.from("assignment_attempts").select("*").in("athlete_id", ids).in("week_start", rosterWeekStarts).order("attempted_at", { ascending: false }) : { data: [], error: null },
+    client.from("attendance_sessions").select("*, attendance_records(*)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
+    ids.length ? client.from("parent_athletes").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
+    client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
+    ids.length ? client.from("weekly_progress_notifications").select("*").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
+    client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
+    ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
+    client.from("rider_sheet_proposals").select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, created_at").eq("coach_id", state.user.id).eq("status", "pending").order("created_at", { ascending: true }),
+  ]);
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals].forEach((result) => { if (result.error) throw result.error; });
+  return cacheSet(cacheKey, {
+    calendar: calendar.data || [],
+    statuses: statusRows.data || [],
+    dashboardItems: dashboardItems.data || [],
+    sessions: sessions.data || [],
+    scheduleRows: (scheduleRows.data || []).filter((row) => row.week_start === weekStartByAthlete.get(row.athlete_id)),
+    awards: awards.data || [],
+    assignmentAttempts: (assignmentAttempts.data || []).filter((row) => row.week_start === weekStartByAthlete.get(row.athlete_id)),
+    attendanceSessions: attendanceSessions.data || [],
+    parentLinks: parentLinks.data || [],
+    weeklySettings: weeklySettings.data || null,
+    weeklyNotifications: weeklyNotifications.data || [],
+    dismissedTasks: dismissedTasks.data || [],
+    trickRequests: trickRequests.data || [],
+    sheetProposals: sheetProposals.data || [],
+  });
+}
+
+async function getStudentPrivateData(athleteId) {
+  const [record, documents, injuries, attendance, runs] = await Promise.all([
+    client.from("athlete_private_records").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).maybeSingle(),
+    client.from("athlete_documents").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }),
+    client.from("injury_reports").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("injured_at", { ascending: false }).limit(8),
+    client.from("attendance_records").select("*, attendance_sessions(*)").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(8),
+    client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(8),
+  ]);
+  [record, documents, injuries, attendance, runs].forEach((result) => { if (result.error) throw result.error; });
+  return {
+    record: record.data || {},
+    documents: documents.data || [],
+    injuries: injuries.data || [],
+    attendance: attendance.data || [],
+    runs: runs.data || [],
+  };
+}
+
+async function getRunPlans(athleteId) {
+  const { data, error } = await client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(12);
+  if (error) throw error;
+  return data || [];
+}
+
+async function getCrewFeed() {
+  const { data, error } = await client.rpc("get_crew_feed");
+  if (error) throw error;
+  return data || [];
+}
+
+async function getBoardChat() {
+  const { data: posts, error } = await client.from("crew_posts")
+    .select("*, profiles:author_id(display_name, avatar)")
+    .eq("post_type", "chat")
+    .order("created_at", { ascending: false })
+    .limit(60);
+  if (error) throw error;
+  const visiblePosts = (posts || []).filter((post) => String(post.body || "").trim());
+  const postIds = visiblePosts.map((post) => post.id);
+  const { data: reactions, error: reactionError } = postIds.length
+    ? await client.from("crew_post_reactions").select("*").in("post_id", postIds)
+    : { data: [], error: null };
+  if (reactionError) throw reactionError;
+  const reactionUserIds = [...new Set((reactions || []).map((reaction) => reaction.user_id).filter(Boolean))];
+  const { data: reactionProfiles } = reactionUserIds.length
+    ? await client.from("profiles").select("id, display_name, avatar").in("id", reactionUserIds)
+    : { data: [] };
+  const profileById = new Map((reactionProfiles || []).map((profile) => [profile.id, profile]));
+  const reactionsByPost = (reactions || []).reduce((map, reaction) => {
+    const list = map.get(reaction.post_id) || [];
+    list.push({ ...reaction, profile: profileById.get(reaction.user_id) || null });
+    map.set(reaction.post_id, list);
+    return map;
+  }, new Map());
+  return visiblePosts.map((post) => ({ ...post, reactions: reactionsByPost.get(post.id) || [] }));
+}
+
+const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
+const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
+const mentionToken = (name = "") => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+const escapeRegExp = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const boardMentionableUsers = (rows = []) => rows
+  .filter((row) => row.athlete_id && row.display_name && !row.isBenchmarkBot)
+  .map((row) => ({ id: row.athlete_id, name: row.display_name, token: mentionToken(row.display_name), avatar: row.avatar || null }))
+  .filter((row) => row.token);
+const extractBoardMentions = (body = "", users = []) => {
+  const lower = String(body).toLowerCase();
+  return users
+    .filter((user) => lower.includes(`@${user.token}`))
+    .map((user) => ({ id: user.id, name: user.name, token: `@${user.token}` }));
+};
+const formatBoardMessageBody = (body = "", mentions = []) => {
+  let html = escapeHtml(body);
+  mentions.forEach((mention) => {
+    if (!mention?.token || !mention?.id) return;
+    const label = `@${mention.name || mention.token.replace(/^@/, "")}`;
+    html = html.replace(new RegExp(escapeRegExp(escapeHtml(mention.token)), "gi"), `<button class="mention-link" type="button" data-mention-athlete="${escapeHtml(mention.id)}">${escapeHtml(label)}</button>`);
+  });
+  return html;
+};
+const containsGifUrl = (value = "") => /https?:\/\/\S*(?:\.gif|giphy\.com|tenor\.com|media\.tenor\.com|media\d?\.giphy\.com)\S*/i.test(String(value || ""));
+const countryOptions = [
+  ["", "Not set"],
+  ["AU", "Australia"],
+  ["NZ", "New Zealand"],
+  ["US", "United States"],
+  ["GB", "United Kingdom"],
+  ["CA", "Canada"],
+  ["JP", "Japan"],
+  ["FR", "France"],
+  ["DE", "Germany"],
+  ["NL", "Netherlands"],
+  ["BE", "Belgium"],
+  ["ES", "Spain"],
+  ["IT", "Italy"],
+  ["SE", "Sweden"],
+  ["NO", "Norway"],
+  ["RU", "Russia"],
+  ["DK", "Denmark"],
+  ["FI", "Finland"],
+  ["BR", "Brazil"],
+  ["CO", "Colombia"],
+  ["AR", "Argentina"],
+  ["CL", "Chile"],
+  ["ZA", "South Africa"],
+  ["SG", "Singapore"],
+  ["MY", "Malaysia"],
+  ["TH", "Thailand"],
+  ["ID", "Indonesia"],
+  ["PH", "Philippines"],
+];
+
+function countryNameFromCode(code = "") {
+  return countryOptions.find(([value]) => value === code)?.[1] || "";
+}
+
+function countryFlag(code = "") {
+  const value = String(code || "").toUpperCase();
+  if (!/^[A-Z]{2}$/.test(value)) return "";
+  return value.split("").map((char) => String.fromCodePoint(127397 + char.charCodeAt(0))).join("");
+}
+
+const countryTimezones = {
+  AU: "Australia/Brisbane",
+  NZ: "Pacific/Auckland",
+  US: "America/Los_Angeles",
+  GB: "Europe/London",
+  CA: "America/Toronto",
+  JP: "Asia/Tokyo",
+  FR: "Europe/Paris",
+  DE: "Europe/Berlin",
+  NL: "Europe/Amsterdam",
+  BE: "Europe/Brussels",
+  ES: "Europe/Madrid",
+  IT: "Europe/Rome",
+  SE: "Europe/Stockholm",
+  NO: "Europe/Oslo",
+  RU: "Europe/Moscow",
+  DK: "Europe/Copenhagen",
+  FI: "Europe/Helsinki",
+  BR: "America/Sao_Paulo",
+  CO: "America/Bogota",
+  AR: "America/Argentina/Buenos_Aires",
+  CL: "America/Santiago",
+  ZA: "Africa/Johannesburg",
+  SG: "Asia/Singapore",
+  MY: "Asia/Kuala_Lumpur",
+  TH: "Asia/Bangkok",
+  ID: "Asia/Jakarta",
+  PH: "Asia/Manila",
+};
+function dateForTimezone(timeZone = "Australia/Brisbane", date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date).reduce((all, part) => ({ ...all, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function dateForCountryCode(countryCode = "") {
+  return dateForTimezone(countryTimezones[String(countryCode || "").toUpperCase()] || "Australia/Brisbane");
+}
+function weekStartDateForCountry(countryCode = "", date = new Date()) {
+  const timeZone = countryTimezones[String(countryCode || "").toUpperCase()] || "Australia/Brisbane";
+  const [year, month, day] = dateForTimezone(timeZone, date).split("-").map(Number);
+  const localCalendarDate = new Date(Date.UTC(year, month - 1, day));
+  localCalendarDate.setUTCDate(localCalendarDate.getUTCDate() - localCalendarDate.getUTCDay());
+  return localCalendarDate.toISOString().slice(0, 10);
+}
+async function getAthleteCountryCode(athleteId) {
+  if (athleteId === state.profile?.id || athleteId === state.user?.id) return state.profile?.country_code || "AU";
+  const cacheKey = `athlete-country:${athleteId}`;
+  const cached = cacheGet(cacheKey, 5 * 60 * 1000);
+  if (cached) return cached;
+  const { data, error } = await client.from("profiles").select("country_code").eq("id", athleteId).maybeSingle();
+  if (error) throw error;
+  return cacheSet(cacheKey, data?.country_code || "AU");
+}
+function assignmentLocalDate(assignment = {}) {
+  return dateForCountryCode(assignment.athlete_country_code || assignment.country_code || state.profile?.country_code || "AU");
+}
+
+function countryOptionsHtml(selectedCode = "") {
+  return countryOptions.map(([code, label]) => `<option value="${code}" ${selectedCode === code ? "selected" : ""}>${code ? `${countryFlag(code)} ${label}` : label}</option>`).join("");
+}
+
+function countryBadge(profile = {}) {
+  const flag = countryFlag(profile.country_code);
+  if (!flag) return "";
+  const label = profile.country_name || countryNameFromCode(profile.country_code) || profile.country_code;
+  return `<span class="country-flag" title="${escapeHtml(label)}">${flag}</span>`;
+}
+
+async function getActiveCoachGroupSession() {
+  const { data, error } = await client.from("coach_group_sessions")
+    .select("id,coach_id,group_name,venue,status,started_at,paused_at,total_paused_seconds,ended_at,coach_group_session_participants(group_session_id,athlete_id,training_session_id,joined_at,last_activity_at,daily_finished_at,daily_finish_seconds)")
+    .eq("coach_id", state.user.id)
+    .in("status", ["running", "paused"])
+    .order("started_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] || null;
+}
+
+async function getSessionViewerPlanData(athletes = [], { force = false } = {}) {
+  if (!athletes.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
+  const athleteRows = athletes.map((athlete) => typeof athlete === "string" ? { id: athlete, country_code: "AU" } : athlete).filter((athlete) => athlete?.id);
+  const safeAthleteIds = [...new Set(athleteRows.map((athlete) => athlete.id))];
+  if (!safeAthleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
+  const weekStartByAthlete = new Map(athleteRows.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
+  const weekStarts = [...new Set(weekStartByAthlete.values())];
+  const cacheKey = `coach-live:plans:${state.sessionViewerDataVersion}:${[...safeAthleteIds].sort().join(",")}:${[...weekStarts].sort().join(",")}`;
+  if (!force) {
+    const cached = cacheGet(cacheKey, 12000);
+    if (cached) return cached;
+    if (state.inFlight.has(cacheKey)) return state.inFlight.get(cacheKey);
+  }
+
+  const requestKey = force ? `${cacheKey}:force` : cacheKey;
+  const request = (async () => {
+    const { data: assignments, error } = await client.rpc("get_coach_session_viewer_plan_data", {
+      p_athlete_ids: safeAthleteIds,
+      p_week_starts: safeAthleteIds.map((athleteId) => weekStartByAthlete.get(athleteId)),
+    });
+    if (error) throw error;
+
+    const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category]);
+    const assignmentsByAthlete = new Map();
+    currentAssignments.forEach((assignment) => {
+      const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
+      const assignmentProgress = reconcileAwardedProgress(assignment, assignment.progress || null, assignment.awards || []);
+      rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: assignment.percentage_attempts || [], assignmentAttempts: assignment.assignment_attempts || [] });
+      assignmentsByAthlete.set(assignment.athlete_id, rows);
+    });
+    return cacheSet(cacheKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() });
+  })();
+  state.inFlight.set(requestKey, request);
+  try {
+    return await request;
+  } finally {
+    state.inFlight.delete(requestKey);
+  }
+}
+
+const categoryInfo = {
+  daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
+  dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
+  one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
+  percentage: { label: "Percentage Tricks", description: "10 attempts · 100%=3, 90%=2, 80%=1" },
+  foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
+  bonus: { label: "Bonus Tricks", description: "Gold challenge · 5 points each" },
+  lines: { label: "Lines", description: "Link 3–4 tricks in one run · 3 points each" },
+};
+
+const categoryRewardLabels = {
+  daily: "Full list · 1 pt",
+  one_bang: "2 pts each",
+  dialled: "2 pts each",
+  lines: "3 pts each",
+  percentage: "Up to 3 pts",
+  foam_pit: "Practice only",
+  bonus: "5 pts each",
+};
+
+const riderProposalRequirements = {
+  daily: 10,
+  one_bang: 5,
+  dialled: 5,
+  percentage: 3,
+  lines: 3,
+  bonus: 1,
+};
+
+const contestPrepGroupId = "contest_prep";
+
+const contestPrepCategoryInfo = {
+  daily: { label: "Practice 1", description: "Contest prep · 1 point per completed item" },
+  one_bang: { label: "Practice 2", description: "Contest prep · 1 point per completed item" },
+  dialled: { label: "Practice 3", description: "Contest prep · 1 point per completed item" },
+  percentage: { label: "Warm Up", description: "Contest prep warm up · 1 point per completed item" },
+  foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
+  bonus: { label: "Run 1 / Run 2", description: "Contest prep run work · 1 point per completed item" },
+};
+const plannerEditableStatuses = ["draft", "draft_next_week", "scheduled_next_week", "published"];
+const plannerSummaryStatuses = ["draft", "draft_next_week", "scheduled_next_week", "published"];
+const plannerStatusLabels = {
+  draft: "Legacy draft",
+  draft_next_week: "Draft",
+  scheduled_next_week: "Scheduled",
+  published: "Scheduled",
+};
+const plannerStatusRank = {
+  scheduled_next_week: 0,
+  published: 1,
+  draft_next_week: 2,
+  draft: 3,
+};
+
+const sessionViewerListTabs = [
+  { id: "daily", label: "Daily Tricks" },
+  { id: "one_bang", label: "One Bangs" },
+  { id: "dialled", label: "Dialled" },
+  { id: "percentage", label: "Percentage" },
+  { id: "foam_pit", label: "Foam" },
+  { id: "bonus", label: "Bonus Trick" },
+  { id: "lines", label: "Lines" },
+];
+
+function profileGroupNames(profile = {}) {
+  const source = profile && typeof profile === "object" ? profile : {};
+  const values = [];
+  const add = (value) => {
+    if (Array.isArray(value)) return value.forEach(add);
+    if (value) values.push(String(value));
+    return undefined;
+  };
+  add(source.groupNames);
+  add(source.group_names);
+  add(source.groupName);
+  add(source.group_name);
+  return [...new Set(values.filter(Boolean))];
+}
+
+function isContestPrepProfile(profile = {}) {
+  return profileGroupNames(profile).some((group) => {
+    const key = group.toLowerCase().replace(/[\s-]+/g, "_");
+    return key === contestPrepGroupId || key === "contest_preparation";
+  });
+}
+
+function categoryDisplayInfo(category, profileOrContestPrep = false) {
+  const contestPrep = typeof profileOrContestPrep === "boolean"
+    ? profileOrContestPrep
+    : isContestPrepProfile(profileOrContestPrep);
+  return (contestPrep && contestPrepCategoryInfo[category]) || categoryInfo[category] || { label: "Tricks", description: "" };
+}
+
+function sessionViewerTabsForEntry(entry) {
+  return sessionViewerListTabs.map((tab) => ({ ...tab, label: categoryDisplayInfo(tab.id, entry?.athlete).label }));
+}
+
+const coachGroups = [
+  ["monday", "Monday Team"],
+  ["tuesday", "Tuesday Team"],
+  ["wednesday", "Wednesday Team"],
+  ["online", "Online Training"],
+  [contestPrepGroupId, "Contest Preparation"],
+];
+const heatStatuses = {
+  on_track: { label: "On track", dot: "green", icon: "●" },
+  needs_help: { label: "Needs help", dot: "yellow", icon: "●" },
+  falling_behind: { label: "Falling behind", dot: "red", icon: "●" },
+  injured: { label: "Injured / modified", dot: "blue", icon: "●" },
+  competition_prep: { label: "Competition prep", dot: "purple", icon: "●" },
+  away: { label: "On holiday / away", dot: "grey", icon: "●" },
+};
+const heatOptions = () => Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}">${info.label}</option>`).join("");
+
+const isDailyCompletionAward = (award = {}) => {
+  const key = String(award.award_key || "");
+  return key.startsWith("daily-complete:") || key.startsWith("daily:");
+};
+const isDailyUnder20Award = (award = {}) => String(award.award_key || "").startsWith("daily-under-20:");
+const dailyAwardDate = (award = {}) => {
+  const key = String(award.award_key || "");
+  const match = key.match(/(\d{4}-\d{2}-\d{2})$/);
+  return match?.[1] || String(award.created_at || "").slice(0, 10);
+};
+const dailyCompletionCount = (awards = []) => new Set(awards.filter(isDailyCompletionAward).map(dailyAwardDate).filter(Boolean)).size;
+function normalizeAssignmentProgress(assignment, progress) {
+  if (!progress) return null;
+  if (assignment?.category === "daily" && progress.progress_date && progress.progress_date !== assignmentLocalDate(assignment)) {
+    return { ...progress, progress_date: null, completed: false };
+  }
+  return progress;
+}
+
+function reconcileAwardedProgress(assignment, progress, awards = []) {
+  if (progress?.completed_at || !["dialled", "one_bang", "bonus"].includes(assignment?.category)) return progress;
+  const earnedAward = awards.find((award) => Number(award.points || 0) > 0);
+  if (!earnedAward) return progress;
+  return {
+    ...(progress || {}),
+    assignment_id: assignment.id,
+    athlete_id: assignment.athlete_id,
+    completed_at: earnedAward.created_at,
+    restored_from_award: true,
+  };
+}
+const spinDirectionLabels = {
+  "": "Not set",
+  left: "Left spin",
+  right: "Right spin",
+  both: "Both ways",
+  not_sure: "Not sure yet",
+};
+
+function dailyOrderKey(venue = "") {
+  return `${weekStartDate()}:${venueKey(venue) || "default"}`;
+}
+
+function orderedAssignments(assignments = []) {
+  if (state.profile?.role !== "athlete") return assignments;
+  const dailyVenue = assignments.find((assignment) => assignment.category === "daily")?.venue || state.selectedVenue;
+  const order = state.profile.daily_trick_order?.[dailyOrderKey(dailyVenue)] || [];
+  if (!Array.isArray(order) || !order.length) return assignments;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return [...assignments].sort((a, b) => {
+    const aRank = rank.has(a.id) ? rank.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const bRank = rank.has(b.id) ? rank.get(b.id) : Number.MAX_SAFE_INTEGER;
+    return aRank - bRank || a.sort_order - b.sort_order;
+  });
+}
+
+function extraTricks(profile = state.profile) {
+  return Array.isArray(profile?.rider_extra_tricks) ? profile.rider_extra_tricks : [];
+}
+
+function isAssignmentComplete(assignment) {
+  const pending = pendingAssignmentState(assignment);
+  if (pending) return Boolean(pending.complete);
+  if (assignment.category === "daily") return assignment.progress?.progress_date === assignmentLocalDate(assignment);
+  if (assignment.category === "percentage") return percentageAttemptsByNumber(assignment).size >= 10;
+  return Boolean(assignment.progress?.completed_at);
+}
+
+function assignmentStatus(assignment) {
+  if (assignment.category === "daily") return isAssignmentComplete(assignment) ? "Done today" : "To do today";
+  if (assignment.category === "percentage") {
+    const summary = percentageSummary(assignment);
+    return `${summary.attempts}/10 attempts${summary.attempts ? ` · ${summary.percentage}% landed` : ""}`;
+  }
+  return isAssignmentComplete(assignment) ? "Done this week" : "To do this week";
+}
+
+function dailyVenues(assignments = []) {
+  const venues = [...new Set(assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueKey(assignment.venue)))];
+  return venues.length ? venues : [""];
+}
+
+function selectedVenueFor(assignments = []) {
+  const venues = dailyVenues(assignments);
+  if (!venues.includes(state.selectedVenue)) state.selectedVenue = venues[0] || "";
+  return state.selectedVenue;
+}
+
+function assignmentsForVenue(assignments = [], venue = "") {
+  const selected = venueKey(venue);
+  return assignments.filter((assignment) => assignment.category !== "daily" || venueKey(assignment.venue) === selected);
+}
+
+function venueSelectorHtml(assignments = []) {
+  const venues = dailyVenues(assignments);
+  const selected = selectedVenueFor(assignments);
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === selected ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  return `<section class="panel venue-panel">
+    <div class="panel-head"><div><div class="panel-title">Training venue</div><div class="panel-meta">Choose the skate park for today's Daily Tricks</div></div></div>
+    <div class="venue-select-wrap"><select id="session-venue">${options}</select></div>
+  </section>`;
+}
+
+async function getParkKing(venue = "", { force = false } = {}) {
+  const selected = venueKey(venue);
+  if (!selected) return null;
+  const cacheKey = `park-king:${venueIdentityKey(selected)}`;
+  if (!force) {
+    const cached = cacheGet(cacheKey, 12000);
+    if (cached) return cached.king;
+  }
+  const existingRequest = !force ? state.inFlight.get(cacheKey) : null;
+  if (existingRequest) return existingRequest;
+
+  const request = (async () => {
+    const { data, error } = await client.rpc("get_park_king", { p_venue: selected });
+    if (error) {
+      console.warn("King of the Park could not load", error);
+      return null;
+    }
+    const king = Array.isArray(data) ? data[0] || null : data || null;
+    cacheSet(cacheKey, { king });
+    return king;
+  })();
+  if (!force) state.inFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    if (!force) state.inFlight.delete(cacheKey);
+  }
+}
+
+async function getAllParkKings({ force = false } = {}) {
+  const cacheKey = "park-kings:all";
+  if (!force) {
+    const cached = cacheGet(cacheKey, 30000);
+    if (cached) return cached;
+  }
+  const existingRequest = !force ? state.inFlight.get(cacheKey) : null;
+  if (existingRequest) return existingRequest;
+  const request = (async () => {
+    const { data, error } = await client
+      .from("park_king_snapshots")
+      .select("venue_key, venue_name, athlete_id, display_name, points, updated_at")
+      .order("venue_name", { ascending: true });
+    if (error) {
+      console.warn("Park Kings list could not load", error);
+      return [];
+    }
+    return cacheSet(cacheKey, data || []);
+  })();
+  if (!force) state.inFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    if (!force) state.inFlight.delete(cacheKey);
+  }
+}
+
+function commandParkKingVenueList(scheduleRows = [], parkKings = []) {
+  const venuesByKey = new Map();
+  [...scheduleRows.filter((row) => row.category === "daily").map((row) => row.venue), ...parkKings.map((row) => row.venue_name)]
+    .map(venueKey)
+    .filter(Boolean)
+    .forEach((venue) => {
+      const key = venueIdentityKey(venue);
+      if (!venuesByKey.has(key)) venuesByKey.set(key, venue);
+    });
+  return [...venuesByKey.values()].sort((a, b) => venueLabel(a).localeCompare(venueLabel(b)));
+}
+
+function parkKingForVenue(parkKings = [], venue = "") {
+  const selectedKey = venueIdentityKey(venue);
+  return parkKings.find((row) => venueIdentityKey(row.venue_name || row.venue_key) === selectedKey) || null;
+}
+
+function commandParkKingsAccordionHtml(scheduleRows = [], parkKings = []) {
+  const venues = commandParkKingVenueList(scheduleRows, parkKings);
+  if (!venues.includes(state.commandParkKingVenue)) state.commandParkKingVenue = venues[0] || "";
+  state.commandParkKingRows = parkKings;
+  state.commandParkKingVenues = venues;
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.commandParkKingVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  const king = parkKingForVenue(parkKings, state.commandParkKingVenue);
+  return `<details id="command-park-kings" class="command-park-kings-accordion">
+    <summary><span><strong>Park Kings</strong><small>Filter Daily venues and see each permanent park record</small></span><span class="command-message-count">${parkKings.length} claimed</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
+    <div class="command-park-kings-body">
+      ${venues.length ? `<label class="command-park-kings-filter"><span>Daily venue</span><select id="command-park-king-filter">${options}</select></label><div id="command-park-king-result">${parkKingCardHtml(king, state.commandParkKingVenue, { compact: true })}</div>` : `<div class="empty compact-empty">No Daily venues are assigned yet.</div>`}
+    </div>
+  </details>`;
+}
+
+function renderCommandParkKingSelection() {
+  const select = document.querySelector("#command-park-king-filter");
+  const target = document.querySelector("#command-park-king-result");
+  if (!select || !target) return;
+  state.commandParkKingVenue = select.value;
+  const king = parkKingForVenue(state.commandParkKingRows, state.commandParkKingVenue);
+  target.innerHTML = parkKingCardHtml(king, state.commandParkKingVenue, { compact: true });
+}
+
+async function refreshCommandParkKings() {
+  const accordion = document.querySelector("#command-park-kings");
+  if (!accordion) return;
+  try {
+    const parkKings = await getAllParkKings({ force: true });
+    const venues = commandParkKingVenueList(state.commandParkKingVenues.map((venue) => ({ category: "daily", venue })), parkKings);
+    state.commandParkKingRows = parkKings;
+    state.commandParkKingVenues = venues;
+    if (!venues.includes(state.commandParkKingVenue)) state.commandParkKingVenue = venues[0] || "";
+    const select = accordion.querySelector("#command-park-king-filter");
+    if (select) {
+      select.innerHTML = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.commandParkKingVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+    }
+    renderCommandParkKingSelection();
+  } catch (error) {
+    console.warn("Coach Park Kings could not refresh", error);
+  }
+}
+
+function parkKingCardHtml(king, venue = "", { id = "", compact = false, loading = false, requestId = "" } = {}) {
+  const selectedVenue = venueLabel(venue);
+  const content = loading
+    ? `<div class="park-king-empty"><strong>Loading park record...</strong><small>Checking ${escapeHtml(selectedVenue)}.</small></div>`
+    : king
+    ? `<div class="park-king-rider"><span class="park-king-crown" aria-hidden="true">♛</span>${avatarHtml(king, "park-king-avatar")}<div><span class="park-champion-tag">Current champion</span><strong>${escapeHtml(king.display_name)}</strong><small>${Number(king.points || 0)} park points</small></div></div>`
+    : `<div class="park-king-empty"><strong>No King of the Park yet</strong><small>Complete a scored session at this park to take the title.</small></div>`;
+  return `<section ${id ? `id="${escapeHtml(id)}"` : ""} class="park-king-card ${compact ? "compact" : ""}" data-park-venue-key="${escapeHtml(venueIdentityKey(venue))}" ${requestId ? `data-park-request-id="${escapeHtml(requestId)}"` : ""}>
+    <div class="park-king-label"><span>King of the Park</span><small>${escapeHtml(selectedVenue)}</small></div>
+    ${content}
+  </section>`;
+}
+
+async function refreshParkKingCard(id, venue = "", compact = true, force = false) {
+  const element = document.getElementById(id);
+  if (!element || !venueKey(venue)) return;
+  const expectedVenueKey = venueIdentityKey(venue);
+  const requestId = String(++state.parkKingRequestSerial);
+  const loadingWrapper = document.createElement("div");
+  loadingWrapper.innerHTML = parkKingCardHtml(null, venue, { id, compact, loading: true, requestId });
+  element.replaceWith(loadingWrapper.firstElementChild);
+  const king = await getParkKing(venue, { force });
+  const current = document.getElementById(id);
+  if (!current || current.dataset.parkRequestId !== requestId || current.dataset.parkVenueKey !== expectedVenueKey) return;
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = parkKingCardHtml(king, venue, { id, compact, requestId });
+  current.replaceWith(wrapper.firstElementChild);
+}
+
+function sessionStatBarHtml({ points = 0, percent = 0, rank = 0 } = {}) {
+  return `<section class="session-stat-bar panel">
+    <article><span>Total points</span><strong>${Number(points || 0)}</strong></article>
+    <article><span>Sheets completed</span><strong>${Number(percent || 0)}%</strong></article>
+    <article><span>World ranking</span><strong>${rank ? `#${rank}` : "-"}</strong></article>
+  </section>`;
+}
+
+function latestDailyTime(activeTraining = null, latestTraining = null) {
+  const source = activeTraining?.daily_completed_seconds ? activeTraining : latestTraining;
+  return source?.daily_completed_seconds ? formatPbTime(source.daily_completed_seconds) : "Not finished today";
+}
+
+function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTraining = null, latestTraining = null) {
+  const venues = dailyVenues(assignments);
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === selectedVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  const selectedDaily = assignmentsForVenue(assignments.filter((assignment) => assignment.category === "daily"), selectedVenue);
+  const dailyDone = selectedDaily.filter(isAssignmentComplete).length;
+  const timerHtml = activeTraining
+    ? `<div class="hub-timer"><span>Live timer</span><strong id="trick-timer">${formatTime(Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000))}</strong></div>`
+    : `<div class="hub-timer ready"><span>Ready</span><strong>GO</strong></div>`;
+  const actionHtml = activeTraining
+    ? `<button class="danger-btn start-session-btn" id="end-session" type="button">End session</button>`
+    : `<button class="primary-btn start-session-btn" id="create-session" type="button">Start session</button>`;
+  return `<section class="panel daily-session-hub">
+    <div class="daily-hub-main">
+      <div>
+        <div class="panel-title">Daily Tricks timer</div>
+        <div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} · ${dailyDone}/${selectedDaily.length} complete today · full list within 20 minutes earns points</div>
+      </div>
+      ${timerHtml}
+    </div>
+    <div class="daily-hub-grid">
+      <div class="field"><label for="session-venue">Venue</label><select id="session-venue">${options}</select></div>
+      <div class="session-pb-chip"><span>Daily PB</span><strong>${formatPbTime(state.profile?.daily_pb_seconds)}</strong></div>
+      <div class="session-pb-chip"><span>Today's time</span><strong>${latestDailyTime(activeTraining, latestTraining)}</strong></div>
+      ${actionHtml}
+    </div>
+  </section>`;
+}
+
+function nextTrainingOptionsHtml() {
+  return "";
+}
+
+function bindVenueSelector() {
+  document.querySelector("#session-venue")?.addEventListener("change", (event) => {
+    state.selectedVenue = event.target.value;
+    const currentCard = document.querySelector("#session-park-king");
+    if (currentCard) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = parkKingCardHtml(null, state.selectedVenue, { id: "session-park-king", compact: true, loading: true });
+      currentCard.replaceWith(wrapper.firstElementChild);
+    }
+    renderSession({ forceParkKing: true });
+  });
+}
+
+let dailyReorderDrag = null;
+
+function dailyRowOrder(container = document) {
+  return [...container.querySelectorAll("[data-daily-row]")].map((row) => row.dataset.dailyRow).filter(Boolean);
+}
+
+function bindDailyReorder() {
+  document.querySelectorAll("[data-daily-row]").forEach((row) => {
+    row.addEventListener("pointerdown", startDailyReorder);
+  });
+}
+
+function startDailyReorder(event) {
+  if (event.button && event.button !== 0) return;
+  if (event.target.closest("button, a, input, select, textarea")) return;
+  const row = event.currentTarget.closest("[data-daily-row]");
+  if (!row) return;
+  const container = row.closest("[data-daily-venue-list]") || row.parentElement || document;
+  const venue = row.closest("[data-daily-venue]")?.dataset.dailyVenue || state.selectedVenue;
+  event.stopPropagation();
+  dailyReorderDrag = {
+    row,
+    container,
+    venue,
+    originalOrder: dailyRowOrder(container),
+    moved: false,
+    armed: false,
+    startX: event.clientX,
+    startY: event.clientY,
+    holdTimer: window.setTimeout(() => {
+      if (!dailyReorderDrag || dailyReorderDrag.row !== row) return;
+      dailyReorderDrag.armed = true;
+      row.classList.remove("daily-reorder-pressing");
+      row.classList.add("dragging");
+      row.setPointerCapture?.(event.pointerId);
+    }, 240),
+  };
+  row.classList.add("daily-reorder-pressing");
+  document.addEventListener("pointermove", moveDailyReorder, { passive: false });
+  document.addEventListener("pointerup", finishDailyReorder, { once: true });
+  document.addEventListener("pointercancel", cancelDailyReorder, { once: true });
+}
+
+function moveDailyReorder(event) {
+  if (!dailyReorderDrag) return;
+  const { row, startX, startY } = dailyReorderDrag;
+  if (!dailyReorderDrag.armed) {
+    const distance = Math.hypot(event.clientX - startX, event.clientY - startY);
+    if (distance > 14) cancelDailyReorder();
+    return;
+  }
+  event.preventDefault();
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-daily-row]");
+  document.querySelectorAll("[data-daily-row].drag-over-row").forEach((element) => {
+    if (element !== target) element.classList.remove("drag-over-row");
+  });
+  if (!target || target === row || target.closest("[data-daily-venue-list]") !== dailyReorderDrag.container) return;
+  const targetRect = target.getBoundingClientRect();
+  const placeBefore = event.clientY < targetRect.top + targetRect.height / 2;
+  target.classList.add("drag-over-row");
+  if (placeBefore) target.before(row);
+  else target.after(row);
+  dailyReorderDrag.moved = true;
+}
+
+async function finishDailyReorder() {
+  const drag = dailyReorderDrag;
+  clearDailyReorder();
+  if (!drag?.armed || !drag?.moved) return;
+  const nextOrder = dailyRowOrder(drag.container);
+  if (nextOrder.join("|") === drag.originalOrder.join("|")) return;
+  await saveDailyDisplayOrder(nextOrder, drag.venue);
+}
+
+function cancelDailyReorder() {
+  clearDailyReorder();
+}
+
+function clearDailyReorder() {
+  if (dailyReorderDrag?.holdTimer) window.clearTimeout(dailyReorderDrag.holdTimer);
+  document.removeEventListener("pointermove", moveDailyReorder);
+  document.removeEventListener("pointerup", finishDailyReorder);
+  document.removeEventListener("pointercancel", cancelDailyReorder);
+  document.querySelectorAll("[data-daily-row]").forEach((row) => row.classList.remove("daily-reorder-pressing", "dragging", "drag-over-row"));
+  dailyReorderDrag = null;
+}
+
+async function saveDailyDisplayOrder(rows = dailyRowOrder(), venue = state.selectedVenue) {
+  if (!rows.length || !state.profile || !state.user?.id) return;
+  const dailyOrder = { ...(state.profile.daily_trick_order || {}), [dailyOrderKey(venue)]: rows };
+  state.profile = { ...state.profile, daily_trick_order: dailyOrder };
+  const { error } = await client.from("profiles").update({ daily_trick_order: dailyOrder, updated_at: new Date().toISOString() }).eq("id", state.user.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Daily Tricks order saved.");
+}
+
+function percentageSummary(assignment) {
+  const attempts = Array.from(percentageAttemptsByNumber(assignment).values());
+  const landed = attempts.filter((attempt) => attempt.landed).length;
+  const percentage = attempts.length ? Math.round((landed / attempts.length) * 100) : 0;
+  return { attempts: attempts.length, landed, missed: attempts.length - landed, percentage, complete: attempts.length >= 10 };
+}
+
+const PENDING_PROGRESS_TTL_MS = 2 * 60 * 1000;
+
+function pendingAssignmentState(assignment) {
+  const entry = state.pendingAssignmentProgress?.get(assignment.id);
+  if (!entry) return null;
+  if (Date.now() - entry.time > PENDING_PROGRESS_TTL_MS) {
+    state.pendingAssignmentProgress.delete(assignment.id);
+    return null;
+  }
+  return entry;
+}
+
+function setPendingAssignmentProgress(assignmentId, complete) {
+  if (!assignmentId) return;
+  state.pendingAssignmentProgress.set(assignmentId, { complete: Boolean(complete), time: Date.now() });
+}
+
+function clearPendingAssignmentProgress(assignmentId) {
+  if (assignmentId) state.pendingAssignmentProgress.delete(assignmentId);
+}
+
+function percentageAttemptKey(assignmentId, attemptNumber) {
+  return `${assignmentId}:${Number(attemptNumber)}`;
+}
+
+function setPendingPercentageAttempt(assignmentId, attemptNumber, landed) {
+  if (!assignmentId || !attemptNumber) return;
+  state.pendingPercentageAttempts.set(percentageAttemptKey(assignmentId, attemptNumber), {
+    attemptNumber: Number(attemptNumber),
+    landed,
+    time: Date.now(),
+  });
+}
+
+function clearPendingPercentageAttempt(assignmentId, attemptNumber) {
+  if (assignmentId && attemptNumber) state.pendingPercentageAttempts.delete(percentageAttemptKey(assignmentId, attemptNumber));
+}
+
+function percentageAttemptsByNumber(assignment) {
+  const byNumber = new Map((assignment.percentageAttempts || []).map((attempt) => [Number(attempt.attempt_number), attempt]));
+  (state.pendingPercentageAttempts || new Map()).forEach((entry, key) => {
+    if (!key.startsWith(`${assignment.id}:`)) return;
+    if (Date.now() - entry.time > PENDING_PROGRESS_TTL_MS) {
+      state.pendingPercentageAttempts.delete(key);
+      return;
+    }
+    if (entry.landed === null) byNumber.delete(entry.attemptNumber);
+    else byNumber.set(entry.attemptNumber, { assignment_id: assignment.id, attempt_number: entry.attemptNumber, landed: entry.landed });
+  });
+  return byNumber;
+}
+
+function nextPercentageAttemptNumber(assignment) {
+  const byNumber = percentageAttemptsByNumber(assignment);
+  for (let index = 1; index <= 10; index += 1) {
+    if (!byNumber.has(index)) return index;
+  }
+  return null;
+}
+
+function percentageClass(value) {
+  if (value < 50) return "result-red";
+  if (value <= 70) return "result-yellow";
+  return "result-green";
+}
+
+function percentagePointsStatus(summary) {
+  if (!summary.complete) return `Points unlock at 10/10 attempts · ${10 - summary.attempts} left`;
+  if (summary.percentage === 100) return "3 points awarded";
+  if (summary.percentage >= 90) return "2 points awarded";
+  if (summary.percentage >= 80) return "1 point awarded";
+  return "0 points awarded";
+}
+
+function assignmentList(assignments, emptyText = "No tricks assigned for this week yet.", interactive = false) {
+  if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
+  const ordered = assignments.some((assignment) => assignment.category === "daily") ? orderedAssignments(assignments) : assignments;
+  return ordered.map((assignment) => {
+    const complete = isAssignmentComplete(assignment);
+    const action = complete ? "unlanded" : "landed";
+    const label = complete ? "Untick trick" : "Tick trick complete";
+    const draggable = interactive && state.profile?.role === "athlete" && assignment.category === "daily";
+    const metaParts = assignment.category === "daily"
+      ? [assignment.notes].filter(Boolean)
+      : [assignmentStatus(assignment), assignment.notes].filter(Boolean);
+    const meta = metaParts.join(" · ");
+    const controls = interactive ? `
+      <div class="assignment-actions">
+        <button class="assignment-check ${complete ? "complete" : ""}" type="button" aria-label="${label}" title="${label}" data-assignment-action="${action}" data-assignment-id="${assignment.id}" data-assignment-category="${assignment.category}">${complete ? "✓" : ""}</button>
+      </div>` : `<span class="assignment-check">${complete ? "✓" : ""}</span>`;
+    return `
+    <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `data-daily-row="${assignment.id}" aria-label="Hold and drag ${escapeHtml(assignment.trick_name)} to reorder Daily Tricks"` : ""}>
+      ${controls}
+      <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>
+    </div>`;
+  }).join("");
+}
+
+function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks assigned.", interactive = false) {
+  if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
+  return assignments.map((assignment) => {
+    const summary = percentageSummary(assignment);
+    const byNumber = percentageAttemptsByNumber(assignment);
+    const attempts = Array.from({ length: 10 }, (_, index) => {
+      const attemptNumber = index + 1;
+      const attempt = byNumber.get(attemptNumber);
+      const label = attempt ? (attempt.landed ? "✓" : "×") : index + 1;
+      const stateLabel = attempt ? (attempt.landed ? "landed" : "missed") : "empty";
+      const klass = attempt ? (attempt.landed ? "landed" : "missed") : "";
+      const title = attempt
+        ? `Tap to change attempt ${attemptNumber}`
+        : `Tap to mark attempt ${attemptNumber} landed`;
+      return interactive
+        ? `<button class="attempt-dot ${klass}" type="button" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" data-assignment-id="${assignment.id}" data-athlete-id="${assignment.athlete_id || ""}" data-percentage-attempt-number="${attemptNumber}" data-percentage-cycle="${stateLabel}">${label}</button>`
+        : `<span class="attempt-dot ${klass}">${label}</span>`;
+    }).join("");
+    const result = summary.attempts ? `<span class="percentage-result ${percentageClass(summary.percentage)}">${summary.percentage}%</span>` : `<span class="percentage-result">0%</span>`;
+    const nextAttempt = nextPercentageAttemptNumber(assignment);
+    const controls = interactive
+      ? (nextAttempt ? `<div class="percentage-actions"><button class="primary-btn compact-btn" type="button" data-percentage-action="true" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}" data-athlete-id="${assignment.athlete_id || ""}">Land attempt ${nextAttempt}</button><button class="danger-btn compact-btn" type="button" data-percentage-action="false" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}" data-athlete-id="${assignment.athlete_id || ""}">Crash attempt ${nextAttempt}</button></div><small class="subcopy">Shortcut: tap circles to cycle landed, missed, clear.</small>` : `<small class="subcopy">Tap circles to cycle landed, missed, clear.</small>`)
+      : "";
+    return `<div class="percentage-card">
+      <div class="percentage-card-head"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${summary.landed} landed · ${summary.missed} missed · ${summary.attempts}/10 attempts · ${percentagePointsStatus(summary)}</small></div>${result}</div>
+      <div class="attempt-dots">${attempts}</div>
+      ${controls}
+    </div>`;
+  }).join("");
+}
+
+function dailyVenueGroups(assignments, interactive = false, profile = null) {
+  const dailyAssignments = assignments.filter((assignment) => assignment.category === "daily");
+  const info = categoryDisplayInfo("daily", profile);
+  const venues = dailyVenues(dailyAssignments);
+  const complete = dailyAssignments.filter(isAssignmentComplete).length;
+  const body = venues.length ? venues.map((venue) => {
+    const items = assignmentsForVenue(dailyAssignments, venue);
+    const venueComplete = items.filter(isAssignmentComplete).length;
+    const open = state.sessionOpenDailyVenues.has(venue);
+    return `<details class="daily-venue-accordion" data-daily-venue="${escapeHtml(venue)}" ${open ? "open" : ""}>
+      <summary><span><strong>${escapeHtml(`${venueLabel(venue)} ${info.label}`)}</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
+      <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No ${info.label.toLowerCase()} assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
+    </details>`;
+  }).join("") : `<div class="empty">No ${escapeHtml(info.label)} assigned for this week yet.</div>`;
+  return `<section class="assignment-group daily-venue-group">
+    <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels.daily}</span><div class="category-count">${complete}/${dailyAssignments.length}</div></div></div>
+    <div class="daily-venue-stack">${body}</div>
+  </section>`;
+}
+
+function assignmentGroups(assignments, interactive = false, profile = null) {
+  const sessionCategoryOrder = ["daily", "one_bang", "dialled", "lines", "percentage", "foam_pit", "bonus"];
+  return sessionCategoryOrder.map((category) => {
+    const info = categoryDisplayInfo(category, profile);
+    if (category === "daily") return dailyVenueGroups(assignments, interactive, profile);
+    const items = assignments.filter((assignment) => assignment.category === category);
+    const sectionKey = category === "one_bang" ? "one-bang" : category === "foam_pit" ? "foam" : category;
+    const list = category === "percentage"
+      ? percentageAssignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive)
+      : assignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive);
+    return `<details class="assignment-group session-assignment-accordion ${category === "bonus" ? "bonus-assignment-group" : ""}" data-assignment-section="${sectionKey}">
+      <summary class="assignment-group-head"><div><div class="panel-title">${info.label}${category === "bonus" ? `<span class="bonus-rare-tag">Gold trick</span>` : ""}</div><div class="panel-meta">${info.description}</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels[category]}</span><div class="category-count">${items.filter(isAssignmentComplete).length}/${items.length}</div><span class="accordion-caret" aria-hidden="true">⌄</span></div></summary>
+      <div class="assignment-list">${list}</div>
+    </details>`;
+  }).join("");
+}
+
+function helpRequestsHtml(requests, mode = "athlete") {
+  if (!requests.length) return `<div class="empty">No trick help videos yet.</div>`;
+  return requests.map((request) => {
+    const riderVideoUrl = request.video_url || request.video_data_url || "";
+    const coachVideoUrl = request.coach_video_url || request.coach_video_data_url || "";
+    const riderVideo = riderVideoUrl ? `
+      <video class="help-video" src="${escapeHtml(riderVideoUrl)}" controls playsinline preload="metadata"></video>
+      <div class="video-actions">
+        <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open video</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" download="${escapeHtml(safeFileName(request.video_file_name || "jkcrew-trick-video"))}">Download</a>
+      </div>` : `<div class="empty compact-empty">No video attached.</div>`;
+    const coachVideo = coachVideoUrl ? `
+      <video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>
+      <div class="video-actions">
+        <a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" target="_blank" rel="noopener">Open coach video</a>
+        <a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" download="${escapeHtml(safeFileName(request.coach_video_file_name || "jkcrew-coach-reply"))}">Download</a>
+      </div>` : "";
+    const coachReply = request.coach_comment || coachVideoUrl
+      ? `<div class="coach-reply"><strong>Coach reply</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}</div>`
+      : `<div class="panel-meta">Waiting for coach reply</div>`;
+    const coachTools = mode === "coach" ? `
+      <form class="reply-form" data-help-reply="${request.id}">
+        <div class="field"><label for="reply-${request.id}">Written feedback</label><textarea id="reply-${request.id}" name="comment" placeholder="What should they fix?">${escapeHtml(request.coach_comment || "")}</textarea></div>
+        <div class="field"><label for="reply-video-${request.id}">Optional video reply</label><input id="reply-video-${request.id}" name="video" type="file" accept="video/*"></div>
+        <button class="primary-btn" type="submit">Send coach reply</button>
+      </form>` : "";
+    return `<article class="help-card">
+      <div class="help-card-head"><div><strong>${escapeHtml(request.question || "Trick help request")}</strong><small>${dateLabel(request.created_at)} · ${escapeHtml(request.status)}</small></div></div>
+      ${riderVideo}
+      ${coachReply}
+      ${coachTools}
+    </article>`;
+  }).join("");
+}
+
+function helpUploadSection(requests) {
+  return `<details class="panel help-section session-panel-accordion">
+    <summary class="panel-head"><div><div class="panel-title">Need Help With A Trick?</div><div class="panel-meta">Upload longer videos, save coach replies, and keep feedback in one place</div></div><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
+    <div class="session-panel-accordion-body">
+      <div class="video-review-hint">Tip: trim if you can, but longer riding clips are supported. CoachNow-style drawing/voice-over needs a dedicated video annotation service later.</div>
+      <form id="help-request-form" class="help-form">
+        <div class="field"><label for="help-question">Short note or question</label><textarea id="help-question" name="question" required placeholder="I keep missing my barspin. What should I change?"></textarea></div>
+        <div class="field"><label for="help-video">Trick video</label><input id="help-video" name="video" type="file" accept="video/*" required></div>
+        <button class="primary-btn wide" type="submit">Submit to coach</button>
+      </form>
+      <div class="settings-divider"></div>
+      <div class="panel-title">My coach feedback</div>
+      <div class="help-list">${helpRequestsHtml(requests)}</div>
+    </div>
+  </details>`;
+}
+
+const trickRequestCategoryLabels = {
+  daily: "Daily Tricks",
+  one_bang: "One Bangs",
+  dialled: "Dialled",
+  percentage: "Percentage Tricks",
+};
+
+function trickRequestCategoryOptions(selected = "daily") {
+  return Object.entries(trickRequestCategoryLabels)
+    .map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function athleteTrickRequestSection(assignments = [], requests = []) {
+  const venueNames = [...new Set([
+    ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue)),
+    ...defaultVenues,
+  ].filter(Boolean))];
+  const venueOptions = venueNames.map((venue) => `<option value="${escapeHtml(venueKey(venue))}">${escapeHtml(venue)}</option>`).join("");
+  const requestRows = requests.length ? requests.slice(0, 5).map((request) => `
+    <div class="request-row ${escapeHtml(request.status)}">
+      <span>${escapeHtml(request.status || "pending")}</span>
+      <strong>${escapeHtml(request.trick_name)}</strong>
+      <small>${escapeHtml(trickRequestCategoryLabels[request.category] || request.category)} · ${escapeHtml(venueLabel(request.venue))}</small>
+    </div>`).join("") : `<div class="empty compact-empty">No requests sent yet.</div>`;
+  return riderAccordionSection("Request Tricks For Next Week", "Ask your coach to add a trick to your next schedule", `
+    <form id="trick-request-form" class="trick-request-form">
+      <div class="field"><label for="request-venue">Park / venue</label><select id="request-venue" name="venue">${venueOptions}</select></div>
+      <div class="field"><label for="request-category">List</label><select id="request-category" name="category">${trickRequestCategoryOptions()}</select></div>
+      <div class="field trick-request-name"><label for="request-trick">Trick</label><input id="request-trick" name="trickName" required maxlength="120" placeholder="Tailwhip, flair, barspin..."></div>
+      <div class="field trick-request-note"><label for="request-notes">Note</label><input id="request-notes" name="notes" maxlength="180" placeholder="Why do you want this next week?"></div>
+      <button class="primary-btn" type="submit">Send request</button>
+    </form>
+    <div class="settings-divider"></div>
+    <div class="request-list">${requestRows}</div>
+  `, "trick-request-panel");
+}
+
+function heatChip(status = "on_track", extra = "") {
+  const info = heatStatuses[status] || heatStatuses.on_track;
+  return `<span class="heat-chip ${info.dot}">${info.icon} ${escapeHtml(info.label)}${extra ? ` · ${escapeHtml(extra)}` : ""}</span>`;
+}
+
+function statusByAthlete(statuses = []) {
+  return new Map(statuses.map((status) => [status.athlete_id, status]));
+}
+
+function coachGroupLabel(groupName = "monday") {
+  return coachGroups.find(([id]) => id === groupName)?.[1] || "Monday Team";
+}
+
+function groupLabelList(groupNames = []) {
+  const labels = [...new Set(groupNames.filter(Boolean))].map((groupName) => coachGroupLabel(groupName));
+  return labels.length ? labels.join(", ") : "No group set";
+}
+
+function athleteAttention(athlete, data = {}) {
+  const sessions = (data.sessions || []).filter((session) => session.athlete_id === athlete.id);
+  const lastSession = sessions[0];
+  const dailyAwards = (data.awards || []).filter((award) => award.athlete_id === athlete.id && isDailyCompletionAward(award)).length;
+  const weeklyAssignments = (data.scheduleRows || []).filter((assignment) => assignment.athlete_id === athlete.id);
+  const weeklyNonDaily = weeklyAssignments.filter((assignment) => assignment.category !== "daily").length;
+  const flags = [];
+  if (!lastSession) flags.push("No training data for 21 days");
+  if (sessions.length === 0) flags.push("Not recording sessions");
+  if (dailyAwards === 0) flags.push("Daily Tricks not completed this week");
+  if (weeklyAssignments.length === 0) flags.push("Needs a weekly plan");
+  if (weeklyNonDaily >= 6 && sessions.length <= 1) flags.push("May be neglecting weekly tricks");
+  return { lastSession, flags };
+}
+
+function daysAwayLabel(value) {
+  const start = new Date(value);
+  const today = new Date(`${localDate()}T00:00:00+10:00`);
+  const target = new Date(start);
+  target.setHours(0, 0, 0, 0);
+  const days = Math.round((target - today) / (1000 * 60 * 60 * 24));
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days < 0) return `${Math.abs(days)} days ago`;
+  return `${days} days away`;
+}
+
+function eventGroupKey(event = {}) {
+  const title = String(event.title || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const venue = String(event.venue || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const date = event.starts_at ? new Date(event.starts_at).toISOString().slice(0, 10) : "";
+  return `${title}|${date}|${venue}`;
+}
+
+function groupCoachCalendarItems(events = [], roster = []) {
+  const athletes = new Map(roster.map((athlete) => [athlete.id, athlete.display_name]));
+  const grouped = new Map();
+  events.forEach((event) => {
+    const key = eventGroupKey(event);
+    const entry = grouped.get(key) || {
+      ...event,
+      riderNames: [],
+      riderIds: new Set(),
+      eventIds: [],
+      count: 0,
+    };
+    const riderName = event.athlete_id ? athletes.get(event.athlete_id) || "Rider" : "";
+    if (riderName && !entry.riderIds.has(event.athlete_id)) {
+      entry.riderNames.push(riderName);
+      entry.riderIds.add(event.athlete_id);
+    }
+    entry.eventIds.push(event.id);
+    entry.count += 1;
+    if (!entry.ends_at && event.ends_at) entry.ends_at = event.ends_at;
+    if (!entry.notes && event.notes) entry.notes = event.notes;
+    grouped.set(key, entry);
+  });
+  return [...grouped.values()]
+    .map((event) => ({ ...event, riderCount: event.riderNames.length || event.count, riderIds: undefined }))
+    .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+}
+
+function calendarItemsHtml(events = [], roster = []) {
+  if (!events.length) return `<div class="empty compact-empty">No coach calendar events yet.</div>`;
+  const athletes = new Map(roster.map((athlete) => [athlete.id, athlete.display_name]));
+  return events.slice(0, 10).map((event) => `
+    <article class="calendar-card">
+      <div class="calendar-date"><strong>${new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(event.starts_at))}</strong><span>${new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(event.starts_at))}</span></div>
+      <div><strong>${escapeHtml(event.title)}</strong><small>${dateLabel(event.starts_at)}${event.ends_at ? ` → ${dateLabel(event.ends_at)}` : ""} · ${daysAwayLabel(event.starts_at)} · ${escapeHtml(event.venue || "Venue TBC")}${event.attendance_status ? ` · ${escapeHtml(event.attendance_status)}` : ""}${event.payment_status ? ` · ${escapeHtml(event.payment_status)}` : ""}</small><p>${event.riderNames ? `${event.riderCount} rider${event.riderCount === 1 ? "" : "s"}: ${escapeHtml(event.riderNames.join(", ") || "Whole crew")}` : `${escapeHtml(event.athlete_id ? athletes.get(event.athlete_id) || "Rider" : event.group_name ? coachGroupLabel(event.group_name) : "Whole crew")}`}${event.notes ? ` · ${escapeHtml(event.notes)}` : ""}</p></div>
+    </article>`).join("");
+}
+
+function combinedCoachCalendarItems(commandData = {}) {
+  const calendarEvents = (commandData.calendar || []).map((event) => ({ ...event, source: "coach" }));
+  const riderItems = (commandData.dashboardItems || [])
+    .filter((item) => item.due_at)
+    .map((item) => ({
+      id: item.id,
+      athlete_id: item.owner_id,
+      group_name: "",
+      title: item.title,
+      starts_at: item.due_at,
+      ends_at: item.end_at,
+      venue: "",
+      notes: item.details,
+      source: item.item_type,
+    }));
+  return [...calendarEvents, ...riderItems].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+}
+
+function coachCalendarForm(roster = []) {
+  const athleteOptions = roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)}</option>`).join("");
+  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join("");
+  return `<form id="coach-calendar-form" class="coach-calendar-form">
+    <div class="field"><label for="calendar-title">Event name</label><input id="calendar-title" name="title" required placeholder="State titles, private lesson, group session..."></div>
+    <div class="field"><label for="calendar-start">Start</label><input id="calendar-start" name="startsAt" type="datetime-local" required></div>
+    <div class="field"><label for="calendar-end">Finish</label><input id="calendar-end" name="endsAt" type="datetime-local"></div>
+    <div class="field"><label for="calendar-venue">Venue</label><input id="calendar-venue" name="venue" placeholder="Pizzey, Beenleigh..."></div>
+    <div class="field"><label for="calendar-athlete">Rider</label><select id="calendar-athlete" name="athleteId"><option value="">Group / all riders</option>${athleteOptions}</select></div>
+    <div class="field"><label for="calendar-group">Group</label><select id="calendar-group" name="groupName"><option value="">Whole crew</option>${groupOptions}</select></div>
+    <div class="field"><label for="calendar-attendance">Attendance status</label><input id="calendar-attendance" name="attendanceStatus" placeholder="Confirmed, pending, absent..."></div>
+    <div class="field"><label for="calendar-payment">Payment status</label><input id="calendar-payment" name="paymentStatus" placeholder="Paid, owing, included..."></div>
+    <div class="field"><label for="calendar-notes">Notes</label><input id="calendar-notes" name="notes" placeholder="Payment, attendance, comp details..."></div>
+    <button class="primary-btn" type="submit">Add event</button>
+  </form>`;
+}
+
+function athleteOverviewHtml(roster = [], commandData = {}) {
+  const statuses = statusByAthlete(commandData.statuses);
+  return roster.map((athlete) => {
+    const status = statuses.get(athlete.id) || {};
+    const attention = athleteAttention(athlete, commandData);
+    const alert = status.coach_alert || attention.flags[0] || "No urgent alert";
+    return `<article class="overview-card">
+      <button class="student-chip overview-person" type="button" data-open-student="${athlete.id}">${avatarHtml(athlete, "student-chip-avatar")}<span>${escapeHtml(athlete.display_name)}</span></button>
+      <div>${heatChip(status.heat_status || "on_track")}<small>${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))} · ${escapeHtml(status.training_focus || "No focus set")}</small><p>${escapeHtml(alert)}</p></div>
+      <form class="heat-form" data-heat-athlete="${athlete.id}">
+        <select name="heatStatus">${Object.entries(heatStatuses).map(([value, info]) => `<option value="${value}" ${(status.heat_status || "on_track") === value ? "selected" : ""}>${info.label}</option>`).join("")}</select>
+        <input name="trainingFocus" value="${escapeHtml(status.training_focus || "")}" placeholder="Current focus">
+        <button class="secondary-btn compact-btn" type="submit">Save</button>
+      </form>
+    </article>`;
+  }).join("");
+}
+
+function attendanceForm(roster = []) {
+  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join("");
+  const riderRows = roster.map((athlete) => `<label class="attendance-rider">${avatarHtml(athlete)}<span>${escapeHtml(athlete.display_name)}</span><select name="status:${athlete.id}"><option value="">Skip</option><option value="attended">Attended</option><option value="late">Late</option><option value="absent">Absent</option></select><label><input type="checkbox" name="owed:${athlete.id}"> Owes</label><label><input type="checkbox" name="paid:${athlete.id}"> Paid</label></label>`).join("");
+  return `<form id="attendance-form" class="attendance-form">
+    <div class="two-col-form">
+      <div class="field"><label for="attendance-date">Date</label><input id="attendance-date" name="sessionDate" type="date" value="${escapeHtml(localDate())}" required></div>
+      <div class="field"><label for="attendance-venue">Venue</label><input id="attendance-venue" name="venue" placeholder="Skate park"></div>
+      <div class="field"><label for="attendance-group">Group</label><select id="attendance-group" name="groupName">${groupOptions}</select></div>
+      <div class="field"><label for="attendance-total">Total entry cost paid</label><input id="attendance-total" name="totalEntryCost" type="number" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="field"><label for="attendance-cost">Cost per rider</label><input id="attendance-cost" name="costPerRider" type="number" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="field"><label for="attendance-notes">Session notes</label><input id="attendance-notes" name="notes" placeholder="Session notes"></div>
+    </div>
+    <div class="attendance-grid">${riderRows}</div>
+    <button class="primary-btn wide" type="submit">Save attendance & reimbursements</button>
+  </form>`;
+}
+
+function attendanceHistoryHtml(sessions = []) {
+  if (!sessions.length) return `<div class="empty compact-empty">No attendance sessions recorded yet.</div>`;
+  return sessions.map((session) => {
+    const records = session.attendance_records || [];
+    const owed = records.filter((record) => record.reimbursement_owed && !record.reimbursement_paid).length;
+    return `<div class="list-row"><div><strong>${escapeHtml(session.venue || "Session")} · ${escapeHtml(coachGroupLabel(session.group_name))}</strong><small>${escapeHtml(session.session_date)} · ${records.length} riders · $${Number(session.total_entry_cost || 0).toFixed(2)} paid · ${owed} outstanding</small></div><span class="points">${records.filter((record) => record.status === "attended").length}</span></div>`;
+  }).join("");
+}
+
+function commandAccordionSection(id, title, meta, body, open = false) {
+  return `<details id="${escapeHtml(id)}" class="command-accordion" ${open ? "open" : ""}>
+    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret">Open</span></summary>
+    <div class="command-accordion-body">${body}</div>
+  </details>`;
+}
+
+function athleteNameMap(roster = []) {
+  return new Map(roster.map((athlete) => [athlete.id, athlete.display_name]));
+}
+
+function currentWeekEvents(events = []) {
+  const start = new Date(weekStartIso()).getTime();
+  const end = start + (7 * 24 * 60 * 60 * 1000);
+  return events.filter((event) => {
+    const time = new Date(event.starts_at).getTime();
+    return Number.isFinite(time) && time >= start && time < end;
+  });
+}
+
+function highPriorityTasks(roster = [], commandData = {}, groupedCalendar = []) {
+  const dismissedKeys = new Set((commandData.dismissedTasks || []).map((task) => task.task_key));
+  const scheduleByAthlete = (commandData.scheduleRows || []).reduce((map, row) => {
+    const rows = map.get(row.athlete_id) || [];
+    rows.push(row);
+    map.set(row.athlete_id, rows);
+    return map;
+  }, new Map());
+  const notificationsByAthlete = (commandData.weeklyNotifications || []).reduce((map, row) => {
+    const rows = map.get(row.athlete_id) || [];
+    rows.push(row);
+    map.set(row.athlete_id, rows);
+    return map;
+  }, new Map());
+  const parentCounts = (commandData.parentLinks || []).reduce((map, link) => map.set(link.athlete_id, (map.get(link.athlete_id) || 0) + 1), new Map());
+  const sheetTasks = roster.flatMap((athlete) => {
+    const rows = scheduleByAthlete.get(athlete.id) || [];
+    const tasks = [];
+    if (!rows.length) tasks.push({ key: `sheet:${athlete.id}:missing`, type: "sheet", label: `${athlete.display_name} — sheet not updated this week`, athleteId: athlete.id, priority: "high" });
+    else if (!rows.some((row) => row.category === "daily")) tasks.push({ key: `sheet:${athlete.id}:daily`, type: "sheet", label: `${athlete.display_name} — needs new Daily Tricks`, athleteId: athlete.id, priority: "high" });
+    else if (!rows.some((row) => row.category === "dialled")) tasks.push({ key: `sheet:${athlete.id}:dialled`, type: "sheet", label: `${athlete.display_name} — Dialled tricks need review`, athleteId: athlete.id, priority: "medium" });
+    return tasks;
+  });
+  const parentTasks = roster
+    .filter((athlete) => parentCounts.get(athlete.id) && !notificationsByAthlete.get(athlete.id)?.some((row) => row.status === "sent"))
+    .map((athlete) => ({ key: `parent:${athlete.id}:weekly-update`, type: "parent", label: `${athlete.display_name}'s parent — weekly update not sent`, athleteId: athlete.id, priority: "medium" }));
+  const eventTasks = currentWeekEvents(groupedCalendar).slice(0, 5).map((event) => ({ key: `event:${event.eventIds?.join(",") || event.id || event.title}:${event.starts_at}`, type: "event", label: `${event.title} — ${event.riderCount || 0} rider${event.riderCount === 1 ? "" : "s"} attending`, target: "upcoming-events-section", priority: "low" }));
+  return [...sheetTasks.slice(0, 6), ...parentTasks.slice(0, 5), ...eventTasks]
+    .filter((task) => !dismissedKeys.has(task.key))
+    .slice(0, 14);
+}
+
+function highPriorityTodoHtml(tasks = []) {
+  if (!tasks.length) return "";
+  const taskRow = (task) => `<div class="priority-task-row">
+    <button class="priority-task ${task.priority}" type="button" ${task.athleteId ? `data-open-student="${task.athleteId}"` : ""} ${task.target ? `data-command-scroll="${task.target}"` : ""}>
+      <span>${task.priority === "high" ? "!" : task.priority === "medium" ? "•" : "→"}</span>
+      <strong>${escapeHtml(task.label)}</strong>
+    </button>
+    <button class="dismiss-task-btn" type="button" data-dismiss-task="${escapeHtml(task.key)}" aria-label="Remove ${escapeHtml(task.label)} from this week's to do list">×</button>
+  </div>`;
+  const visibleRows = tasks.slice(0, 3).map(taskRow).join("");
+  const extraTasks = tasks.slice(3);
+  const overflow = extraTasks.length ? `<details class="priority-more"><summary>View ${extraTasks.length} more task${extraTasks.length === 1 ? "" : "s"}</summary><div class="priority-list">${extraTasks.map(taskRow).join("")}</div></details>` : "";
+  return `<section class="panel high-priority-panel coach-tone-coral"><div class="panel-head"><div><div class="panel-title">Priority Actions</div><div class="panel-meta">${tasks.length} private coach task${tasks.length === 1 ? "" : "s"} this week</div></div></div><div class="priority-list">${visibleRows}</div>${overflow}</section>`;
+}
+
+function commandMetricCard(label, value, meta, action = {}) {
+  const tone = {
+    students: "aqua",
+    attention: "coral",
+    upcoming: "gold",
+    modified: "blue",
+  }[String(label || "").toLowerCase()] || "aqua";
+  const attributes = action.view
+    ? `data-view="${escapeHtml(action.view)}"`
+    : action.target
+      ? `data-command-scroll="${escapeHtml(action.target)}"`
+      : "";
+  return `<button class="command-metric-card coach-tone-${tone}" type="button" ${attributes}>
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    <small>${escapeHtml(meta)}</small>
+  </button>`;
+}
+
+function commandHubAccordion(id, number, title, meta, summary, body) {
+  const tone = number === "01" ? "purple" : "blue";
+  return `<details id="${escapeHtml(id)}" class="command-hub-accordion coach-tone-${tone}">
+    <summary>
+      <span class="command-hub-number">${escapeHtml(number)}</span>
+      <span class="command-hub-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>
+      <span class="command-hub-summary">${escapeHtml(summary)}</span>
+      <span class="command-hub-chevron" aria-hidden="true">+</span>
+    </summary>
+    <div class="command-hub-body"><div class="command-accordion-stack compact-command-stack">${body}</div></div>
+  </details>`;
+}
+
+function commandNotificationsHtml(roster = [], commandData = {}, groupedCalendar = []) {
+  const statuses = statusByAthlete(commandData.statuses);
+  const attention = roster.flatMap((athlete) => {
+    const flags = athleteAttention(athlete, commandData).flags;
+    const coachAlert = statuses.get(athlete.id)?.coach_alert;
+    return [...(coachAlert ? [coachAlert] : []), ...flags].slice(0, 2).map((flag) => ({ athleteId: athlete.id, label: `${athlete.display_name}: ${flag}`, type: "rider" }));
+  });
+  const events = currentWeekEvents(groupedCalendar).map((event) => ({ label: `${event.title}: ${daysAwayLabel(event.starts_at)}`, target: "upcoming-events-section", type: "event" }));
+  const notifications = [...attention, ...events].slice(0, 16);
+  if (!notifications.length) return `<div class="empty compact-empty">No private notifications right now.</div>`;
+  return `<div class="notification-list">${notifications.map((item) => `<button class="notification-card" type="button" ${item.athleteId ? `data-open-student="${item.athleteId}"` : ""} ${item.target ? `data-command-scroll="${item.target}"` : ""}><span>${item.type === "event" ? "Event" : "Rider"}</span><strong>${escapeHtml(item.label)}</strong></button>`).join("")}</div>`;
+}
+
+function weeklyNotificationControlsHtml(commandData = {}) {
+  const settings = commandData.weeklySettings || {};
+  const history = commandData.weeklyNotifications || [];
+  const sent = history.filter((row) => row.status === "sent").length;
+  const drafts = history.filter((row) => row.status !== "sent").length;
+  const historyRows = history.length ? history.slice(0, 8).map((row) => `<button class="notification-card" type="button" data-open-student="${escapeHtml(row.athlete_id)}">
+    <span>${escapeHtml(row.status || "draft")} · ${escapeHtml(row.recipient_type || "summary")}</span>
+    <strong>${escapeHtml(row.title || "Weekly progress summary")}</strong>
+    <small>${escapeHtml(row.summary || "No summary text saved yet.")}</small>
+  </button>`).join("") : `<div class="empty compact-empty">No weekly summaries created for this week yet.</div>`;
+  return `<div class="weekly-notification-controls">
+    <form id="weekly-notification-settings-form" class="weekly-settings-form">
+      <label><input type="checkbox" name="enabled" ${settings.enabled !== false ? "checked" : ""}> Weekly summaries on</label>
+      <label><input type="checkbox" name="parentSummaries" ${settings.parent_summaries_enabled !== false ? "checked" : ""}> Send to linked parents</label>
+      <label><input type="checkbox" name="onlineSummaries" ${settings.online_rider_summaries_enabled !== false ? "checked" : ""}> Send to online riders</label>
+      <label><input type="checkbox" name="inactiveSummaries" ${settings.inactive_rider_summaries_enabled ? "checked" : ""}> Include inactive riders</label>
+      <div class="settings-callout">Scheduled target: Sunday 7:30pm Australia/Brisbane. History this week: ${sent} sent · ${drafts} drafts/previews.</div>
+      <button class="primary-btn" type="submit">Save notification settings</button>
+    </form>
+    <div class="settings-divider"></div>
+    <div class="weekly-preview-actions">
+      <button class="secondary-btn" id="generate-weekly-previews" type="button">Preview this week's summaries</button>
+      <small>Creates coach-reviewable summary drafts for linked parents and online riders. External push/email delivery can be connected after the sending channel is chosen.</small>
+    </div>
+    <div class="notification-list weekly-history-list">${historyRows}</div>
+  </div>`;
+}
+
+function trickRequestRowsHtml(requests = [], roster = [], context = "command") {
+  if (!requests.length) return `<div class="empty compact-empty">No rider trick requests waiting.</div>`;
+  const byId = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  return `<div class="trick-request-review-list">${requests.map((request) => {
+    const athlete = byId.get(request.athlete_id) || {};
+    return `<article class="trick-request-review-card">
+      <div class="person">${avatarHtml(athlete)}<div class="person-name"><strong>${escapeHtml(athlete.display_name || "Rider")}</strong><small>${escapeHtml(trickRequestCategoryLabels[request.category] || request.category)} · ${escapeHtml(venueLabel(request.venue))} · ${escapeHtml(request.status || "pending")}</small></div></div>
+      <div class="request-review-main"><strong>${escapeHtml(request.trick_name)}</strong>${request.notes ? `<small>${escapeHtml(request.notes)}</small>` : ""}</div>
+      <div class="request-review-actions">
+        <button class="primary-btn compact-btn" type="button" data-request-accept="${escapeHtml(request.id)}" data-request-context="${escapeHtml(context)}">Accept</button>
+        <button class="danger-btn compact-btn" type="button" data-request-decline="${escapeHtml(request.id)}" data-request-context="${escapeHtml(context)}">Decline</button>
+      </div>
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function coachTrickRequestsHtml(commandData = {}, roster = []) {
+  const requests = commandData.trickRequests || [];
+  return trickRequestRowsHtml(requests, roster, "command");
+}
+
+async function acceptTrickRequest(event) {
+  const requestId = event.currentTarget.dataset.requestAccept;
+  const context = event.currentTarget.dataset.requestContext || "";
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Accepting...";
+  try {
+    const { error } = await client.rpc("accept_trick_request_into_plan", { p_request_id: requestId });
+    if (error) throw error;
+    notify("Request accepted and added to next week's private plan.");
+    cacheClear("coach-command");
+    if (context === "planner") await renderPlanner();
+    else await renderCoachCommand();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Accept";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function declineTrickRequest(event) {
+  const requestId = event.currentTarget.dataset.requestDecline;
+  const context = event.currentTarget.dataset.requestContext || "";
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Declining...";
+  const { error } = await client.from("trick_requests").update({
+    status: "declined",
+    reviewed_by: state.user.id,
+    reviewed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", requestId);
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Decline";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Request declined.");
+  cacheClear("coach-command");
+  if (context === "planner") await renderPlanner();
+  else await renderCoachCommand();
+}
+
+function riderAccordionSection(title, meta, body, className = "") {
+  return `<details class="panel rider-content-accordion ${escapeHtml(className)}">
+    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret"><span class="rider-toggle-closed">Open</span><span class="rider-toggle-open">Close</span></span></summary>
+    <div class="rider-content-accordion-body">${body}</div>
+  </details>`;
+}
+
+function goalsSection(profile = {}) {
+  const goals = Array.isArray(profile.goals) ? profile.goals : [];
+  const openCount = goals.filter((goal) => !goal.completed).length;
+  const rows = goals.length ? goals.map((goal) => `
+    <div class="goal-row ${goal.completed ? "complete" : ""}" data-goal-id="${escapeHtml(goal.id)}">
+      <button class="assignment-check goal-toggle" type="button" data-goal-toggle="${escapeHtml(goal.id)}" aria-label="${goal.completed ? "Mark goal active" : "Mark goal complete"}">${goal.completed ? "✓" : ""}</button>
+      <input value="${escapeHtml(goal.title)}" data-goal-title="${escapeHtml(goal.id)}" aria-label="Goal title">
+      <button class="secondary-btn compact-btn" type="button" data-goal-save="${escapeHtml(goal.id)}">Save</button>
+      <button class="danger-btn compact-btn" type="button" data-goal-delete="${escapeHtml(goal.id)}">Delete</button>
+    </div>`).join("") : `<div class="empty compact-empty">No goals yet. Add one thing you want to chase this week.</div>`;
+  return riderAccordionSection("My Goals", `${openCount} active goals · keep your why in front of you`, `
+    <form id="goal-form" class="goal-form"><input name="goal" required maxlength="120" placeholder="Land barspin clean, qualify for state titles..."><button class="primary-btn" type="submit">Add goal</button></form>
+    <div class="goal-list">${rows}</div>
+  `, "goals-panel");
+}
+
+function socialLinks(profile = {}) {
+  const links = profile.social_links || {};
+  return ["instagram", "tiktok", "youtube", "other"].map((key) => ({ key, url: String(links[key] || "").trim() })).filter((item) => item.url);
+}
+
+function socialLinksHtml(profile = {}) {
+  const labels = { instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube", other: "Other" };
+  const links = socialLinks(profile);
+  if (!links.length) return "";
+  return `<section class="panel social-panel">
+    <div class="panel-head"><div><div class="panel-title">Social links</div><div class="panel-meta">Riding content and highlights</div></div></div>
+    <div class="social-links">${links.map((item) => `<a class="secondary-btn compact-btn" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(labels[item.key])}</a>`).join("")}</div>
+  </section>`;
+}
+
+function quoteSection() {
+  const item = randomQuote();
+  return `<section class="panel quote-panel"><div class="eyebrow">Rider mindset</div><blockquote>“${escapeHtml(item.quote)}”</blockquote><small>${escapeHtml(item.by)}${item.role ? ` · ${escapeHtml(item.role)}` : ""}</small></section>`;
+}
+
+function normalizedGoals() {
+  return Array.isArray(state.profile?.goals) ? [...state.profile.goals] : [];
+}
+
+async function saveGoals(goals, message = "Goals saved.") {
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(message);
+  await renderAthleteHome();
+}
+
+function bindGoalActions() {
+  document.querySelector("#goal-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const title = String(new FormData(event.currentTarget).get("goal") || "").trim();
+    if (!title) return;
+    const goals = normalizedGoals();
+    goals.unshift({ id: crypto.randomUUID(), title: title.slice(0, 120), completed: false, createdAt: new Date().toISOString() });
+    await saveGoals(goals, "Goal added.");
+  });
+  document.querySelectorAll("[data-goal-toggle]").forEach((button) => button.addEventListener("click", async () => {
+    const goals = normalizedGoals().map((goal) => goal.id === button.dataset.goalToggle ? { ...goal, completed: !goal.completed } : goal);
+    await saveGoals(goals, "Goal updated.");
+  }));
+  document.querySelectorAll("[data-goal-save]").forEach((button) => button.addEventListener("click", async () => {
+    const input = document.querySelector(`[data-goal-title="${CSS.escape(button.dataset.goalSave)}"]`);
+    const title = String(input?.value || "").trim();
+    if (!title) return notify("Write the goal first.", "error");
+    const goals = normalizedGoals().map((goal) => goal.id === button.dataset.goalSave ? { ...goal, title: title.slice(0, 120) } : goal);
+    await saveGoals(goals, "Goal saved.");
+  }));
+  document.querySelectorAll("[data-goal-delete]").forEach((button) => button.addEventListener("click", async () => {
+    const goals = normalizedGoals().filter((goal) => goal.id !== button.dataset.goalDelete);
+    await saveGoals(goals, "Goal deleted.");
+  }));
+}
+
+function extraTricksSection(profile = state.profile, editable = true) {
+  const tricks = extraTricks(profile);
+  const rows = tricks.length ? tricks.map((trick) => `
+    <div class="goal-row extra-trick-row ${trick.completed ? "complete" : ""}" data-extra-trick-id="${escapeHtml(trick.id)}">
+      <button class="assignment-check" type="button" ${editable ? `data-extra-toggle="${escapeHtml(trick.id)}"` : "disabled"} aria-label="${trick.completed ? "Mark extra trick active" : "Mark extra trick worked on"}">${trick.completed ? "✓" : ""}</button>
+      <div class="extra-trick-copy"><strong>${escapeHtml(trick.title)}</strong><small>${escapeHtml(trick.note || "Personal practice · no points")}</small></div>
+      ${editable ? `<button class="secondary-btn compact-btn" type="button" data-extra-edit="${escapeHtml(trick.id)}">Edit</button><button class="danger-btn compact-btn" type="button" data-extra-delete="${escapeHtml(trick.id)}">Delete</button>` : ""}
+    </div>`).join("") : `<div class="empty compact-empty">No extra tricks yet. Add something you are personally working on.</div>`;
+  return `<details class="panel extra-tricks-panel session-panel-accordion">
+    <summary class="panel-head"><div><div class="panel-title">Working On</div><div class="panel-meta">Personal tricks · no points · coach can view</div></div><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
+    <div class="session-panel-accordion-body">
+      ${editable ? `<form id="extra-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="New trick I am working on"><input name="note" maxlength="180" placeholder="Optional note"><button class="primary-btn" type="submit">Add</button></form>` : ""}
+      <div class="goal-list">${rows}</div>
+    </div>
+  </details>`;
+}
+
+async function saveExtraTricks(tricks, message = "Working On saved.") {
+  const { data, error } = await client.from("profiles").update({ rider_extra_tricks: tricks, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(message);
+  await renderSession();
+}
+
+function bindExtraTrickActions() {
+  document.querySelector("#extra-trick-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get("title") || "").trim();
+    if (!title) return;
+    const tricks = extraTricks();
+    tricks.unshift({ id: crypto.randomUUID(), title: title.slice(0, 120), note: String(form.get("note") || "").trim().slice(0, 180), completed: false, createdAt: new Date().toISOString() });
+    await saveExtraTricks(tricks, "Extra trick added.");
+  });
+  document.querySelectorAll("[data-extra-toggle]").forEach((button) => button.addEventListener("click", async () => {
+    const tricks = extraTricks().map((trick) => trick.id === button.dataset.extraToggle ? { ...trick, completed: !trick.completed } : trick);
+    await saveExtraTricks(tricks, "Extra trick updated.");
+  }));
+  document.querySelectorAll("[data-extra-edit]").forEach((button) => button.addEventListener("click", async () => {
+    const tricks = extraTricks();
+    const trick = tricks.find((item) => item.id === button.dataset.extraEdit);
+    if (!trick) return;
+    const title = window.prompt("Extra trick name:", trick.title);
+    if (!title) return;
+    const note = window.prompt("Short note:", trick.note || "") || "";
+    await saveExtraTricks(tricks.map((item) => item.id === trick.id ? { ...item, title: title.trim().slice(0, 120), note: note.trim().slice(0, 180) } : item), "Extra trick saved.");
+  }));
+  document.querySelectorAll("[data-extra-delete]").forEach((button) => button.addEventListener("click", async () => {
+    await saveExtraTricks(extraTricks().filter((trick) => trick.id !== button.dataset.extraDelete), "Extra trick removed.");
+  }));
+}
+
+function dashboardItemsHtml(items, editable = true) {
+  if (!items.length) return `<div class="empty">No upcoming events or tasks yet.</div>`;
+  return items.map((item) => `
+    <div class="list-row dashboard-item ${item.completed ? "complete" : ""}">
+      <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.item_type)}${dashboardDateLabel(item)}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div>
+      ${editable ? `<div class="item-actions"><button class="secondary-btn compact-btn" type="button" data-toggle-item="${item.id}">${item.completed ? "Reopen" : "Done"}</button><button class="danger-btn compact-btn" type="button" data-delete-item="${item.id}">Delete</button></div>` : ""}
+    </div>`).join("");
+}
+
+function closedPanelAccordion(title, meta, body, className = "") {
+  return `<details class="panel panel-accordion ${className}">
+    <summary class="panel-accordion-summary">
+      <div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div>
+      <span class="secondary-btn compact-btn accordion-caret">Open</span>
+    </summary>
+    <div class="panel-accordion-body">${body}</div>
+  </details>`;
+}
+
+function dashboardDateLabel(item) {
+  if (item.due_at && item.end_at) return ` · ${dateLabel(item.due_at)} → ${dateLabel(item.end_at)}`;
+  if (item.due_at) return ` · Starts ${dateLabel(item.due_at)}`;
+  if (item.end_at) return ` · Finishes ${dateLabel(item.end_at)}`;
+  return "";
+}
+
+function dashboardItemForm(ownerId) {
+  return `<form id="dashboard-item-form" class="dashboard-item-form" data-owner-id="${ownerId}">
+    <div class="field"><label for="item-type">Type</label><select id="item-type" name="itemType"><option value="event">Event</option><option value="task">Important task</option></select></div>
+    <div class="field"><label for="item-title">Title</label><input id="item-title" name="title" required placeholder="State titles, film homework, bike check..."></div>
+    <div class="field"><label for="item-due">Start date / time</label><input id="item-due" name="dueAt" type="datetime-local"></div>
+    <div class="field"><label for="item-end">Finish date / time</label><input id="item-end" name="endAt" type="datetime-local"></div>
+    <div class="field"><label for="item-details">Details</label><input id="item-details" name="details" placeholder="Optional short note"></div>
+    <button class="primary-btn" type="submit">Add</button>
+  </form>`;
+}
+
+function dashboardTaskForm(ownerId) {
+  return `<form id="dashboard-item-form" class="dashboard-item-form task-only-form" data-owner-id="${ownerId}">
+    <input type="hidden" name="itemType" value="task">
+    <div class="field"><label for="item-title">Task</label><input id="item-title" name="title" required placeholder="Bike check, film homework, message coach..."></div>
+    <div class="field"><label for="item-due">Start date / time</label><input id="item-due" name="dueAt" type="datetime-local"></div>
+    <div class="field"><label for="item-end">Finish date / time</label><input id="item-end" name="endAt" type="datetime-local"></div>
+    <div class="field"><label for="item-details">Details</label><input id="item-details" name="details" placeholder="Optional short note"></div>
+    <button class="primary-btn" type="submit">Add task</button>
+  </form>`;
+}
+
+function weekSummaryHtml(assignments, awards) {
+  const weeklyPercent = weeklyCompletionPercent(assignments, awards);
+  const weeklyItems = completionAssignments(assignments);
+  const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+  const dailyDays = Math.min(7, dailyCompletionCount(awards));
+  return `<section class="panel simple-summary">
+    <div class="panel-head"><div><div class="panel-title">This week</div><div class="panel-meta">Clean progress snapshot</div></div><strong>${weeklyPercent}%</strong></div>
+    <div class="progress-bar"><span style="width:${weeklyPercent}%"></span></div>
+    <div class="weekly-daily-days"><span>Daily Tricks</span><strong>${dailyDays}/7 <small>days</small></strong></div>
+    <p>Weekly program completed ${completedWeekly}/${weeklyItems.length || 0}. Daily Tricks show days completed across the week—riders are not expected to train all seven days.</p>
+  </section>`;
+}
+
+function trickObstacleCategory(assignment = {}) {
+  const text = `${assignment.trick_name || ""} ${assignment.notes || ""} ${assignment.venue || ""}`.toLowerCase();
+  if (/\bbox\b|box jump|jump box/.test(text)) return "Box tricks";
+  if (/\bspine\b/.test(text)) return "Spine tricks";
+  if (/\bair\b|quarter|vert|flyout/.test(text)) return "Air tricks";
+  if (/\bhip\b/.test(text)) return "Hip tricks";
+  return "Other tricks";
+}
+
+const TRICKTIONARY_SECTIONS = [
+  { id: "new", label: "New Tricks", hint: "Unsorted tricks land here first" },
+  { id: "box", label: "Box", hint: "Box jump and jump-box tricks" },
+  { id: "spine", label: "Spine", hint: "Spine tricks and transfers" },
+  { id: "hip", label: "Hip", hint: "Hip tricks and hip lines" },
+  { id: "air", label: "Air", hint: "Quarter, ramp, flyout, and air tricks" },
+];
+const TRICKTIONARY_CATEGORY_LABELS = Object.fromEntries(TRICKTIONARY_SECTIONS.map((section) => [section.id, section.label]));
+const TRICKTIONARY_ALLOWED_CATEGORIES = new Set(TRICKTIONARY_SECTIONS.map((section) => section.id));
+
+function normalizeTrickKey(title = "") {
+  return String(title || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function tricktionaryMeta(profile = {}) {
+  const meta = profile?.tricktionary_meta && typeof profile.tricktionary_meta === "object" ? profile.tricktionary_meta : {};
+  return {
+    categories: meta.categories && typeof meta.categories === "object" ? meta.categories : {},
+    updatedAt: meta.updatedAt || "",
+  };
+}
+
+function tricktionaryCategoryFromText(value = "") {
+  const text = String(value || "").toLowerCase();
+  if (/\bfoam\b|foam pit/.test(text)) return "foam";
+  if (/\bbox\b|box jump|jump box/.test(text)) return "box";
+  if (/\bspine\b/.test(text)) return "spine";
+  if (/\bhip\b/.test(text)) return "hip";
+  if (/\bair\b|quarter|vert|flyout/.test(text)) return "air";
+  return "new";
+}
+
+function safeTricktionaryCategory(category = "") {
+  return TRICKTIONARY_ALLOWED_CATEGORIES.has(category) ? category : "new";
+}
+
+function tricktionaryCategoryForEntry(entry = {}, profile = {}) {
+  const meta = tricktionaryMeta(profile);
+  const key = normalizeTrickKey(entry.title || entry.trick_name);
+  const saved = meta.categories?.[key] || entry.tricktionaryCategory || entry.categoryOverride;
+  if (["new", "box", "spine", "hip", "air"].includes(saved)) return saved;
+  return tricktionaryCategoryFromText(`${entry.title || entry.trick_name || ""} ${entry.notes || ""} ${entry.venue || ""}`);
+}
+
+function manualTricktionary(profile = {}) {
+  return Array.isArray(profile.manual_tricktionary) ? profile.manual_tricktionary : [];
+}
+
+function cloneTricktionaryManual(manual = []) {
+  return manual.map((trick) => ({ ...trick }));
+}
+
+function buildTricktionaryMeta(profile = {}, categories = {}) {
+  const current = tricktionaryMeta(profile);
+  return {
+    ...profile.tricktionary_meta,
+    categories: { ...current.categories, ...categories },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function coachManualTricktionaryPanel(athlete = {}) {
+  const manual = manualTricktionary(athlete);
+  const rows = manual.length ? manual.map((trick) => {
+    const title = String(trick.title || trick.name || "").trim();
+    if (!title) return "";
+    const addedAt = trick.addedAt || trick.createdAt;
+    const count = Math.max(1, Number(trick.count || trick.landedCount || 1));
+    return `<div class="list-row">
+      <div><strong>${escapeHtml(title)}</strong><small>Manual Tricktionary entry · ${count} landed${addedAt ? ` · Added ${escapeHtml(dateLabel(addedAt))}` : ""}</small></div>
+      <button class="danger-btn compact-btn" type="button" data-coach-remove-manual-trick="${escapeHtml(trick.id || title)}">Remove</button>
+    </div>`;
+  }).filter(Boolean).join("") : `<div class="empty compact-empty">No manual Tricktionary tricks added yet.</div>`;
+  return `<section class="panel">
+    <div class="panel-head"><div><div class="panel-title">Tricktionary management</div><div class="panel-meta">Add landed tricks that were not captured on a weekly sheet</div></div></div>
+    <form id="coach-manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a landed trick for this rider"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
+    <div class="goal-list">${rows}</div>
+    <small class="form-note">Manual Tricktionary entries are private to the coach, rider, and linked parents. They do not award points.</small>
+  </section>`;
+}
+
+function landedTricktionaryEntries(data = {}) {
+  const profile = data.profile || {};
+  const meta = tricktionaryMeta(profile);
+  const assignmentsById = new Map((data.assignments || []).map((assignment) => [assignment.id, assignment]));
+  const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
+  const awardsByAssignment = (data.awards || []).reduce((map, award) => {
+    if (!award.assignment_id) return map;
+    const rows = map.get(award.assignment_id) || [];
+    rows.push(award);
+    map.set(award.assignment_id, rows);
+    return map;
+  }, new Map());
+  const percentageByAssignment = (data.percentageAttempts || []).reduce((map, attempt) => {
+    if (!attempt.assignment_id) return map;
+    const rows = map.get(attempt.assignment_id) || [];
+    rows.push(attempt);
+    map.set(attempt.assignment_id, rows);
+    return map;
+  }, new Map());
+  const byName = new Map();
+  const countForAssignment = (assignment) => {
+    if (assignment.category === "percentage") return 0;
+    if (assignment.category === "dialled") return Number(assignment.target_reps || 3) || 3;
+    return 1;
+  };
+  const addEntry = (assignment, count, landedAt, sourceOverride = "", manual = false, manualId = "") => {
+    if (!assignment || !Number(count)) return;
+    const key = normalizeTrickKey(assignment.trick_name || "");
+    if (!key) return;
+    if (assignment.category === "foam_pit" || assignment.tricktionaryCategory === "foam" || meta.categories[key] === "foam") return;
+    const categoryGuess = tricktionaryCategoryFromText(`${assignment.trick_name || ""} ${assignment.notes || ""} ${assignment.venue || ""}`);
+    if (categoryGuess === "foam") return;
+    const previous = byName.get(key) || {
+      id: assignment.id || manualId || key,
+      key,
+      title: assignment.trick_name,
+      sources: new Set(),
+      category: assignment.category || "manual",
+      obstacle: TRICKTIONARY_CATEGORY_LABELS[meta.categories[key] || assignment.tricktionaryCategory || categoryGuess] || "New Tricks",
+      tricktionaryCategory: meta.categories[key] || assignment.tricktionaryCategory || categoryGuess,
+      weekStart: assignment.week_start || "",
+      landedAt,
+      count: 0,
+      manual,
+      manualIds: [],
+    };
+    previous.count += Number(count);
+    previous.sources.add(sourceOverride || categoryInfo[assignment.category]?.label || assignment.category || "Manual add");
+    previous.tricktionaryCategory = meta.categories[key] || previous.tricktionaryCategory || "new";
+    previous.obstacle = TRICKTIONARY_CATEGORY_LABELS[previous.tricktionaryCategory] || "New Tricks";
+    if (manual && manualId) previous.manualIds.push(manualId);
+    if (!previous.landedAt || new Date(landedAt) > new Date(previous.landedAt)) previous.landedAt = landedAt;
+    if (assignment.week_start && (!previous.weekStart || new Date(assignment.week_start) > new Date(previous.weekStart))) previous.weekStart = assignment.week_start;
+    if (manual) previous.manual = true;
+    byName.set(key, previous);
+  };
+  const countedAssignments = new Set();
+  (data.assignments || []).forEach((assignment) => {
+    const progress = progressByAssignment.get(assignment.id);
+    const complete = assignment.category === "daily" ? Boolean(progress?.progress_date) : Boolean(progress?.completed_at);
+    if (!complete || assignment.category === "percentage") return;
+    const landedAt = progress?.completed_at || progress?.updated_at || assignment.updated_at || assignment.created_at;
+    addEntry(assignment, countForAssignment(assignment), landedAt);
+    countedAssignments.add(assignment.id);
+  });
+  awardsByAssignment.forEach((awards, assignmentId) => {
+    if (countedAssignments.has(assignmentId)) return;
+    const assignment = assignmentsById.get(assignmentId);
+    if (!assignment || assignment.category === "percentage") return;
+    const landedAt = awards[0]?.created_at || assignment.updated_at || assignment.created_at;
+    addEntry(assignment, countForAssignment(assignment), landedAt);
+    countedAssignments.add(assignmentId);
+  });
+  percentageByAssignment.forEach((attempts, assignmentId) => {
+    const assignment = assignmentsById.get(assignmentId);
+    if (!assignment) return;
+    const landedAttempts = attempts.filter((attempt) => attempt.landed);
+    if (!landedAttempts.length) return;
+    const landedAt = landedAttempts[0]?.created_at || assignment.updated_at || assignment.created_at;
+    addEntry(assignment, landedAttempts.length, landedAt, "Percentage landed reps");
+  });
+  manualTricktionary(data.profile).forEach((trick) => {
+    const title = String(trick.title || trick.name || "").trim();
+    if (!title) return;
+    if (trick.category === "foam_pit" || trick.tricktionaryCategory === "foam" || tricktionaryCategoryFromText(`${title} ${trick.notes || ""}`) === "foam") return;
+    const count = Math.max(1, Number(trick.count || trick.landedCount || 1));
+    addEntry({
+      id: trick.id || title.toLowerCase(),
+      trick_name: title,
+      category: "manual",
+      notes: trick.notes || "",
+      tricktionaryCategory: trick.tricktionaryCategory || trick.categoryOverride || "",
+      week_start: "",
+      updated_at: trick.addedAt || trick.createdAt || new Date().toISOString(),
+    }, count, trick.addedAt || trick.createdAt || new Date().toISOString(), "Manual add", true, trick.id || title.toLowerCase());
+  });
+  return [...byName.values()].map((entry) => ({
+    ...entry,
+    source: [...entry.sources].join(", "),
+    manualRemoveId: entry.manualIds[0] || "",
+  })).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+}
+
+function attemptsByTrick(attempts = []) {
+  return attempts.reduce((map, attempt) => {
+    const key = String(attempt.trick_name || "").trim().toLowerCase();
+    if (!key) return map;
+    const entry = map.get(key) || { title: attempt.trick_name, count: 0 };
+    entry.count += 1;
+    map.set(key, entry);
+    return map;
+  }, new Map());
+}
+
+function tricktionaryEntriesHtml(entries = [], attempts = []) {
+  const attemptMap = attemptsByTrick(attempts);
+  if (!entries.length) return `<div class="empty compact-empty">No landed tricks in the Tricktionary yet.</div>`;
+  return `<div class="tricktionary-grid">${entries.map((entry) => {
+    const attemptCount = attemptMap.get(String(entry.title).toLowerCase())?.count || 0;
+    const landedCount = Math.max(1, Number(entry.count || 1));
+    return `<article class="tricktionary-card">
+      <div class="tricktionary-card-main"><div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Latest week ${escapeHtml(entry.weekStart)}` : ""}</small></div><div class="tricktionary-count-badge"><strong>${landedCount}</strong><small>landed</small></div></div>
+      <div class="tricktionary-card-meta"><span>${escapeHtml(entry.obstacle)}</span>${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}</div>
+      ${entry.manual && state.profile?.id === entry.ownerId && entry.manualRemoveId ? `<button class="danger-btn compact-btn" type="button" data-remove-manual-trick="${escapeHtml(entry.manualRemoveId)}">Remove manual entry</button>` : ""}
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function tricktionaryCardHtml(entry = {}, attemptMap = new Map(), editable = false) {
+  const attemptCount = attemptMap.get(String(entry.title || "").toLowerCase())?.count || 0;
+  const landedCount = Math.max(1, Number(entry.count || 1));
+  const key = normalizeTrickKey(entry.title);
+  const category = safeTricktionaryCategory(entry.tricktionaryCategory);
+  return `<article class="tricktionary-card tricktionary-drag-card" ${editable ? `draggable="true" data-tricktionary-card="1"` : ""} data-trick-key="${escapeHtml(key)}" data-trick-title="${escapeHtml(entry.title)}" data-trick-category="${escapeHtml(category)}">
+    <div class="tricktionary-card-main">
+      <div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Latest week ${escapeHtml(entry.weekStart)}` : ""}</small></div>
+      <div class="tricktionary-count-badge"><strong>${landedCount}</strong><small>landed</small></div>
+    </div>
+    <div class="tricktionary-card-meta">
+      <span>${escapeHtml(TRICKTIONARY_CATEGORY_LABELS[category] || "New Tricks")}</span>
+      ${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}
+      ${editable ? `<span>Hold + drag to organise</span>` : ""}
+    </div>
+    ${entry.manual && state.profile?.id === entry.ownerId && entry.manualRemoveId ? `<button class="danger-btn compact-btn" type="button" data-remove-manual-trick="${escapeHtml(entry.manualRemoveId)}">Remove manual entry</button>` : ""}
+  </article>`;
+}
+
+function tricktionaryBoardHtml(entries = [], attempts = [], options = {}) {
+  const attemptMap = attemptsByTrick(attempts);
+  const editable = Boolean(options.editable);
+  const grouped = TRICKTIONARY_SECTIONS.reduce((map, section) => ({ ...map, [section.id]: [] }), {});
+  entries.forEach((entry) => {
+    const category = safeTricktionaryCategory(entry.tricktionaryCategory || entry.categoryOverride || "new");
+    grouped[category].push({ ...entry, tricktionaryCategory: category });
+  });
+  const zoneHtml = (section, isTop = false) => {
+    const rows = grouped[section.id] || [];
+    return `<section class="tricktionary-zone ${isTop ? "new-zone" : ""}" data-tricktionary-drop-category="${escapeHtml(section.id)}">
+      <div class="tricktionary-zone-header">
+        <div><h3>${escapeHtml(section.label)}</h3><small>${escapeHtml(section.hint)}</small></div>
+        <span>${rows.length}</span>
+      </div>
+      <div class="tricktionary-zone-body">
+        ${rows.length ? rows.map((entry) => tricktionaryCardHtml(entry, attemptMap, editable)).join("") : `<div class="empty compact-empty">No ${escapeHtml(section.label.toLowerCase())} here yet.</div>`}
+      </div>
+    </section>`;
+  };
+  const topSection = TRICKTIONARY_SECTIONS[0];
+  const categorySections = TRICKTIONARY_SECTIONS.slice(1);
+  const help = editable ? `<p class="tricktionary-help">Hold a trick and drag it into Box, Spine, Hip, or Air. Drop one trick on another to create a combined trick.</p>` : "";
+  return `<div class="tricktionary-board" data-tricktionary-board="1">
+    ${help}
+    ${zoneHtml(topSection, true)}
+    <div class="tricktionary-category-grid">${categorySections.map((section) => zoneHtml(section)).join("")}</div>
+  </div>`;
+}
+
+async function saveTricktionaryProfileUpdate(athleteId, updater) {
+  const { data: profile, error: fetchError } = await client.from("profiles").select("id, manual_tricktionary, tricktionary_meta").eq("id", athleteId).single();
+  if (fetchError) throw fetchError;
+  const patch = updater(profile || {}) || {};
+  const { data, error } = await client.from("profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", athleteId).select(PROFILE_SELECT).single();
+  if (error) throw error;
+  if (state.user?.id === athleteId) state.profile = data;
+  cacheClear("roster");
+  return data;
+}
+
+async function moveTricktionaryEntry(athleteId, trickKey, category) {
+  const safeCategory = safeTricktionaryCategory(category);
+  if (!athleteId || !trickKey) return;
+  await saveTricktionaryProfileUpdate(athleteId, (profile) => {
+    const manual = cloneTricktionaryManual(manualTricktionary(profile)).map((trick) => {
+      const key = normalizeTrickKey(trick.title || trick.name);
+      return key === trickKey ? { ...trick, tricktionaryCategory: safeCategory } : trick;
+    });
+    return {
+      manual_tricktionary: manual,
+      tricktionary_meta: buildTricktionaryMeta(profile, { [trickKey]: safeCategory }),
+    };
+  });
+}
+
+async function mergeTricktionaryEntries(athleteId, sourceTitle, targetTitle, category) {
+  const source = String(sourceTitle || "").trim();
+  const target = String(targetTitle || "").trim();
+  if (!athleteId || !source || !target || normalizeTrickKey(source) === normalizeTrickKey(target)) return;
+  const suggestedTitle = `${source} to ${target}`;
+  const title = window.prompt("Confirm combined trick title", suggestedTitle);
+  const cleanTitle = String(title || "").trim();
+  if (!cleanTitle) return;
+  const cleanKey = normalizeTrickKey(cleanTitle);
+  const safeCategory = safeTricktionaryCategory(category);
+  await saveTricktionaryProfileUpdate(athleteId, (profile) => {
+    const manual = cloneTricktionaryManual(manualTricktionary(profile));
+    const exists = manual.some((trick) => normalizeTrickKey(trick.title || trick.name) === cleanKey);
+    const nextManual = exists ? manual : [{
+      id: crypto.randomUUID(),
+      title: cleanTitle.slice(0, 120),
+      count: 1,
+      addedAt: new Date().toISOString(),
+      addedBy: state.user?.id || "",
+      source: "merged",
+      tricktionaryCategory: safeCategory,
+      mergedFrom: [source, target],
+    }, ...manual];
+    return {
+      manual_tricktionary: nextManual,
+      tricktionary_meta: buildTricktionaryMeta(profile, { [cleanKey]: safeCategory }),
+    };
+  });
+  notify("Combined trick saved. Originals were kept.");
+}
+
+function tricktionaryDropTargetFromPoint(x, y) {
+  const element = document.elementFromPoint(x, y);
+  if (!element) return {};
+  return {
+    card: element.closest?.("[data-tricktionary-card]") || null,
+    zone: element.closest?.("[data-tricktionary-drop-category]") || null,
+  };
+}
+
+function bindTricktionaryBoard({ athleteId, refresh }) {
+  const board = document.querySelector("[data-tricktionary-board]");
+  if (!board || !athleteId) return;
+  const performDrop = async (payload, targetCard, targetZone) => {
+    if (!payload?.key) return;
+    const targetKey = targetCard?.dataset?.trickKey || "";
+    const targetTitle = targetCard?.dataset?.trickTitle || "";
+    const category = targetCard?.dataset?.trickCategory || targetZone?.dataset?.tricktionaryDropCategory || payload.category || "new";
+    try {
+      if (targetCard && targetKey && targetKey !== payload.key) {
+        await mergeTricktionaryEntries(athleteId, payload.title, targetTitle, category);
+      } else if (targetZone) {
+        await moveTricktionaryEntry(athleteId, payload.key, category);
+        notify(`Moved to ${TRICKTIONARY_CATEGORY_LABELS[safeTricktionaryCategory(category)]}.`);
+      }
+      await refresh?.();
+    } catch (error) {
+      notify(messageFrom(error), "error");
+    }
+  };
+  board.querySelectorAll("[data-tricktionary-card]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      const payload = {
+        key: card.dataset.trickKey,
+        title: card.dataset.trickTitle,
+        category: card.dataset.trickCategory,
+      };
+      state.tricktionaryDrag = payload;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/json", JSON.stringify(payload));
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      board.querySelectorAll(".drag-over, .merge-target").forEach((node) => node.classList.remove("drag-over", "merge-target"));
+      state.tricktionaryDrag = null;
+    });
+    let holdTimer = null;
+    let pointerPayload = null;
+    card.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button, input, select, textarea")) return;
+      pointerPayload = {
+        key: card.dataset.trickKey,
+        title: card.dataset.trickTitle,
+        category: card.dataset.trickCategory,
+        active: false,
+      };
+      holdTimer = setTimeout(() => {
+        pointerPayload.active = true;
+        state.tricktionaryDrag = pointerPayload;
+        card.classList.add("dragging");
+        card.setPointerCapture?.(event.pointerId);
+      }, 220);
+    });
+    card.addEventListener("pointermove", (event) => {
+      if (!pointerPayload?.active) return;
+      event.preventDefault();
+      const { card: targetCard, zone } = tricktionaryDropTargetFromPoint(event.clientX, event.clientY);
+      board.querySelectorAll(".drag-over, .merge-target").forEach((node) => node.classList.remove("drag-over", "merge-target"));
+      if (targetCard && targetCard !== card) targetCard.classList.add("merge-target");
+      else zone?.classList.add("drag-over");
+    });
+    card.addEventListener("pointerup", async (event) => {
+      clearTimeout(holdTimer);
+      const payload = pointerPayload;
+      pointerPayload = null;
+      card.releasePointerCapture?.(event.pointerId);
+      card.classList.remove("dragging");
+      board.querySelectorAll(".drag-over, .merge-target").forEach((node) => node.classList.remove("drag-over", "merge-target"));
+      if (!payload?.active) return;
+      const { card: targetCard, zone } = tricktionaryDropTargetFromPoint(event.clientX, event.clientY);
+      await performDrop(payload, targetCard === card ? null : targetCard, zone);
+    });
+    card.addEventListener("pointercancel", () => {
+      clearTimeout(holdTimer);
+      pointerPayload = null;
+      card.classList.remove("dragging");
+      state.tricktionaryDrag = null;
+    });
+  });
+  board.querySelectorAll("[data-tricktionary-drop-category]").forEach((zone) => {
+    zone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      zone.classList.add("drag-over");
+    });
+    zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+    zone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      zone.classList.remove("drag-over");
+      let payload = state.tricktionaryDrag;
+      try {
+        const raw = event.dataTransfer.getData("application/json");
+        if (raw) payload = JSON.parse(raw);
+      } catch (_) {}
+      const targetCard = event.target.closest("[data-tricktionary-card]");
+      await performDrop(payload, targetCard, zone);
+    });
+  });
+}
+
+async function getMyCoachMessages(limit = 3) {
+  if (!state.user?.id) return [];
+  const cacheKey = `coach-messages:${state.user.id}:${limit}`;
+  const cached = cacheGet(cacheKey, 5000);
+  if (cached) return cached;
+  const { data, error } = await client.rpc("get_my_coach_messages", { p_limit: limit });
+  if (error) throw error;
+  return cacheSet(cacheKey, data || []);
+}
+
+function coachMessagesHtml(messages = []) {
+  if (!messages.length) return "";
+  return `<section class="coach-message-banner" aria-label="Coach messages">
+    <div class="coach-message-banner-title"><span>Coach message</span><small>Latest update from JK Coaching</small></div>
+    <div class="coach-message-banner-list">
+      ${messages.map((message) => `<article><p>${escapeHtml(message.message)}</p><small>${escapeHtml(message.sender_name || "Coach")} · ${dateLabel(message.sent_at)}</small></article>`).join("")}
+    </div>
+  </section>`;
+}
+
+function coachBroadcastComposerHtml(roster = [], history = []) {
+  const riderOptions = roster.map((athlete) => `<option value="${escapeHtml(athlete.id)}">${escapeHtml(athlete.display_name)}</option>`).join("");
+  const historyRows = history.length ? history.map((message) => `<div class="coach-broadcast-history-row"><div><strong>${escapeHtml(message.target_label)}</strong><small>${dateLabel(message.sent_at)} · ${Number(message.recipient_count || 0)} account${Number(message.recipient_count || 0) === 1 ? "" : "s"}</small></div><p>${escapeHtml(message.message)}</p></div>`).join("") : `<div class="empty compact-empty">No coach messages sent yet.</div>`;
+  return `<section class="panel coach-broadcast-panel">
+    <div class="panel-head"><div><div class="panel-title">Message the crew</div><div class="panel-meta">Saved to Home and sent as push to enabled devices</div></div></div>
+    <form id="coach-broadcast-form" class="coach-broadcast-form">
+      <div class="field"><label for="coach-broadcast-target">Send to</label><select id="coach-broadcast-target" name="audience" required>
+        <option value="everyone">Everyone · riders and parents</option>
+        <option value="riders">All riders</option>
+        <option value="parents">All parents</option>
+        <option value="group:monday">Monday Team</option>
+        <option value="group:tuesday">Tuesday Team</option>
+        <option value="group:wednesday">Wednesday Team</option>
+        <option value="group:online">Online Training</option>
+        <option value="athlete">Individual rider</option>
+      </select></div>
+      <div class="field coach-broadcast-rider-field" id="coach-broadcast-rider-field" hidden><label for="coach-broadcast-rider">Rider</label><select id="coach-broadcast-rider" name="athleteId" disabled>${riderOptions}</select></div>
+      <div class="field coach-broadcast-message-field"><label for="coach-broadcast-message">Message</label><textarea id="coach-broadcast-message" name="message" maxlength="500" rows="2" placeholder="Write a quick update for the crew..." required></textarea></div>
+      <button class="primary-btn coach-broadcast-send" type="submit">Send message</button>
+    </form>
+    <p class="coach-broadcast-note">The Home message stays visible for 7 days. Push delivery requires notifications to be enabled on that device.</p>
+    <details class="coach-broadcast-history"><summary>Recent coach messages <span>${history.length}</span></summary><div>${historyRows}</div></details>
+  </section>`;
+}
+
+async function sendCoachBroadcast(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type='submit']");
+  const values = new FormData(form);
+  const audience = String(values.get("audience") || "everyone");
+  const message = String(values.get("message") || "").trim();
+  let targetType = audience;
+  let targetValue = "";
+  if (audience.startsWith("group:")) [targetType, targetValue] = audience.split(":");
+  if (audience === "athlete") targetValue = String(values.get("athleteId") || "");
+  if (!message) return notify("Write a message first.", "error");
+  if (targetType === "athlete" && !targetValue) return notify("Choose a rider first.", "error");
+
+  button.disabled = true;
+  button.textContent = "Sending...";
+  try {
+    const { data, error } = await client.rpc("send_coach_broadcast", {
+      p_target_type: targetType,
+      p_target_value: targetValue,
+      p_message: message,
+    });
+    if (error) throw error;
+    cacheClear("coach-messages:");
+    cacheClear("coach-broadcasts:");
+    const recipients = Number(data?.recipient_count || 0);
+    const pushes = Number(data?.push_count || 0);
+    notify(`Coach message sent to ${recipients} account${recipients === 1 ? "" : "s"}. ${pushes ? `${pushes} push notification${pushes === 1 ? "" : "s"} queued.` : "It is now visible on their Home page."}`);
+    await renderCoachCommand();
+  } catch (error) {
+    notify(messageFrom(error, "Unable to send the coach message."), "error");
+    button.disabled = false;
+    button.textContent = "Send message";
+  }
+}
+
+function previousTrainingSheetsHtml(data = {}) {
+  const attemptsByAssignment = (data.attempts || []).reduce((map, attempt) => {
+    map.set(attempt.assignment_id, (map.get(attempt.assignment_id) || 0) + 1);
+    return map;
+  }, new Map());
+  const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
+  const awardsByAssignment = (data.awards || []).reduce((map, award) => {
+    const rows = map.get(award.assignment_id) || [];
+    rows.push(award);
+    map.set(award.assignment_id, rows);
+    return map;
+  }, new Map());
+  const weeks = (data.assignments || []).reduce((map, assignment) => {
+    const week = assignment.week_start || "Unknown week";
+    const rows = map.get(week) || [];
+    rows.push(assignment);
+    map.set(week, rows);
+    return map;
+  }, new Map());
+  if (!weeks.size) return `<details class="command-accordion"><summary><span><strong>Previous Training Sheets</strong><small>No previous sheets yet</small></span><span class="accordion-caret">Open</span></summary><div class="empty compact-empty">No previous training sheets saved yet.</div></details>`;
+  const weekRows = [...weeks.entries()].map(([week, assignments]) => {
+    const points = assignments.reduce((sum, assignment) => sum + (awardsByAssignment.get(assignment.id) || []).reduce((total, award) => total + Number(award.points || 0), 0), 0);
+    const groups = ["Box tricks", "Spine tricks", "Air tricks", "Hip tricks", "Other tricks"].map((label) => {
+      const rows = assignments.filter((assignment) => trickObstacleCategory(assignment) === label);
+      if (!rows.length) return "";
+      return `<div class="previous-sheet-group"><strong>${escapeHtml(label)}</strong>${rows.map((assignment) => {
+        const done = Boolean(progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length);
+        const attempts = attemptsByAssignment.get(assignment.id) || 0;
+        return `<div class="list-row previous-sheet-row ${done ? "complete" : ""}"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(categoryInfo[assignment.category]?.label || assignment.category)} · ${done ? "Completed" : "Not completed"} · Attempts: ${attempts}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div><span class="assignment-check">${done ? "✓" : ""}</span></div>`;
+      }).join("")}</div>`;
+    }).filter(Boolean).join("");
+    const dailyTotal = assignments.filter((assignment) => assignment.category === "daily").length;
+    const dailyDone = assignments.filter((assignment) => assignment.category === "daily" && (progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length)).length;
+    const venues = [...new Set(assignments.map((assignment) => venueLabel(assignment.venue)).filter(Boolean))].join(", ");
+    return `<details class="previous-sheet-week">
+      <summary><span><strong>Week ${escapeHtml(week)}</strong><small>${escapeHtml(venues || "Venue not set")} · ${dailyDone}/${dailyTotal} Daily · ${points} pts</small></span><span class="accordion-caret">Open</span></summary>
+      <div class="previous-sheet-body">${groups}</div>
+    </details>`;
+  }).join("");
+  return `<details class="command-accordion previous-sheets-accordion">
+    <summary><span><strong>Previous Training Sheets</strong><small>${weeks.size} saved week${weeks.size === 1 ? "" : "s"} with completed and attempted tricks</small></span><span class="accordion-caret">Open</span></summary>
+    <div class="previous-sheet-stack">${weekRows}</div>
+  </details>`;
+}
+
+async function renderTricktionary() {
+  if (isCoachRole(state.profile?.role)) return renderCoachTricktionary();
+  if (state.profile?.role === "parent") return renderParentTricktionary();
+  const data = await getTricktionaryData(state.user.id);
+  state.profile = data.profile || state.profile;
+  const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: state.user.id }));
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Progress history</div><h1>My <span>Tricktionary</span></h1><p>Your personal BMX trick library, built from landed training-sheet tricks plus manual history.</p></div></div>
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">${entries.length} tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
+      <form id="manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a trick here"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
+      ${tricktionaryBoardHtml(entries, data.attempts, { editable: true })}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Attempted this week</div><div class="panel-meta">Effort count without awarding points</div></div></div>
+      ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
+    </section>
+    `;
+  document.querySelector("#manual-trick-form")?.addEventListener("submit", saveManualTrick);
+  document.querySelectorAll("[data-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeManualTrick));
+  bindTricktionaryBoard({ athleteId: state.user.id, refresh: renderTricktionary });
+}
+
+async function getWeeklyRiderBattles() {
+  const { data, error } = await client.from("weekly_rider_battles")
+    .select("id,challenger_id,opponent_id,week_start,status,duration_days,starts_at,ends_at,winner_id,reward_points,responded_at,created_at,challenger:profiles!weekly_rider_battles_challenger_id_fkey(id,display_name,avatar,level),opponent:profiles!weekly_rider_battles_opponent_id_fkey(id,display_name,avatar,level)")
+    .eq("week_start", weekStartDate())
+    .or(`challenger_id.eq.${state.user.id},opponent_id.eq.${state.user.id}`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getRiderBattleHistory() {
+  const { data, error } = await client.from("weekly_rider_battles")
+    .select("id,challenger_id,opponent_id,status,winner_id")
+    .or(`challenger_id.eq.${state.user.id},opponent_id.eq.${state.user.id}`)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+function riderHeadToHeadRecord(history = [], opponentId = "") {
+  const meetings = history.filter((battle) => battle.challenger_id === opponentId || battle.opponent_id === opponentId);
+  return {
+    wins: meetings.filter((battle) => battle.winner_id === state.user.id).length,
+    losses: meetings.filter((battle) => battle.winner_id && battle.winner_id !== state.user.id).length,
+  };
+}
+
+function riderBattleRecord(history = []) {
+  const wins = history.filter((battle) => battle.winner_id === state.user.id).length;
+  const losses = history.filter((battle) => battle.winner_id && battle.winner_id !== state.user.id).length;
+  const decided = wins + losses;
+  return { wins, losses, winPercent: decided ? Math.round((wins / decided) * 100) : 0 };
+}
+
+function battleDashboardAlertsHtml(battles = []) {
+  const incoming = battles.filter((battle) => battle.status === "pending" && battle.opponent_id === state.user.id);
+  if (!incoming.length) return "";
+  return `<section class="battle-dashboard-alerts" aria-label="Battle requests">${incoming.map((battle) => `<article class="battle-dashboard-alert">
+    <span class="battle-alert-icon">VS</span>
+    <div><div class="eyebrow">New battle request</div><strong>${escapeHtml(battle.challenger?.display_name || "A rider")} challenged you</strong><small>Battle for the most weekly leaderboard points.</small></div>
+    <button class="primary-btn compact-btn" type="button" data-open-battle-request="${battle.id}">View challenge</button>
+  </article>`).join("")}</section>`;
+}
+
+function weeklyBattleCardHtml(battle, pointsByRider = new Map(), battleHistory = []) {
+  const amChallenger = battle.challenger_id === state.user.id;
+  const me = amChallenger ? battle.challenger : battle.opponent;
+  const rival = amChallenger ? battle.opponent : battle.challenger;
+  const myPoints = Number(pointsByRider.get(state.user.id) || 0);
+  const rivalPoints = Number(pointsByRider.get(rival?.id) || 0);
+  const headToHead = riderHeadToHeadRecord(battleHistory, rival?.id);
+  const scoreState = myPoints === rivalPoints ? "Level" : myPoints > rivalPoints ? "You lead" : `${rival?.display_name || "Your rival"} leads`;
+  const pendingActions = battle.status === "pending" && !amChallenger
+    ? `<div class="battle-actions compact-battle-actions"><button class="battle-response-btn accept" type="button" data-battle-response="accepted" data-battle-id="${battle.id}" aria-label="Accept battle" title="Accept battle">✓</button><button class="battle-response-btn decline" type="button" data-battle-response="declined" data-battle-id="${battle.id}" aria-label="Decline battle" title="Decline battle">×</button></div>`
+    : "";
+  const durationCopy = `${Number(battle.duration_days || 7)} day${Number(battle.duration_days || 7) === 1 ? "" : "s"}`;
+  const statusCopy = battle.status === "pending"
+    ? (amChallenger ? `Waiting for ${rival?.display_name || "the rider"} to respond` : `${rival?.display_name || "A rider"} challenged you`)
+    : battle.status === "accepted" ? `${scoreState} · ${durationCopy}`
+      : battle.status === "completed" ? (battle.winner_id === state.user.id ? `You won · +${Number(battle.reward_points || 5)} leaderboard points` : `${rival?.display_name || "Your rival"} won`)
+        : "Challenge declined";
+  return `<article class="battle-card ${battle.status}">
+    <div class="battle-riders"><div>${avatarHtml(me || state.profile, "avatar")}<strong>You</strong><span>${myPoints} pts</span></div><b>VS</b><div>${avatarHtml(rival || {}, "avatar")}<strong>${escapeHtml(rival?.display_name || "Rider")}</strong><span>${rivalPoints} pts</span></div></div>
+    <div class="battle-head-to-head"><span>Against ${escapeHtml(rival?.display_name || "this rider")}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses</strong></div>
+    <div class="battle-status"><span class="status-chip">${escapeHtml(battle.status)}</span><small>${escapeHtml(statusCopy)}</small></div>
+    ${pendingActions}
+  </article>`;
+}
+
+async function renderChallenges() {
+  if (state.profile?.role !== "athlete") return navigate("home");
+  const [schedule, leaderboard, battles, battleHistory] = await Promise.all([
+    getWeeklyAssignments(state.user.id),
+    getLeaderboard(),
+    getWeeklyRiderBattles(),
+    getRiderBattleHistory(),
+  ]);
+  const lineAssignments = (schedule.assignments || []).filter((assignment) => assignment.category === "lines");
+  const completedLines = lineAssignments.filter(isAssignmentComplete).length;
+  const challengeTarget = 3;
+  const challengeProgress = Math.min(challengeTarget, completedLines);
+  const challengePercent = Math.round((challengeProgress / challengeTarget) * 100);
+  const pointsByRider = new Map(leaderboard.map((row) => [row.athlete_id, Number(row.weekly_points || 0)]));
+  const activeOpponentIds = new Set(battles.filter((battle) => ["pending", "accepted"].includes(battle.status)).flatMap((battle) => [battle.challenger_id, battle.opponent_id]));
+  const activeBattleCount = battles.filter((battle) => ["pending", "accepted"].includes(battle.status)).length;
+  const battleLimitReached = activeBattleCount >= 3;
+  const availableRiders = leaderboard.filter((row) => row.athlete_id !== state.user.id && !row.ghost_mode && !activeOpponentIds.has(row.athlete_id));
+  const completedBattles = battleHistory;
+  const { wins: battleWins, losses: battleLosses } = riderBattleRecord(completedBattles);
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Weekly competition</div><h1><span>Challenges</span></h1><p>Complete the weekly target or battle another rider to see who earns the most sheet points.</p></div></div>
+    <section class="panel weekly-challenge-card">
+      <div class="panel-head"><div><div class="panel-title">Line Linker</div><div class="panel-meta">Weekly challenge · resets Sunday</div></div><span class="pill">${challengeProgress}/${challengeTarget}</span></div>
+      <h2>Complete 3 Lines this week</h2><p>Tick off three full Lines from your training sheet. Complete the weekly challenge to earn 5 leaderboard points.</p>
+      <div class="xp-bar" aria-label="Weekly challenge progress"><span style="width:${challengePercent}%"></span></div>
+      <div class="challenge-progress-copy"><strong>${challengeProgress >= challengeTarget ? "Challenge complete" : `${challengeTarget - challengeProgress} Line${challengeTarget - challengeProgress === 1 ? "" : "s"} to go`}</strong><span>${challengePercent}%</span></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">5 points transfer from loser to winner · maximum 3 active battles</div></div><span class="pill">${activeBattleCount}/3 active</span></div>
+      <div class="battle-record" aria-label="Battle record"><span><strong>${battleWins}</strong> wins</span><span><strong>${battleLosses}</strong> losses</span></div>
+      <button class="secondary-btn wide" type="button" id="toggle-battle-rider-list" ${availableRiders.length && !battleLimitReached ? "" : "disabled"}>${battleLimitReached ? "3 battle limit reached" : availableRiders.length ? "Challenge another rider" : "No riders available right now"}</button>
+      <form id="battle-request-form" class="battle-request-form battle-rider-picker hidden">
+        <div class="battle-rider-list" role="radiogroup" aria-label="Choose a rider to challenge">${availableRiders.map((row) => { const record = riderHeadToHeadRecord(battleHistory, row.athlete_id); return `<label class="battle-rider-option"><input type="radio" name="opponentId" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${record.wins} wins · ${record.losses} losses against this rider</small></span><b>${Number(row.weekly_points || 0)} pts</b></label>`; }).join("")}</div>
+        <div class="field battle-duration-field"><label for="battle-duration">Challenge length</label><select id="battle-duration" name="durationDays">${Array.from({ length: 7 }, (_, index) => `<option value="${index + 1}" ${index === 6 ? "selected" : ""}>${index + 1} day${index ? "s" : ""}</option>`).join("")}</select></div>
+        <button class="primary-btn wide" type="submit">Send battle request</button>
+      </form>
+      <div class="battle-list">${battles.length ? battles.map((battle) => weeklyBattleCardHtml(battle, pointsByRider, battleHistory)).join("") : `<div class="empty compact-empty">No battles this week yet. Pick a rider above to start one.</div>`}</div>
+    </section>`;
+  document.querySelector("#battle-request-form")?.addEventListener("submit", requestWeeklyRiderBattle);
+  document.querySelector("#toggle-battle-rider-list")?.addEventListener("click", (event) => {
+    const picker = document.querySelector("#battle-request-form");
+    picker?.classList.toggle("hidden");
+    event.currentTarget.textContent = picker?.classList.contains("hidden") ? "Challenge another rider" : "Close rider list";
+    if (!picker?.classList.contains("hidden")) picker?.querySelector("input")?.focus();
+  });
+  document.querySelectorAll("[data-battle-response]").forEach((button) => button.addEventListener("click", respondWeeklyRiderBattle));
+}
+
+async function requestWeeklyRiderBattle(event) {
+  event.preventDefault();
+  const opponentId = String(new FormData(event.currentTarget).get("opponentId") || "");
+  const durationDays = Number(new FormData(event.currentTarget).get("durationDays") || 7);
+  if (!opponentId) return notify("Choose a rider to battle.", "error");
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  const restoreButton = setButtonBusy(button, "Sending...");
+  const { error } = await client.rpc("request_weekly_rider_battle", { p_opponent_id: opponentId, p_duration_days: durationDays });
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify("Battle request sent. It starts when the rider accepts.");
+  await renderChallenges();
+}
+
+async function respondWeeklyRiderBattle(event) {
+  const button = event.currentTarget;
+  const restoreButton = setButtonBusy(button, button.dataset.battleResponse === "accepted" ? "Accepting..." : "Declining...");
+  const { error } = await client.rpc("respond_weekly_rider_battle", { p_battle_id: button.dataset.battleId, p_response: button.dataset.battleResponse });
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify(button.dataset.battleResponse === "accepted" ? "Battle accepted. Your weekly points now decide it." : "Battle declined.");
+  await renderChallenges();
+}
+
+function weeklyAttemptsHtml(attempts = []) {
+  const rows = [...attemptsByTrick(attempts).values()].sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
+  if (!rows.length) return `<div class="empty compact-empty">No attempted tricks logged this week yet.</div>`;
+  return `<div class="attempt-summary-list">${rows.map((row) => `<div class="list-row"><div><strong>${escapeHtml(row.title)}</strong><small>Attempted this week</small></div><span class="points">${row.count}</span></div>`).join("")}</div>`;
+}
+
+async function saveManualTrick(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const title = String(form.get("title") || "").trim();
+  const count = Math.max(1, Number(form.get("count") || 1));
+  if (!title) return;
+  const current = manualTricktionary(state.profile);
+  const guessedCategory = tricktionaryCategoryFromText(title);
+  if (guessedCategory === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
+  const manual_tricktionary = [{
+    id: crypto.randomUUID(),
+    title: title.slice(0, 120),
+    count,
+    addedAt: new Date().toISOString(),
+    tricktionaryCategory: guessedCategory,
+  }, ...current];
+  const tricktionary_meta = buildTricktionaryMeta(state.profile, { [normalizeTrickKey(title)]: guessedCategory });
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, tricktionary_meta, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify("Trick added to your Tricktionary. No points were awarded.");
+  await renderTricktionary();
+}
+
+async function removeManualTrick(event) {
+  const id = event.currentTarget.dataset.removeManualTrick;
+  const manual_tricktionary = manualTricktionary(state.profile).filter((trick) => trick.id !== id);
+  const { data, error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify("Manual Tricktionary trick removed. Historical session data was kept.");
+  await renderTricktionary();
+}
+
+async function renderParentTricktionary() {
+  const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
+  if (error) throw error;
+  if (!links?.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your coach needs to link this account to a rider first.</p></div></div>`;
+    return;
+  }
+  const sections = await Promise.all(links.map(async (link) => {
+    const data = await getTricktionaryData(link.athlete_id);
+    const entries = landedTricktionaryEntries(data);
+    return `<section class="panel parent-child-card">
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
+      ${tricktionaryBoardHtml(entries, data.attempts)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
+    </section>`;
+  }));
+  document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Tricktionary <span>history</span></h1><p>Read-only landed tricks, attempts, and Daily PBs for linked riders. Previous training sheets live in Profile.</p></div></div>${sections.join("")}`;
+}
+
+async function renderCoachTricktionary() {
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach Tricktionary</div><h1>Rider <span>library</span></h1><p>Add students first, then you can view their landed tricks here.</p></div></div><div class="empty compact-empty">No students linked yet.</div>`;
+    return;
+  }
+  if (!state.coachTricktionaryAthleteId || !roster.some((athlete) => athlete.id === state.coachTricktionaryAthleteId)) {
+    state.coachTricktionaryAthleteId = state.selectedAthleteId && roster.some((athlete) => athlete.id === state.selectedAthleteId)
+      ? state.selectedAthleteId
+      : roster[0].id;
+  }
+  const athlete = roster.find((entry) => entry.id === state.coachTricktionaryAthleteId);
+  const data = await getTricktionaryData(athlete.id);
+  const displayProfile = data.profile || athlete;
+  const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
+  const options = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach Tricktionary</div><h1>Rider <span>Tricktionary</span></h1><p>Filter by rider and view their private trick library, attempts, Daily PB, and saved weekly sheets.</p></div></div>
+    <section class="panel coach-tricktionary-controls">
+      <div class="field"><label for="coach-tricktionary-athlete">Select rider</label><select id="coach-tricktionary-athlete">${options}</select></div>
+      <div class="coach-tricktionary-summary">${avatarHtml(displayProfile, "student-chip-avatar")}<div><strong>${escapeHtml(displayProfile.display_name)}</strong><small>${entries.length} landed tricks · Daily PB ${formatPbTime(displayProfile.daily_pb_seconds)}</small></div></div>
+    </section>
+    <section class="panel compact-panel">
+      <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">Private to coach, rider, and linked parents</div></div></div>
+      ${tricktionaryBoardHtml(entries, data.attempts, { editable: true })}
+    </section>
+    <section class="panel compact-panel">
+      <div class="panel-head"><div><div class="panel-title">Attempted this week</div><div class="panel-meta">Effort count without awarding points</div></div></div>
+      ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
+    </section>
+    <section class="panel compact-panel">
+      ${previousTrainingSheetsHtml(data)}
+    </section>`;
+  document.querySelector("#coach-tricktionary-athlete")?.addEventListener("change", (event) => {
+    state.coachTricktionaryAthleteId = event.target.value;
+    state.selectedAthleteId = event.target.value;
+    renderCoachTricktionary();
+  });
+  bindTricktionaryBoard({ athleteId: athlete.id, refresh: renderCoachTricktionary });
+}
+
+function riderProposalForm(proposals = []) {
+  const pending = proposals.filter((proposal) => proposal.status === "pending");
+  const athleteWeekStart = weekStartDateForCountry(state.profile?.country_code || "AU");
+  const activeThisWeek = proposals.find((proposal) => proposal.week_start === athleteWeekStart && ["pending", "accepted"].includes(proposal.status));
+  const recent = proposals.slice(0, 4);
+  const statusRows = recent.length ? recent.map((proposal) => `<div class="proposal-status-row ${escapeHtml(proposal.status)}"><span>${escapeHtml(proposal.status)}</span><strong>${escapeHtml(proposal.title)}</strong><small>${dateLabel(proposal.created_at)}${proposal.coach_note ? ` · ${escapeHtml(proposal.coach_note)}` : ""}</small></div>`).join("") : `<div class="empty compact-empty">You have not sent a list request yet.</div>`;
+  const fields = Object.entries(riderProposalRequirements).map(([category, requiredCount]) => {
+    const info = categoryInfo[category];
+    const numberedRows = Array.from({ length: requiredCount }, (_, index) => `<label class="proposal-numbered-row"><span>${index + 1}.</span><input id="proposal-items-${category}-${index + 1}" name="proposalItems.${category}" maxlength="620" autocomplete="off" placeholder="${category === "lines" ? "Enter a complete 3–4 trick run" : `Enter ${info.label.toLowerCase().replace(/s$/, "")} ${index + 1}`}"></label>`).join("");
+    return `<div class="proposal-category-field" data-proposal-category="${category}"><div class="proposal-category-head"><label for="proposal-items-${category}-1">${escapeHtml(info.label)}</label><span class="proposal-count" data-proposal-count="${category}">0/${requiredCount}</span><small>${escapeHtml(info.description)}</small></div><div class="proposal-numbered-list">${numberedRows}</div>${category === "lines" ? `<small>Each numbered row must contain one complete 3–4 trick run.</small>` : ""}</div>`;
+  }).join("");
+  return `<section class="panel rider-proposal-panel"><div class="panel-head"><div><div class="panel-title">Request your weekly lists</div><div class="panel-meta">Build the full sheet and send it to your coach${pending.length ? ` · ${pending.length} waiting` : ""}</div></div><button class="secondary-btn compact-btn" type="button" id="toggle-rider-proposal" ${activeThisWeek ? "disabled" : ""}>${activeThisWeek ? (activeThisWeek.status === "accepted" ? "Lists accepted this week" : "Request already sent") : "Build my lists"}</button></div><div id="rider-proposal-builder" class="rider-proposal-builder hidden"><form id="rider-proposal-form" novalidate><div class="two-col-form"><div class="field"><label for="proposal-title">Request name</label><input id="proposal-title" name="title" maxlength="100" placeholder="Saturday park session"></div><div class="field" id="proposal-venue-field"><label for="proposal-venue">Skate park / location</label><input id="proposal-venue" name="venue" maxlength="80" placeholder="Where your 10 Dailys apply"></div></div><div class="proposal-requirements">Required: 10 Dailys · 5 One Bangs · 5 Dialled · 3 Percentage · 3 Lines · 1 Bonus</div><div class="proposal-sheet-grid">${fields}</div><div class="field"><label for="proposal-note">Note for your coach</label><textarea id="proposal-note" name="note" rows="2" maxlength="500" placeholder="Anything your coach should know"></textarea></div><button class="primary-btn" type="submit">Send all lists to my coach</button></form></div><div class="proposal-status-list">${statusRows}</div></section>`;
+}
+
+function updateRiderProposalCounts(formElement) {
+  const data = new FormData(formElement);
+  const venueInput = formElement.querySelector("#proposal-venue");
+  if (venueInput?.value.trim()) {
+    venueInput.removeAttribute("aria-invalid");
+    formElement.querySelector("#proposal-venue-field")?.classList.remove("proposal-invalid");
+  }
+  formElement.querySelectorAll('.proposal-numbered-row input[aria-invalid="true"]').forEach((input) => {
+    if (input.value.trim()) input.removeAttribute("aria-invalid");
+  });
+  Object.entries(riderProposalRequirements).forEach(([category, requiredCount]) => {
+    const count = data.getAll(`proposalItems.${category}`).map((line) => String(line).trim()).filter(Boolean).length;
+    const counter = formElement.querySelector(`[data-proposal-count="${category}"]`);
+    if (!counter) return;
+    counter.textContent = `${count}/${requiredCount}`;
+    counter.classList.toggle("complete", count === requiredCount);
+    const categoryField = formElement.querySelector(`[data-proposal-category="${category}"]`);
+    if (categoryField?.classList.contains("proposal-invalid") && count === requiredCount) categoryField.classList.remove("proposal-invalid");
+  });
+}
+
+function focusRiderProposalProblem(element) {
+  element?.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.setTimeout(() => element?.focus({ preventScroll: true }), 350);
+}
+
+async function submitRiderSheetProposal(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  formElement.querySelectorAll(".proposal-invalid").forEach((element) => element.classList.remove("proposal-invalid"));
+  formElement.querySelectorAll('[aria-invalid="true"]').forEach((element) => element.removeAttribute("aria-invalid"));
+  const venueInput = formElement.querySelector("#proposal-venue");
+  const venue = String(form.get("venue") || "").trim();
+  if (!venue) {
+    formElement.querySelector("#proposal-venue-field")?.classList.add("proposal-invalid");
+    venueInput?.setAttribute("aria-invalid", "true");
+    focusRiderProposalProblem(venueInput);
+    return notify("Add the skate park or location for the 10 Dailys.", "error");
+  }
+  const categoryLines = Object.fromEntries(Object.keys(riderProposalRequirements).map((category) => [category, form.getAll(`proposalItems.${category}`).map((line) => String(line).trim()).filter(Boolean)]));
+  const wrongCounts = Object.entries(riderProposalRequirements).filter(([category, count]) => categoryLines[category].length !== count);
+  if (wrongCounts.length) {
+    wrongCounts.forEach(([category]) => formElement.querySelector(`[data-proposal-category="${category}"]`)?.classList.add("proposal-invalid"));
+    const [firstCategory] = wrongCounts[0];
+    const firstMissing = [...formElement.querySelectorAll(`[name="proposalItems.${firstCategory}"]`)].find((input) => !input.value.trim());
+    firstMissing?.setAttribute("aria-invalid", "true");
+    focusRiderProposalProblem(firstMissing || formElement.querySelector(`[data-proposal-category="${firstCategory}"]`));
+    return notify(`Finish the exact lists first. ${wrongCounts.map(([category, count]) => `${categoryInfo[category].label}: ${categoryLines[category].length}/${count}`).join(" · ")}`, "error");
+  }
+  const { data: links, error: linkError } = await client.from("coach_athletes").select("coach_id").eq("athlete_id", state.user.id).limit(1);
+  if (linkError || !links?.length) return notify("Your account is not linked to a coach yet.", "error");
+  const items = Object.keys(riderProposalRequirements).flatMap((category) => categoryLines[category].map((line) => { const [name, ...notes] = line.split(" - "); return { category, trick_name: name.trim().slice(0, 120), notes: notes.join(" - ").trim().slice(0, 500) }; }));
+  const button = formElement.querySelector("button[type='submit']");
+  const restoreButton = setButtonBusy(button, "Sending...");
+  const { error } = await client.from("rider_sheet_proposals").insert({ athlete_id: state.user.id, coach_id: links[0].coach_id, week_start: weekStartDateForCountry(state.profile?.country_code || "AU"), title: String(form.get("title") || "").trim().slice(0, 100) || "My weekly lists", venue: venue.slice(0, 80), rider_note: String(form.get("note") || "").trim().slice(0, 500), items });
+  if (error) { restoreButton(); return notify(messageFrom(error), "error"); }
+  cacheClear("coach-command:");
+  notify("Your complete list request was sent to your coach.");
+  await renderAthleteHome();
+}
+
+async function renderAthleteHome() {
+  const [leaderboard, schedule, trickRequests, sheetProposals, coachMessages, riderBattles, battleHistory] = await Promise.all([
+    getLeaderboard(),
+    getWeeklyAssignments(state.user.id),
+    getTrickRequestsForAthlete(state.user.id).catch(() => []),
+    getRiderSheetProposals(state.user.id).catch(() => []),
+    getMyCoachMessages(3).catch((error) => {
+      console.warn("Coach messages unavailable", error);
+      return [];
+    }),
+    getWeeklyRiderBattles().catch((error) => {
+      console.warn("Rider battles unavailable", error);
+      return [];
+    }),
+    getRiderBattleHistory().catch((error) => {
+      console.warn("Battle history unavailable", error);
+      return [];
+    }),
+  ]);
+  const { assignments, awards, assignmentAttempts } = schedule;
+  const leaderboardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
+  const weeklyPoints = Number(leaderboardRow?.weekly_points || 0);
+  const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
+  const activeSession = await getActiveSession();
+  const xp = permanentScoreSummary({ ...state.profile, ...(leaderboardRow || {}), weekly_points: weeklyPoints });
+  const battleRecord = riderBattleRecord(battleHistory);
+  if (activeSession) {
+    state.activeTraining = activeSession;
+    state.trickStartedAt = new Date(activeSession.started_at).getTime();
+  }
+
+  document.querySelector("#view").innerHTML = `
+    ${coachMessagesHtml(coachMessages)}
+    ${battleDashboardAlertsHtml(riderBattles)}
+    <section class="athlete-scoreboard panel">
+      <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
+      <div class="scoreboard-stats home-scoreboard-summary">
+        ${scoreRankingCard(weeklyPoints, rank, leaderboard.length, battleRecord)}
+      </div>
+      ${xpProgressHtml(xp)}
+    </section>
+    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
+    ${quoteSection()}
+    ${weekSummaryHtml(assignments, awards)}
+    ${goalsSection(state.profile)}
+    ${riderProposalForm(sheetProposals)}
+    ${athleteTrickRequestSection(assignments, trickRequests)}`;
+  bindGoalActions();
+  document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
+  document.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => document.querySelector("#rider-proposal-builder")?.classList.toggle("hidden"));
+  const riderProposalFormElement = document.querySelector("#rider-proposal-form");
+  riderProposalFormElement?.addEventListener("submit", submitRiderSheetProposal);
+  riderProposalFormElement?.addEventListener("input", () => updateRiderProposalCounts(riderProposalFormElement));
+  if (riderProposalFormElement) updateRiderProposalCounts(riderProposalFormElement);
+  document.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
+  if (activeSession) {
+    updateTimer();
+    if (!Number(activeSession.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
+  }
+}
+
+function statCard(label, value, unit, foot, className = "") {
+  return `<article class="stat-card ${escapeHtml(className)}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${escapeHtml(value)}${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
+}
+
+function statCardRaw(label, body, foot, className = "") {
+  return `<article class="stat-card ${className}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${body}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
+}
+
+function scoreRankingCard(weeklyPoints, rank, riderCount, battleRecord = null) {
+  return `<article class="stat-card score-ranking-card ${battleRecord ? "with-battle-record" : ""}">
+    <div class="score-ranking-stat">
+      <div class="stat-label">Weekly score</div>
+      <div class="stat-value">${escapeHtml(Number(weeklyPoints || 0))}<small>pts</small></div>
+      <div class="stat-foot">This week</div>
+    </div>
+    <div class="score-ranking-stat">
+      <div class="stat-label">World ranking</div>
+      <div class="stat-value">${rank ? `#${escapeHtml(rank)}` : "-"}</div>
+      <div class="stat-foot">${escapeHtml(Number(riderCount || 0))} riders on board</div>
+    </div>
+    ${battleRecord ? `<div class="score-ranking-stat battle-ranking-stat">
+      <div class="stat-label">Battle record</div>
+      <div class="stat-value">${escapeHtml(Number(battleRecord.wins || 0))}<small>W</small> — ${escapeHtml(Number(battleRecord.losses || 0))}<small>L</small></div>
+      <div class="stat-foot">${escapeHtml(Number(battleRecord.winPercent || 0))}% win rate</div>
+    </div>` : ""}
+  </article>`;
+}
+
+const completionCategories = new Set(["dialled", "one_bang", "foam", "foam_pit", "bonus", "percentage", "lines"]);
+const completionAssignments = (assignments = []) => assignments.filter((assignment) => completionCategories.has(assignment.category));
+
+function weeklyCompletionPercent(assignments, awards) {
+  const weeklyItems = completionAssignments(assignments);
+  const weeklyDone = weeklyItems.filter(isAssignmentComplete).length;
+  return weeklyItems.length ? Math.round((weeklyDone / weeklyItems.length) * 100) : 0;
+}
+
+async function renderParentHome() {
+  const [{ data: links, error }, coachMessages] = await Promise.all([
+    client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id),
+    getMyCoachMessages(3).catch((messageError) => {
+      console.warn("Coach messages unavailable", messageError);
+      return [];
+    }),
+  ]);
+  if (error) throw error;
+  const ids = (links || []).map((link) => link.athlete_id);
+  if (!ids.length) {
+    document.querySelector("#view").innerHTML = `
+      ${coachMessagesHtml(coachMessages)}
+      <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your parent account is ready, but it is not connected to a rider yet.</p></div></div>
+      <section class="panel parent-waiting-card">
+        ${avatarHtml(state.profile, "profile-avatar")}
+        <div>
+          <div class="panel-title">Your account is waiting to be linked to your child's rider profile.</div>
+          <p class="subcopy">Once your coach links your account, you'll be able to view your child's progress, goals, training plan, points, badges, and session history.</p>
+        </div>
+      </section>`;
+    return;
+  }
+  const { data: athletes, error: athleteError } = await client.from("profiles").select(PROFILE_SELECT).in("id", ids).order("display_name");
+  if (athleteError) throw athleteError;
+  const leaderboard = await getLeaderboard();
+  const linkByAthlete = new Map((links || []).map((link) => [link.athlete_id, link]));
+  const cards = await Promise.all((athletes || []).map(async (athlete) => {
+    const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, runs, xpSummary] = await Promise.all([
+      getWeeklyAssignments(athlete.id),
+      getHelpRequests(athlete.id),
+      getDashboardItems(athlete.id),
+      client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5).then((result) => {
+        if (result.error) throw result.error;
+        return result.data || [];
+      }),
+      getRunPlans(athlete.id),
+      getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
+    ]);
+    const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
+    const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
+    const percent = weeklyCompletionPercent(assignments, awards);
+    const weeklyItems = completionAssignments(assignments);
+    const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+    const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+    const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
+    const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+    const relationship = linkByAthlete.get(athlete.id)?.relationship;
+    return `<section class="panel parent-child-card">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view${relationship ? ` · ${escapeHtml(relationship)}` : ""}</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</p></div></div>
+      <div class="scoreboard-stats">
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Weekly completion", `${percent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked weekly items")}
+      </div>
+      ${xpProgressHtml(xp, true)}
+      <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(assignmentAttempts || [])}
+      ${goalsReadonlyHtml(athlete)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Badges & achievements</div>
+      <div class="public-badges">${badgeStripHtml(athlete.badges)}</div>
+      ${levelBadgesAccordionHtml(xp)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Training plan</div>
+      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Events & tasks</div>
+      ${dashboardItemsHtml(dashboardItems, false)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Session progress</div>
+      ${sessionRows}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Run plans</div>
+      ${runPlansHtml(runs)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Coach feedback</div>
+      <div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div>
+    </section>`;
+  }));
+  document.querySelector("#view").innerHTML = `
+    ${coachMessagesHtml(coachMessages)}
+    <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Linked <span>riders</span></h1><p>Read-only progress for the riders your coach has linked to this parent account.</p></div></div>
+    ${cards.join("")}`;
+}
+
+function goalsReadonlyHtml(profile = {}) {
+  const goals = Array.isArray(profile.goals) ? profile.goals : [];
+  const rows = goals.length ? goals.map((goal) => `<div class="goal-row ${goal.completed ? "complete" : ""}"><span class="assignment-check">${goal.completed ? "✓" : ""}</span><div><strong>${escapeHtml(goal.title)}</strong><small>${goal.completed ? "Completed" : "In progress"}</small></div></div>`).join("") : `<div class="empty compact-empty">No goals added yet.</div>`;
+  return `<section class="parent-readonly-section"><div class="panel-title">Goals</div><div class="goal-list">${rows}</div></section>`;
+}
+
+function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
+  const realRows = rows;
+  const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
+  const badge = medalForRank(row, realIndex, realRows, pointsKey);
+  const badges = earnedBadges(row.earned_badges)
+    .filter((earned) => earned?.icon !== "🔗" && !String(earned?.label || "").toLowerCase().includes("chain link"))
+    .slice(0, 4)
+    .map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`)
+    .join("");
+  const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
+  const xp = permanentScoreSummary(row);
+  const country = countryBadge(row);
+  const hasStarted = points > 0 || Boolean(row.daily_pb_seconds);
+  const meta = row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "";
+  const rank = leaderboardRankForRow(row, index, pointsKey);
+  const ghostLabel = ghostModeLabelHtml(row);
+  const content = `
+    <div class="rank">#${rank}</div>
+    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="points ${hasStarted ? "" : "dns-points"}">${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
+  return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
+}
+
+function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
+  if (!rows.length) return `<div class="empty">No athlete scores yet.</div>`;
+  const topRows = rows.slice(0, 7);
+  const extraRows = rows.slice(7);
+  return `
+    ${topRows.map((row, index) => leaderRow(row, index, rows, pointsKey)).join("")}
+    ${extraRows.length ? `<details class="leaderboard-more"><summary><span class="leaderboard-toggle-closed">View Full Leaderboard</span><span class="leaderboard-toggle-open">Hide Full Leaderboard</span><span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey)).join("")}</div></details>` : ""}`;
+}
+
+function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
+  const limit = window.matchMedia("(min-width: 980px)").matches ? 10 : 5;
+  const previewRows = rows.slice(0, limit);
+  if (!previewRows.length) return `<div class="empty compact-empty">No leaderboard scores yet.</div>`;
+  return `
+    <div class="command-leaderboard-list">
+      ${previewRows.map((row, index) => {
+        const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
+        const xp = permanentScoreSummary(row);
+        const rank = leaderboardRankForRow(row, index, pointsKey);
+        return `<button class="command-leader-row" type="button" ${row.isBenchmarkBot ? "" : `data-public-athlete="${escapeHtml(row.athlete_id)}"`}>
+          <span class="command-rank">#${rank}</span>
+          ${avatarHtml(row)}
+          <strong>${escapeHtml(row.display_name)}${row.ghost_mode ? ` <span class="ghost-mode-mini">Ghost</span>` : ""}</strong>
+          <span class="command-level">L${xp.level}</span>
+          <span class="command-points">${points} pts</span>
+        </button>`;
+      }).join("")}
+    </div>
+    <button class="secondary-btn full-width-btn" type="button" data-view="board">View Full Leaderboard</button>`;
+}
+
+function leaderboardWithBenchmark(rows = [], pointsKey = "weekly_points") {
+  return rows.filter((row) => {
+    const name = String(row.display_name || "").trim().toLowerCase();
+    return !row.isBenchmarkBot && name !== "anonymous rider";
+  });
+}
+
+function pointsHelpHtml() {
+  return `<details class="points-help">
+    <summary aria-label="How points work">?</summary>
+    <div>
+      <strong>How Points Work</strong>
+      <ul>
+        <li>Daily Tricks: full list within the live timer = 1 point.</li>
+        <li>One Bangs: 2 points each when landed.</li>
+        <li>Dialled: 2 points each when landed.</li>
+        <li>Bonus Tricks: 5 points each.</li>
+        <li>First rider to finish Daily Tricks in a group session: 1 point.</li>
+        <li>Percentage Tricks: 100% = 3, 90% = 2, 80% = 1, 70% and below = 0.</li>
+        <li>Coaches can deduct points with a saved reason for behaviour or corrections.</li>
+      </ul>
+    </div>
+  </details>`;
+}
+
+function pointHistoryHtml(rows = []) {
+  if (!rows.length) return `<div class="empty compact-empty">No point history recorded yet.</div>`;
+  return `<div class="point-history-list">${rows.slice(0, 24).map((row) => {
+    const points = Number(row.points || 0);
+    const label = points > 0 ? `+${points}` : `${points}`;
+    const item = row.item || row.category || row.source || "Point change";
+    const reason = row.reason ? `<small>${escapeHtml(row.reason)}</small>` : "";
+    const coach = row.coach_name ? `<span>Coach: ${escapeHtml(row.coach_name)}</span>` : "";
+    return `<div class="point-history-row ${points < 0 ? "negative" : "positive"}">
+      <div><strong>${escapeHtml(item)}</strong><small>${dateLabel(row.event_at)} · ${escapeHtml(row.category || row.source || "points")}</small>${reason}</div>
+      <div class="point-history-side"><span class="point-pill">${label} pts</span>${coach}</div>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function scoreAdjustmentPanel(rows = []) {
+  if (!isCoachRole(state.profile?.role)) return "";
+  const options = rows
+    .filter((row) => !row.isBenchmarkBot)
+    .map((row) => `<option value="${row.athlete_id}">${escapeHtml(row.display_name)} · ${Number(row.weekly_points || 0)} pts</option>`)
+    .join("");
+  if (!options) return "";
+  return `<section class="panel score-adjust-panel">
+    <div class="panel-head"><div><div class="panel-title">Coach point control</div><div class="panel-meta">Add points or deduct points for behaviour, cheating, or coach corrections.</div></div></div>
+    <form id="score-adjust-form" class="score-adjust-form">
+      <div class="field"><label for="adjust-athlete">Rider</label><select id="adjust-athlete" name="athleteId" required>${options}</select></div>
+      <div class="field"><label for="adjust-action">Action</label><select id="adjust-action" name="action"><option value="add">Add points</option><option value="deduct">Deduct points</option></select></div>
+      <div class="field"><label for="adjust-points">Points</label><input id="adjust-points" name="points" type="number" min="1" max="999" required placeholder="5"></div>
+      <div class="field"><label for="adjust-reason">Reason</label><input id="adjust-reason" name="reason" maxlength="160" placeholder="Naughty, cheating, bonus effort..."></div>
+      <button class="primary-btn" type="submit">Apply score change</button>
+    </form>
+    <form id="point-recalc-form" class="score-adjust-form point-recalc-form">
+      <div class="field"><label for="recalc-athlete">Recalculate rider totals</label><select id="recalc-athlete" name="athleteId" required>${options}</select></div>
+      <button class="secondary-btn" type="submit">Recalculate from point history</button>
+    </form>
+  </section>`;
+}
+
+async function loadActiveSession() {
+  const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
+  if (error) throw error;
+  state.activeTraining = data?.[0] || null;
+  if (!state.activeTraining) {
+    state.attempts = [];
+    return;
+  }
+  const { data: attempts, error: attemptsError } = await client.from("trick_attempts").select("*").eq("session_id", state.activeTraining.id).order("created_at", { ascending: false });
+  if (attemptsError) throw attemptsError;
+  state.attempts = attempts || [];
+}
+
+async function getActiveSession() {
+  const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
+  if (error) throw error;
+  return data?.[0] || null;
+}
+
+async function renderSession({ forceParkKing = false } = {}) {
+  const renderVersion = ++state.sessionRenderVersion;
+  const todayStartIso = new Date(`${localDate()}T00:00:00+10:00`).toISOString();
+  const [schedule, leaderboard, todayTrainingResult] = await Promise.all([
+    getWeeklyAssignments(state.user.id),
+    getLeaderboard(),
+    client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at").eq("athlete_id", state.user.id).gte("started_at", todayStartIso).order("started_at", { ascending: false }).limit(8),
+  ]);
+  if (state.view !== "session" || renderVersion !== state.sessionRenderVersion) return;
+  const { assignments, awards } = schedule;
+  const latestDailyTraining = (todayTrainingResult.data || []).find((session) => session.daily_completed_seconds) || null;
+  const selectedVenue = selectedVenueFor(assignments);
+  const boardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
+  const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
+  const contestPrepSession = isContestPrepProfile(state.profile);
+  const statBar = sessionStatBarHtml({
+    points: boardRow?.weekly_points || 0,
+    percent: weeklyCompletionPercent(assignments, awards),
+    rank,
+  });
+  const requestedVenueKey = venueIdentityKey(selectedVenue);
+  const parkKingPromise = contestPrepSession ? Promise.resolve(null) : getParkKing(selectedVenue, { force: forceParkKing });
+  await loadActiveSession();
+  const parkKing = await parkKingPromise;
+  if (state.view !== "session" || renderVersion !== state.sessionRenderVersion || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
+  if (!state.activeTraining) {
+    document.querySelector("#view").innerHTML = `
+      ${statBar}
+      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
+      ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
+      ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
+      ${assignmentGroups(assignments, true, state.profile)}
+      ${extraTricksSection(state.profile, true)}`;
+    bindVenueSelector();
+    bindDailyVenueAccordions();
+    bindExtraTrickActions();
+    bindDailyReorder();
+    document.querySelector("#create-session").addEventListener("click", startSession);
+    document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
+    document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
+    bindSessionQuickJumps();
+    return;
+  }
+  state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
+  const attemptsHtml = state.attempts.length ? state.attempts.map((attempt) => `
+    <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)} · ${formatTime(attempt.duration_seconds || 0)}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
+  document.querySelector("#view").innerHTML = `
+    ${statBar}
+    <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
+    ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
+    ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
+    ${assignmentGroups(assignments, true, state.profile)}
+    ${extraTricksSection(state.profile, true)}
+    <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>`;
+  bindVenueSelector();
+  bindDailyVenueAccordions();
+  bindExtraTrickActions();
+  bindDailyReorder();
+  document.querySelector("#end-session").addEventListener("click", endSession);
+  document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
+  bindSessionQuickJumps();
+  updateTimer();
+  if (!Number(state.activeTraining.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
+}
+
+function bindDailyVenueAccordions() {
+  document.querySelectorAll(".daily-venue-accordion[data-daily-venue]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      const venue = details.dataset.dailyVenue;
+      if (!venue) return;
+      if (details.open) state.sessionOpenDailyVenues.add(venue);
+      else state.sessionOpenDailyVenues.delete(venue);
+    });
+  });
+}
+
+function bindSessionQuickJumps() {
+  document.querySelectorAll("[data-scroll-section]").forEach((button) => button.addEventListener("click", () => {
+    const section = document.querySelector(`[data-assignment-section="${button.dataset.scrollSection}"]`);
+    section?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+
+function updateTimer() {
+  const element = document.querySelector("#trick-timer");
+  if (!element) return;
+  const completedDailySeconds = Number(state.activeTraining?.daily_completed_seconds || 0);
+  element.textContent = formatTime(completedDailySeconds || Math.floor((Date.now() - state.trickStartedAt) / 1000));
+}
+
+async function saveOwnDailyCompletionTime(seconds) {
+  const value = Math.max(0, Number(seconds || 0));
+  const previousPb = Number(state.profile?.daily_pb_seconds || 0);
+  const isNewPb = !previousPb || value < previousPb;
+  const profileUpdate = isNewPb
+    ? { daily_pb_seconds: value, daily_pb_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    : { updated_at: new Date().toISOString() };
+  if (state.activeTraining?.id) {
+    await client.from("training_sessions").update({ daily_completed_seconds: value, daily_completed_at: new Date().toISOString() }).eq("id", state.activeTraining.id);
+    state.activeTraining = { ...state.activeTraining, daily_completed_seconds: value, daily_completed_at: new Date().toISOString() };
+    clearInterval(state.timer);
+    state.timer = null;
+    updateTimer();
+  }
+  if (isNewPb) {
+    const { data, error } = await client.from("profiles").update(profileUpdate).eq("id", state.user.id).select(PROFILE_SELECT).single();
+    if (!error && data) state.profile = data;
+  }
+  return { previousPb, isNewPb, seconds: value };
+}
+
+async function startSession() {
+  const { error } = await client.from("training_sessions").insert({ athlete_id: state.user.id });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Session started. Go land something.");
+  await renderSession();
+}
+
+async function recordAssignmentAction(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const row = button.closest(".assignment-row");
+  const trickName = row?.querySelector("strong")?.textContent?.trim() || "Trick";
+  const wasComplete = row?.classList.contains("complete");
+  const tickingComplete = button.dataset.assignmentAction === "landed";
+  button.disabled = true;
+  row?.classList.toggle("complete", !wasComplete);
+  button.classList.toggle("complete", !wasComplete);
+  button.textContent = wasComplete ? "" : "✓";
+  setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.assignmentAction === "landed");
+  const isLine = button.dataset.assignmentCategory === "lines";
+  const { data, error } = await client.rpc(isLine ? "record_line_action" : "record_assignment_action_at_venue", isLine ? {
+    p_assignment_id: button.dataset.assignmentId,
+    p_action: button.dataset.assignmentAction,
+  } : {
+    p_assignment_id: button.dataset.assignmentId,
+    p_action: button.dataset.assignmentAction,
+    p_venue: state.selectedVenue || "",
+  });
+  if (error) {
+    clearPendingAssignmentProgress(button.dataset.assignmentId);
+    button.disabled = false;
+    row?.classList.toggle("complete", Boolean(wasComplete));
+    button.classList.toggle("complete", Boolean(wasComplete));
+    button.textContent = wasComplete ? "✓" : "";
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  cacheClear(`schedule:${state.user.id}:`);
+  cacheClear("leaderboard");
+  cacheClear("park-king:");
+  const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
+  const message = `${result.message}${pointsNote}.`;
+  const dailyCompleteResult = result.category === "daily" && (result.daily_complete || (result.progress_date === assignmentLocalDate({ athlete_country_code: state.profile?.country_code }) && Number(result.points_awarded || 0) > 0));
+  if (dailyCompleteResult && result.live_session && Number.isFinite(Number(result.elapsed_seconds)) && Number(result.elapsed_seconds) > 0) {
+    const completion = await saveOwnDailyCompletionTime(Number(result.elapsed_seconds));
+    showProgressPopup({
+      kind: "daily",
+      title: completion.isNewPb ? `New Daily PB · ${formatPbTime(completion.seconds)}` : `Daily complete · ${formatPbTime(completion.seconds)}`,
+      message: `${Number(result.points_awarded || 0) > 0 ? `+${Number(result.points_awarded)} point · ` : ""}${completion.isNewPb ? "Fastest Daily time" : "Time saved"}`,
+    });
+    await refreshOwnXpAfterAction({ announceXp: false, trickName });
+  } else {
+    notify(message);
+    await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
+    if (tickingComplete && Number(result.points_awarded || 0) > 0) await showUpdatedWeeklyScore(Number(result.points_awarded), trickName);
+  }
+  if (state.view === "home") await renderAthleteHome();
+  else await renderSession();
+}
+
+async function recordAssignmentAttempt(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const currentCount = Number(button.querySelector(".attempt-pill")?.textContent || 0);
+  button.disabled = true;
+  button.classList.add("attempted");
+  button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
+  const { data, error } = await client.rpc("record_assignment_attempt", {
+    p_assignment_id: button.dataset.assignmentAttempt,
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  cacheClear(`schedule:${state.user.id}:`);
+  notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
+  if (state.view === "home") await renderAthleteHome();
+  else await renderSession();
+}
+
+async function recordPercentageAttempt(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  button.disabled = true;
+  const cycleState = button.dataset.percentageCycle || "";
+  const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
+  const landed = cycleState
+    ? cycleState === "empty"
+    : button.dataset.percentageAction === "true";
+  const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
+  setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
+  const { data, error } = await client.rpc("set_percentage_attempt_at_venue", {
+    p_assignment_id: button.dataset.assignmentId,
+    p_attempt_number: attemptNumber,
+    p_landed: clearAttempt ? null : landed,
+    p_venue: state.selectedVenue || "",
+  });
+  if (error) {
+    clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  cacheClear(`schedule:${state.user.id}:`);
+  cacheClear("leaderboard");
+  cacheClear("park-king:");
+  const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
+  notify(clearAttempt ? `Attempt cleared. New result: ${result.percentage}%.` : (result.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result.attempt_number} ${actionText}. ${result.attempts}/10 saved.`));
+  await refreshOwnXpAfterAction();
+  if (state.view === "home") await renderAthleteHome();
+  else await renderSession();
+}
+
+function bindDashboardItemActions(refresh) {
+  document.querySelector("#dashboard-item-form")?.addEventListener("submit", (event) => saveDashboardItem(event, refresh));
+  document.querySelectorAll("[data-toggle-item]").forEach((button) => button.addEventListener("click", (event) => toggleDashboardItem(event, refresh)));
+  document.querySelectorAll("[data-delete-item]").forEach((button) => button.addEventListener("click", (event) => deleteDashboardItem(event, refresh)));
+}
+
+async function saveDashboardItem(event, refresh) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const dueAt = form.get("dueAt");
+  const endAt = form.get("endAt");
+  if (dueAt && endAt && new Date(endAt) < new Date(dueAt)) return notify("Finish date must be after the start date.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Adding...";
+  const { error } = await client.from("dashboard_items").insert({
+    owner_id: formElement.dataset.ownerId,
+    created_by: state.user.id,
+    item_type: form.get("itemType"),
+    title: String(form.get("title") || "").trim(),
+    details: String(form.get("details") || "").trim(),
+    due_at: dueAt ? new Date(dueAt).toISOString() : null,
+    end_at: endAt ? new Date(endAt).toISOString() : null,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Add";
+    return notify(messageFrom(error), "error");
+  }
+  cacheClear("coach-command:");
+  notify("Event/task added.");
+  await refresh();
+}
+
+async function toggleDashboardItem(event, refresh) {
+  const id = event.currentTarget.dataset.toggleItem;
+  const row = event.currentTarget.closest(".dashboard-item");
+  const completed = !row?.classList.contains("complete");
+  const { error } = await client.from("dashboard_items").update({ completed, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) return notify(messageFrom(error), "error");
+  cacheClear("coach-command:");
+  notify(completed ? "Marked complete." : "Reopened.");
+  await refresh();
+}
+
+async function deleteDashboardItem(event, refresh) {
+  const id = event.currentTarget.dataset.deleteItem;
+  const { error } = await client.from("dashboard_items").delete().eq("id", id);
+  if (error) return notify(messageFrom(error), "error");
+  cacheClear("coach-command:");
+  notify("Event/task deleted.");
+  await refresh();
+}
+
+async function recordTrick(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const duration = Math.max(0, Math.floor((Date.now() - state.trickStartedAt) / 1000));
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  const { data, error } = await client.rpc("record_landed_trick", {
+    p_session_id: state.activeTraining.id,
+    p_trick_name: form.get("trickName"),
+    p_category: form.get("category"),
+    p_duration_seconds: duration,
+  });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  const attempt = Array.isArray(data) ? data[0] : data;
+  notify(`${attempt.trick_name} landed for ${attempt.points} points.`);
+  await renderSession();
+}
+
+async function endSession() {
+  const { error } = await client.from("training_sessions").update({ ended_at: new Date().toISOString() }).eq("id", state.activeTraining.id);
+  if (error) return notify(messageFrom(error), "error");
+  clearInterval(state.timer);
+  notify("Session complete. Points locked in.");
+  state.activeTraining = null;
+  await navigate("home");
+}
+
+async function renderBoard() {
+  const rawLeaderboard = await getLeaderboard();
+  const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
+  const allTimeLeaderboard = leaderboardWithBenchmark([...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))), "all_time_points");
+  const activeBoardView = state.boardLeaderboardView === "allTime" ? "allTime" : "weekly";
+  const activeRows = activeBoardView === "allTime" ? allTimeLeaderboard : leaderboard;
+  const activePointsKey = activeBoardView === "allTime" ? "all_time_points" : "weekly_points";
+  const boardTitle = activeBoardView === "allTime" ? "All-time rankings" : "Weekly rankings";
+  const boardMeta = activeBoardView === "allTime" ? "Total points since joining" : "Resets Sunday evening in each rider's country";
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at Sunday midnight in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
+    ${scoreAdjustmentPanel(rawLeaderboard)}
+    <section class="panel board-rankings-panel">
+      <div class="panel-head board-rankings-head">
+        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta} · Badges and levels follow all-time progress.</div></div>
+        <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">
+          <button type="button" class="${activeBoardView === "weekly" ? "active" : ""}" data-board-view="weekly">Weekly</button>
+          <button type="button" class="${activeBoardView === "allTime" ? "active" : ""}" data-board-view="allTime">All-time</button>
+        </div>
+        <div class="panel-meta">${activeRows.length} riders</div>
+      </div>
+      <div class="leaderboard">${compactLeaderboardHtml(activeRows, activePointsKey)}</div>
+    </section>`;
+  document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
+  document.querySelectorAll("[data-board-view]").forEach((button) => button.addEventListener("click", () => {
+    state.boardLeaderboardView = button.dataset.boardView || "weekly";
+    renderBoard();
+  }));
+  document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
+  document.querySelector("#point-recalc-form")?.addEventListener("submit", submitPointRecalculation);
+}
+
+async function submitScoreAdjustment(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can change scores.", "error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const athleteId = String(form.get("athleteId") || "");
+  const action = String(form.get("action") || "add");
+  const amount = Math.abs(Number(form.get("points") || 0));
+  const reason = String(form.get("reason") || "").trim().slice(0, 160);
+  if (!athleteId || !amount) return notify("Choose a rider and points amount.", "error");
+  const signedPoints = action === "deduct" ? -amount : amount;
+  if (signedPoints < 0 && !reason) return notify("Add a reason before deducting points.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Applying...";
+  const { error } = await client.from("leaderboard_point_adjustments").insert({
+    athlete_id: athleteId,
+    coach_id: state.user.id,
+    points: signedPoints,
+    reason: reason || `${action === "deduct" ? "Deducted" : "Added"} by coach`,
+    week_start: weekStartDate(),
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Apply score change";
+    return notify(messageFrom(error), "error");
+  }
+  if (signedPoints < 0) await createDeductionParentNotification(athleteId, amount, reason);
+  notify(`${signedPoints > 0 ? "Added" : "Deducted"} ${amount} point${amount === 1 ? "" : "s"}.`);
+  await renderBoard();
+}
+
+async function submitPointRecalculation(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can recalculate points.", "error");
+  const form = new FormData(event.currentTarget);
+  const athleteId = String(form.get("athleteId") || "");
+  if (!athleteId) return notify("Choose a rider first.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Recalculating...";
+  const { data, error } = await client.rpc("recalculate_athlete_points", { p_athlete_id: athleteId });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Recalculate from point history";
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(`Point audit: ${result?.weekly_points || 0} weekly · ${result?.all_time_points || 0} all-time · ${result?.point_events || 0} events.`);
+  button.disabled = false;
+  button.textContent = "Recalculate from point history";
+}
+
+async function createDeductionParentNotification(athleteId, amount, reason) {
+  const [{ data: links, error: linksError }, { data: athlete, error: athleteError }] = await Promise.all([
+    client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athleteId),
+    client.from("profiles").select("display_name").eq("id", athleteId).single(),
+  ]);
+  if (linksError || athleteError) {
+    notify(`Score saved, but parent notification could not be prepared: ${messageFrom(linksError || athleteError)}`, "error");
+    return;
+  }
+  if (!links?.length) return;
+  const riderName = athlete?.display_name || "This rider";
+  const rows = links.map((link) => ({
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    recipient_type: "parent",
+    recipient_id: link.parent_id,
+    week_start: weekStartDate(),
+    week_end: weekEndDate(),
+    title: `${riderName} had points deducted`,
+    summary: `Hi, ${riderName} had ${amount} point${amount === 1 ? "" : "s"} deducted today for behaviour during training. Reason: ${reason}. Please speak with them before the next session.`,
+    status: "draft",
+    stats: { type: "behaviour_deduction", points: -amount, reason },
+    coach_notes: reason,
+  }));
+  const { error } = await client.from("weekly_progress_notifications").upsert(rows, {
+    onConflict: "athlete_id,recipient_type,recipient_id,week_start",
+  });
+  if (error) notify(`Score saved, but parent notification could not be prepared: ${messageFrom(error)}`, "error");
+}
+
+function boardChatMessageHtml(post) {
+  const author = post.profiles || {};
+  const metadata = post.metadata || {};
+  const authorName = metadata.author_name || author.display_name || (post.author_id === state.user?.id ? state.profile?.display_name : "") || "Crew member";
+  const authorAvatar = metadata.avatar || author.avatar || null;
+  const reactionsByEmoji = post.reactions.reduce((map, reaction) => {
+    const list = map.get(reaction.reaction) || [];
+    list.push(reaction);
+    map.set(reaction.reaction, list);
+    return map;
+  }, new Map());
+  const reactionHtml = boardReactionEmojis.map((emoji) => {
+    const reactions = reactionsByEmoji.get(emoji) || [];
+    const active = reactions.some((reaction) => reaction.user_id === state.user?.id);
+    const people = reactions.map((reaction) => {
+      const profile = reaction.profile || {};
+      const name = profile.display_name || (reaction.user_id === state.user?.id ? state.profile?.display_name : "") || "Crew member";
+      return `<span>${avatarHtml({ display_name: name, avatar: profile.avatar }, "reaction-avatar")}<strong>${escapeHtml(name)}</strong></span>`;
+    }).join("");
+    return `<span class="reaction-wrap"><button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${reactions.length ? `<span>${reactions.length}</span>` : ""}</button>${reactions.length ? `<span class="reaction-popover" role="tooltip">${people}</span>` : ""}</span>`;
+  }).join("");
+  const bodyHtml = post.body ? `<p>${formatBoardMessageBody(post.body, metadata.mentions || [])}</p>` : "";
+  return `<article class="board-chat-message">
+    ${avatarHtml({ display_name: authorName, avatar: authorAvatar })}
+    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}<div class="reaction-row">${reactionHtml}</div></div>
+  </article>`;
+}
+
+function boardChatComposerHtml(mentionableUsers = []) {
+  const suggestions = mentionableUsers.map((user) => `<button type="button" data-mention-pick="${escapeHtml(user.id)}" data-mention-token="${escapeHtml(user.token)}"><span>${avatarHtml({ display_name: user.name, avatar: user.avatar }, "reaction-avatar")}</span><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.token)}</small></button>`).join("");
+  return `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose">
+    <div class="board-compose-shell">
+      <div class="mention-field">
+        <textarea id="board-message" name="body" maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea>
+        <div id="board-mention-menu" class="mention-menu" hidden>${suggestions || `<div class="empty compact-empty">No riders to mention yet.</div>`}</div>
+      </div>
+      <button class="primary-btn board-send-btn" type="submit" data-send-board-chat>Send</button>
+    </div>
+  </form>`;
+}
+
+async function submitBoardChat(event) {
+  event.preventDefault();
+  if (!canPostBoardChat()) return notify("Only riders and coaches can post in crew chat.", "error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const body = String(form.get("body") || "").trim();
+  if (containsGifUrl(body)) return notify("GIFs and stickers are turned off for crew chat.", "error");
+  if (!body) return notify("Write a message first.", "error");
+  const mentions = extractBoardMentions(body, state.boardMentionableCache || []);
+  const button = formElement.querySelector("[data-send-board-chat]");
+  button.disabled = true;
+  button.textContent = "Sending...";
+  const { error } = await client.from("crew_posts").insert({
+    author_id: state.user.id,
+    body,
+    post_type: "chat",
+    metadata: {
+      author_name: state.profile?.display_name || state.user?.email || "Crew member",
+      author_role: state.profile?.role || "member",
+      avatar: state.profile?.avatar || null,
+      mentions,
+    },
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Send";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Message posted.");
+  await renderBoard();
+}
+
+function bindBoardChatComposer(mentionableUsers = []) {
+  const form = document.querySelector("#board-chat-form");
+  if (!form) return;
+  const textarea = form.querySelector("#board-message");
+  const menu = form.querySelector("#board-mention-menu");
+  const refreshMentionMenu = () => {
+    if (!textarea || !menu) return;
+    const beforeCursor = textarea.value.slice(0, textarea.selectionStart || textarea.value.length);
+    const match = beforeCursor.match(/(^|\s)@([a-z0-9]*)$/i);
+    if (!match) {
+      menu.hidden = true;
+      return;
+    }
+    const term = match[2].toLowerCase();
+    let visible = 0;
+    menu.querySelectorAll("[data-mention-pick]").forEach((button) => {
+      const token = button.dataset.mentionToken || "";
+      const name = button.querySelector("strong")?.textContent?.toLowerCase() || "";
+      const matched = token.includes(term) || name.includes(term);
+      button.hidden = !matched;
+      if (matched) visible += 1;
+    });
+    menu.hidden = visible === 0;
+  };
+  textarea?.addEventListener("input", refreshMentionMenu);
+  textarea?.addEventListener("paste", (event) => {
+    const clipboard = event.clipboardData;
+    const text = clipboard?.getData("text") || "";
+    const hasImageOrGif = [...(clipboard?.items || [])].some((item) => item.type === "image/gif" || item.type.startsWith("image/"));
+    if (hasImageOrGif || containsGifUrl(text)) {
+      event.preventDefault();
+      notify("GIFs and stickers are turned off for crew chat.", "error");
+    }
+  });
+  textarea?.addEventListener("blur", () => setTimeout(() => { if (menu) menu.hidden = true; }, 160));
+  menu?.querySelectorAll("[data-mention-pick]").forEach((button) => button.addEventListener("click", () => {
+    const token = button.dataset.mentionToken;
+    const cursor = textarea.selectionStart || textarea.value.length;
+    const beforeCursor = textarea.value.slice(0, cursor);
+    const afterCursor = textarea.value.slice(cursor);
+    const match = beforeCursor.match(/(^|\s)@([a-z0-9]*)$/i);
+    if (!match || !token) return;
+    const replacementStart = beforeCursor.length - match[0].length;
+    textarea.value = `${beforeCursor.slice(0, replacementStart)}${match[1]}@${token} ${afterCursor}`;
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = replacementStart + match[1].length + token.length + 2;
+    menu.hidden = true;
+  }));
+}
+
+async function toggleBoardReaction(event) {
+  const button = event.currentTarget;
+  const postId = button.dataset.postId;
+  const reaction = button.dataset.boardReaction;
+  if (!postId || !reaction) return;
+  const active = button.classList.contains("active");
+  button.disabled = true;
+  const query = client.from("crew_post_reactions").delete().eq("post_id", postId).eq("user_id", state.user.id).eq("reaction", reaction);
+  const { error } = active
+    ? await query
+    : await client.from("crew_post_reactions").insert({ post_id: postId, user_id: state.user.id, reaction });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  await renderBoard();
+}
+
+function openPublicAthleteProfile(event) {
+  state.publicAthleteId = event.currentTarget.dataset.publicAthlete;
+  navigate("publicProfile");
+}
+
+function openMentionedAthleteProfile(event) {
+  state.publicAthleteId = event.currentTarget.dataset.mentionAthlete;
+  navigate("publicProfile");
+}
+
+async function renderPublicAthleteProfile() {
+  if (!state.publicAthleteId) return navigate("board");
+  const [profile, battleRecord] = await Promise.all([
+    getPublicAthleteProfile(state.publicAthleteId),
+    getPublicRiderBattleRecord(state.publicAthleteId).catch(() => ({ wins: 0, losses: 0, win_percent: 0 })),
+  ]);
+  if (!profile) {
+    document.querySelector("#view").innerHTML = `<div class="empty">Could not find that rider profile.</div>`;
+    return;
+  }
+  const scoreXp = permanentScoreSummary(profile || {});
+  const badges = earnedBadges(profile.badges);
+  const hasWeeklyPoints = Number(profile.weekly_points || 0) > 0;
+  const badgeHtml = [
+    profile.is_weekly_winner ? `<span class="public-badge"><span>🏅</span>Weekly leader</span>` : "",
+    profile.is_last_place && hasWeeklyPoints ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
+    badgeStripHtml(badges, ""),
+  ].filter(Boolean).join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, medals, badges, and weekly points history.</p></div><button class="secondary-btn" type="button" id="back-to-board">Back to board</button></div>
+    <section class="panel public-profile-card">
+      ${avatarHtml(profile, "public-profile-avatar")}
+      <div>
+        <div class="eyebrow">Rider profile</div>
+        <h2>${escapeHtml(profile.display_name)} ${levelBadgeHtml(scoreXp.current_badge, true)}</h2>
+        <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No earned badges yet</span>`}</div>
+      </div>
+    </section>
+    <section class="panel">${xpProgressHtml(scoreXp)}${levelBadgesAccordionHtml(scoreXp)}</section>
+    ${socialLinksHtml(profile)}
+    <section class="stats-grid public-profile-stats">
+      ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
+      ${statCard("Weekly wins", profile.weekly_wins || 0, "", "Leaderboard wins")}
+      ${statCard("Battle record", `${battleRecord.wins || 0}W — ${battleRecord.losses || 0}L`, "", `${battleRecord.win_percent || 0}% win rate`)}
+      ${statCard("Country", profile.country_code ? `${countryFlag(profile.country_code)} ${profile.country_name || countryNameFromCode(profile.country_code)}` : "-", "", "Where they ride from")}
+      ${statCard("Stance", profile.stance || "-", "", "Goofy or regular")}
+      ${statCard("Spin", spinDirectionLabels[profile.spin_direction] || "-", "", "Natural direction")}
+      ${statCard("Favourite trick", profile.favourite_trick || "-", "", "Rider pick")}
+      ${statCard("Age", profile.age || "-", "", "Rider age")}
+    </section>
+    <section class="panel public-profile-details">
+      <div class="public-detail"><div class="panel-title">Sponsors</div>${linesHtml(profile.sponsors, "No sponsors added yet.")}</div>
+      <div class="public-detail"><div class="panel-title">Achievements</div>${linesHtml(profile.achievements, "No achievements added yet.")}</div>
+    </section>`;
+  document.querySelector("#back-to-board").addEventListener("click", () => navigate("board"));
+}
+
+async function renderAthleteCrew() {
+  const [leaderboard, feed] = await Promise.all([getLeaderboard(), getCrewFeed()]);
+  const leader = leaderboard[0];
+  const orderedFeed = [...feed].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const feedHtml = orderedFeed.length ? orderedFeed.map((item) => `
+    <article class="feed-card chat-message ${item.author_id === state.user.id ? "mine" : ""} ${item.feed_type === "landed" ? "activity" : ""}">
+      ${avatarHtml({ display_name: item.author_name, avatar: item.avatar })}
+      <div class="chat-bubble"><strong>${escapeHtml(item.author_name || "JKCREW")}</strong><p>${escapeHtml(item.body)}${item.points ? ` · +${item.points} pts` : ""}</p><small>${dateLabel(item.created_at)}</small></div>
+    </article>`).join("") : `<div class="empty">No crew activity yet.</div>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and see live notifications when someone moves up or lands a trick.</p></div></div>
+    ${leader ? `<section class="panel leader-alert"><div class="live-dot"></div><div><div class="panel-title">Current leader: ${escapeHtml(leader.display_name)}</div><div class="panel-meta">${leader.weekly_points} points this week · new leaders show here</div></div></section>` : ""}
+    <section class="panel crew-chat-panel">
+      <div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages first</div></div></div>
+      <div class="feed-list chat-list" id="crew-chat-list">${feedHtml}</div>
+      <form id="crew-post-form" class="crew-post-form crew-chat-compose"><textarea id="crew-message" name="body" required maxlength="500" rows="1" placeholder="Message the crew..."></textarea><button class="primary-btn" type="submit">Send</button></form>
+    </section>`;
+  document.querySelector("#crew-post-form").addEventListener("submit", submitCrewPost);
+}
+
+async function submitCrewPost(event) {
+  event.preventDefault();
+  const body = String(new FormData(event.currentTarget).get("body") || "").trim();
+  if (!body) return notify("Write a message first.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Posting...";
+  const { error } = await client.from("crew_posts").insert({
+    author_id: state.user.id,
+    body,
+    post_type: "chat",
+    metadata: {
+      author_name: state.profile?.display_name || state.user?.email || "Crew member",
+      author_role: state.profile?.role || "member",
+      avatar: state.profile?.avatar || null,
+    },
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Post to Crew";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Posted to Crew.");
+  await renderAthleteCrew();
+}
+
+async function renderContests() {
+  const [items, runs] = await Promise.all([
+    getDashboardItems(state.user.id),
+    getRunPlans(state.user.id),
+  ]);
+  const events = items.filter((item) => item.item_type === "event");
+  const upcoming = events.filter((item) => !item.due_at || new Date(item.end_at || item.due_at) >= new Date());
+  const contestsBody = `${dashboardItemsHtml(events, true)}
+      <div class="settings-divider"></div>
+      ${dashboardItemForm(state.user.id)}`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Contests</div><h1>Events & <span>runs</span></h1><p>Plan competition lines, view upcoming contests, and keep old runs archived for later.</p></div></div>
+    ${closedPanelAccordion("Upcoming events & contests", `${upcoming.length} upcoming · dates can include start and finish`, contestsBody, "contests-overview")}
+    ${runBuilderPanel(runs, { collapsed: true })}`;
+  bindDashboardItemActions(renderContests);
+  bindRunBuilderActions();
+}
+
+function coachHubTone(view) {
+  return ({
+    planner: "purple",
+    videoReviews: "coral",
+    tricktionary: "blue",
+    contests: "gold",
+    parents: "purple",
+    board: "gold",
+    profile: "blue",
+    command: "aqua",
+  })[view] || "aqua";
+}
+
+function coachHubCard(view, title, meta, icon = "•") {
+  return `<button class="coach-hub-card coach-tone-${coachHubTone(view)}" type="button" data-view="${escapeHtml(view)}">
+    <span>${escapeHtml(icon)}</span>
+    <div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></div>
+  </button>`;
+}
+
+async function renderCoachTools() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Training <span>toolbox</span></h1><p>Planner, reviews, Tricktionary, run work, feedback and weekly schedule tools in one cleaner hub.</p></div></div>
+    <section class="coach-hub-grid">
+      ${coachHubCard("planner", "Planner", "Prepare next week's private trick lists", "▤")}
+      ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
+      ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
+      ${coachHubCard("contests", "Run Planner", "Events, contests and saved runs", "🏆")}
+    </section>
+    <section class="command-section-group">
+      <div class="command-section-heading"><span>01</span><div><strong>Weekly schedule tools</strong><small>Fast shortcuts for planning and feedback</small></div></div>
+      <div class="coach-tools-row">
+        <button class="coach-tool-card coach-tone-purple" type="button" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
+        <button class="coach-tool-card coach-tone-coral" type="button" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
+        <button class="coach-tool-card coach-tone-aqua" type="button" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
+        <button class="coach-tool-card coach-tone-blue" type="button" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
+      </div>
+    </section>`;
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+}
+
+async function renderCoachMore() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">More</div><h1>Coach <span>admin</span></h1><p>Parent management, leaderboard, profile, account settings, app updates and sign out live here so the main nav stays clean.</p></div></div>
+    <section class="coach-hub-grid">
+      ${coachHubCard("adminRecords", "Admin & Records", "Attendance, payments, injuries and rider records", "▦")}
+      ${coachHubCard("parents", "Parents", "Linked parent viewer accounts", "P")}
+      ${coachHubCard("board", "Board", "Full leaderboard and crew chat", "#")}
+      ${coachHubCard("profile", "Profile", "Account settings, theme and password", "●")}
+      ${coachHubCard("command", "Command", "Back to the coach dashboard", "◇")}
+    </section>`;
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+}
+
+async function renderCoachAdminRecords() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">More · Admin & Records</div><h1>No <span>riders</span></h1><p>Add students before using attendance and rider records.</p></div><button class="secondary-btn" type="button" data-view="more">Back to More</button></div><div class="empty">No students linked yet.</div>`;
+    document.querySelector("#view [data-view]")?.addEventListener("click", (event) => navigate(event.currentTarget.dataset.view));
+    return;
+  }
+  const commandData = await getCoachCommandData(roster);
+  const injuredCount = commandData.statuses.filter((status) => status.heat_status === "injured").length;
+  const adminSections = [
+    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster)),
+    commandAccordionSection("payments-section", "Payments / Reimbursements", "Attendance history and outstanding venue costs", attendanceHistoryHtml(commandData.attendanceSessions)),
+    commandAccordionSection("injury-section", "Injury Reports", "Modified training and rider file shortcuts", `<div class="notification-list">${commandData.statuses.filter((status) => status.heat_status === "injured").map((status) => {
+      const athlete = roster.find((entry) => entry.id === status.athlete_id);
+      return `<button class="notification-card" type="button" data-open-student="${escapeHtml(status.athlete_id)}"><span>Injury</span><strong>${escapeHtml(athlete?.display_name || "Rider")} — modified training / injury</strong></button>`;
+    }).join("") || `<div class="empty compact-empty">No injured / modified riders marked.</div>`}</div>`),
+    commandAccordionSection("records-section", "Emergency Contacts / Waivers / Forms", "Open rider files to view private records", `<div class="notification-list">${roster.map((athlete) => `<button class="notification-card" type="button" data-open-student="${athlete.id}"><span>Rider file</span><strong>${escapeHtml(athlete.display_name)} — emergency contacts, waivers, forms</strong></button>`).join("")}</div>`),
+    commandAccordionSection("settings-section", "Settings", "Coach account and app settings", `<button class="secondary-btn" data-view="profile" type="button">Open Coach Profile</button>`),
+  ].join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">More · Coach admin</div><h1>Admin & <span>Records</span></h1><p>Attendance, payments, injuries, rider files and settings.</p></div><button class="secondary-btn" type="button" data-view="more">Back to More</button></div>
+    <section class="command-management-stack">
+      ${commandHubAccordion("admin-records-hub", "01", "Admin & Records", "Attendance, payments, injuries, records and settings", `${injuredCount} modified · ${commandData.attendanceSessions?.length || 0} sessions`, adminSections)}
+    </section>`;
+  document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
+  document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
+}
+
+function coachListRequestsHtml(proposals = [], roster = []) {
+  if (!proposals.length) return `<div class="empty compact-empty">No student list requests are waiting.</div>`;
+  return proposals.map((proposal) => {
+    const athlete = roster.find((entry) => entry.id === proposal.athlete_id);
+    const items = Array.isArray(proposal.items) ? proposal.items : [];
+    const rows = items.map((item) => `<li><span>${escapeHtml(categoryInfo[item.category]?.label || item.category || "Trick")}</span><strong>${escapeHtml(item.trick_name || "")}</strong>${item.notes ? `<small>${escapeHtml(item.notes)}</small>` : ""}</li>`).join("");
+    return `<article class="proposal-review-card"><div class="proposal-review-head"><span>Waiting for approval</span><h3>${escapeHtml(athlete?.display_name || "Rider")} · ${escapeHtml(proposal.title)}</h3><small>${escapeHtml(proposal.venue || "No location added")} · ${dateLabel(proposal.created_at)}</small></div>${proposal.rider_note ? `<p>${escapeHtml(proposal.rider_note)}</p>` : ""}<ul class="proposal-item-list">${rows}</ul><form data-proposal-review="${proposal.id}"><div class="field"><label>Optional reply</label><input name="coachNote" maxlength="500" placeholder="Looks good, or explain what to change"></div><div class="proposal-review-actions"><button class="primary-btn" type="submit" data-proposal-decision="accepted">Accept all lists</button><button class="danger-btn" type="submit" data-proposal-decision="declined">Decline</button></div></form></article>`;
+  }).join("");
+}
+
+async function reviewRiderSheetProposal(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = event.submitter;
+  const decision = button?.dataset.proposalDecision;
+  if (!decision) return;
+  const restoreButton = setButtonBusy(button, decision === "accepted" ? "Accepting..." : "Declining...");
+  const { data, error } = await client.rpc("review_rider_sheet_proposal", { p_proposal_id: form.dataset.proposalReview, p_decision: decision, p_coach_note: String(new FormData(form).get("coachNote") || "").trim() });
+  if (error) { restoreButton(); return notify(messageFrom(error), "error"); }
+  const result = Array.isArray(data) ? data[0] : data;
+  clearCoachCaches({ command: true, sessionViewer: true, leaderboard: true });
+  notify(decision === "accepted" ? `Lists accepted · ${result?.assignments_added || 0} items added.` : "Request declined and the rider can see your reply.");
+  await renderCoachCommand();
+}
+
+async function renderCoachCommand() {
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>No <span>riders</span></h1><p>Add students first, then this becomes your calendar, attendance, and parent-update hub.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  const [commandData, rawLeaderboard, broadcastHistory, parkKings] = await Promise.all([
+    getCoachCommandData(roster),
+    getLeaderboard(),
+    client.from("coach_broadcasts").select("id, target_label, message, recipient_count, push_count, sent_at").eq("coach_id", state.user.id).order("sent_at", { ascending: false }).limit(5).then((result) => {
+      if (result.error) throw result.error;
+      return result.data || [];
+    }),
+    getAllParkKings(),
+  ]);
+  const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
+  const calendarFeed = combinedCoachCalendarItems(commandData);
+  const groupedCalendar = groupCoachCalendarItems(calendarFeed, roster);
+  const upcoming = groupedCalendar.filter((event) => new Date(event.starts_at) >= new Date()).length;
+  const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
+  const pendingRequests = commandData.trickRequests?.length || 0;
+  const listRequestCount = commandData.sheetProposals?.length || 0;
+  const teamSections = [
+    commandAccordionSection("list-requests-section", "List Requests", "Complete weekly lists waiting for your approval", coachListRequestsHtml(commandData.sheetProposals, roster)),
+    commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
+    commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
+    commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
+  ].join("");
+  document.querySelector("#view").innerHTML = `
+    <section class="command-page-hero">
+      <div><div class="eyebrow">Coach command centre</div><h1>Coach <span>HQ</span></h1><p>Your riders, priorities and weekly operations at a glance.</p></div>
+      <button class="command-start-button" data-view="sessionViewer" type="button"><span>Start Coaching</span><small>Open live Session Viewer</small><b aria-hidden="true">→</b></button>
+    </section>
+    <section class="command-metrics" aria-label="Coach overview">
+      ${commandMetricCard("Students", roster.length, "In your crew", { view: "crew" })}
+      ${commandMetricCard("Upcoming", upcoming, "Events", { target: "upcoming-events-section" })}
+      ${commandMetricCard("List Requests", listRequestCount, "Student lists", { target: "list-requests-section" })}
+    </section>
+    ${highPriorityTodoHtml(priorityTasks)}
+    <details class="command-message-accordion coach-tone-purple">
+      <summary><span><strong>Message the Crew</strong><small>Send a rider, group or parent update</small></span><span class="command-message-count">${broadcastHistory.length ? `${broadcastHistory.length} recent` : "Compose"}</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
+      <div class="command-message-body">${coachBroadcastComposerHtml(roster, broadcastHistory)}</div>
+    </details>
+    <section class="panel command-leaderboard-panel coach-tone-gold">
+      <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top riders this week · full board lives under More</div></div></div>
+      ${commandLeaderboardPreviewHtml(leaderboard, "weekly_points")}
+    </section>
+    ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
+    <section class="command-management-stack">
+      ${commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events and parent updates", `${listRequestCount + pendingRequests} request${listRequestCount + pendingRequests === 1 ? "" : "s"} · ${upcoming} event${upcoming === 1 ? "" : "s"}`, teamSections)}
+    </section>`;
+  document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
+  document.querySelector("#coach-broadcast-form")?.addEventListener("submit", sendCoachBroadcast);
+  document.querySelector("#coach-broadcast-target")?.addEventListener("change", (event) => {
+    const individual = event.currentTarget.value === "athlete";
+    const riderField = document.querySelector("#coach-broadcast-rider-field");
+    const riderSelect = document.querySelector("#coach-broadcast-rider");
+    if (riderField) riderField.hidden = !individual;
+    if (riderSelect) riderSelect.disabled = !individual;
+  });
+  document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
+  document.querySelector("#command-park-king-filter")?.addEventListener("change", renderCommandParkKingSelection);
+  document.querySelector("#generate-weekly-previews")?.addEventListener("click", () => generateWeeklyNotificationPreviews(roster, commandData));
+  document.querySelectorAll("[data-dismiss-task]").forEach((button) => button.addEventListener("click", dismissCoachTask));
+  document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
+  document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
+  document.querySelectorAll("[data-proposal-review]").forEach((form) => form.addEventListener("submit", reviewRiderSheetProposal));
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelectorAll("#view [data-public-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.publicAthleteId = button.dataset.publicAthlete;
+    navigate("publicProfile");
+  }));
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
+  document.querySelectorAll("[data-command-scroll]").forEach((button) => button.addEventListener("click", () => {
+    const target = document.querySelector(`#${button.dataset.commandScroll}`);
+    if (!target) return notify("Could not find that command section.", "error");
+    const parentHub = target.closest(".command-hub-accordion");
+    if (parentHub) parentHub.open = true;
+    target.open = true;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+
+async function renderSessionViewer({ forceParkKing = false } = {}) {
+  const renderVersion = ++state.sessionViewerRenderVersion;
+  if (state.sessionViewerTimer) {
+    clearInterval(state.sessionViewerTimer);
+    state.sessionViewerTimer = null;
+  }
+  if (state.sessionViewerClock) {
+    clearInterval(state.sessionViewerClock);
+    state.sessionViewerClock = null;
+  }
+  const [roster, activeGroupSession] = await Promise.all([
+    getSessionViewerRoster(),
+    getActiveCoachGroupSession(),
+  ]);
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Add students first, then you can manage group Daily Tricks from here.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  state.sessionViewerRosterCache = roster;
+  state.sessionViewerActiveSessionCache = activeGroupSession;
+  if (activeGroupSession) {
+    state.sessionViewerGroup = activeGroupSession.group_name || state.sessionViewerGroup;
+    state.sessionViewerVenue = activeGroupSession.venue || state.sessionViewerVenue;
+  }
+  const contestPrepViewer = state.sessionViewerGroup === contestPrepGroupId;
+  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}" ${state.sessionViewerGroup === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+  const search = state.sessionViewerSearch.toLowerCase().trim();
+  const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
+  const groupRoster = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id));
+  const filteredRoster = groupRoster.filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
+  if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
+    state.sessionViewerOpenAthleteId = "";
+  }
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster);
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
+  const schedules = filteredRoster.map((athlete) => {
+    const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
+      const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
+      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, assignment.progress) };
+    });
+    const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
+    const selectedVenue = state.sessionViewerVenue || dailyVenues(allDaily)[0] || "";
+    const visibleDaily = assignmentsForVenue(allDaily, selectedVenue);
+    const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
+    return { athlete, assignments: allAssignments, allDaily, daily: visibleDaily, venue: selectedVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
+  });
+  if (state.view !== "sessionViewer") return;
+  if (!state.sessionViewerVenue) {
+    const firstVenue = schedules.flatMap((entry) => dailyVenues(entry.allDaily)).find((venue) => venue !== undefined);
+    state.sessionViewerVenue = firstVenue || "";
+    schedules.forEach((entry) => {
+      entry.venue = state.sessionViewerVenue;
+      entry.daily = assignmentsForVenue(entry.allDaily, state.sessionViewerVenue);
+    });
+  }
+  const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
+  const requestedVenue = state.sessionViewerVenue;
+  const requestedVenueKey = venueIdentityKey(requestedVenue);
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
+  const started = Boolean(activeGroupSession);
+  const cards = schedules.length ? schedules.map((entry) => {
+    const { athlete, daily, venue, participant } = entry;
+    const complete = daily.filter(isAssignmentComplete).length;
+    const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
+    const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+    const finish = participant?.daily_finish_seconds ? ` · Finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
+    const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
+    return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
+      <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
+        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete${finish}</small></div></div>
+        <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
+        <div class="viewer-progress"><span style="width:${percent}%"></span></div>
+      </button>
+      ${finishButton}
+      ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
+    </article>`;
+  }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
+  const idleCount = schedules.filter((entry) => !entry.participant?.last_activity_at).length;
+  const availableExtras = started ? roster.filter((athlete) => !activeParticipantIds.has(athlete.id)) : [];
+  const extraOptions = availableExtras.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</option>`).join("");
+  const extraRiderForm = started && availableExtras.length ? `
+    <section class="panel extra-session-rider-panel">
+      <form id="add-session-rider-form" class="trick-form">
+        <div class="field"><label for="session-extra-athlete">One-off extra rider</label><select id="session-extra-athlete" name="athleteId">${extraOptions}</select></div>
+        <button class="secondary-btn" type="submit">Add to this session</button>
+      </form>
+    </section>` : "";
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" type="button" id="viewer-refresh">Refresh</button></div>
+    <section class="panel group-session-control coach-tone-aqua ${activeGroupSession?.status || "ready"}">
+      <div class="group-timer-block"><div class="timer-label">${started ? `${escapeHtml(coachGroupLabel(activeGroupSession.group_name))} · ${escapeHtml(venueLabel(activeGroupSession.venue))}` : "Ready for group session"}</div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? `${escapeHtml(activeGroupSession.status)} · ${schedules.length} riders · ${idleCount} not logged yet` : "Only coach/admin can start, pause, resume or end."}</small></div>
+      <div class="group-session-actions">
+        ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session</button>`}
+      </div>
+    </section>
+    <section class="panel session-viewer-controls coach-tone-blue">
+      <div class="field"><label for="viewer-group">Group/session</label><select id="viewer-group" ${started ? "disabled" : ""}>${groupOptions}</select></div>
+      <div class="field"><label for="viewer-venue">Venue/skate park</label><select id="viewer-venue" ${started ? "disabled" : ""}>${venueOptions}</select></div>
+      <div class="field"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
+    </section>
+    ${extraRiderForm}
+    <section class="session-viewer-layout">
+      <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
+    </section>
+    ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}`;
+  bindSessionViewerActions();
+  updateGroupSessionTimerDom();
+  state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
+  if (!contestPrepViewer && requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
+}
+
+function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
+  const venues = new Set();
+  if (state.sessionViewerVenue) venues.add(state.sessionViewerVenue);
+  schedules.forEach((entry) => entry.allDaily.forEach((assignment) => venues.add(venueKey(assignment.venue))));
+  groupRoster.forEach(() => {});
+  const values = [...venues].filter((venue) => venue !== undefined);
+  if (!values.length) values.push(state.sessionViewerVenue || "");
+  return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.sessionViewerVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+}
+
+function groupSessionElapsedSeconds(session) {
+  if (!session?.started_at) return 0;
+  const pausedBase = Number(session.total_paused_seconds || 0);
+  const pausedNow = session.status === "paused" && session.paused_at ? Math.max(0, Math.floor((Date.now() - new Date(session.paused_at).getTime()) / 1000)) : 0;
+  return Math.max(0, Math.floor((Date.now() - new Date(session.started_at).getTime()) / 1000) - pausedBase - pausedNow);
+}
+
+function updateGroupSessionTimerDom() {
+  const timerElement = document.querySelector("#group-session-timer");
+  if (!timerElement || !timerElement.dataset.startedAt) return;
+  const pseudoSession = {
+    started_at: timerElement.dataset.startedAt,
+    paused_at: timerElement.dataset.pausedAt,
+    total_paused_seconds: Number(timerElement.dataset.pausedSeconds || 0),
+    status: timerElement.dataset.status,
+  };
+  timerElement.textContent = formatTime(groupSessionElapsedSeconds(pseudoSession));
+}
+
+function activeSessionViewerList() {
+  return sessionViewerListTabs.some((tab) => tab.id === state.sessionViewerActiveList) ? state.sessionViewerActiveList : "daily";
+}
+
+function sessionViewerAssignmentsForList(entry, listId) {
+  if (listId === "daily") return assignmentsForVenue(entry.assignments.filter((assignment) => assignment.category === "daily"), entry.venue);
+  return entry.assignments.filter((assignment) => assignment.category === listId);
+}
+
+function sessionViewerPlanList(entry, activeGroupSession) {
+  const activeList = activeSessionViewerList();
+  const tabs = sessionViewerTabsForEntry(entry).map((tab) => {
+    const count = sessionViewerListCount(entry, tab.id);
+    return `<button class="viewer-list-tab ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
+  }).join("");
+  return `<div class="viewer-inline-list">
+    <div class="viewer-list-tabs" role="tablist" aria-label="Rider trick lists">${tabs}</div>
+    ${sessionViewerListContent(entry, activeGroupSession, activeList)}
+  </div>`;
+}
+
+function sessionViewerListCount(entry, listId) {
+  if (listId === "goals") return Array.isArray(entry.athlete.goals) ? entry.athlete.goals.length : 0;
+  if (listId === "contest_run") return sessionViewerActiveRun(entry)?.points?.length || 0;
+  return sessionViewerAssignmentsForList(entry, listId).length;
+}
+
+function sessionViewerListContent(entry, activeGroupSession, listId) {
+  if (listId === "goals") return sessionViewerGoalsList(entry);
+  if (listId === "contest_run") return sessionViewerRunList(entry);
+  const assignments = sessionViewerAssignmentsForList(entry, listId);
+  const complete = assignments.filter(isAssignmentComplete).length;
+  const isPaused = activeGroupSession?.status === "paused";
+  const info = categoryDisplayInfo(listId, entry.athlete);
+  const editor = isCoachRole(state.profile?.role) ? sessionViewerAssignmentEditor(entry, listId, assignments) : "";
+  if (listId === "percentage") {
+    const label = info.label;
+    return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-percentage-list">${percentageAssignmentList(assignments, "No Percentage Tricks assigned.", true)}</div>`;
+  }
+  const list = assignments.length ? assignments.map((assignment) => {
+    const done = isAssignmentComplete(assignment);
+    const attemptCount = assignment.assignmentAttempts?.length || 0;
+    return `<div class="viewer-trick-row viewer-attempt-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}">
+      <button class="assignment-check" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}" data-assignment-category="${assignment.category}" data-athlete-id="${assignment.athlete_id || entry.athlete.id}" aria-label="${done ? "Untick landed" : "Mark landed"}">${done ? "✓" : ""}</button>
+      <button class="attempt-btn ${attemptCount ? "attempted" : ""}" type="button" data-viewer-assignment-attempt="${assignment.id}" data-athlete-id="${assignment.athlete_id || entry.athlete.id}" aria-label="Add one attempt"><span>Attempt</span>${attemptCount ? `<span class="attempt-pill">${attemptCount}</span>` : ""}</button>
+      <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}${attemptCount ? ` · ${attemptCount} attempt${attemptCount === 1 ? "" : "s"}` : ""}</small></span>
+    </div>`;
+  }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
+  const label = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
+  return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-trick-list">${list}</div>`;
+}
+
+function assignmentLinesForEditor(assignments = []) {
+  return assignments.map((assignment) => {
+    const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+    return `${assignment.trick_name}${notes}`;
+  }).join("\n");
+}
+
+function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
+  const info = categoryDisplayInfo(listId, entry.athlete);
+  if (!info) return "";
+  const editLabel = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
+  const helper = listId === "daily"
+    ? `Editing ${venueLabel(entry.venue)} only. One trick per line.`
+    : listId === "percentage"
+      ? "Maximum 3 percentage tricks. One trick per line."
+      : "One trick per line. Add notes after a dash.";
+  return `<details class="viewer-edit-panel">
+    <summary>Edit ${escapeHtml(editLabel)}</summary>
+    <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
+      <div class="field">
+        <label>${escapeHtml(helper)}</label>
+        <textarea name="assignmentLines" rows="${listId === "daily" ? 7 : 5}" placeholder="Add tricks here...">${escapeHtml(assignmentLinesForEditor(assignments))}</textarea>
+      </div>
+      <button class="primary-btn compact-save-btn" type="submit">Save ${escapeHtml(info.label)}</button>
+    </form>
+  </details>`;
+}
+
+function sessionViewerGoalsList(entry) {
+  const goals = Array.isArray(entry.athlete.goals) ? entry.athlete.goals : [];
+  const complete = goals.filter((goal) => goal.completed).length;
+  const list = goals.length ? goals.map((goal, index) => {
+    const done = Boolean(goal.completed);
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" data-viewer-goal-toggle="${escapeHtml(goal.id || "")}" data-goal-index="${index}" data-athlete-id="${entry.athlete.id}">
+      <span class="assignment-check">${done ? "✓" : ""}</span>
+      <span><strong>${escapeHtml(goal.title || "Goal")}</strong><small>${done ? "Completed" : "In progress"} · goals do not affect leaderboard points</small></span>
+    </button>`;
+  }).join("") : `<div class="empty compact-empty">No goals saved for this rider yet.</div>`;
+  return `<div class="panel-meta viewer-list-meta">Goals · ${complete}/${goals.length} complete</div><div class="viewer-trick-list">${list}</div>`;
+}
+
+function sessionViewerActiveRun(entry) {
+  return (entry.runs || []).find((run) => !run.archived_at && Array.isArray(run.points) && run.points.length) || (entry.runs || [])[0] || null;
+}
+
+function sessionViewerRunList(entry) {
+  const run = sessionViewerActiveRun(entry);
+  if (!run) return `<div class="panel-meta viewer-list-meta">Contest Run</div><div class="empty compact-empty">No saved contest run for this rider yet.</div>`;
+  const progressRows = entry.runProgressByPlan?.get(run.id) || [];
+  const completedIndexes = new Set(progressRows.filter((row) => row.completed).map((row) => Number(row.point_index)));
+  const points = Array.isArray(run.points) ? run.points : [];
+  const complete = points.filter((_point, index) => completedIndexes.has(index)).length;
+  const list = points.length ? points.map((point, index) => {
+    const done = completedIndexes.has(index);
+    return `<button class="viewer-trick-row ${done ? "complete" : ""}" type="button" data-viewer-run-toggle="${run.id}" data-athlete-id="${entry.athlete.id}" data-run-point-index="${index}" data-run-completed="${done ? "true" : "false"}">
+      <span class="assignment-check">${done ? "✓" : index + 1}</span>
+      <span><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong><small>${escapeHtml(run.title || "Contest run")} · no leaderboard points</small></span>
+    </button>`;
+  }).join("") : `<div class="empty compact-empty">This run has no tricks saved yet.</div>`;
+  return `<div class="panel-meta viewer-list-meta">${escapeHtml(run.title || "Contest Run")} · ${complete}/${points.length} complete</div><div class="viewer-trick-list">${list}</div>`;
+}
+
+function bindSessionViewerActions() {
+  document.querySelector("#viewer-refresh")?.addEventListener("click", () => renderSessionViewer());
+  document.querySelector("#viewer-group")?.addEventListener("change", (event) => {
+    state.sessionViewerGroup = event.target.value;
+    state.sessionViewerVenue = "";
+    state.sessionViewerOpenAthleteId = "";
+    state.sessionViewerActiveList = "daily";
+    renderSessionViewer();
+  });
+  document.querySelector("#viewer-venue")?.addEventListener("change", (event) => {
+    state.sessionViewerVenue = event.target.value;
+    state.sessionViewerOpenAthleteId = "";
+    state.sessionViewerActiveList = "daily";
+    const currentCard = state.sessionViewerGroup === contestPrepGroupId ? null : document.querySelector("#session-viewer-park-king");
+    if (currentCard) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: true });
+      currentCard.replaceWith(wrapper.firstElementChild);
+    }
+    renderSessionViewer();
+  });
+  document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
+    state.sessionViewerSearch = event.target.value;
+    clearTimeout(state.sessionViewerSearchTimer);
+    state.sessionViewerSearchTimer = setTimeout(() => refreshSessionViewerLight(), 200);
+  });
+  document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
+    refreshSessionViewerLight();
+  }));
+  document.querySelector("#start-group-session")?.addEventListener("click", startViewerGroupSession);
+  document.querySelector("#pause-group-session")?.addEventListener("click", toggleViewerGroupSessionPause);
+  document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
+  document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
+  document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
+  document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
+  document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
+  document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
+  document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
+  document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
+}
+
+async function startViewerGroupSession(event) {
+  const restoreButton = setButtonBusy(event?.currentTarget, "Starting...");
+  try {
+    const roster = await withTimeout(getSessionViewerRoster(), "Load group riders", 15000);
+    const athleteIds = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup)).map((athlete) => athlete.id);
+    if (!athleteIds.length) return notify("No riders in this group yet.", "error");
+    const { data, error } = await withTimeout(client.rpc("start_coach_group_session", {
+      p_group_name: state.sessionViewerGroup,
+      p_venue: state.sessionViewerVenue || "",
+      p_athlete_ids: athleteIds,
+    }), "Start group session", 20000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify(`Group session started for ${result.participant_count || athleteIds.length} riders.`);
+    state.sessionViewerOpenAthleteId = "";
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function addExtraRiderToGroupSession(event) {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button");
+  const restoreButton = setButtonBusy(button, "Adding...");
+  try {
+    const session = await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("Start the group session first.", "error");
+    const athleteId = new FormData(event.currentTarget).get("athleteId");
+    if (!athleteId) return notify("Choose a rider to add.", "error");
+    const { error } = await withTimeout(client.rpc("add_coach_group_session_rider", {
+      p_group_session_id: session.id,
+      p_athlete_id: athleteId,
+    }), "Add rider to session", 15000);
+    if (error) throw error;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify("Rider added to this session only.");
+    state.sessionViewerOpenAthleteId = athleteId;
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function toggleViewerGroupSessionPause(event) {
+  const restoreButton = setButtonBusy(event?.currentTarget, "Updating...");
+  try {
+    const session = await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("No live group session to pause.", "error");
+    const action = session.status === "paused" ? "resume" : "pause";
+    const { error } = await withTimeout(client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: action }), `${action} group session`, 15000);
+    if (error) throw error;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify(action === "pause" ? "Group session paused." : "Group session resumed.");
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function endViewerGroupSession(event) {
+  const restoreButton = setButtonBusy(event?.currentTarget, "Ending...");
+  try {
+    const session = await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("No live group session to end.", "error");
+    const { error } = await withTimeout(client.rpc("update_coach_group_session", { p_group_session_id: session.id, p_action: "end" }), "End group session", 15000);
+    if (error) throw error;
+    clearCoachCaches({ command: true, sessionViewer: true });
+    notify("Group session ended and saved.");
+    state.sessionViewerOpenAthleteId = "";
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function finishViewerDailyTimer(event) {
+  const button = event.currentTarget;
+  const restoreButton = setButtonBusy(button, "Saving...");
+  try {
+    const session = state.sessionViewerActiveSessionCache || await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
+    if (!session) return notify("Start the group session first.", "error");
+    const seconds = groupSessionElapsedSeconds(session);
+    const { data, error } = await withTimeout(client.rpc("finish_group_session_daily", {
+      p_group_session_id: session.id,
+      p_athlete_id: button.dataset.finishDailyAthlete,
+      p_seconds: seconds,
+    }), "Save Daily finish", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    clearCoachCaches({ command: true, sessionViewer: true, leaderboard: true });
+    notify(result?.is_new_pb ? `New Daily PB saved: ${formatPbTime(result.daily_finish_seconds)}` : `Daily finish saved: ${formatPbTime(result?.daily_finish_seconds || seconds)}`);
+    await renderSessionViewer();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function recordViewerAssignmentAction(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const row = button.closest(".viewer-trick-row");
+  const wasComplete = row?.classList.contains("complete");
+  const restoreButton = setButtonBusy(button);
+  row?.classList.toggle("complete", !wasComplete);
+  button.textContent = wasComplete ? "" : "✓";
+  setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
+  try {
+    const isLine = button.dataset.assignmentCategory === "lines";
+    const { data, error } = await withTimeout(client.rpc(isLine ? "record_line_action" : "record_assignment_action_at_venue", isLine ? {
+      p_assignment_id: button.dataset.assignmentId,
+      p_action: button.dataset.viewerAssignmentAction,
+    } : {
+      p_assignment_id: button.dataset.assignmentId,
+      p_action: button.dataset.viewerAssignmentAction,
+      p_venue: state.sessionViewerVenue || "",
+    }), "Update trick progress", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
+    if (athleteId) cacheClear(`schedule:${athleteId}:`);
+    invalidateSessionViewerData();
+    cacheClear("leaderboard");
+    cacheClear("park-king:");
+    const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
+    const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
+    const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
+    notify(`${result?.message || "Trick progress updated"}${pointsNote}${timeNote}.`);
+    await refreshSessionViewerLight({ force: true });
+  } catch (error) {
+    clearPendingAssignmentProgress(button.dataset.assignmentId);
+    row?.classList.toggle("complete", Boolean(wasComplete));
+    button.textContent = wasComplete ? "✓" : "";
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function recordViewerAssignmentAttempt(event) {
+  const button = event.currentTarget;
+  const currentCount = Number(button.querySelector(".attempt-pill")?.textContent || 0);
+  const previousHtml = button.innerHTML;
+  const restoreButton = setButtonBusy(button);
+  button.classList.add("attempted");
+  button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
+  try {
+    const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
+    const { data, error } = await withTimeout(client.rpc("record_assignment_attempt", {
+      p_assignment_id: button.dataset.viewerAssignmentAttempt,
+      p_group_session_id: session?.id || null,
+    }), "Save trick attempt", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
+    if (athleteId) cacheClear(`schedule:${athleteId}:`);
+    invalidateSessionViewerData();
+    notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
+    await refreshSessionViewerLight({ force: true });
+  } catch (error) {
+    button.innerHTML = previousHtml;
+    button.classList.toggle("attempted", currentCount > 0);
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function recordViewerPercentageAttempt(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const restoreButton = setButtonBusy(button);
+  const cycleState = button.dataset.percentageCycle || "";
+  const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
+  const landed = cycleState
+    ? cycleState === "empty"
+    : button.dataset.percentageAction === "true";
+  const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
+  setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
+  try {
+    const { data, error } = await withTimeout(client.rpc("set_percentage_attempt_at_venue", {
+      p_assignment_id: button.dataset.assignmentId,
+      p_attempt_number: attemptNumber,
+      p_landed: clearAttempt ? null : landed,
+      p_venue: state.sessionViewerVenue || "",
+    }), "Save percentage attempt", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
+    if (athleteId) cacheClear(`schedule:${athleteId}:`);
+    invalidateSessionViewerData();
+    cacheClear("leaderboard");
+    cacheClear("park-king:");
+    const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
+    notify(clearAttempt ? `Attempt cleared. New result: ${result?.percentage || 0}%.` : (result?.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result?.attempt_number || attemptNumber} ${actionText}. ${result?.attempts || 0}/10 saved.`));
+    await refreshSessionViewerLight({ force: true });
+  } catch (error) {
+    clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+function selectViewerListTab(event) {
+  state.sessionViewerActiveList = event.currentTarget.dataset.viewerListTab || "daily";
+  refreshSessionViewerLight();
+}
+
+async function saveSessionViewerAssignments(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const athleteId = formElement.dataset.athleteId;
+  const listId = formElement.dataset.viewerAssignmentEditor;
+  const venue = formElement.dataset.venue || "";
+  if (!athleteId || !categoryInfo[listId]) return notify("Could not save that list.", "error");
+  const button = formElement.querySelector("button");
+  const restoreButton = setButtonBusy(button, "Saving...");
+
+  const editedLines = String(new FormData(formElement).get("assignmentLines") || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), index, listId, listId === "daily" ? venue : ""))
+    .filter(Boolean)
+    .slice(0, listId === "percentage" ? 3 : undefined);
+
+  try {
+    const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
+    const info = categoryDisplayInfo(listId, athlete);
+    const athleteWeekStart = weekStartDateForCountry(athlete?.country_code || "AU");
+    const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
+      p_athlete_id: athleteId,
+      p_week_start: athleteWeekStart,
+      p_category: listId,
+      p_venue: listId === "daily" ? venue : "",
+      p_assignments: editedLines,
+    }), `Save ${info.label}`, 20000);
+    if (error) throw error;
+    clearCoachCaches({ roster: false, command: true, sessionViewer: true, leaderboard: false });
+    notify(`${info.label} saved for this rider.`);
+    await refreshSessionViewerLight({ force: true });
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  } finally {
+    restoreButton();
+  }
+}
+
+async function toggleViewerGoal(event) {
+  const button = event.currentTarget;
+  const athleteId = button.dataset.athleteId;
+  const goalIndex = Number(button.dataset.goalIndex);
+  const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getSessionViewerRoster();
+  const athlete = roster.find((entry) => entry.id === athleteId);
+  if (!athlete || !Array.isArray(athlete.goals) || !athlete.goals[goalIndex]) return notify("Could not find that goal.", "error");
+  button.disabled = true;
+  const goals = athlete.goals.map((goal, index) => index === goalIndex ? { ...goal, completed: !goal.completed, completedAt: !goal.completed ? new Date().toISOString() : null } : goal);
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", athleteId).select(PROFILE_SELECT).single();
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  state.sessionViewerRosterCache = roster.map((entry) => entry.id === athleteId ? { ...entry, goals: data.goals || goals } : entry);
+  notify("Goal progress updated.");
+  await refreshSessionViewerLight();
+}
+
+async function toggleViewerRunPoint(event) {
+  const button = event.currentTarget;
+  const completed = button.dataset.runCompleted === "true";
+  const payload = {
+    athlete_id: button.dataset.athleteId,
+    run_plan_id: button.dataset.viewerRunToggle,
+    point_index: Number(button.dataset.runPointIndex),
+    completed: !completed,
+    updated_at: new Date().toISOString(),
+  };
+  button.disabled = true;
+  const { error } = await client.from("run_checklist_progress").upsert(payload, { onConflict: "athlete_id,run_plan_id,point_index" });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  notify("Contest run progress updated.");
+  await refreshSessionViewerLight();
+}
+
+async function refreshSessionViewerLight({ force = false, forceParkKing = false } = {}) {
+  if (state.view !== "sessionViewer") return;
+  const rosterGrid = document.querySelector(".viewer-rider-grid");
+  if (!rosterGrid) return renderSessionViewer();
+  const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
+  const activeGroupSession = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
+  const search = state.sessionViewerSearch.toLowerCase().trim();
+  const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
+  const filteredRoster = roster
+    .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
+    .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, { force });
+  const schedules = filteredRoster.map((athlete) => {
+    const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
+      const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
+      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, assignment.progress) };
+    });
+    const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
+    const daily = assignmentsForVenue(allDaily, state.sessionViewerVenue);
+    const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
+    return { athlete, assignments: allAssignments, allDaily, daily, venue: state.sessionViewerVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
+  });
+  rosterGrid.innerHTML = schedules.length ? schedules.map((entry) => {
+    const { athlete, daily, venue, participant } = entry;
+    const complete = daily.filter(isAssignmentComplete).length;
+    const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
+    const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+    const finish = participant?.daily_finish_seconds ? ` · Finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
+    const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
+    return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
+      <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
+        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete${finish}</small></div></div>
+        <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
+        <div class="viewer-progress"><span style="width:${percent}%"></span></div>
+      </button>
+      ${finishButton}
+      ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
+    </article>`;
+  }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
+  bindSessionViewerFastActions();
+  if (forceParkKing && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true, true);
+}
+
+function bindSessionViewerFastActions() {
+  document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
+    refreshSessionViewerLight();
+  }));
+  document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
+  document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
+  document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
+  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
+  document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
+  document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
+  document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
+  document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
+}
+
+async function saveCoachCalendarEvent(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const startsAt = form.get("startsAt");
+  const endsAt = form.get("endsAt");
+  if (endsAt && new Date(endsAt) < new Date(startsAt)) return notify("Finish date must be after start date.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Adding...";
+  const { error } = await client.from("coach_calendar_events").insert({
+    coach_id: state.user.id,
+    athlete_id: form.get("athleteId") || null,
+    group_name: form.get("groupName") || "",
+    title: String(form.get("title") || "").trim(),
+    starts_at: new Date(startsAt).toISOString(),
+    ends_at: endsAt ? new Date(endsAt).toISOString() : null,
+    venue: String(form.get("venue") || "").trim(),
+    notes: String(form.get("notes") || "").trim(),
+    attendance_status: String(form.get("attendanceStatus") || "").trim(),
+    payment_status: String(form.get("paymentStatus") || "").trim(),
+    event_type: "coach",
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Add event";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Coach calendar event added.");
+  await renderCoachCommand();
+}
+
+async function saveHeatStatus(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const athleteId = event.currentTarget.dataset.heatAthlete;
+  const { error } = await client.from("athlete_coach_status").upsert({
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    heat_status: form.get("heatStatus"),
+    training_focus: String(form.get("trainingFocus") || "").trim(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,athlete_id" });
+  if (error) return notify(messageFrom(error), "error");
+  cacheClear("coach-command:");
+  notify("Rider heat status saved.");
+  await (state.view === "adminRecords" ? renderCoachAdminRecords() : renderCoachCommand());
+}
+
+async function dismissCoachTask(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can remove coach tasks.", "error");
+  const taskKey = event.currentTarget.dataset.dismissTask;
+  if (!taskKey) return;
+  event.currentTarget.disabled = true;
+  const { error } = await client.from("dismissed_coach_tasks").upsert({
+    coach_id: state.user.id,
+    task_key: taskKey,
+    week_start: weekStartDate(),
+    dismissed_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,task_key,week_start" });
+  if (error) {
+    event.currentTarget.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  cacheClear("coach-command:");
+  notify("Removed from this week's to do list.");
+  await renderCoachCommand();
+}
+
+async function saveWeeklyNotificationSettings(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can manage weekly notifications.", "error");
+  const form = new FormData(event.currentTarget);
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  const { error } = await client.from("weekly_progress_notification_settings").upsert({
+    coach_id: state.user.id,
+    enabled: form.get("enabled") === "on",
+    parent_summaries_enabled: form.get("parentSummaries") === "on",
+    online_rider_summaries_enabled: form.get("onlineSummaries") === "on",
+    inactive_rider_summaries_enabled: form.get("inactiveSummaries") === "on",
+    send_day: 0,
+    send_time: "19:30",
+    timezone: "Australia/Brisbane",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id" });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Save notification settings";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Weekly notification settings saved.");
+  await renderCoachCommand();
+}
+
+async function generateWeeklyNotificationPreviews(roster = [], commandData = {}) {
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can preview weekly summaries.", "error");
+  const settings = commandData.weeklySettings || {};
+  if (settings.enabled === false) return notify("Weekly summaries are turned off. Turn them on first.", "error");
+  const button = document.querySelector("#generate-weekly-previews");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Creating previews...";
+  }
+  const weekStart = weekStartDate();
+  const weekEnd = new Date(new Date(weekStartIso()).getTime() + (6 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+  const parentLinksByAthlete = (commandData.parentLinks || []).reduce((map, link) => {
+    const rows = map.get(link.athlete_id) || [];
+    rows.push(link);
+    map.set(link.athlete_id, rows);
+    return map;
+  }, new Map());
+  const statuses = statusByAthlete(commandData.statuses || []);
+  const rows = [];
+  roster.forEach((athlete) => {
+    const sessions = (commandData.sessions || []).filter((session) => session.athlete_id === athlete.id);
+    const awards = (commandData.awards || []).filter((award) => award.athlete_id === athlete.id);
+    const assignments = (commandData.scheduleRows || []).filter((assignment) => assignment.athlete_id === athlete.id);
+    const attempts = (commandData.assignmentAttempts || []).filter((attempt) => attempt.athlete_id === athlete.id);
+    const attemptRows = [...attemptsByTrick(attempts).values()].sort((a, b) => b.count - a.count).slice(0, 5);
+    const attemptSummary = attemptRows.length ? ` Attempted this week: ${attemptRows.map((row) => `${row.title} (${row.count})`).join(", ")}.` : "";
+    const venues = [...new Set(sessions.map((session) => session.venue).filter(Boolean))];
+    const status = statuses.get(athlete.id)?.heat_status || "on_track";
+    const statusLabel = heatStatuses[status]?.label || "On track";
+    const dailyAwards = awards.filter(isDailyCompletionAward).length;
+    const oneBangAwards = awards.filter((award) => award.award_key?.includes("one")).length;
+    const dialledAwards = awards.filter((award) => award.award_key?.includes("dial")).length;
+    const goalsCompleted = Array.isArray(athlete.goals) ? athlete.goals.filter((goal) => goal.completed).length : 0;
+    const badgesEarned = Array.isArray(athlete.badges) ? athlete.badges.length : 0;
+    const pointsEarned = awards.reduce((sum, award) => sum + Number(award.points || 0), 0);
+    const weeklyTasks = assignments.filter((assignment) => assignment.category !== "daily").length;
+    const dailyTimes = sessions.map((session) => Number(session.daily_completed_seconds || 0)).filter(Boolean);
+    const latestDailyTime = dailyTimes[0] || null;
+    const summary = sessions.length
+      ? `${firstName(athlete)} logged ${sessions.length} session${sessions.length === 1 ? "" : "s"}${venues.length ? ` at ${venues.join(", ")}` : ""}, completed ${dailyAwards} Daily Trick list${dailyAwards === 1 ? "" : "s"}, ${oneBangAwards} One Bangs, ${dialledAwards} Dialled tricks, ${goalsCompleted} goal${goalsCompleted === 1 ? "" : "s"}, and earned ${pointsEarned} points.${attemptSummary} Daily PB: ${formatPbTime(athlete.daily_pb_seconds)}${latestDailyTime ? `, latest Daily time: ${formatPbTime(latestDailyTime)}` : ""}. Status: ${statusLabel}. Next focus: ${statuses.get(athlete.id)?.training_focus || "keep building consistency and flow."}`
+      : `${firstName(athlete)} has no training data recorded this week.${attemptSummary} Daily PB: ${formatPbTime(athlete.daily_pb_seconds)}. Status: ${statusLabel}. Suggested next focus: get one clean session logged and complete the Daily Tricks list.`;
+    const base = {
+      coach_id: state.user.id,
+      athlete_id: athlete.id,
+      week_start: weekStart,
+      week_end: weekEnd,
+      title: `${firstName(athlete)}'s Weekly BMX Training Update`,
+      summary,
+      status: "preview",
+      stats: {
+        sessions: sessions.length,
+        venues,
+        daily_lists_completed: dailyAwards,
+        attempted_tricks: attemptRows,
+        attempt_count: attempts.length,
+        daily_pb_seconds: athlete.daily_pb_seconds || null,
+        latest_daily_completed_seconds: latestDailyTime,
+        daily_tricks_completed: awards.filter((award) => award.award_key?.startsWith("daily-trick:")).length,
+        one_bangs_completed: oneBangAwards,
+        dialled_completed: dialledAwards,
+        goals_completed: goalsCompleted,
+        badges_earned: badgesEarned,
+        weekly_tasks_assigned: weeklyTasks,
+        points_earned: pointsEarned,
+        heat_status: status,
+      },
+      coach_notes: statuses.get(athlete.id)?.coach_alert || "",
+    };
+    if (settings.parent_summaries_enabled !== false) {
+      (parentLinksByAthlete.get(athlete.id) || []).forEach((link) => rows.push({ ...base, recipient_type: "parent", recipient_id: link.parent_id }));
+    }
+    if (settings.online_rider_summaries_enabled !== false && (athlete.groupNames || [athlete.groupName]).includes("online")) {
+      rows.push({ ...base, recipient_type: "rider", recipient_id: athlete.id });
+    }
+    if (settings.inactive_rider_summaries_enabled && !parentLinksByAthlete.get(athlete.id)?.length && !(athlete.groupNames || [athlete.groupName]).includes("online")) {
+      rows.push({ ...base, recipient_type: "coach_preview", recipient_id: state.user.id });
+    }
+  });
+  if (!rows.length) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Preview this week's summaries";
+    }
+    return notify("No linked parents or online riders need weekly summaries yet.", "error");
+  }
+  const { error } = await client.from("weekly_progress_notifications").upsert(rows, {
+    onConflict: "athlete_id,recipient_type,recipient_id,week_start",
+  });
+  if (error) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Preview this week's summaries";
+    }
+    return notify(messageFrom(error), "error");
+  }
+  notify(`Created ${rows.length} weekly summary preview${rows.length === 1 ? "" : "s"}.`);
+  await renderCoachCommand();
+}
+
+async function saveAttendanceSession(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const rows = [];
+  [...form.entries()].forEach(([key, value]) => {
+    if (!key.startsWith("status:") || !value) return;
+    const athleteId = key.slice("status:".length);
+    rows.push({
+      coach_id: state.user.id,
+      athlete_id: athleteId,
+      status: value,
+      reimbursement_owed: form.get(`owed:${athleteId}`) === "on",
+      reimbursement_paid: form.get(`paid:${athleteId}`) === "on",
+    });
+  });
+  if (!rows.length) return notify("Choose at least one rider attendance status.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  const { data: session, error } = await client.from("attendance_sessions").insert({
+    coach_id: state.user.id,
+    session_date: form.get("sessionDate"),
+    venue: String(form.get("venue") || "").trim(),
+    group_name: form.get("groupName"),
+    notes: String(form.get("notes") || "").trim(),
+    total_entry_cost: Number(form.get("totalEntryCost") || 0),
+    cost_per_rider: Number(form.get("costPerRider") || 0),
+  }).select().single();
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Save attendance & reimbursements";
+    return notify(messageFrom(error), "error");
+  }
+  const { error: recordError } = await client.from("attendance_records").insert(rows.map((row) => ({ ...row, attendance_session_id: session.id })));
+  if (recordError) return notify(messageFrom(recordError), "error");
+  notify("Attendance and reimbursement tracker saved.");
+  await (state.view === "adminRecords" ? renderCoachAdminRecords() : renderCoachCommand());
+}
+
+function privateRecordForm(record = {}) {
+  return `<form id="private-record-form" class="private-record-form">
+    <div class="two-col-form">
+      <div class="field"><label for="emergency-name">Emergency contact name</label><input id="emergency-name" name="emergencyContactName" value="${escapeHtml(record.emergency_contact_name || "")}" placeholder="Parent / guardian"></div>
+      <div class="field"><label for="emergency-phone">Emergency contact phone</label><input id="emergency-phone" name="emergencyContactPhone" value="${escapeHtml(record.emergency_contact_phone || "")}" placeholder="Phone number"></div>
+      <div class="field"><label for="guardian-details">Parent / guardian details</label><textarea id="guardian-details" name="guardianDetails" placeholder="Names, emails, extra contacts...">${escapeHtml(record.guardian_details || "")}</textarea></div>
+      <div class="field"><label for="medical-notes">Medical notes</label><textarea id="medical-notes" name="medicalNotes" placeholder="Allergies, conditions, medication...">${escapeHtml(record.medical_notes || "")}</textarea></div>
+      <div class="field"><label for="injury-notes">Injury / modified training notes</label><textarea id="injury-notes" name="injuryNotes" placeholder="Current injuries or modified training...">${escapeHtml(record.injury_notes || "")}</textarea></div>
+      <div class="field"><label for="waiver-notes">Waivers / permission notes</label><textarea id="waiver-notes" name="waiverNotes" placeholder="Waiver status, permission forms, reminders...">${escapeHtml(record.waiver_notes || "")}</textarea></div>
+    </div>
+    <button class="primary-btn wide" type="submit">Save private rider record</button>
+  </form>`;
+}
+
+function documentsHtml(documents = []) {
+  if (!documents.length) return `<div class="empty compact-empty">No waivers, forms or documents uploaded yet.</div>`;
+  return documents.map((doc) => `<div class="list-row"><div><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.document_type)} · ${escapeHtml(doc.file_name || "Saved file")} · ${dateLabel(doc.created_at)}${doc.notes ? ` · ${escapeHtml(doc.notes)}` : ""}</small></div><a class="secondary-btn compact-btn" href="${escapeHtml(doc.file_data_url)}" target="_blank" rel="noopener">Open</a></div>`).join("");
+}
+
+function documentUploadForm() {
+  return `<form id="document-form" class="coach-document-form">
+    <div class="field"><label for="document-title">Document title</label><input id="document-title" name="title" required placeholder="Signed waiver, permission form..."></div>
+    <div class="field"><label for="document-type">Type</label><select id="document-type" name="documentType"><option value="waiver">Waiver</option><option value="permission">Permission form</option><option value="medical">Medical form</option><option value="other">Other</option></select></div>
+    <div class="field"><label for="document-file">Upload PDF / image</label><input id="document-file" name="file" type="file" accept="application/pdf,image/*" required></div>
+    <div class="field"><label for="document-notes">Notes</label><input id="document-notes" name="notes" placeholder="Optional"></div>
+    <button class="primary-btn" type="submit">Save file</button>
+  </form>`;
+}
+
+function injuryReportsHtml(injuries = []) {
+  if (!injuries.length) return `<div class="empty compact-empty">No injury reports saved.</div>`;
+  return injuries.map((report) => `<article class="help-card"><div class="help-card-head"><div><strong>${escapeHtml(report.body_area || "Injury report")}</strong><small>${dateLabel(report.injured_at)} · ${escapeHtml(report.venue || "Venue not set")} · ${escapeHtml(report.severity || "Severity not set")}</small></div></div><p>${escapeHtml(report.what_happened || "No details added.")}</p><small>${report.guardian_contacted ? "Parent/guardian contacted" : "Parent/guardian not marked as contacted"} · Follow-up: ${escapeHtml(report.follow_up || "None added")}</small>${report.photo_data_url ? `<div class="video-actions"><a class="secondary-btn compact-btn" href="${escapeHtml(report.photo_data_url)}" target="_blank" rel="noopener">Open photo</a></div>` : ""}</article>`).join("");
+}
+
+function injuryReportForm(athlete = {}) {
+  return `<form id="injury-form" class="injury-form">
+    <div class="two-col-form">
+      <div class="field"><label for="injury-time">Date / time</label><input id="injury-time" name="injuredAt" type="datetime-local" required></div>
+      <div class="field"><label for="injury-venue">Venue</label><input id="injury-venue" name="venue" placeholder="Skate park"></div>
+      <div class="field"><label for="body-area">Body area</label><input id="body-area" name="bodyArea" placeholder="Wrist, ankle, shoulder..."></div>
+      <div class="field"><label for="severity">Severity</label><select id="severity" name="severity"><option value="minor">Minor</option><option value="moderate">Moderate</option><option value="serious">Serious</option></select></div>
+      <div class="field"><label for="what-happened">What happened</label><textarea id="what-happened" name="whatHappened" placeholder="${escapeHtml(firstName(athlete))} fell attempting..."></textarea></div>
+      <div class="field"><label for="first-aid">First aid given</label><textarea id="first-aid" name="firstAid" placeholder="Ice, rest, parent called..."></textarea></div>
+      <div class="field"><label for="witnesses">Who was present</label><input id="witnesses" name="witnesses" placeholder="Coach, riders, parent..."></div>
+      <div class="field"><label for="follow-up">Follow-up action</label><input id="follow-up" name="followUp" placeholder="Monitor, doctor, modified training..."></div>
+      <div class="field"><label for="injury-photo">Optional photo</label><input id="injury-photo" name="photo" type="file" accept="image/*"></div>
+      <label class="checkline"><input name="guardianContacted" type="checkbox"> Parent / guardian contacted</label>
+    </div>
+    <div class="field"><label for="injury-coach-notes">Coach notes</label><textarea id="injury-coach-notes" name="coachNotes" placeholder="Private coach notes..."></textarea></div>
+    <button class="danger-btn wide" type="submit">Save injury report</button>
+  </form>`;
+}
+
+function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance = []) {
+  return `<section class="panel parent-update-panel"><div class="panel-head"><div><div class="panel-title">Parent update button</div><div class="panel-meta">Generate, edit, then copy a parent message</div></div></div>
+    <div class="two-col-form">
+      <div class="field"><label for="parent-update-type">Message type</label><select id="parent-update-type"><option value="positive">Positive update</option><option value="progress">Progress update</option><option value="injury">Injury update</option><option value="behaviour">Behaviour update</option><option value="reminder">Reminder message</option><option value="term">Term report message</option></select></div>
+      <div class="field"><label for="parent-next-focus">Next focus</label><input id="parent-next-focus" placeholder="Keeping speed through the park"></div>
+    </div>
+    <textarea id="parent-update-draft" class="parent-update-draft" placeholder="Generate a message, then edit it here..."></textarea>
+    <div class="actions"><button class="primary-btn" id="generate-parent-update" type="button" data-athlete-name="${escapeHtml(athlete.display_name)}" data-completed="${schedule.assignments.filter(isAssignmentComplete).length}" data-total="${schedule.assignments.length}" data-attendance="${attendance[0]?.status || ""}">Generate update</button><button class="secondary-btn" id="copy-parent-update" type="button">Copy message</button></div>
+  </section>`;
+}
+
+function runPointColor(pointNumber) {
+  if (pointNumber >= 15) return "#ff4567";
+  if (pointNumber >= 10) return "#25f68c";
+  if (pointNumber >= 5) return "#f7d154";
+  return "#39a7ff";
+}
+
+function runPathBetween(previous, point) {
+  const dx = point.x - previous.x;
+  const dy = point.y - previous.y;
+  const bend = Math.max(4, Math.min(12, Math.hypot(dx, dy) * 0.18));
+  const normalX = dy === 0 ? 0 : -dy / Math.hypot(dx, dy);
+  const normalY = dx === 0 ? 0 : dx / Math.hypot(dx, dy);
+  const c1x = previous.x + dx * 0.35 + normalX * bend;
+  const c1y = previous.y + dy * 0.35 + normalY * bend;
+  const c2x = previous.x + dx * 0.7 + normalX * bend;
+  const c2y = previous.y + dy * 0.7 + normalY * bend;
+  return `M ${previous.x} ${previous.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${point.x} ${point.y}`;
+}
+
+function runRouteSvg(points = []) {
+  const safePoints = Array.isArray(points) ? points : [];
+  if (safePoints.length < 2) return "";
+  const lines = safePoints.slice(1).map((point, index) => {
+    const previous = safePoints[index];
+    const pointNumber = index + 2;
+    return `<path data-run-segment="${pointNumber}" d="${runPathBetween(previous, point)}" stroke="${runPointColor(pointNumber)}" />`;
+  }).join("");
+  return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
+}
+
+function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable = false) {
+  if (!imageDataUrl) return "";
+  const safePoints = Array.isArray(points) ? points : [];
+  const markers = safePoints.map((point, index) => {
+    const pointNumber = index + 1;
+    return `<button type="button" class="run-marker" ${editable ? `data-run-point-index="${index}"` : ""} style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
+  }).join("");
+  return `<div class="run-map-preview"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}</div>`;
+}
+
+function canEditRun(run = {}) {
+  if (isCoachRole(state.profile?.role)) return run.coach_id === state.user.id;
+  return run.created_by === state.user?.id;
+}
+
+function runBuilderRefreshView() {
+  if (isCoachRole(state.profile?.role) && state.view === "student") return renderStudentProfile();
+  if (state.view === "contests") return renderContests();
+  return renderProfile();
+}
+
+function runPlansHtml(runs = []) {
+  if (!runs.length) return `<div class="empty compact-empty">No saved run plans yet.</div>`;
+  const activeRuns = runs.filter((run) => !run.archived_at);
+  const archivedRuns = runs.filter((run) => run.archived_at);
+  const card = (run) => `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}<button class="secondary-btn compact-btn" type="button" data-play-run="${run.id}">Slow playback</button></div></article>`;
+  return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
+}
+
+function runBuilderPanel(runs = [], options = {}) {
+  const builder = state.runBuilder || { points: [] };
+  const points = builder.points || [];
+  const submitLabel = builder.id ? "Save run changes" : "Save run plan";
+  const body = `<form id="run-builder-form" class="run-builder-form">
+      <div class="two-col-form">
+        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Competition run, safe line..."></div>
+        <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" value="${escapeHtml(builder.venue || "")}" placeholder="Pizzey, Beenleigh..."></div>
+        <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training" ${builder.planType === "training" ? "selected" : ""}>Training line</option><option value="competition" ${builder.planType === "competition" ? "selected" : ""}>Competition run</option><option value="safe" ${builder.planType === "safe" ? "selected" : ""}>Safe run</option><option value="high-risk" ${builder.planType === "high-risk" ? "selected" : ""}>High-risk run</option><option value="best-trick" ${builder.planType === "best-trick" ? "selected" : ""}>Best trick plan</option></select></div>
+        <div class="field"><label for="run-photo">Park/course photo</label><input id="run-photo" name="photo" type="file" accept="image/*"></div>
+      </div>
+      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map", true) : "Upload a photo, then tap the image to add start/trick points."}</div>
+      <div class="run-builder-actions">${points.length ? `<button class="secondary-btn compact-btn" type="button" id="play-run-builder">Watch slow playback</button>` : ""}<span class="panel-meta">Drag numbers to move them. Edit labels below.</span></div>
+      <div class="run-point-list editable-run-points">${points.length ? points.map((point, index) => `<div class="run-point-editor"><span class="public-badge" style="--run-color:${runPointColor(index + 1)}">${index + 1}</span><input value="${escapeHtml(point.label || "")}" data-run-label="${index}" aria-label="Point ${index + 1} label"><button class="secondary-btn compact-btn" type="button" data-run-up="${index}">↑</button><button class="secondary-btn compact-btn" type="button" data-run-down="${index}">↓</button><button class="danger-btn compact-btn" type="button" data-run-delete="${index}">Delete</button></div>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
+      <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
+      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">${submitLabel}</button></div>
+    </form>
+    <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`;
+  if (options.collapsed) {
+    return closedPanelAccordion("Visual run builder", "Upload a park photo, tap points, name each trick, then save", body, "run-builder-panel");
+  }
+  return `<section class="panel"><div class="panel-head"><div><div class="panel-title">Visual run builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, then save</div></div></div>
+    ${body}
+  </section>`;
+}
+
+async function getSessionViewerRoster() {
+  const cacheKey = `session-viewer-roster:${state.user.id}`;
+  const cached = cacheGet(cacheKey, 30000);
+  if (cached) {
+    state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
+    return cached;
+  }
+
+  const { data: links, error } = await client.from("coach_athletes")
+    .select("athlete_id,group_name")
+    .eq("coach_id", state.user.id);
+  if (error) throw error;
+  const ids = [...new Set((links || []).map((link) => link.athlete_id).filter(Boolean))];
+  if (!ids.length) {
+    state.coachRosterIds = new Set();
+    return cacheSet(cacheKey, []);
+  }
+
+  const [{ data: athletes, error: athleteError }, { data: groupLinks, error: groupError }] = await Promise.all([
+    client.from("profiles").select("id,display_name,avatar,country_code").in("id", ids).order("display_name"),
+    client.from("coach_athlete_groups").select("athlete_id,group_name,membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
+  ]);
+  if (athleteError) throw athleteError;
+  if (groupError) throw groupError;
+
+  const primaryGroupByAthlete = new Map((links || []).map((link) => [link.athlete_id, link.group_name || "monday"]));
+  const groupsByAthlete = (groupLinks || []).reduce((map, link) => {
+    const groups = map.get(link.athlete_id) || [];
+    if (!groups.includes(link.group_name)) groups.push(link.group_name);
+    map.set(link.athlete_id, groups);
+    return map;
+  }, new Map());
+  const roster = (athletes || []).map((athlete) => {
+    const groupNames = groupsByAthlete.get(athlete.id) || [primaryGroupByAthlete.get(athlete.id) || "monday"];
+    return { ...athlete, groupName: groupNames[0] || "monday", groupNames };
+  });
+  state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
+  return cacheSet(cacheKey, roster);
+}
+
+async function getCoachRoster() {
+  const cacheKey = `roster:${state.user.id}`;
+  const cached = cacheGet(cacheKey, 10000);
+  if (cached) {
+    state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
+    return cached;
+  }
+  const { data: links, error } = await client.from("coach_athletes").select("athlete_id, group_name").eq("coach_id", state.user.id);
+  if (error) throw error;
+  const ids = links.map((link) => link.athlete_id);
+  if (!ids.length) {
+    state.coachRosterIds = new Set();
+    return cacheSet(cacheKey, []);
+  }
+  const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
+    client.from("profiles").select(PROFILE_SELECT).in("id", ids).order("display_name"),
+    client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
+    client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
+  ]);
+  if (athleteError) throw athleteError;
+  if (sessionError) throw sessionError;
+  if (groupError) throw groupError;
+  const groupByAthlete = new Map(links.map((link) => [link.athlete_id, link.group_name || "monday"]));
+  const groupsByAthlete = (groupLinks || []).reduce((map, link) => {
+    const groups = map.get(link.athlete_id) || [];
+    if (!groups.includes(link.group_name)) groups.push(link.group_name);
+    map.set(link.athlete_id, groups);
+    return map;
+  }, new Map());
+  const roster = athletes.map((athlete) => {
+    const athleteSessions = sessions.filter((session) => session.athlete_id === athlete.id);
+    const groupNames = groupsByAthlete.get(athlete.id) || [groupByAthlete.get(athlete.id) || "monday"];
+    return { ...athlete, groupName: groupNames[0] || "monday", groupNames, weeklyPoints: athleteSessions.reduce((sum, session) => sum + session.total_points, 0), sessionCount: athleteSessions.length };
+  });
+  state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
+  return cacheSet(cacheKey, roster);
+}
+
+async function getCoachLiveActivity(roster = []) {
+  if (!isCoachRole(state.profile?.role) || !roster.length) return [];
+  const athleteIds = roster.map((athlete) => athlete.id).filter(Boolean);
+  const cacheKey = `coach-live:${athleteIds.slice().sort().join(",")}`;
+  const cached = cacheGet(cacheKey, 7000);
+  if (cached) return cached;
+  const athleteById = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  const [{ data: awards, error: awardsError }, { data: sessions, error: sessionsError }] = await Promise.all([
+    client.from("assignment_point_awards")
+      .select("id, athlete_id, assignment_id, award_key, points, created_at")
+      .in("athlete_id", athleteIds)
+      .order("created_at", { ascending: false })
+      .limit(18),
+    client.from("training_sessions")
+      .select("id, athlete_id, daily_completed_seconds, daily_completed_at")
+      .in("athlete_id", athleteIds)
+      .not("daily_completed_at", "is", null)
+      .order("daily_completed_at", { ascending: false })
+      .limit(10),
+  ]);
+  if (awardsError) console.warn("Coach live awards failed", awardsError);
+  if (sessionsError) console.warn("Coach live sessions failed", sessionsError);
+
+  const assignmentIds = [...new Set((awards || []).map((award) => award.assignment_id).filter(Boolean))];
+  let assignmentById = new Map();
+  if (assignmentIds.length) {
+    const { data: assignments, error: assignmentsError } = await client.from("weekly_trick_assignments").select("id, category, trick_name, venue").in("id", assignmentIds);
+    if (assignmentsError) console.warn("Coach live assignment labels failed", assignmentsError);
+    assignmentById = new Map((assignments || []).map((assignment) => [assignment.id, assignment]));
+  }
+
+  const pointItems = (awards || []).map((award) => {
+    const athlete = athleteById.get(award.athlete_id);
+    const assignment = assignmentById.get(award.assignment_id) || {};
+    const name = firstName(athlete || {});
+    const category = assignment.category || "";
+    const points = Number(award.points || 0);
+    let text = points > 0 ? `${name} earned +${points} points` : `${name} had ${points} points adjusted`;
+    if (isDailyUnder20Award(award)) text = `${name} completed Daily Tricks under 20 minutes${points ? ` · +${points}` : ""}`;
+    else if (isDailyCompletionAward(award)) text = `${name} completed Daily Tricks${points ? ` · +${points}` : ""}`;
+    else if (award.award_key?.startsWith("group-first-finish:")) text = `${name} finished Daily Tricks first in group · +${points}`;
+    else if (category === "one_bang") text = `${name} earned +${points} from One Bangs${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
+    else if (category === "dialled") text = `${name} completed Dialled${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
+    else if (category === "percentage") text = `${name} earned +${points} from Percentage Tricks${assignment.trick_name ? ` · ${assignment.trick_name}` : ""}`;
+    else if (category === "bonus") text = `${name} landed ${assignment.trick_name || "a bonus trick"} · +${points}`;
+    return { id: `award-${award.id}`, text, at: award.created_at, type: category || "points" };
+  });
+
+  const sessionItems = (sessions || []).map((session) => {
+    const athlete = athleteById.get(session.athlete_id);
+    const seconds = Number(session.daily_completed_seconds || 0);
+    return {
+      id: `daily-${session.id}`,
+      text: `${firstName(athlete || {})} finished Daily Tricks${seconds ? ` in ${formatPbTime(seconds)}` : ""}`,
+      at: session.daily_completed_at,
+      type: "daily",
+    };
+  });
+
+  return cacheSet(cacheKey, [...pointItems, ...sessionItems]
+    .filter((item) => item.at)
+    .sort((a, b) => new Date(b.at) - new Date(a.at))
+    .slice(0, 24));
+}
+
+function coachLiveRowsHtml(items = [], emptyText = "Live rider activity will show here.") {
+  return items.length ? items.map((item) => `
+    <div class="coach-live-row activity-${escapeHtml(item.type || "progress")}">
+      <span class="live-dot"></span>
+      <div><strong>${escapeHtml(item.text)}</strong><small>${dateLabel(item.at)}</small></div>
+    </div>`).join("") : `<div class="empty compact-empty">${escapeHtml(emptyText)}</div>`;
+}
+
+function coachLiveActivityHtml(items = []) {
+  const previewItems = items.slice(0, 3);
+  const remainingItems = items.slice(3);
+  return `<article class="coach-live-card coach-tone-aqua">
+    <div class="coach-live-head"><div><div class="stat-label">Live feed</div><strong>Coach activity</strong></div><span>${items.length ? `${items.length} live` : "Live"}</span></div>
+    <div class="coach-live-list coach-live-preview">${coachLiveRowsHtml(previewItems)}</div>
+    ${remainingItems.length ? `<details class="coach-live-more"><summary>View more notifications <span>${remainingItems.length} more</span></summary><div class="coach-live-list">${coachLiveRowsHtml(remainingItems, "")}</div></details>` : ""}
+  </article>`;
+}
+
+function bindDailyVenuePicker() {
+  document.querySelector("#daily-venue-select")?.addEventListener("change", (event) => {
+    const selectedIndex = event.currentTarget.value;
+    const selectedPanel = document.querySelector(`[data-venue-panel="${selectedIndex}"]`);
+    state.coachPlanVenue = selectedPanel?.querySelector(`[name="dailyVenueName:${selectedIndex}"]`)?.value || "";
+    document.querySelectorAll("[data-venue-panel]").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.venuePanel === selectedIndex);
+    });
+  });
+}
+
+async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const { data, error } = await client.from("weekly_assignment_plans")
+    .select("*")
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .eq("target_week_start", targetWeekStart)
+    .in("status", plannerEditableStatuses)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  const rows = data || [];
+  const scheduled = rows.filter((row) => row.status === "scheduled_next_week");
+  if (scheduled.length) return scheduled;
+  const published = rows.filter((row) => row.status === "published");
+  if (published.length) return published;
+  const draft = rows.filter((row) => row.status === "draft_next_week");
+  if (draft.length) return draft;
+  return rows.filter((row) => row.status === "draft");
+}
+
+async function getRecoverablePlannerDraft(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const currentWeekStart = weekStartDate();
+  if (currentWeekStart === targetWeekStart) return [];
+  const { data, error } = await client.from("weekly_assignment_plans")
+    .select("*")
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .eq("target_week_start", currentWeekStart)
+    .in("status", ["draft", "draft_next_week"])
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data || [])
+    .filter((assignment) => categoryInfo[assignment.category])
+    .map((assignment, index) => ({
+      ...assignment,
+      id: `recover-${assignment.id}`,
+      status: "draft_next_week",
+      target_week_start: targetWeekStart,
+      recovered_from_week_start: assignment.target_week_start,
+      sort_order: Number.isFinite(Number(assignment.sort_order)) ? Number(assignment.sort_order) : index,
+    }));
+}
+
+async function ensurePlannerDraft(athleteId, targetWeekStart = nextWeekStartDate()) {
+  try {
+    const { error } = await client.rpc("ensure_weekly_assignment_draft", {
+      p_athlete_id: athleteId,
+      p_target_week_start: targetWeekStart,
+    });
+    if (error) throw error;
+  } catch (error) {
+    // Keep the planner usable if the database migration has not reached the live project yet.
+    if (String(error?.message || error).toLowerCase().includes("ensure_weekly_assignment_draft")) return;
+    throw error;
+  }
+}
+
+function assignmentDraftKey(assignment = {}) {
+  return [
+    assignment.category || "daily",
+    assignment.category === "daily" ? venueKey(assignment.venue).toLowerCase() : "",
+    String(assignment.trick_name || "").trim().toLowerCase(),
+  ].join("|");
+}
+
+function completedKeysFromPlannerSource(assignments = [], progressRows = [], attemptRows = []) {
+  const byAssignmentId = new Map(assignments.map((assignment) => [assignment.id, assignment]));
+  const completedIds = new Set();
+  (progressRows || []).forEach((progress) => {
+    if (progress?.completed_at) completedIds.add(progress.assignment_id);
+  });
+  (attemptRows || []).forEach((attempt) => {
+    if (attempt?.assignment_id) completedIds.add(attempt.assignment_id);
+  });
+  const completedKeys = new Set();
+  completedIds.forEach((assignmentId) => {
+    const assignment = byAssignmentId.get(assignmentId);
+    if (assignment) completedKeys.add(assignmentDraftKey(assignment));
+  });
+  return completedKeys;
+}
+
+function withPlannerCompletionFlags(assignments = [], completedKeys = new Set()) {
+  return assignments.map((assignment) => ({
+    ...assignment,
+    completed_this_week: completedKeys.has(assignmentDraftKey(assignment)),
+  }));
+}
+
+function plannerCompletedStrip(assignments = [], show = false) {
+  if (!show) return "";
+  const completed = (assignments || []).filter((assignment) => assignment.completed_this_week);
+  if (!completed.length) {
+    return `<div class="planner-completed-strip empty">No completed tricks in this section yet this week.</div>`;
+  }
+  return `<div class="planner-completed-strip">
+    <strong>Completed this week</strong>
+    <div class="planner-completed-chips">${completed.map((assignment) => `<span class="planner-completed-chip">${escapeHtml(assignment.trick_name)}</span>`).join("")}</div>
+  </div>`;
+}
+
+async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const cacheKey = `planner-template:${athleteId}:${targetWeekStart}`;
+  const cached = cacheGet(cacheKey, 20000);
+  if (cached) return cached;
+  const currentWeek = weekStartDate();
+  const { data: currentRows, error: currentError } = await client.from("weekly_trick_assignments")
+    .select("*")
+    .eq("athlete_id", athleteId)
+    .eq("week_start", currentWeek)
+    .order("sort_order", { ascending: true })
+    .limit(300);
+  if (currentError) throw currentError;
+  let rows = (currentRows || []).filter((assignment) => categoryInfo[assignment.category]);
+  let completedKeys = new Set();
+
+  if (rows.length) {
+    const assignmentIds = rows.map((assignment) => assignment.id);
+    const [progressResult, attemptsResult] = await Promise.all([
+      client.from("assignment_progress").select("assignment_id, completed_at, progress_date").in("assignment_id", assignmentIds),
+      client.from("assignment_attempts").select("assignment_id").eq("athlete_id", athleteId).eq("week_start", currentWeek).in("assignment_id", assignmentIds),
+    ]);
+    if (progressResult.error) throw progressResult.error;
+    if (attemptsResult.error) throw attemptsResult.error;
+    completedKeys = completedKeysFromPlannerSource(rows, progressResult.data || [], attemptsResult.data || []);
+  } else {
+    const { data, error } = await client.from("weekly_trick_assignments")
+      .select("*")
+      .eq("athlete_id", athleteId)
+      .lt("week_start", targetWeekStart)
+      .order("week_start", { ascending: false })
+      .order("sort_order", { ascending: true })
+      .limit(300);
+    if (error) throw error;
+    rows = (data || []).filter((assignment) => categoryInfo[assignment.category]);
+  }
+
+  if (!rows.length) return cacheSet(cacheKey, { assignments: [], completedKeys: [] });
+  const latestWeekStart = rows[0].week_start;
+  const assignments = rows
+    .filter((assignment) => assignment.week_start === latestWeekStart)
+    .map((assignment, index) => ({
+      ...assignment,
+      id: `planner-${assignment.id}`,
+      week_start: targetWeekStart,
+      source_week_start: assignment.week_start,
+      completed_this_week: completedKeys.has(assignmentDraftKey(assignment)),
+      sort_order: Number.isFinite(Number(assignment.sort_order)) ? Number(assignment.sort_order) : index,
+    }));
+  return cacheSet(cacheKey, {
+    assignments,
+    completedKeys: [...completedKeys],
+  });
+}
+
+function plannerSummaryPriority(row = {}, targetWeekStart = nextWeekStartDate()) {
+  const weekPenalty = row.target_week_start === targetWeekStart ? 0 : 10;
+  return weekPenalty + (plannerStatusRank[row.status] ?? 99);
+}
+
+function plannerSummaryHtml(roster = [], plannedRows = [], targetWeekStart = nextWeekStartDate()) {
+  const rowsByAthlete = plannedRows.reduce((map, row) => {
+    if (!map.has(row.athlete_id)) map.set(row.athlete_id, []);
+    map.get(row.athlete_id).push(row);
+    return map;
+  }, new Map());
+
+  const summaryByAthlete = new Map();
+  rowsByAthlete.forEach((rows, athleteId) => {
+    const bestRow = [...rows].sort((a, b) => plannerSummaryPriority(a, targetWeekStart) - plannerSummaryPriority(b, targetWeekStart))[0];
+    if (!bestRow) return;
+    const planRows = rows.filter((row) => row.target_week_start === bestRow.target_week_start && row.status === bestRow.status);
+    const categories = planRows.reduce((map, row) => {
+      map.set(row.category, (map.get(row.category) || 0) + 1);
+      return map;
+    }, new Map());
+    const updatedAt = planRows.reduce((latest, row) => (
+      latest && new Date(latest) > new Date(row.updated_at) ? latest : row.updated_at
+    ), bestRow.updated_at);
+    summaryByAthlete.set(athleteId, {
+      total: planRows.length,
+      categories,
+      updatedAt,
+      status: bestRow.status,
+      weekStart: bestRow.target_week_start,
+    });
+  });
+
+  return roster.map((athlete) => {
+    const summary = summaryByAthlete.get(athlete.id);
+    const detail = summary ? [...summary.categories.entries()]
+      .map(([category, count]) => `${categoryInfo[category]?.label || category}: ${count}`)
+      .join(" · ") : "No private plan saved yet";
+    const status = summary ? plannerStatusLabels[summary.status] || "Planned" : "Not scheduled";
+    const weekNote = summary?.weekStart && summary.weekStart !== targetWeekStart ? ` · saved under ${summary.weekStart}` : "";
+    return `<button class="planner-summary-row ${state.plannerAthleteId === athlete.id ? "active" : ""}" type="button" data-planner-athlete="${athlete.id}">
+      ${avatarHtml(athlete)}
+      <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(status)}${escapeHtml(weekNote)} · ${escapeHtml(detail)}</small></span>
+      <b>${summary ? `${summary.total}` : "0"}</b>
+    </button>`;
+  }).join("");
+}
+
+async function renderPlanner() {
+  if (!isCoachRole(state.profile?.role)) {
+    document.querySelector("#view").innerHTML = `<div class="empty">Planner is for coach/admin accounts only.</div>`;
+    return;
+  }
+  const targetWeekStart = nextWeekStartDate();
+  const [roster, coachVenues] = await Promise.all([
+    getCoachRoster(),
+    getCoachVenues(),
+  ]);
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Add students first, then you can schedule their next weekly plans.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+
+  if (!state.plannerAthleteId || !roster.some((athlete) => athlete.id === state.plannerAthleteId)) state.plannerAthleteId = roster[0].id;
+  const athlete = roster.find((entry) => entry.id === state.plannerAthleteId);
+  let plannedAssignments = await getWeeklyAssignmentPlan(athlete.id, targetWeekStart);
+  const recoverableDraft = plannedAssignments.length ? [] : await getRecoverablePlannerDraft(athlete.id, targetWeekStart);
+  if (!plannedAssignments.length && !recoverableDraft.length) {
+    await ensurePlannerDraft(athlete.id, targetWeekStart);
+    plannedAssignments = await getWeeklyAssignmentPlan(athlete.id, targetWeekStart);
+  }
+  const [plannerRequests, templateSource, plannedRowsResult] = await Promise.all([
+    getTrickRequestsForAthlete(athlete.id, ["pending"]),
+    getPlannerTemplateAssignments(athlete.id, targetWeekStart),
+    client.from("weekly_assignment_plans")
+      .select("athlete_id, category, updated_at, status, target_week_start")
+      .eq("coach_id", state.user.id)
+      .in("target_week_start", [...new Set([targetWeekStart, weekStartDate()])])
+      .in("status", plannerSummaryStatuses),
+  ]);
+  if (plannedRowsResult.error) throw plannedRowsResult.error;
+  const plannedRows = plannedRowsResult.data || [];
+  const completedKeys = new Set(templateSource.completedKeys || []);
+  const plannerSourceAssignments = plannedAssignments.length
+    ? plannedAssignments
+    : recoverableDraft.length
+      ? recoverableDraft
+      : templateSource.assignments || [];
+  const templateAssignments = plannedAssignments.length || recoverableDraft.length
+    ? withPlannerCompletionFlags(plannerSourceAssignments, completedKeys)
+    : plannerSourceAssignments;
+  if (!state.coachPlanVenue) {
+    state.coachPlanVenue = venueLabel(templateAssignments.find((assignment) => assignment.category === "daily")?.venue || "");
+  }
+  const studentOptions = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
+  const plannedCount = plannedAssignments.length || recoverableDraft.length;
+  const planIsScheduled = plannedAssignments.some((assignment) => assignment.status === "scheduled_next_week" || assignment.status === "published");
+  const planStatus = planIsScheduled ? "Scheduled" : recoverableDraft.length ? "Recovered draft" : plannedAssignments.length ? "Draft" : "Template";
+  const editor = scheduleEditorHtml(templateAssignments, coachVenues, {
+    profile: athlete,
+    dailyTitle: "Next Week Daily Tricks",
+    dailyMeta: "Hidden plan · copied from this week unless already scheduled",
+    tip: "Completed tricks are highlighted below each editor. Edit freely here without changing this week.",
+    openWeeklySections: false,
+    showCompletedHighlights: true,
+  });
+  const draftAction = planIsScheduled ? "" : `<button class="secondary-btn wide" type="submit" data-plan-save-status="draft_next_week">Save Draft</button>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
+    <section class="panel planner-hero">
+      <div class="planner-hero-copy">
+        <div class="panel-title">Plan for week starting ${escapeHtml(targetWeekStart)}</div>
+        <p>Choose a rider, start from their current active list, then schedule the edited version for next week.</p>
+      </div>
+      <div class="field planner-athlete-picker"><label for="planner-athlete-select">Student</label><select id="planner-athlete-select">${studentOptions}</select></div>
+      <div class="planner-status-pill ${plannedCount ? "scheduled" : ""}">${plannedCount ? `${planStatus} · ${plannedCount} tricks` : templateAssignments.length ? "Using current week as template" : "No current tricks found"}</div>
+    </section>
+    ${recoverableDraft.length ? `<section class="panel planner-recovery-note"><div class="panel-title">Recovered planner draft</div><p>This rider had a draft saved under ${escapeHtml(weekStartDate())}. It is shown here as next week's editable draft. Press Save Draft or Schedule for Next Week to store it under ${escapeHtml(targetWeekStart)}.</p></section>` : ""}
+    <section class="panel planner-request-panel">
+      <div class="panel-head"><div><div class="panel-title">Requested tricks</div><div class="panel-meta">Accepting adds the trick to next week's private draft</div></div></div>
+      ${trickRequestRowsHtml(plannerRequests, roster, "planner")}
+    </section>
+    <section class="panel planner-editor-panel">
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(athlete.display_name)} · next week draft</div><div class="panel-meta">Hidden from the rider until Sunday reset</div></div></div>
+      <form id="planner-form">${editor}<div class="planner-save-actions">${draftAction}<button class="primary-btn wide" type="submit" data-plan-save-status="scheduled_next_week">${planIsScheduled ? "Update Scheduled Plan" : "Schedule for Next Week"}</button></div></form>
+    </section>
+    <section class="panel planner-summary-panel">
+      <div class="panel-head"><div><div class="panel-title">Scheduled plans</div><div class="panel-meta">Week starting ${escapeHtml(targetWeekStart)}</div></div></div>
+      <div class="planner-summary-list">${plannerSummaryHtml(roster, plannedRows || [], targetWeekStart)}</div>
+    </section>`;
+
+  document.querySelector("#planner-athlete-select").addEventListener("change", (event) => {
+    state.plannerAthleteId = event.currentTarget.value;
+    state.coachPlanVenue = "";
+    renderPlanner();
+  });
+  document.querySelector("#planner-form").addEventListener("submit", savePlannedWeeklyAssignments);
+  document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
+  document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
+  document.querySelectorAll("[data-planner-athlete]").forEach((button) => button.addEventListener("click", () => {
+    state.plannerAthleteId = button.dataset.plannerAthlete;
+    state.coachPlanVenue = "";
+    renderPlanner();
+  }));
+  bindDailyVenuePicker();
+}
+
+async function savePlannedWeeklyAssignments(event) {
+  event.preventDefault();
+  if (!state.plannerAthleteId) return notify("Choose a student first.", "error");
+  const form = new FormData(event.currentTarget);
+  const targetWeekStart = nextWeekStartDate();
+  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.plannerAthleteId, targetWeekStart);
+  const saveStatus = event.submitter?.dataset?.planSaveStatus || "scheduled_next_week";
+  const isDraftSave = saveStatus === "draft_next_week";
+  const button = event.submitter || event.currentTarget.querySelector("button[type='submit']");
+  button.disabled = true;
+  button.textContent = isDraftSave ? "Saving Draft..." : "Scheduling...";
+  const rpcName = isDraftSave ? "save_weekly_assignment_draft" : "save_weekly_assignment_plan";
+  const { error } = await client.rpc(rpcName, {
+    p_athlete_id: state.plannerAthleteId,
+    p_target_week_start: targetWeekStart,
+    p_assignments: assignments,
+    p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+  });
+  if (error) {
+    notify(messageFrom(error), "error");
+    return renderPlanner();
+  }
+  cacheClear(`planner-template:${state.plannerAthleteId}:`);
+  notify(isDraftSave ? "Next-week draft saved privately." : "Next-week schedule saved.");
+  await renderPlanner();
+}
+
+async function renderCrew() {
+  const [roster, { data: allAthletes, error }] = await Promise.all([
+    getCoachRoster(),
+    client.from("profiles").select("id, display_name, level, avatar").eq("role", "athlete").order("display_name"),
+  ]);
+  if (error) throw error;
+  const [commandData, liveActivity] = roster.length ? await Promise.all([
+    getCoachCommandData(roster),
+    getCoachLiveActivity(roster),
+  ]) : [{ statuses: [] }, []];
+  const statuses = statusByAthlete(commandData.statuses);
+  const linkedIds = new Set(roster.map((athlete) => athlete.id));
+  const available = (allAthletes || []).filter((athlete) => !linkedIds.has(athlete.id));
+  const groupsHtml = coachGroups.map(([groupId, label]) => {
+    const athletes = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(groupId));
+    const students = athletes.length ? athletes.map((athlete) => {
+      const status = statuses.get(athlete.id) || {};
+      return `
+      <div class="student-chip-wrap">
+        <button class="student-chip" type="button" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
+          ${avatarHtml(athlete, "student-chip-avatar")}
+          <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${heatChip(status.heat_status || "on_track")} ${escapeHtml(status.training_focus || "No focus set")}</small></span>
+        </button>
+        ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
+      </div>`;
+    }).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
+    return `<section class="group-column group-${groupId}" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
+  }).join("");
+  const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach dashboard</div><h1>Training <span>groups</span></h1><p>Drag students between groups, or click a student to open their profile.</p></div></div>
+    <section class="coach-dashboard-top">${statCard("Total students", roster.length, "", "Assigned to your crew", "compact-stat-card")}${coachLiveActivityHtml(liveActivity)}</section>
+    <section class="groups-grid">${groupsHtml}</section>
+    <section class="panel"><div class="panel-head"><div class="panel-title">Add an athlete</div><div class="panel-meta">They need an account first</div></div>
+      ${available.length ? `<form id="add-athlete-form" class="trick-form"><div class="field"><label for="athlete-id">Available athletes</label><select id="athlete-id" name="athleteId">${options}</select></div><button class="primary-btn" type="submit">Add to crew</button></form>` : `<div class="empty">Every available athlete is already linked.</div>`}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Create a student profile</div><div class="panel-meta">Makes their private login and adds them to your crew</div></div></div>
+      <form id="create-student-form" class="student-account-form">
+        <div class="field"><label for="student-name">Student name</label><input id="student-name" name="displayName" required placeholder="Koby Carroll"></div>
+        <div class="field"><label for="student-email">Student or parent email</label><input id="student-email" name="email" type="email" required placeholder="student@example.com"></div>
+        <div class="field"><label for="student-password">Temporary password</label><input id="student-password" name="password" type="password" minlength="8" required placeholder="At least 8 characters"></div>
+        <button class="primary-btn" type="submit">Create and add student</button>
+      </form>
+    </section>`;
+  document.querySelector("#add-athlete-form")?.addEventListener("submit", addAthlete);
+  document.querySelector("#create-student-form").addEventListener("submit", createStudent);
+  document.querySelectorAll(".student-chip").forEach((chip) => {
+    chip.addEventListener("dragstart", (event) => {
+      chip.dataset.dragging = "true";
+      event.dataTransfer.setData("text/plain", chip.dataset.athleteId);
+    });
+    chip.addEventListener("dragend", () => setTimeout(() => { chip.dataset.dragging = "false"; }, 0));
+    chip.addEventListener("click", () => {
+      if (chip.dataset.dragging === "true") return;
+      state.selectedAthleteId = chip.dataset.athleteId;
+      navigate("student");
+    });
+  });
+  document.querySelectorAll("[data-group]").forEach((group) => {
+    group.addEventListener("dragover", (event) => { event.preventDefault(); group.classList.add("drag-over"); });
+    group.addEventListener("dragleave", () => group.classList.remove("drag-over"));
+    group.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      group.classList.remove("drag-over");
+      const athleteId = event.dataTransfer.getData("text/plain");
+      if (athleteId) await addAthleteToGroup(athleteId, group.dataset.group);
+    });
+  });
+  document.querySelectorAll("[data-remove-athlete-group]").forEach((button) => button.addEventListener("click", () => removeAthleteFromGroup(button.dataset.removeAthleteGroup, button.dataset.removeGroup)));
+}
+
+async function addAthleteToGroup(athleteId, groupName) {
+  const { error } = await client.from("coach_athlete_groups").upsert({
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    group_name: groupName,
+    membership_type: "weekly",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,athlete_id,group_name" });
+  if (error) return notify(messageFrom(error), "error");
+  await client.from("coach_athletes").update({ group_name: groupName }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+  cacheClear("roster");
+  notify("Student added to group.");
+  await renderCrew();
+}
+
+async function removeAthleteFromGroup(athleteId, groupName) {
+  const { error } = await client.from("coach_athlete_groups").delete().eq("coach_id", state.user.id).eq("athlete_id", athleteId).eq("group_name", groupName);
+  if (error) return notify(messageFrom(error), "error");
+  const { data: remainingGroups } = await client
+    .from("coach_athlete_groups")
+    .select("group_name")
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .order("created_at", { ascending: true });
+  if (remainingGroups?.[0]?.group_name) {
+    await client.from("coach_athletes").update({ group_name: remainingGroups[0].group_name }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+  }
+  cacheClear("roster");
+  notify("Student removed from that group.");
+  await renderCrew();
+}
+
+async function getCoachPreviewData() {
+  if (!isCoachRole(state.profile?.role)) {
+    navigate("home");
+    return null;
+  }
+  const roster = await getCoachRoster();
+  if (!roster.length) return { roster, athlete: null };
+  if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
+  const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
+  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs, xpSummary] = await Promise.all([
+    getWeeklyAssignments(athlete.id),
+    getLeaderboard(),
+    getDashboardItems(athlete.id),
+    client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5),
+    getHelpRequests(athlete.id),
+    getRunPlans(athlete.id),
+    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
+  ]);
+  if (sessionsResult.error) throw sessionsResult.error;
+  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs, xpSummary };
+}
+
+async function renderCoachPreview(mode = "student") {
+  const data = await getCoachPreviewData();
+  if (!data) return;
+  if (!data.athlete) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>No <span>students</span></h1><p>Add a student first, then you can preview their Student View and Parent View.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs, xpSummary } = data;
+  const { assignments, awards, assignmentAttempts = [] } = schedule;
+  const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
+  const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
+  const weeklyPercent = weeklyCompletionPercent(assignments, awards);
+  const weeklyItems = completionAssignments(assignments);
+  const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+  const events = dashboardItems.filter((item) => item.item_type === "event");
+  const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+  const tabs = coachPreviewTabs(mode);
+  if (!tabs.some(([id]) => id === state.coachPreviewTab)) state.coachPreviewTab = "home";
+  const activeTab = state.coachPreviewTab;
+  const tricktionaryData = activeTab === "tricktionary" ? await getTricktionaryData(athlete.id) : null;
+  const previewBody = coachPreviewPageHtml({
+    mode,
+    activeTab,
+    athlete,
+    assignments,
+    awards,
+    assignmentAttempts,
+    leaderboard,
+    dashboardItems,
+    events,
+    sessions,
+    runs,
+    visibleFeedback,
+    rank,
+    weeklyRow,
+    weeklyPercent,
+    completedWeekly,
+    weeklyItems,
+    xpSummary,
+    tricktionaryData,
+  });
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>${mode === "parent" ? "Parent" : "Student"} <span>view</span></h1><p>You are previewing what ${escapeHtml(athlete.display_name)}'s ${mode === "parent" ? "linked parent/guardian" : "student"} experience looks like on a phone.</p></div><div class="actions"><button class="secondary-btn" type="button" data-view="student">Back to profile</button><button class="secondary-btn" type="button" data-preview-switch="${mode === "parent" ? "studentPreview" : "parentPreview"}">${mode === "parent" ? "Student View" : "Parent View"}</button></div></div>
+    <section class="coach-preview-shell">
+      <div class="phone-preview-frame">
+        <div class="preview-phone-tabs">${tabs.map(([id, label]) => `<button class="${id === activeTab ? "active" : ""}" type="button" data-preview-tab="${id}">${escapeHtml(label)}</button>`).join("")}</div>
+        ${previewBody}
+      </div>
+    </section>`;
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelector("[data-preview-switch]")?.addEventListener("click", (event) => {
+    state.coachPreviewTab = "home";
+    navigate(event.currentTarget.dataset.previewSwitch);
+  });
+  document.querySelectorAll("[data-preview-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.coachPreviewTab = button.dataset.previewTab || "home";
+    renderCoachPreview(mode);
+  }));
+}
+
+function coachPreviewTabs(mode = "student") {
+  return mode === "parent"
+    ? [["home", "Home"], ["tricktionary", "Tricktionary"], ["profile", "Profile"]]
+    : [["home", "Home"], ["session", "Session"], ["challenges", "Challenges"], ["contests", "Contests"], ["board", "Board"], ["profile", "Profile"]];
+}
+
+function coachPreviewPageHtml(context) {
+  const { mode, activeTab } = context;
+  if (activeTab === "tricktionary") return coachPreviewTricktionaryHtml(context);
+  if (activeTab === "profile") return mode === "parent" ? coachParentPreviewProfileHtml(context) : coachStudentPreviewProfileHtml(context);
+  if (mode === "parent") return coachParentPreviewTabHtml(context);
+  if (activeTab === "session") return coachStudentPreviewSessionHtml(context);
+  if (activeTab === "challenges") return coachStudentPreviewChallengesHtml(context);
+  if (activeTab === "contests") return coachStudentPreviewContestsHtml(context);
+  if (activeTab === "board") return coachPreviewBoardHtml(context);
+  return coachStudentPreviewHtml(context);
+}
+
+function coachStudentPreviewHtml({ athlete, assignments, awards, events, sessions, rank, weeklyRow, leaderboard }) {
+  const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
+  const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+  return `<div class="phone-preview-content">
+    <section class="athlete-scoreboard panel">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
+      <div class="scoreboard-stats preview-stats home-scoreboard-summary">
+        ${scoreRankingCard(weeklyRow?.weekly_points || 0, rank, leaderboard.length)}
+      </div>
+      ${xpProgressHtml(xp, true)}
+    </section>
+    ${quoteSection()}
+    ${weekSummaryHtml(assignments, awards)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Upcoming events</div><div class="panel-meta">Events live in Contests</div></div></div>${dashboardItemsHtml(events, false)}</section>
+    ${goalsReadonlyHtml(athlete)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Session schedule preview</div><div class="panel-meta">Assigned tricks visible to this rider</div></div></div>${assignmentGroups(assignments, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Recent sessions</div></div></div>${sessionRows}</section>
+  </div>`;
+}
+
+function coachStudentPreviewSessionHtml({ assignments, awards }) {
+  return `<div class="phone-preview-content">
+    ${weekSummaryHtml(assignments, awards)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Session</div><div class="panel-meta">Assigned tricks visible to this rider</div></div></div>${assignmentGroups(assignments, false)}</section>
+  </div>`;
+}
+
+function coachStudentPreviewChallengesHtml({ assignments }) {
+  const completedLines = (assignments || []).filter((assignment) => assignment.category === "lines" && isAssignmentComplete(assignment)).length;
+  const progress = Math.min(3, completedLines);
+  return `<div class="phone-preview-content">
+    <section class="panel weekly-challenge-card"><div class="panel-head"><div><div class="panel-title">Line Linker</div><div class="panel-meta">Weekly challenge · resets Sunday</div></div><span class="pill">${progress}/3</span></div><h2>Complete 3 Lines this week</h2><div class="xp-bar"><span style="width:${Math.round((progress / 3) * 100)}%"></span></div></section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">Riders can invite one another to compare weekly points</div></div></div><div class="empty compact-empty">Battle requests and live scores appear here.</div></section>
+  </div>`;
+}
+
+function coachPreviewTricktionaryHtml({ athlete, tricktionaryData }) {
+  const data = tricktionaryData || { profile: athlete, assignments: [], progress: [], awards: [], attempts: [], percentageAttempts: [] };
+  const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
+  return `<div class="phone-preview-content">
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile?.daily_pb_seconds)}</div></div></div>${tricktionaryBoardHtml(entries, data.attempts || [])}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Attempted this week</div></div></div>${weeklyAttemptsHtml((data.attempts || []).filter((attempt) => attempt.week_start === weekStartDate()))}</section>
+  </div>`;
+}
+
+function coachStudentPreviewContestsHtml({ dashboardItems, runs }) {
+  const events = dashboardItems.filter((item) => item.item_type === "event");
+  return `<div class="phone-preview-content">
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Contests</div><div class="panel-meta">Events visible in the rider Contests tab</div></div></div>${dashboardItemsHtml(events, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Run planner</div><div class="panel-meta">Saved rider run plans</div></div></div>${runPlansHtml(runs)}</section>
+  </div>`;
+}
+
+function coachPreviewBoardHtml({ leaderboard }) {
+  const rows = leaderboardWithBenchmark(leaderboard, "weekly_points");
+  return `<div class="phone-preview-content">
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Crew board</div><div class="panel-meta">What this rider sees on the Board tab</div></div></div><div class="leaderboard preview-leaderboard">${compactLeaderboardHtml(rows, "weekly_points")}</div></section>
+  </div>`;
+}
+
+function coachStudentPreviewProfileHtml({ athlete, weeklyRow }) {
+  const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+  return `<div class="phone-preview-content">
+    <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">athlete · Level ${xp.level}</div><p class="subcopy" style="margin-top:12px">${countryBadge(athlete)} ${escapeHtml(athlete.country_name || "Country not set")}</p></section>
+    <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
+    ${goalsReadonlyHtml(athlete)}
+    <section class="panel profile-library-card"><div class="panel-title">My Tricktionary</div><p class="subcopy">The rider opens their landed trick library from Profile & Settings.</p></section>
+  </div>`;
+}
+
+function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary }) {
+  const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
+  const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
+  const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+  return `<div class="phone-preview-content">
+    <section class="panel parent-child-card">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
+      <div class="scoreboard-stats preview-stats">
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
+      </div>
+      ${xpProgressHtml(xp, true)}
+      <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(assignmentAttempts)}
+      ${goalsReadonlyHtml(athlete)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Training plan</div>
+      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Events & tasks</div>
+      ${dashboardItemsHtml(dashboardItems, false)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Session progress</div>
+      ${sessionRows}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Run plans</div>
+      ${runRows}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Coach feedback</div>
+      <div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div>
+    </section>
+  </div>`;
+}
+
+function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = [], weeklyRow, weeklyPercent, completedWeekly, weeklyItems, rank }) {
+  const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+  return `<div class="phone-preview-content">
+    <section class="panel parent-child-card">
+      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
+      <div class="scoreboard-stats preview-stats">
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} pts to Level ${xp.next_level}`, "level-stat-card")}
+        ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
+        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
+      </div>
+      ${xpProgressHtml(xp, true)}
+      <div class="settings-divider"></div>
+      <div class="panel-title">Training plan</div>
+      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
+      <div class="settings-divider"></div>
+      <div class="panel-title">Attempted this week</div>
+      ${weeklyAttemptsHtml(assignmentAttempts)}
+    </section>
+  </div>`;
+}
+
+function coachParentPreviewProfileHtml({ athlete, dashboardItems, sessions, runs, visibleFeedback, weeklyRow }) {
+  const xp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+  const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
+  return `<div class="phone-preview-content">
+    <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">read-only linked rider</div></section>
+    <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
+    ${goalsReadonlyHtml(athlete)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & tasks</div></div></div>${dashboardItemsHtml(dashboardItems, false)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Session progress</div></div></div>${sessionRows}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Run plans</div></div></div>${runPlansHtml(runs)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Coach feedback</div></div></div><div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div></section>
+  </div>`;
+}
+
+async function renderParents() {
+  if (!isCoachRole(state.profile?.role)) {
+    await navigate("home");
+    return;
+  }
+  const [roster, parentResult, linkResult] = await Promise.all([
+    getCoachRoster(),
+    client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
+    client.from("parent_athletes").select("*").eq("coach_id", state.user.id).order("created_at", { ascending: false }),
+  ]);
+  if (parentResult.error) throw parentResult.error;
+  if (linkResult.error) throw linkResult.error;
+  const parents = parentResult.data || [];
+  const links = linkResult.data || [];
+  const athleteById = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  const linksByParent = links.reduce((map, link) => {
+    const rows = map.get(link.parent_id) || [];
+    rows.push(link);
+    map.set(link.parent_id, rows);
+    return map;
+  }, new Map());
+  const parentOptions = parents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.display_name)}${parent.email ? ` · ${escapeHtml(parent.email)}` : ""}</option>`).join("");
+  const athleteOptions = roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</option>`).join("");
+  const grouped = coachGroups.map(([groupId, label]) => {
+    const athletes = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(groupId));
+    const rows = athletes.length ? athletes.map((athlete) => {
+      const athleteLinks = links.filter((link) => link.athlete_id === athlete.id);
+      const parentNames = athleteLinks.length ? athleteLinks.map((link) => {
+        const parent = parents.find((entry) => entry.id === link.parent_id);
+        return parent ? `${parent.display_name}${link.relationship ? ` (${link.relationship})` : ""}` : "Parent";
+      }).join(", ") : "No linked parents";
+      return `<div class="list-row"><button class="student-chip compact-student-chip" type="button" data-open-student="${athlete.id}">${avatarHtml(athlete)}<span>${escapeHtml(athlete.display_name)}</span></button><small>${escapeHtml(parentNames)}</small></div>`;
+    }).join("") : `<div class="empty compact-empty">No riders in this group.</div>`;
+    return `<section class="group-column parent-group-column"><div class="group-head"><div><div class="panel-title">${escapeHtml(label)}</div><div class="panel-meta">${athletes.length} rider${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${rows}</div></section>`;
+  }).join("");
+  const parentRows = parents.length ? parents.map((parent) => {
+    const parentLinks = linksByParent.get(parent.id) || [];
+    const linkedNames = parentLinks.map((link) => athleteById.get(link.athlete_id)?.display_name).filter(Boolean);
+    const linkedChildren = parentLinks.length ? parentLinks.map((link) => {
+      const athlete = athleteById.get(link.athlete_id);
+      if (!athlete) return "";
+      return `<span class="public-badge">${escapeHtml(athlete.display_name)}${link.relationship ? ` · ${escapeHtml(link.relationship)}` : ""}<button class="inline-remove" type="button" data-unlink-parent-global="${parent.id}" data-unlink-athlete-global="${athlete.id}" aria-label="Unlink ${escapeHtml(parent.display_name)} from ${escapeHtml(athlete.display_name)}">×</button></span>`;
+    }).filter(Boolean).join("") : `<span class="public-badge muted-badge">Unlinked</span>`;
+    return `<article class="parent-admin-card ${parentLinks.length ? "linked" : "unlinked"}">
+      <div class="parent-card-top">
+        <div class="person">${avatarHtml(parent, "student-chip-avatar")}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}</small>${parent.phone ? `<small>${escapeHtml(parent.phone)}</small>` : ""}<small>Joined ${dateLabel(parent.created_at)}</small></div></div>
+        ${parentContactButtonsHtml(parent, linkedNames)}
+      </div>
+      <div class="parent-link-summary">
+        <span class="status-chip ${parentLinks.length ? "" : "warning-chip"}">${parentLinks.length ? "Linked" : "Not linked yet"}</span>
+        <div><strong>Linked to:</strong> <span>${parentLinks.length ? escapeHtml(linkedNames.join(", ")) : "Not linked yet"}</span></div>
+      </div>
+      <div class="parent-child-badges">${linkedChildren}</div>
+    </article>`;
+  }).join("") : `<div class="empty">No parent accounts yet. Parents can create their own account from the sign-up screen.</div>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach admin</div><h1>Parent <span>accounts</span></h1><p>Parents are read-only viewer accounts. Link them to one or more riders when they are ready.</p></div></div>
+    <section class="stats-grid">
+      ${statCard("Parent accounts", parents.length, "", "Separate from athletes")}
+      ${statCard("Linked", parents.filter((parent) => (linksByParent.get(parent.id) || []).length).length, "", "Ready to view")}
+      ${statCard("Unlinked", parents.filter((parent) => !(linksByParent.get(parent.id) || []).length).length, "", "Waiting for coach")}
+      ${statCard("Parent links", links.length, "", "Parent to rider connections")}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Link parent to rider</div><div class="panel-meta">Supports multiple children per parent and multiple parents per rider</div></div></div>
+      ${parents.length && roster.length ? `<form id="parent-admin-link-form" class="trick-form parent-link-form"><div class="field"><label for="admin-parent-id">Parent account</label><select id="admin-parent-id" name="parentId" required>${parentOptions}</select></div><div class="field"><label for="admin-athlete-ids">Rider/s</label><select id="admin-athlete-ids" name="athleteIds" multiple size="${Math.min(Math.max(roster.length, 3), 7)}" required>${athleteOptions}</select><small>Hold Command on Mac to choose more than one rider.</small></div><div class="field"><label for="admin-relationship">Relationship</label><input id="admin-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link account</button></form>` : `<div class="empty compact-empty">Create at least one parent account and one rider first.</div>`}
+    </section>
+    <section class="panel parent-accounts-panel">
+      <details class="parent-account-accordion">
+        <summary><div><div class="panel-title">All parent accounts</div><div class="panel-meta">Name, contact details, linked riders, status and date joined</div></div><span>Open</span></summary>
+        <div class="parent-admin-list">${parentRows}</div>
+      </details>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Parents by training group</div><div class="panel-meta">Quick scan by Monday, Tuesday, Wednesday and online groups</div></div></div><div class="groups-grid">${grouped}</div></section>`;
+  document.querySelector("#parent-admin-link-form")?.addEventListener("submit", linkParentFromAdmin);
+  document.querySelectorAll("[data-unlink-parent-global]").forEach((button) => button.addEventListener("click", unlinkParentFromAdmin));
+  document.querySelectorAll("[data-copy-parent-contact]").forEach((button) => button.addEventListener("click", copyParentContact));
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
+}
+
+function parentContactButtonsHtml(parent = {}, linkedNames = []) {
+  const email = String(parent.email || "").trim();
+  const phone = String(parent.phone || "").trim();
+  const phoneHref = phone.replace(/[^\d+]/g, "");
+  const contactText = [
+    parent.display_name || "Parent",
+    email ? `Email: ${email}` : "",
+    phone ? `Phone: ${phone}` : "",
+    linkedNames.length ? `Linked to: ${linkedNames.join(", ")}` : "Linked to: Not linked yet",
+  ].filter(Boolean).join("\n");
+  const encodedText = encodeURIComponent(contactText);
+  return `<div class="parent-contact-actions">
+    ${phoneHref ? `<a class="secondary-btn compact-btn" href="tel:${escapeHtml(phoneHref)}">Call</a><a class="secondary-btn compact-btn" href="sms:${escapeHtml(phoneHref)}">Text</a>` : ""}
+    ${email ? `<a class="secondary-btn compact-btn" href="mailto:${escapeHtml(email)}">Email</a>` : ""}
+    <button class="secondary-btn compact-btn" type="button" data-copy-parent-contact="${escapeHtml(encodedText)}">Copy</button>
+  </div>`;
+}
+
+async function copyParentContact(event) {
+  const text = decodeURIComponent(event.currentTarget.dataset.copyParentContact || "");
+  if (!text) return notify("No contact details to copy.", "error");
+  await navigator.clipboard.writeText(text);
+  notify("Parent contact details copied.");
+}
+
+async function createStudent(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Creating...";
+  const { data, error } = await client.functions.invoke("create-jkcrew-account", {
+    body: {
+      email: form.get("email").trim(),
+      password: form.get("password"),
+      displayName: form.get("displayName").trim(),
+      role: "athlete",
+      website: "",
+    },
+  });
+  if (error || data?.error) {
+    button.disabled = false;
+    button.textContent = "Create and add student";
+    return notify(data?.error || messageFrom(error), "error");
+  }
+  const { error: linkError } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: data.userId });
+  if (linkError) return notify(messageFrom(linkError), "error");
+  await client.from("coach_athlete_groups").upsert({ coach_id: state.user.id, athlete_id: data.userId, group_name: "monday", membership_type: "weekly" }, { onConflict: "coach_id,athlete_id,group_name" });
+  cacheClear("roster");
+  notify("Student profile created and added to your crew.");
+  state.selectedAthleteId = data.userId;
+  await navigate("student");
+}
+
+async function addAthlete(event) {
+  event.preventDefault();
+  const athleteId = new FormData(event.currentTarget).get("athleteId");
+  const { error } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: athleteId });
+  if (error) return notify(messageFrom(error), "error");
+  await client.from("coach_athlete_groups").upsert({ coach_id: state.user.id, athlete_id: athleteId, group_name: "monday", membership_type: "weekly" }, { onConflict: "coach_id,athlete_id,group_name" });
+  cacheClear("roster");
+  notify("Athlete added to your crew.");
+  await renderCrew();
+}
+
+async function deleteSelectedAthlete(athlete) {
+  if (!state.selectedAthleteId || !athlete?.display_name) return;
+  const confirmed = window.prompt(`This permanently deletes ${athlete.display_name}'s JKCREW account and saved app data.\n\nType DELETE to confirm.`);
+  if (confirmed !== "DELETE") return notify("Delete cancelled.");
+  const button = document.querySelector("#delete-student-account");
+  button.disabled = true;
+  button.textContent = "Deleting...";
+  const { data, error } = await client.functions.invoke("delete-jkcrew-user", {
+    body: { userId: state.selectedAthleteId },
+  });
+  if (error || data?.error) {
+    button.disabled = false;
+    button.textContent = `Delete ${athlete.display_name}`;
+    return notify(data?.error || messageFrom(error), "error");
+  }
+  notify(`${athlete.display_name} was deleted.`);
+  state.selectedAthleteId = null;
+  await navigate("crew");
+}
+
+async function renderStudentProfile() {
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Student profile</div><h1>No <span>students</span></h1><p>Add an athlete first, then you can set their weekly tricks.</p></div></div><div class="empty">No students linked yet.</div>`;
+    return;
+  }
+  if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
+  const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory, xpSummary, xpHistory, leaderboard] = await Promise.all([
+    getWeeklyAssignments(athlete.id),
+    client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
+    client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
+    client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
+    getHelpRequests(athlete.id),
+    getDashboardItems(athlete.id),
+    getCoachVenues(),
+    getStudentPrivateData(athlete.id),
+    getPointHistory(athlete.id),
+    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
+    getXpHistory(athlete.id).catch(() => []),
+    getLeaderboard(),
+  ]);
+  const { assignments, awards } = schedule;
+  if (templateError) throw templateError;
+  if (parentLinkError) throw parentLinkError;
+  if (parentProfileError) throw parentProfileError;
+  const template = templates?.[0] || null;
+  const athleteGroups = athlete.groupNames || [athlete.groupName || "monday"];
+  const groupCheckboxes = coachGroups.map(([groupId, label]) => `<label class="group-checkbox"><input type="checkbox" name="groupNames" value="${groupId}" ${athleteGroups.includes(groupId) ? "checked" : ""}> <span>${escapeHtml(label)}</span></label>`).join("");
+  const linkByParent = new Map((parentLinks || []).map((link) => [link.parent_id, link]));
+  const linkedParentIds = new Set((parentLinks || []).map((link) => link.parent_id));
+  const linkedParents = (parentProfiles || []).filter((parent) => linkedParentIds.has(parent.id));
+  const availableParents = (parentProfiles || []).filter((parent) => !linkedParentIds.has(parent.id));
+  const parentOptions = availableParents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.display_name)}${parent.email ? ` · ${escapeHtml(parent.email)}` : ""}</option>`).join("");
+  const linkedParentsHtml = linkedParents.length ? linkedParents.map((parent) => `
+    <div class="list-row parent-link-row">
+      <div class="person">${avatarHtml(parent)}<div class="person-name"><strong>${escapeHtml(parent.display_name)}</strong><small>${escapeHtml(parent.email || "No email saved")}${parent.phone ? ` · ${escapeHtml(parent.phone)}` : ""} · ${escapeHtml(linkByParent.get(parent.id)?.relationship || "Guardian")} · Linked</small></div></div>
+      <button class="danger-btn compact-btn" type="button" data-unlink-parent="${parent.id}">Unlink</button>
+    </div>
+  `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
+  const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete });
+  const dailyDone = dailyCompletionCount(awards);
+  const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
+  const scoreXp = permanentScoreSummary({ ...athlete, ...(weeklyRow || {}) });
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
+    <section class="panel athlete-profile-hero">
+      ${avatarHtml(athlete, "profile-avatar-large")}
+      <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
+      <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
+    </section>
+    <section class="panel xp-coach-panel">
+      <div class="panel-head"><div><div class="panel-title">Scoreboard Level & Badges</div><div class="panel-meta">Follows current weekly points from marked-off schedule items</div></div></div>
+      ${xpProgressHtml(scoreXp)}
+      <div class="settings-divider"></div>
+      ${levelBadgesAccordionHtml(scoreXp, { title: "Current Score Badges", meta: "Unlocked by current weekly points · coach view" })}
+      <div class="settings-divider"></div>
+      <div class="panel-head"><div><div class="panel-title">Legacy XP adjustment</div><div class="panel-meta">Admin-only archive tool · does not control visible scoreboard badges</div></div></div>
+      <form id="xp-adjust-form" class="xp-adjust-form">
+        <div class="field"><label for="xp-action">Action</label><select id="xp-action" name="action"><option value="add">Add XP</option><option value="deduct">Deduct XP</option></select></div>
+        <div class="field"><label for="xp-amount">XP amount</label><input id="xp-amount" name="amount" type="number" min="1" step="1" placeholder="35"></div>
+        <div class="field"><label for="xp-reason">Reason</label><input id="xp-reason" name="reason" placeholder="Bonus effort, correction, PB repair..."></div>
+        <button class="secondary-btn" type="submit">Apply XP Change</button>
+      </form>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
+      <form id="coach-athlete-profile-form" class="two-col-form">
+        <div class="field"><label for="coach-athlete-spin">Spin Direction</label><select id="coach-athlete-spin" name="spinDirection"><option value="" ${!athlete.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${athlete.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${athlete.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${athlete.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${athlete.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
+        <div class="field"><label for="coach-athlete-favourite">Favourite Trick</label><input id="coach-athlete-favourite" name="favouriteTrick" maxlength="120" value="${escapeHtml(athlete.favourite_trick || "")}" placeholder="Favourite BMX trick"></div>
+        <div class="field"><label for="coach-athlete-country">Country</label><select id="coach-athlete-country" name="countryCode">${countryOptionsHtml(athlete.country_code || "")}</select></div>
+        <div class="field group-checkbox-field"><label>Training groups</label><div class="group-checkbox-grid">${groupCheckboxes}</div><small>Riders can be in more than one weekly group.</small></div>
+        <button class="primary-btn" type="submit">Save rider details</button>
+      </form>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Current weekly tricks</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
+    ${extraTricksSection(athlete, false)}
+    ${coachManualTricktionaryPanel(athlete)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Student Plan Builder</div><div class="panel-meta">Open the section you need · one trick or line per row · notes after a dash</div></div></div>
+      <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Linked Parents / Guardians</div><div class="panel-meta">Parents are read-only linked viewers, not athlete accounts</div></div></div>
+      <div class="parent-links">${linkedParentsHtml}</div>
+      ${availableParents.length ? `<form id="link-parent-form" class="trick-form parent-link-form"><div class="field"><label for="parent-id">Available parent accounts</label><select id="parent-id" name="parentId">${parentOptions}</select></div><div class="field"><label for="parent-relationship">Relationship</label><input id="parent-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link parent</button></form>` : `<div class="empty compact-empty">No unlinked parent accounts available. Parents can create one from the sign-up screen.</div>`}
+    </section>
+    ${parentUpdatePanel(athlete, schedule, dashboardItems, privateData.attendance)}
+    <section class="panel coach-private-panel"><div class="panel-head"><div><div class="panel-title">Private rider records</div><div class="panel-meta">Coach/admin only · emergency contacts, medical notes, waivers and permissions</div></div></div>${privateRecordForm(privateData.record)}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Waivers, forms & documents</div><div class="panel-meta">Private coach-only file area</div></div></div>${documentsHtml(privateData.documents)}<div class="settings-divider"></div>${documentUploadForm()}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Injury reports</div><div class="panel-meta">Quick phone-friendly report saved to the rider file</div></div></div>${injuryReportsHtml(privateData.injuries)}<div class="settings-divider"></div>${injuryReportForm(athlete)}</section>
+    ${runBuilderPanel(privateData.runs)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & important tasks</div><div class="panel-meta">Visible on this athlete's Home page</div></div></div>
+      ${dashboardItemsHtml(dashboardItems)}
+      <div class="settings-divider"></div>
+      ${dashboardItemForm(athlete.id)}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Completion history</div><div class="panel-meta">Daily Tricks: ${dailyDone}/7 this week · ${assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length} weekly tasks complete</div></div></div>
+      ${assignmentGroups(assignments)}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Point history</div><div class="panel-meta">Earned points, deductions, session bonuses and coach changes</div></div></div>
+      ${pointHistoryHtml(pointHistory)}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">XP history</div><div class="panel-meta">Long-term progression log, levels, and badge unlocks</div></div></div>
+      ${xpHistoryHtml(xpHistory)}
+    </section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Trick help videos</div><div class="panel-meta">Open rider submissions and reply with written or video feedback</div></div></div>
+      <div class="help-list">${helpRequestsHtml(helpRequests, "coach")}</div>
+    </section>
+    <section class="panel danger-zone"><div class="panel-head"><div><div class="panel-title">Delete student account</div><div class="panel-meta">Removes this rider from JKCREW, including their login and saved app data.</div></div></div>
+      <button class="danger-btn wide" id="delete-student-account" type="button">Delete ${escapeHtml(athlete.display_name)}</button>
+    </section>`;
+  document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
+  document.querySelectorAll("[data-preview-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.previewView)));
+  document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
+  document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
+  document.querySelectorAll("[data-save-daily-venue]").forEach((button) => button.addEventListener("click", saveDailyVenueFromStudentProfile));
+  document.querySelectorAll("[data-save-category-list]").forEach((button) => button.addEventListener("click", saveCategoryListFromStudentProfile));
+  document.querySelector("#daily-venue-select")?.addEventListener("change", (event) => {
+    const selectedIndex = event.currentTarget.value;
+    const selectedPanel = document.querySelector(`[data-venue-panel="${selectedIndex}"]`);
+    state.coachPlanVenue = selectedPanel?.querySelector(`[name="dailyVenueName:${selectedIndex}"]`)?.value || "";
+    document.querySelectorAll("[data-venue-panel]").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.venuePanel === selectedIndex);
+    });
+  });
+  document.querySelector("#coach-athlete-profile-form").addEventListener("submit", saveCoachAthleteProfile);
+  document.querySelector("#xp-adjust-form")?.addEventListener("submit", saveCoachXpAdjustment);
+  document.querySelector("#coach-manual-trick-form")?.addEventListener("submit", saveCoachManualTrick);
+  document.querySelectorAll("[data-coach-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeCoachManualTrick));
+  document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
+  document.querySelector("#private-record-form").addEventListener("submit", savePrivateRecord);
+  document.querySelector("#document-form").addEventListener("submit", saveAthleteDocument);
+  document.querySelector("#injury-form").addEventListener("submit", saveInjuryReport);
+  document.querySelector("#generate-parent-update").addEventListener("click", generateParentUpdate);
+  document.querySelector("#copy-parent-update").addEventListener("click", copyParentUpdate);
+  bindRunBuilderActions();
+  document.querySelectorAll("[data-unlink-parent]").forEach((button) => button.addEventListener("click", unlinkParentAccount));
+  document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
+  bindDashboardItemActions(renderStudentProfile);
+  document.querySelector("#choose-avatar").addEventListener("click", () => document.querySelector("#avatar-file").click());
+  document.querySelector("#avatar-file").addEventListener("change", updateAthleteAvatar);
+  document.querySelector("#remove-avatar").addEventListener("click", () => saveAthleteAvatar(null));
+  document.querySelector("#delete-student-account").addEventListener("click", () => deleteSelectedAthlete(athlete));
+}
+
+function parseAssignmentLine(line, index, category, venue = "", athleteId = state.selectedAthleteId, weekStart = weekStartDate()) {
+  const [left, ...noteParts] = line.split(" - ");
+  const note = noteParts.join(" - ").trim();
+  const trickName = left.trim();
+  if (!trickName) return null;
+  const targetReps = category === "dialled" ? 3 : category === "percentage" ? 10 : 1;
+  return {
+    coach_id: state.user.id,
+    athlete_id: athleteId,
+    week_start: weekStart,
+    trick_name: trickName.slice(0, 120),
+    category,
+    venue: category === "daily" ? venueKey(venue).slice(0, 80) : "",
+    target_reps: targetReps,
+    notes: note.slice(0, 500),
+    sort_order: index,
+  };
+}
+
+function assignmentsFromScheduleForm(form, athleteId = state.selectedAthleteId, weekStart = weekStartDate()) {
+  const selectedVenueIndex = String(form.get("selectedDailyVenueIndex") || "0");
+  state.coachPlanVenue = String(form.get(`dailyVenueName:${selectedVenueIndex}`) || "").trim();
+  const dailyVenueRows = dailyVenueRowsFromForm(form);
+  const dailyAssignments = dailyVenueRows.flatMap((row, venueIndex) => String(row.tricks || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), (venueIndex * 100) + index, "daily", row.name, athleteId, weekStart))
+    .filter(Boolean));
+  const otherAssignments = Object.keys(categoryInfo).filter((category) => category !== "daily").flatMap((category, categoryIndex) => String(form.get(category) || "").split("\n")
+    .slice(0, category === "percentage" ? 3 : undefined)
+    .map((line, index) => parseAssignmentLine(line.trim(), 1000 + (categoryIndex * 100) + index, category, "", athleteId, weekStart))
+    .filter(Boolean));
+  const assignments = [...dailyAssignments, ...otherAssignments].map((assignment, index) => ({ ...assignment, sort_order: index }));
+  return { dailyVenueRows, assignments };
+}
+
+function dailyVenueRowsFromForm(form) {
+  const rows = [...form.entries()]
+    .filter(([key]) => key.startsWith("dailyVenueName:"))
+    .map(([key, value]) => {
+      const index = key.slice("dailyVenueName:".length);
+      return {
+        index,
+        name: String(value || "").trim().slice(0, 80),
+        tricks: String(form.get(`dailyVenueTricks:${index}`) || ""),
+      };
+    })
+    .filter((row) => row.name);
+  const customVenue = String(form.get("customDailyVenue") || "").trim().slice(0, 80);
+  if (customVenue) rows.push({ index: "custom", name: customVenue, tricks: String(form.get("customDaily") || "") });
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = row.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
+  const displayProfile = options.profile || null;
+  const dailyInfo = categoryDisplayInfo("daily", displayProfile);
+  const savedVenueNames = (coachVenues || []).map((venue) => venue.name).filter(Boolean);
+  const baseVenueNames = savedVenueNames.length ? savedVenueNames : defaultVenues;
+  const venueNameMap = new Map();
+  [...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))]
+    .filter(Boolean)
+    .forEach((venue) => {
+      const key = venueKey(venue).toLowerCase();
+      if (!venueNameMap.has(key)) venueNameMap.set(key, venueLabel(venue));
+    });
+  const venueNames = [...venueNameMap.values()];
+  const assignmentsForVenue = (venue) => assignments.filter((assignment) => assignment.category === "daily" && venueKey(assignment.venue).toLowerCase() === venueKey(venue).toLowerCase());
+  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue).toLowerCase() === venueKey(state.coachPlanVenue || "").toLowerCase()));
+  const venueOptions = venueNames.map((venue, venueIndex) => {
+    const count = assignmentsForVenue(venue).length;
+    return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
+  }).join("");
+  const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
+    const venueAssignments = assignmentsForVenue(venue);
+    const venueDailyCount = venueAssignments.length;
+    const assignmentText = venueAssignments.map((assignment) => {
+      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+      return `${assignment.trick_name}${notes}`;
+    }).join("\n");
+    return `<div class="schedule-editor compact-schedule-editor venue-edit-panel compact-venue-editor ${venueIndex === selectedPlanVenueIndex ? "active" : ""}" data-venue-panel="${venueIndex}">
+      <div class="schedule-editor-head compact-venue-head"><div><div class="panel-title">${escapeHtml(venue)} ${escapeHtml(dailyInfo.label)}</div><div class="panel-meta">${escapeHtml(dailyInfo.description)} · one trick or line per row</div></div><div class="venue-head-actions"><div class="category-count">${venueDailyCount}</div><button class="secondary-btn compact-btn" type="button" data-save-daily-venue="${venueIndex}" data-original-venue="${escapeHtml(venue)}">Save this ${escapeHtml(dailyInfo.label)} list</button></div></div>
+      <div class="compact-venue-editor-grid">
+        <div class="field venue-name-field"><label for="daily-venue-name-${venueIndex}">Venue name</label><input id="daily-venue-name-${venueIndex}" name="dailyVenueName:${venueIndex}" value="${escapeHtml(venue)}" placeholder="Skate park name"></div>
+        <div class="field venue-tricks-field"><label for="assignment-daily-${venueIndex}">${escapeHtml(dailyInfo.label)} for this venue</label><textarea id="assignment-daily-${venueIndex}" name="dailyVenueTricks:${venueIndex}" placeholder="Add ${escapeHtml(dailyInfo.label.toLowerCase())} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(venueAssignments, options.showCompletedHighlights)}</div>
+      </div>
+    </div>`;
+  }).join("");
+  const customVenueEditor = `<details class="coach-tool-details custom-venue-editor compact-custom-venue">
+    <summary>Add another venue</summary>
+    <div class="two-col-form">
+      <div class="field"><label for="custom-daily-venue">Venue name</label><input id="custom-daily-venue" name="customDailyVenue" placeholder="New skate park name"></div>
+      <div class="field"><label for="custom-daily-list">Daily tricks</label><textarea id="custom-daily-list" name="customDaily" placeholder="One trick per line"></textarea></div>
+    </div>
+  </details>`;
+  const otherCategoryEditor = Object.keys(categoryInfo).filter((category) => category !== "daily").map((category) => {
+    const info = categoryDisplayInfo(category, displayProfile);
+    const categoryAssignments = assignments.filter((assignment) => assignment.category === category);
+    const assignmentText = categoryAssignments.map((assignment) => {
+      const notes = assignment.notes ? ` - ${assignment.notes}` : "";
+      return `${assignment.trick_name}${notes}`;
+    }).join("\n");
+    return planAccordionSection(info.label, `${categoryAssignments.length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
+      <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="venue-head-actions"><div class="category-count">${categoryAssignments.length}</div><button class="secondary-btn compact-btn" type="button" data-save-category-list="${escapeHtml(category)}">Save ${escapeHtml(info.label)}</button></div></div>
+      <div class="field"><label for="assignment-${category}">One trick or line per row</label><textarea id="assignment-${category}" name="${category}" placeholder="Add ${info.label.toLowerCase()} here...">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
+    </div>`, options.openWeeklySections ?? false);
+  }).join("");
+  const dailySectionTitle = options.dailyTitle || (isContestPrepProfile(displayProfile) ? "Practice 1 Lists" : "Venue-Specific Daily Tricks");
+  return `<div class="plan-accordion-stack">
+    ${planAccordionSection(dailySectionTitle, options.dailyMeta || `Select one riding location, then edit its ${dailyInfo.label}`, `<div class="compact-venue-planner">
+      <div class="compact-venue-controls">
+        <div class="field compact-location-field"><label for="daily-venue-select">Riding location</label><select id="daily-venue-select" name="selectedDailyVenueIndex">${venueOptions}</select></div>
+        <div class="compact-editor-tip">${escapeHtml(options.tip || "Only one location is open at a time. Use the small Save button for quick edits, or save the full schedule for bigger changes.")}</div>
+      </div>
+      <div class="venue-edit-panels">${dailyVenueEditors}</div>
+      ${customVenueEditor}
+    </div>`, options.dailyOpen ?? false)}
+    ${otherCategoryEditor}
+  </div>`;
+}
+
+function planAccordionSection(title, meta, body, open = false) {
+  return `<details class="plan-accordion" ${open ? "open" : ""}>
+    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret">Open</span></summary>
+    <div class="plan-accordion-body">${body}</div>
+  </details>`;
+}
+
+async function saveCoachVenueNames(rows) {
+  const venues = rows.map((row, index) => ({
+    coach_id: state.user.id,
+    name: row.name,
+    sort_order: index,
+  }));
+  const { error: deleteError } = await client.from("coach_venues").delete().eq("coach_id", state.user.id);
+  if (deleteError) throw deleteError;
+  if (!venues.length) return;
+  const { error } = await client.from("coach_venues").insert(venues);
+  if (error) throw error;
+}
+
+async function saveWeeklyAssignments(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.selectedAthleteId, weekStartDate());
+  const button = event.submitter || event.currentTarget.querySelector("button[type='submit']") || event.currentTarget.querySelector("button");
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const { error } = await withTimeout(client.rpc("save_weekly_assignments", {
+      p_athlete_id: state.selectedAthleteId,
+      p_week_start: weekStartDate(),
+      p_assignments: assignments,
+      p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+    }), "Saving schedule", 15000);
+    if (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      const errorMessage = messageFrom(error);
+      notify(errorMessage.includes("part of the weekly schedule") ? `${errorMessage} Use the small Save buttons above when you only want to edit one list.` : errorMessage, "error");
+      return;
+    }
+
+    notify("Weekly schedule saved for this student.");
+    button.textContent = "Saved";
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error) || "Unable to save this schedule. Please try again.", "error");
+  }
+}
+
+async function saveDailyVenueFromStudentProfile(event) {
+  const button = event.currentTarget;
+  const venueIndex = button.dataset.saveDailyVenue;
+  const panel = document.querySelector(`[data-venue-panel="${venueIndex}"]`);
+  if (!panel) return notify("Could not find that Daily Tricks venue editor.", "error");
+
+  const venueInput = panel.querySelector(`[name="dailyVenueName:${venueIndex}"]`);
+  const tricksInput = panel.querySelector(`[name="dailyVenueTricks:${venueIndex}"]`);
+  const venueName = String(venueInput?.value || "").trim().slice(0, 80);
+  if (!venueName) return notify("Add a venue name before saving this Daily list.", "error");
+
+  const originalVenue = String(button.dataset.originalVenue || "").trim().slice(0, 80);
+  const editedLines = String(tricksInput?.value || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), index, "daily", venueName))
+    .filter(Boolean);
+
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Saving...";
+
+  try {
+    const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
+      p_athlete_id: state.selectedAthleteId,
+      p_week_start: weekStartDate(),
+      p_category: "daily",
+      p_venue: venueKey(venueName).slice(0, 80),
+      p_assignments: editedLines,
+    }), "Saving Daily list", 15000);
+
+    if (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      return notify(messageFrom(error), "error");
+    }
+
+    if (originalVenue && venueKey(originalVenue).toLowerCase() !== venueKey(venueName).toLowerCase()) {
+      const { error: clearOldVenueError } = await withTimeout(client.rpc("save_weekly_assignment_list", {
+        p_athlete_id: state.selectedAthleteId,
+        p_week_start: weekStartDate(),
+        p_category: "daily",
+        p_venue: venueKey(originalVenue).slice(0, 80),
+        p_assignments: [],
+      }), "Removing old Daily list", 15000);
+      if (clearOldVenueError) {
+        button.disabled = false;
+        button.textContent = originalText;
+        return notify(`Saved ${venueName}, but could not remove the old ${originalVenue} list: ${messageFrom(clearOldVenueError)}`, "error");
+      }
+    }
+
+    state.coachPlanVenue = venueName;
+    clearCoachCaches();
+    state.sessionViewerPlanMemory = null;
+    notify(`${venueName} Daily Tricks saved.`);
+    button.textContent = "Saved";
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error) || "Unable to save this Daily list. Please try again.", "error");
+  }
+}
+
+async function saveCategoryListFromStudentProfile(event) {
+  const button = event.currentTarget;
+  const category = button.dataset.saveCategoryList;
+  const info = categoryInfo[category];
+  if (!info || category === "daily") return notify("Could not save that trick list.", "error");
+
+  const textarea = document.querySelector(`#assignment-${category}`);
+  if (!textarea) return notify(`Could not find the ${info.label} editor.`, "error");
+
+  const editedLines = String(textarea.value || "").split("\n")
+    .map((line, index) => parseAssignmentLine(line.trim(), index, category))
+    .filter(Boolean)
+    .slice(0, category === "percentage" ? 3 : undefined);
+
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Saving...";
+
+  try {
+    const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
+      p_athlete_id: state.selectedAthleteId,
+      p_week_start: weekStartDate(),
+      p_category: category,
+      p_venue: "",
+      p_assignments: editedLines,
+    }), `Saving ${info.label}`, 15000);
+
+    if (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      return notify(messageFrom(error), "error");
+    }
+
+    clearCoachCaches();
+    state.sessionViewerPlanMemory = null;
+    notify(`${info.label} saved.`);
+    button.textContent = "Saved";
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error) || `Unable to save ${info.label}. Please try again.`, "error");
+  }
+}
+
+async function saveCoachAthleteProfile(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const groupNames = form.getAll("groupNames").filter(Boolean);
+  if (!groupNames.length) return notify("Choose at least one training group.", "error");
+  const countryCode = String(form.get("countryCode") || "");
+  const { error } = await client.from("profiles").update({
+    spin_direction: form.get("spinDirection") || "",
+    favourite_trick: String(form.get("favouriteTrick") || "").trim().slice(0, 120),
+    country_code: countryCode,
+    country_name: countryNameFromCode(countryCode),
+    updated_at: new Date().toISOString(),
+  }).eq("id", state.selectedAthleteId);
+  if (error) return notify(messageFrom(error), "error");
+  const { error: deleteError } = await client.from("coach_athlete_groups").delete().eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId);
+  if (deleteError) return notify(messageFrom(deleteError), "error");
+  const rows = groupNames.map((groupName) => ({
+    coach_id: state.user.id,
+    athlete_id: state.selectedAthleteId,
+    group_name: groupName,
+    membership_type: "weekly",
+  }));
+  const { error: groupError } = await client.from("coach_athlete_groups").insert(rows);
+  if (groupError) return notify(messageFrom(groupError), "error");
+  await client.from("coach_athletes").update({ group_name: groupNames[0] }).eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId);
+  cacheClear("roster");
+  notify("Rider profile details saved.");
+  await renderStudentProfile();
+}
+
+async function saveCoachXpAdjustment(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can adjust XP.", "error");
+  const form = new FormData(event.currentTarget);
+  const amount = Number(form.get("amount") || 0);
+  const action = String(form.get("action") || "add");
+  const reason = String(form.get("reason") || "").trim();
+  if (!amount || amount < 1) return notify("Enter an XP amount first.", "error");
+  if (action === "deduct" && !reason) return notify("Add a reason before deducting XP.", "error");
+  const signedXp = action === "deduct" ? -Math.abs(amount) : Math.abs(amount);
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  const { data, error } = await client.rpc("adjust_athlete_xp", {
+    p_athlete_id: state.selectedAthleteId,
+    p_xp: signedXp,
+    p_reason: reason,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Apply XP Change";
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(`${signedXp > 0 ? "Added" : "Deducted"} ${Math.abs(signedXp)} XP. Level ${result?.level_after || result?.level || "updated"}.`);
+  await renderStudentProfile();
+}
+
+async function selectedCoachAthleteProfile() {
+  if (!isCoachRole(state.profile?.role) || !state.selectedAthleteId) return null;
+  const roster = await getCoachRoster();
+  return roster.find((athlete) => athlete.id === state.selectedAthleteId) || null;
+}
+
+async function saveCoachManualTrick(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const title = String(form.get("title") || "").trim();
+  const count = Math.max(1, Number(form.get("count") || 1));
+  if (!title) return;
+  const athlete = await selectedCoachAthleteProfile();
+  if (!athlete) return notify("Choose a rider before adding to their Tricktionary.", "error");
+  const current = manualTricktionary(athlete);
+  const guessedCategory = tricktionaryCategoryFromText(title);
+  if (guessedCategory === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
+  const exists = current.some((trick) => String(trick.title || trick.name || "").trim().toLowerCase() === title.toLowerCase());
+  if (exists) return notify("That trick is already in this rider's manual Tricktionary.", "error");
+  const manual_tricktionary = [{
+    id: crypto.randomUUID(),
+    title: title.slice(0, 120),
+    count,
+    addedAt: new Date().toISOString(),
+    addedBy: state.user.id,
+    source: "coach",
+    tricktionaryCategory: guessedCategory,
+  }, ...current];
+  const tricktionary_meta = buildTricktionaryMeta(athlete, { [normalizeTrickKey(title)]: guessedCategory });
+  const { error } = await client.from("profiles").update({ manual_tricktionary, tricktionary_meta, updated_at: new Date().toISOString() }).eq("id", athlete.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Trick added to the rider's Tricktionary. No points were awarded.");
+  await renderStudentProfile();
+}
+
+async function removeCoachManualTrick(event) {
+  const removeId = event.currentTarget.dataset.coachRemoveManualTrick;
+  const athlete = await selectedCoachAthleteProfile();
+  if (!athlete || !removeId) return notify("Choose a rider before changing their Tricktionary.", "error");
+  const manual_tricktionary = manualTricktionary(athlete).filter((trick) => {
+    const id = trick.id || String(trick.title || trick.name || "").trim();
+    return id !== removeId;
+  });
+  const { error } = await client.from("profiles").update({ manual_tricktionary, updated_at: new Date().toISOString() }).eq("id", athlete.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Manual Tricktionary trick removed. Historical session data was kept.");
+  await renderStudentProfile();
+}
+
+function imageFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { image.src = reader.result; };
+    reader.onerror = reject;
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 360;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const scale = Math.max(size / image.width, size / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    image.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function updateAthleteAvatar(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) return notify("Choose an image under 8MB.", "error");
+  try {
+    const dataUrl = await imageFileToDataUrl(file);
+    await saveAthleteAvatar(dataUrl);
+  } catch (_error) {
+    notify("Could not read that image. Try another photo.", "error");
+  }
+}
+
+async function saveAthleteAvatar(dataUrl) {
+  const avatar = dataUrl ? { dataUrl, updatedAt: new Date().toISOString() } : {};
+  const { error } = await client.from("profiles").update({ avatar, updated_at: new Date().toISOString() }).eq("id", state.selectedAthleteId);
+  if (error) return notify(messageFrom(error), "error");
+  notify(dataUrl ? "Profile picture updated." : "Profile picture removed.");
+  await renderStudentProfile();
+}
+
+async function importScheduleTemplate(template) {
+  const assignments = Object.keys(categoryInfo).flatMap((category, categoryIndex) => String(template[category] || "").split("\n")
+    .slice(0, category === "percentage" ? 3 : undefined)
+    .map((line, index) => parseAssignmentLine(line.trim(), (categoryIndex * 100) + index, category))
+    .filter(Boolean))
+    .map((assignment, index) => ({ ...assignment, sort_order: index }));
+  const { error: scheduleError } = await client.rpc("save_weekly_assignments", {
+    p_athlete_id: state.selectedAthleteId,
+    p_week_start: weekStartDate(),
+    p_assignments: assignments,
+    p_venues: null,
+  });
+  if (scheduleError) return notify(messageFrom(scheduleError), "error");
+  if (template.coach_note) {
+    const { error } = await client.from("coach_notes").insert({ coach_id: state.user.id, athlete_id: state.selectedAthleteId, note: template.coach_note });
+    if (error) return notify(messageFrom(error), "error");
+  }
+  notify("Monday plan loaded into this student profile.");
+  await renderStudentProfile();
+}
+
+async function linkParentAccount(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const parentId = form.get("parentId");
+  if (!parentId || !state.selectedAthleteId) return notify("Unable to link account. Please check the selected parent and rider.", "error");
+  const { error } = await client.from("parent_athletes").upsert({
+    parent_id: parentId,
+    athlete_id: state.selectedAthleteId,
+    coach_id: state.user.id,
+    relationship: String(form.get("relationship") || "").trim().slice(0, 80),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "parent_id,athlete_id" });
+  if (error) return notify(`Unable to link account. ${messageFrom(error)}`, "error");
+  notify("Parent account linked successfully.");
+  await renderStudentProfile();
+}
+
+async function linkParentFromAdmin(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const parentId = String(form.get("parentId") || "");
+  const athleteIds = form.getAll("athleteIds").map((id) => String(id || "")).filter(Boolean);
+  const button = formElement.querySelector("button[type=submit]");
+  if (!parentId || !athleteIds.length) return notify("Unable to link account. Please check the selected parent and rider.", "error");
+  button.disabled = true;
+  button.textContent = "Linking...";
+  const rows = athleteIds.map((athleteId) => ({
+    parent_id: parentId,
+    athlete_id: athleteId,
+    coach_id: state.user.id,
+    relationship: String(form.get("relationship") || "").trim().slice(0, 80),
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await client.from("parent_athletes").upsert(rows, { onConflict: "parent_id,athlete_id" });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Link account";
+    return notify(`Unable to link account. ${messageFrom(error)}`, "error");
+  }
+  notify(athleteIds.length === 1 ? "Parent account linked successfully." : `Parent account linked successfully to ${athleteIds.length} riders.`);
+  await renderParents();
+}
+
+async function unlinkParentAccount(event) {
+  const parentId = event.currentTarget.dataset.unlinkParent;
+  const { error } = await client.from("parent_athletes")
+    .delete()
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", state.selectedAthleteId)
+    .eq("parent_id", parentId);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Parent viewer unlinked.");
+  await renderStudentProfile();
+}
+
+async function unlinkParentFromAdmin(event) {
+  const parentId = event.currentTarget.dataset.unlinkParentGlobal;
+  const athleteId = event.currentTarget.dataset.unlinkAthleteGlobal;
+  const { error } = await client.from("parent_athletes")
+    .delete()
+    .eq("coach_id", state.user.id)
+    .eq("athlete_id", athleteId)
+    .eq("parent_id", parentId);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Parent account unlinked.");
+  await renderParents();
+}
+
+async function savePrivateRecord(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const { error } = await client.from("athlete_private_records").upsert({
+    coach_id: state.user.id,
+    athlete_id: state.selectedAthleteId,
+    emergency_contact_name: String(form.get("emergencyContactName") || "").trim(),
+    emergency_contact_phone: String(form.get("emergencyContactPhone") || "").trim(),
+    guardian_details: String(form.get("guardianDetails") || "").trim(),
+    medical_notes: String(form.get("medicalNotes") || "").trim(),
+    injury_notes: String(form.get("injuryNotes") || "").trim(),
+    waiver_notes: String(form.get("waiverNotes") || "").trim(),
+    permission_notes: String(form.get("waiverNotes") || "").trim(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "coach_id,athlete_id" });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Private rider record saved.");
+  await renderStudentProfile();
+}
+
+async function saveAthleteDocument(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const file = form.get("file");
+  if (!file?.size) return notify("Choose a document or image first.", "error");
+  if (file.size > 12 * 1024 * 1024) return notify("Choose a file under 12MB.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const fileDataUrl = await fileToDataUrl(file);
+    const { error } = await client.from("athlete_documents").insert({
+      coach_id: state.user.id,
+      athlete_id: state.selectedAthleteId,
+      document_type: form.get("documentType"),
+      title: String(form.get("title") || "").trim(),
+      file_name: file.name,
+      file_data_url: fileDataUrl,
+      notes: String(form.get("notes") || "").trim(),
+    });
+    if (error) throw error;
+    notify("Private document saved.");
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Save file";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function saveInjuryReport(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const file = form.get("photo");
+  if (file?.size > 8 * 1024 * 1024) return notify("Choose an injury photo under 8MB.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const photo = file?.size ? await fileToDataUrl(file) : "";
+    const { error } = await client.from("injury_reports").insert({
+      coach_id: state.user.id,
+      athlete_id: state.selectedAthleteId,
+      injured_at: new Date(form.get("injuredAt")).toISOString(),
+      venue: String(form.get("venue") || "").trim(),
+      what_happened: String(form.get("whatHappened") || "").trim(),
+      body_area: String(form.get("bodyArea") || "").trim(),
+      severity: form.get("severity"),
+      first_aid: String(form.get("firstAid") || "").trim(),
+      witnesses: String(form.get("witnesses") || "").trim(),
+      guardian_contacted: form.get("guardianContacted") === "on",
+      follow_up: String(form.get("followUp") || "").trim(),
+      coach_notes: String(form.get("coachNotes") || "").trim(),
+      photo_data_url: photo,
+    });
+    if (error) throw error;
+    await client.from("athlete_coach_status").upsert({ coach_id: state.user.id, athlete_id: state.selectedAthleteId, heat_status: "injured", updated_at: new Date().toISOString() }, { onConflict: "coach_id,athlete_id" });
+    notify("Injury report saved and rider marked modified/injured.");
+    await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Save injury report";
+    notify(messageFrom(error), "error");
+  }
+}
+
+function generateParentUpdate(event) {
+  const button = event.currentTarget;
+  const name = button.dataset.athleteName || "your rider";
+  const first = name.split(/\s+/)[0] || name;
+  const type = document.querySelector("#parent-update-type").value;
+  const focus = document.querySelector("#parent-next-focus").value.trim() || "keeping the next session focused and consistent";
+  const completed = button.dataset.completed || "0";
+  const total = button.dataset.total || "0";
+  const templates = {
+    positive: `Hey! ${first} had a solid session today. They completed ${completed}/${total} weekly items and brought good energy. Next focus is ${focus}. Super proud of the effort.`,
+    progress: `Hey! Quick progress update for ${first}: they are sitting at ${completed}/${total} completed items this week. The next focus is ${focus}. We will keep building this step by step.`,
+    injury: `Hey, just letting you know ${first} had an injury/modified training note added today. Current plan is ${focus}. I will keep monitoring and adjust training as needed.`,
+    behaviour: `Hey! Behaviour update for ${first}: today we focused on staying locked in, listening quickly, and keeping the session productive. Next focus is ${focus}.`,
+    reminder: `Hey! Reminder for ${first}: please check upcoming tasks/events in JKCREW. Next focus is ${focus}.`,
+    term: `Hey! Term report snapshot for ${first}: they completed ${completed}/${total} tracked weekly items recently. Main next focus is ${focus}. Thanks for supporting the process.`,
+  };
+  document.querySelector("#parent-update-draft").value = templates[type] || templates.positive;
+}
+
+async function copyParentUpdate() {
+  const text = document.querySelector("#parent-update-draft").value.trim();
+  if (!text) return notify("Generate or write a message first.", "error");
+  await navigator.clipboard.writeText(text);
+  notify("Parent update copied.");
+}
+
+function bindRunBuilderActions() {
+  document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
+  document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
+  document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
+  document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
+  document.querySelector("#play-run-builder")?.addEventListener("click", () => playRunPreview(document.querySelector("#run-map .run-map-preview")));
+  document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
+  document.querySelectorAll("[data-run-label]").forEach((input) => input.addEventListener("input", updateRunPointLabel));
+  document.querySelectorAll("[data-run-up]").forEach((button) => button.addEventListener("click", moveRunPoint));
+  document.querySelectorAll("[data-run-down]").forEach((button) => button.addEventListener("click", moveRunPoint));
+  document.querySelectorAll("[data-run-delete]").forEach((button) => button.addEventListener("click", deleteRunPoint));
+  document.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
+  document.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
+  document.querySelectorAll("[data-play-run]").forEach((button) => button.addEventListener("click", () => playRunPreview(button.closest(".run-card")?.querySelector(".run-map-preview"))));
+}
+
+function currentRunFormState() {
+  const form = document.querySelector("#run-builder-form");
+  if (!form) return {};
+  const data = new FormData(form);
+  return {
+    id: state.runBuilder?.id || null,
+    title: String(data.get("title") || state.runBuilder?.title || "").trim(),
+    venue: String(data.get("venue") || state.runBuilder?.venue || "").trim(),
+    planType: data.get("planType") || state.runBuilder?.planType || "training",
+    notes: String(data.get("notes") || state.runBuilder?.notes || "").trim(),
+    points: state.runBuilder?.points || [],
+    imageDataUrl: state.runBuilder?.imageDataUrl || "",
+  };
+}
+
+async function setRunBuilderPhoto(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
+  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await fileToDataUrl(file), points: state.runBuilder?.points || [] };
+  await runBuilderRefreshView();
+}
+
+async function addRunBuilderPoint(event) {
+  if (!state.runBuilder?.imageDataUrl || event.target.closest(".run-marker")) return;
+  const map = event.currentTarget.querySelector(".run-map-preview") || event.currentTarget;
+  const rect = map.getBoundingClientRect();
+  const x = Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10;
+  const y = Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10;
+  const label = window.prompt("Name this point or trick:", state.runBuilder.points.length ? `Trick ${state.runBuilder.points.length}` : "Start");
+  if (!label) return;
+  state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points || [] };
+  state.runBuilder.points.push({ x, y, label: label.slice(0, 80) });
+  await runBuilderRefreshView();
+}
+
+function updateRunBuilderMapDom() {
+  const preview = document.querySelector("#run-map .run-map-preview");
+  if (!preview || !state.runBuilder?.points) return;
+  const currentSvg = preview.querySelector(".run-line-overlay");
+  const nextSvg = runRouteSvg(state.runBuilder.points);
+  if (currentSvg) currentSvg.outerHTML = nextSvg;
+  else preview.insertAdjacentHTML("beforeend", nextSvg);
+  preview.querySelectorAll("[data-run-point-index]").forEach((marker) => {
+    const index = Number(marker.dataset.runPointIndex);
+    const point = state.runBuilder.points[index];
+    if (!point) return;
+    marker.style.left = `${point.x}%`;
+    marker.style.top = `${point.y}%`;
+    marker.style.setProperty("--run-color", runPointColor(index + 1));
+  });
+}
+
+function startRunPointDrag(event) {
+  if (!state.runBuilder?.points) return;
+  event.preventDefault();
+  event.stopPropagation();
+  state.draggedRunPoint = Number(event.currentTarget.dataset.runPointIndex);
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  document.addEventListener("pointermove", dragRunPoint);
+  document.addEventListener("pointerup", stopRunPointDrag, { once: true });
+}
+
+function dragRunPoint(event) {
+  const index = state.draggedRunPoint;
+  if (!Number.isInteger(index) || !state.runBuilder?.points?.[index]) return;
+  const map = document.querySelector("#run-map .run-map-preview");
+  if (!map) return;
+  const rect = map.getBoundingClientRect();
+  const x = Math.max(0, Math.min(100, Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10));
+  const y = Math.max(0, Math.min(100, Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10));
+  state.runBuilder.points[index] = { ...state.runBuilder.points[index], x, y };
+  updateRunBuilderMapDom();
+}
+
+function stopRunPointDrag() {
+  document.removeEventListener("pointermove", dragRunPoint);
+  state.draggedRunPoint = null;
+}
+
+function updateRunPointLabel(event) {
+  const index = Number(event.currentTarget.dataset.runLabel);
+  if (!state.runBuilder?.points?.[index]) return;
+  state.runBuilder.points[index] = { ...state.runBuilder.points[index], label: event.currentTarget.value.slice(0, 80) };
+}
+
+async function moveRunPoint(event) {
+  const up = event.currentTarget.dataset.runUp;
+  const down = event.currentTarget.dataset.runDown;
+  const index = Number(up ?? down);
+  const nextIndex = up !== undefined ? index - 1 : index + 1;
+  if (!state.runBuilder?.points?.[index] || !state.runBuilder.points[nextIndex]) return;
+  state.runBuilder = { ...currentRunFormState(), points: [...state.runBuilder.points] };
+  [state.runBuilder.points[index], state.runBuilder.points[nextIndex]] = [state.runBuilder.points[nextIndex], state.runBuilder.points[index]];
+  await runBuilderRefreshView();
+}
+
+async function deleteRunPoint(event) {
+  const index = Number(event.currentTarget.dataset.runDelete);
+  if (!state.runBuilder?.points?.[index]) return;
+  state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points.filter((_point, pointIndex) => pointIndex !== index) };
+  await runBuilderRefreshView();
+}
+
+function playRunPreview(preview) {
+  if (!preview) return;
+  clearTimeout(state.runPlaybackTimer);
+  const markers = [...preview.querySelectorAll(".run-marker")];
+  const segments = [...preview.querySelectorAll("[data-run-segment]")];
+  if (!markers.length) return;
+  markers.forEach((marker) => marker.classList.remove("play-active", "play-done"));
+  segments.forEach((segment) => segment.classList.remove("play-active", "play-done"));
+  let index = 0;
+  const step = () => {
+    markers.forEach((marker, markerIndex) => {
+      marker.classList.toggle("play-active", markerIndex === index);
+      marker.classList.toggle("play-done", markerIndex < index);
+    });
+    segments.forEach((segment, segmentIndex) => {
+      segment.classList.toggle("play-active", segmentIndex === index - 1);
+      segment.classList.toggle("play-done", segmentIndex < index - 1);
+    });
+    index += 1;
+    if (index <= markers.length) state.runPlaybackTimer = setTimeout(step, 850);
+  };
+  step();
+}
+
+async function clearRunBuilder() {
+  state.runBuilder = null;
+  await runBuilderRefreshView();
+}
+
+async function editRunPlan(event) {
+  const runId = event.currentTarget.dataset.editRun;
+  const athleteId = isCoachRole(state.profile.role) ? state.selectedAthleteId : state.user.id;
+  const runs = await getRunPlans(athleteId);
+  const run = runs.find((item) => item.id === runId);
+  if (!run || !canEditRun(run)) return notify("You can only edit runs you created.", "error");
+  state.runBuilder = {
+    id: run.id,
+    title: run.title,
+    venue: run.venue,
+    planType: run.plan_type,
+    notes: run.notes,
+    imageDataUrl: run.image_data_url,
+    points: Array.isArray(run.points) ? run.points : [],
+  };
+  await runBuilderRefreshView();
+}
+
+async function archiveRunPlan(event) {
+  const runId = event.currentTarget.dataset.archiveRun;
+  const { error } = await client.from("run_plans").update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", runId).eq("coach_id", state.user.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Run archived. It is saved for later.");
+  await runBuilderRefreshView();
+}
+
+async function saveRunPlan(event) {
+  event.preventDefault();
+  if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
+  const form = new FormData(event.currentTarget);
+  const isCoach = isCoachRole(state.profile.role);
+  const athleteId = isCoach ? state.selectedAthleteId : state.user.id;
+  const coachId = isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
+  const payload = {
+    coach_id: coachId,
+    athlete_id: athleteId,
+    title: String(form.get("title") || "").trim(),
+    venue: String(form.get("venue") || "").trim(),
+    plan_type: form.get("planType"),
+    image_data_url: state.runBuilder.imageDataUrl,
+    points: state.runBuilder.points || [],
+    notes: String(form.get("notes") || "").trim(),
+    updated_at: new Date().toISOString(),
+  };
+  const query = state.runBuilder.id
+    ? client.from("run_plans").update(payload).eq("id", state.runBuilder.id)
+    : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
+  const { error } = await query;
+  if (error) return notify(messageFrom(error), "error");
+  state.runBuilder = null;
+  notify("Run plan saved.");
+  await runBuilderRefreshView();
+}
+
+async function getLinkedCoachIdForCurrentAthlete() {
+  const { data, error } = await client.from("coach_athletes").select("coach_id").eq("athlete_id", state.user.id).limit(1);
+  if (error) throw error;
+  return data?.[0]?.coach_id || null;
+}
+
+async function submitHelpRequest(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const video = form.get("video");
+  const question = String(form.get("question") || "").trim();
+  if (!video?.size) return notify("Upload a trick video first.", "error");
+  if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Choose a video under 500MB.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Uploading...";
+  try {
+    const coachId = await getLinkedCoachIdForCurrentAthlete();
+    if (!coachId) throw new Error("Ask your coach to add you to their crew first.");
+    const upload = await uploadHelpVideoFile(video, "student");
+    const { error } = await client.from("trick_help_requests").insert({
+      athlete_id: state.user.id,
+      coach_id: coachId,
+      question,
+      video_data_url: "",
+      video_storage_path: upload.path,
+      video_file_name: upload.fileName,
+      video_mime_type: upload.mimeType,
+      video_size_bytes: upload.size,
+    });
+    if (error) throw error;
+    notify("Video sent to your coach.");
+    await renderAthleteHome();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Submit to coach";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function submitTrickRequest(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const trickName = String(form.get("trickName") || "").trim();
+  const category = String(form.get("category") || "daily");
+  const venue = String(form.get("venue") || "").trim();
+  const notes = String(form.get("notes") || "").trim();
+  if (!trickName) return notify("Add the trick you want to request.", "error");
+  if (!trickRequestCategoryLabels[category]) return notify("Choose a valid trick list.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Sending...";
+  try {
+    const coachId = await getLinkedCoachIdForCurrentAthlete().catch(() => null);
+    const { error } = await client.from("trick_requests").insert({
+      athlete_id: state.user.id,
+      coach_id: coachId,
+      target_week_start: nextWeekStartDate(),
+      venue,
+      category,
+      trick_name: trickName,
+      notes,
+    });
+    if (error) throw error;
+    notify("Trick request sent to your coach.");
+    cacheClear("coach-command");
+    await renderAthleteHome();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Send request";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function replyToHelpRequest(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const file = form.get("video");
+  const comment = String(form.get("comment") || "").trim();
+  if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
+  if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 500MB.", "error");
+  const button = formElement.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Sending...";
+  try {
+    const update = {
+      coach_comment: comment || "",
+      status: "replied",
+      replied_at: new Date().toISOString(),
+    };
+    if (file?.size) {
+      const upload = await uploadHelpVideoFile(file, "coach-reply");
+      update.coach_video_data_url = "";
+      update.coach_video_storage_path = upload.path;
+      update.coach_video_file_name = upload.fileName;
+      update.coach_video_mime_type = upload.mimeType;
+      update.coach_video_size_bytes = upload.size;
+    }
+    const { data, error } = await client.from("trick_help_requests")
+      .update(update)
+      .eq("id", formElement.dataset.helpReply)
+      .select("id, status");
+    if (error) throw error;
+    if (!data?.length) throw new Error("Unable to save feedback for this video. Check the rider is still linked to your coach account.");
+    state.videoReviewMedia.delete(formElement.dataset.helpReply);
+    notify("Coach feedback sent to rider.");
+    if (state.view === "videoReviews") await renderVideoReviews();
+    else await renderStudentProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Send coach reply";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function getCoachVideoReviews() {
+  if (!isCoachRole(state.profile?.role)) return { roster: [], requests: [] };
+  const roster = await getCoachRoster();
+  const athleteIds = roster.map((athlete) => athlete.id);
+  if (!athleteIds.length) return { roster, requests: [] };
+  const { data, error } = await client.from("trick_help_requests")
+    .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at, video_storage_path, coach_video_storage_path, video_file_name, coach_video_file_name, video_mime_type, coach_video_mime_type, video_size_bytes, coach_video_size_bytes")
+    .in("athlete_id", athleteIds)
+    .order("created_at", { ascending: false })
+    .limit(120);
+  if (error) throw error;
+  const byAthlete = new Map(roster.map((athlete) => [athlete.id, athlete]));
+  return {
+    roster,
+    requests: (data || []).map((request) => ({ ...request, athlete: byAthlete.get(request.athlete_id) || null })),
+  };
+}
+
+function videoReviewFilterHtml(roster = []) {
+  const riderOptions = roster.map((athlete) => `<option value="${athlete.id}" ${state.videoReviewRider === athlete.id ? "selected" : ""}>${escapeHtml(athlete.display_name)}</option>`).join("");
+  return `<section class="panel video-review-filters">
+    <div class="field"><label for="video-review-status">Status</label><select id="video-review-status"><option value="all" ${state.videoReviewStatus === "all" ? "selected" : ""}>All requests</option><option value="new" ${state.videoReviewStatus === "new" ? "selected" : ""}>New / waiting</option><option value="replied" ${state.videoReviewStatus === "replied" ? "selected" : ""}>Replied</option><option value="reviewed" ${state.videoReviewStatus === "reviewed" ? "selected" : ""}>Reviewed</option></select></div>
+    <div class="field"><label for="video-review-rider">Rider</label><select id="video-review-rider"><option value="all" ${state.videoReviewRider === "all" ? "selected" : ""}>All riders</option>${riderOptions}</select></div>
+    <div class="field"><label for="video-review-search">Search</label><input id="video-review-search" value="${escapeHtml(state.videoReviewSearch)}" placeholder="Trick, question, rider..."></div>
+  </section>`;
+}
+
+function videoReviewCardHtml(request) {
+  const athlete = request.athlete || { display_name: "Unknown rider", avatar: null };
+  const status = request.status || "new";
+  const media = state.videoReviewMedia.get(request.id) || {};
+  const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
+  const coachSaveName = `${athlete.display_name || "rider"}-${dateLabel(request.replied_at || request.created_at)}-coach-reply`;
+  const hasRiderVideo = true;
+  const riderVideoUrl = media.video_url || media.video_data_url || "";
+  const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
+  const riderVideo = riderVideoUrl ? `
+    <video class="help-video" src="${escapeHtml(riderVideoUrl)}" controls playsinline preload="metadata"></video>
+    <div class="video-actions">
+      <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open video</a>
+      <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download video</button>
+    </div>` : hasRiderVideo ? `<div class="video-lazy-box" data-help-video-slot="${request.id}">
+      <div><strong>Student video attached</strong><small>Load only when you want to watch it, or save it straight away.</small></div>
+      <div class="video-actions">
+        <button class="secondary-btn compact-btn" type="button" data-load-help-video="${request.id}">Load video</button>
+        <button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download video</button>
+      </div>
+    </div>` : `<div class="empty compact-empty">No video attached.</div>`;
+  const coachVideo = coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video><div class="video-actions"><a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" target="_blank" rel="noopener">Open reply</a><button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-kind="coach" data-save-name="${escapeHtml(coachSaveName)}">Download reply</button></div>` : "";
+  const hasCoachVideo = request.coach_video_storage_path || request.coach_video_data_url || coachVideoUrl;
+  const coachReply = request.coach_comment || coachVideo || status === "replied" || hasCoachVideo
+    ? `<div class="coach-reply"><strong>Coach reply saved</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}${!coachVideo && status === "replied" ? `<small>Video reply saved. Load this request's media to view it.</small>` : ""}</div>`
+    : "";
+  const reviewed = status === "reviewed";
+  return `<article class="video-review-card help-card">
+    <div class="video-review-top">
+      <div class="person">${avatarHtml(athlete)}<div class="person-name"><strong>${escapeHtml(athlete.display_name)}</strong><small>${dateLabel(request.created_at)} · ${escapeHtml(status)}</small></div></div>
+      <button class="secondary-btn compact-btn" type="button" data-open-student="${escapeHtml(request.athlete_id)}">Open rider</button>
+    </div>
+    <div class="help-card-head"><div><strong>${escapeHtml(request.question || "Trick help request")}</strong><small>${escapeHtml(status === "reviewed" ? "Marked reviewed" : "Awaiting / reply status")}</small></div></div>
+    ${riderVideo}
+    ${coachReply}
+    <form class="reply-form" data-help-reply="${request.id}">
+      <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="What should they fix?">${escapeHtml(request.coach_comment || "")}</textarea></div>
+      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"><small>Coach replies can be up to 500MB.</small></div>
+      <button class="primary-btn" type="submit">Send coach reply</button>
+    </form>
+    <button class="secondary-btn compact-btn" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Reviewed" : "Mark reviewed"}</button>
+  </article>`;
+}
+
+async function renderVideoReviews() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const { roster, requests } = await getCoachVideoReviews();
+  const search = state.videoReviewSearch.toLowerCase().trim();
+  const filtered = requests.filter((request) => {
+    const status = request.status || "new";
+    const statusMatch = state.videoReviewStatus === "all"
+      || (state.videoReviewStatus === "new" && !["replied", "reviewed"].includes(status))
+      || status === state.videoReviewStatus;
+    const riderMatch = state.videoReviewRider === "all" || request.athlete_id === state.videoReviewRider;
+    const haystack = `${request.question || ""} ${request.athlete?.display_name || ""} ${status}`.toLowerCase();
+    return statusMatch && riderMatch && (!search || haystack.includes(search));
+  });
+  const newCount = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "new")).length;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Video <span>Reviews</span></h1><p>All rider trick-help videos in one coach-only inbox.</p></div></div>
+    <section class="stats-grid">
+      ${statCard("New", newCount, "", "Waiting")}
+      ${statCard("Total", requests.length, "", "Submissions")}
+      ${statCard("Riders", new Set(requests.map((request) => request.athlete_id)).size, "", "With videos")}
+    </section>
+    ${videoReviewFilterHtml(roster)}
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Review inbox</div><div class="panel-meta">${filtered.length} visible video${filtered.length === 1 ? "" : "s"}</div></div></div>
+      <div class="video-review-list">${filtered.length ? filtered.map(videoReviewCardHtml).join("") : `<div class="empty compact-empty">No videos match those filters.</div>`}</div>
+    </section>`;
+  document.querySelector("#video-review-status")?.addEventListener("change", (event) => {
+    state.videoReviewStatus = event.target.value;
+    renderVideoReviews();
+  });
+  document.querySelector("#video-review-rider")?.addEventListener("change", (event) => {
+    state.videoReviewRider = event.target.value;
+    renderVideoReviews();
+  });
+  document.querySelector("#video-review-search")?.addEventListener("input", (event) => {
+    state.videoReviewSearch = event.target.value;
+    clearTimeout(state.videoReviewSearchTimer);
+    state.videoReviewSearchTimer = setTimeout(() => renderVideoReviews(), 250);
+  });
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
+  document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
+  document.querySelectorAll("[data-load-help-video]").forEach((button) => button.addEventListener("click", loadHelpVideo));
+  document.querySelectorAll("[data-save-help-video]").forEach((button) => button.addEventListener("click", saveHelpVideo));
+  document.querySelectorAll("[data-mark-help-reviewed]").forEach((button) => button.addEventListener("click", markHelpReviewed));
+}
+
+async function fetchHelpVideoMedia(requestId) {
+  const cached = state.videoReviewMedia.get(requestId);
+  if (cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url) return cached;
+  const { data, error } = await client.from("trick_help_requests")
+    .select("id, video_data_url, coach_video_data_url, video_storage_path, coach_video_storage_path")
+    .eq("id", requestId)
+    .limit(1);
+  if (error) throw error;
+  if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
+  const [media] = await hydrateHelpRequestMediaUrls(data);
+  state.videoReviewMedia.set(requestId, media);
+  return media;
+}
+
+async function loadHelpVideo(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Loading...";
+  try {
+    const media = await fetchHelpVideoMedia(button.dataset.loadHelpVideo);
+    if (!(media.video_url || media.video_data_url)) notify("No student video found for this request.", "error");
+    await renderVideoReviews();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Load video";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function saveHelpVideo(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Saving...";
+  try {
+    const media = await fetchHelpVideoMedia(button.dataset.saveHelpVideo);
+    const key = button.dataset.saveKind === "coach" ? "coach_video_url" : "video_url";
+    const legacyKey = button.dataset.saveKind === "coach" ? "coach_video_data_url" : "video_data_url";
+    const source = media[key] || media[legacyKey];
+    if (!source) throw new Error(button.dataset.saveKind === "coach" ? "No coach reply video found for this request." : "No student video found for this request.");
+    if (String(source).startsWith("data:")) downloadDataUrl(source, button.dataset.saveName || "jkcrew-trick-video");
+    else openDownloadUrl(source, button.dataset.saveName || "jkcrew-trick-video");
+    button.disabled = false;
+    button.textContent = originalText;
+    notify("Video saved.");
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function markHelpReviewed(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  button.disabled = true;
+  const { data, error } = await client.from("trick_help_requests")
+    .update({ status: "reviewed" })
+    .eq("id", button.dataset.markHelpReviewed)
+    .select("id, status");
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error), "error");
+  }
+  if (!data?.length) {
+    button.disabled = false;
+    return notify("Unable to mark reviewed. Check the rider is still linked to your coach account.", "error");
+  }
+  notify("Video marked reviewed.");
+  await renderVideoReviews();
+}
+
+async function renderNotes() {
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Coach <span>notes</span></h1><p>Notes are private to you.</p></div></div><div class="empty">Add an athlete to your crew before writing notes.</div>`;
+    return;
+  }
+  if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
+  const { data: notes, error } = await client.from("coach_notes").select("*").eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId).order("created_at", { ascending: false });
+  if (error) throw error;
+  const options = roster.map((athlete) => `<option value="${athlete.id}" ${athlete.id === state.selectedAthleteId ? "selected" : ""}>${escapeHtml(athlete.display_name)}</option>`).join("");
+  const notesHtml = notes.length ? notes.map((note) => `<article class="note"><p>${escapeHtml(note.note)}</p><small>${dateLabel(note.created_at)}</small></article>`).join("") : `<div class="empty">No private notes for this athlete yet.</div>`;
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Coach <span>notes</span></h1><p>Only you can see the notes you write here.</p></div></div>
+    <div class="two-col">
+      <section class="panel"><div class="panel-head"><div class="panel-title">Notes</div><div class="field" style="margin:0"><select id="note-athlete">${options}</select></div></div><div class="notes-list">${notesHtml}</div></section>
+      <section class="panel"><div class="panel-head"><div class="panel-title">Add note</div></div><form id="note-form"><div class="field"><label for="note-text">Private note</label><textarea id="note-text" name="note" required placeholder="Focus for next session..."></textarea></div><button class="primary-btn wide" type="submit">Save note</button></form></section>
+    </div>`;
+  document.querySelector("#note-athlete").addEventListener("change", (event) => { state.selectedAthleteId = event.target.value; renderNotes(); });
+  document.querySelector("#note-form").addEventListener("submit", addNote);
+}
+
+async function addNote(event) {
+  event.preventDefault();
+  const note = new FormData(event.currentTarget).get("note").trim();
+  const { error } = await client.from("coach_notes").insert({ coach_id: state.user.id, athlete_id: state.selectedAthleteId, note });
+  if (error) return notify(messageFrom(error), "error");
+  notify("Private note saved.");
+  await renderNotes();
+}
+
+function coachDailyPbSettingsHtml(roster = []) {
+  const options = roster.length
+    ? roster.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · PB ${formatPbTime(athlete.daily_pb_seconds)}</option>`).join("")
+    : `<option value="">No linked riders yet</option>`;
+  return `<section class="panel coach-pb-panel">
+    <div class="panel-head"><div><div class="panel-title">Daily PB repair</div><div class="panel-meta">Coach-only manual fix for accidental Daily Tricks times</div></div></div>
+    <form id="coach-daily-pb-form" class="compact-admin-form">
+      <div class="field"><label for="coach-pb-athlete">Rider</label><select id="coach-pb-athlete" name="athleteId" required>${options}</select></div>
+      <div class="field"><label for="coach-pb-time">Daily PB time</label><input id="coach-pb-time" name="dailyPb" placeholder="1:24 or 84 seconds" inputmode="numeric"></div>
+      <div class="actions compact-actions"><button class="primary-btn" type="submit">Save PB</button><button class="secondary-btn" type="button" id="clear-daily-pb">Clear PB</button></div>
+    </form>
+    <p class="subcopy">Leave the time blank or use Clear PB if a mistaken time should be removed.</p>
+  </section>`;
+}
+
+async function saveCoachDailyPb(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const athleteId = form.get("athleteId");
+  const seconds = parsePbSeconds(form.get("dailyPb"));
+  if (!athleteId) return notify("Choose a rider first.", "error");
+  if (Number.isNaN(seconds)) return notify("Use a time like 1:24, or type total seconds like 84.", "error");
+  const button = formElement.querySelector("button[type='submit']");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  const { data, error } = await client.rpc("set_athlete_daily_pb", {
+    p_athlete_id: athleteId,
+    p_seconds: seconds,
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Save PB";
+    return notify(messageFrom(error), "error");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  notify(result?.daily_pb_seconds ? `Daily PB saved: ${formatPbTime(result.daily_pb_seconds)}.` : "Daily PB cleared.");
+  await renderProfile();
+}
+
+async function clearCoachDailyPb(event) {
+  const formElement = event.currentTarget.closest("form");
+  const athleteId = new FormData(formElement).get("athleteId");
+  if (!athleteId) return notify("Choose a rider first.", "error");
+  event.currentTarget.disabled = true;
+  event.currentTarget.textContent = "Clearing...";
+  const { error } = await client.rpc("set_athlete_daily_pb", {
+    p_athlete_id: athleteId,
+    p_seconds: null,
+  });
+  if (error) {
+    event.currentTarget.disabled = false;
+    event.currentTarget.textContent = "Clear PB";
+    return notify(messageFrom(error), "error");
+  }
+  notify("Daily PB cleared.");
+  await renderProfile();
+}
+
+function supportsPushNotifications() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+function urlBase64ToUint8Array(value = "") {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+}
+
+async function getPushNotificationState() {
+  const defaults = {
+    leaderboard_overtaken: true,
+    crew_chat: true,
+    parent_weekly_summary: true,
+    coach_messages: true,
+    daily_hype: true,
+    trick_completed: true,
+    list_requests: true,
+  };
+  if (!state.user?.id || !supportsPushNotifications()) {
+    return { supported: false, enabled: false, permission: "unsupported", preferences: defaults };
+  }
+
+  const { data: preferences, error } = await client.from("push_preferences")
+    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary, coach_messages, daily_hype, trick_completed, list_requests")
+    .eq("user_id", state.user.id)
+    .maybeSingle();
+  if (error) throw error;
+
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = registration ? await registration.pushManager.getSubscription() : null;
+  return {
+    supported: true,
+    enabled: Boolean(subscription) && Notification.permission === "granted",
+    permission: Notification.permission,
+    preferences: { ...defaults, ...(preferences || {}) },
+  };
+}
+
+function pushNotificationSettingsHtml(pushState) {
+  const role = state.profile?.role;
+  const status = !pushState.supported
+    ? "Not supported in this browser"
+    : pushState.enabled
+      ? "Enabled on this device"
+      : pushState.permission === "denied"
+        ? "Blocked in browser settings"
+        : "Off on this device";
+  const actionLabel = pushState.enabled ? "Turn off on this device" : "Enable push notifications";
+  const preference = pushState.preferences || {};
+  return `
+    <section class="push-settings-card ${pushState.enabled ? "active" : ""}">
+      <div class="push-settings-head">
+        <div>
+          <strong>Push notifications</strong>
+          <small>${escapeHtml(status)}</small>
+        </div>
+        <button class="${pushState.enabled ? "secondary-btn" : "primary-btn"}" type="button" id="toggle-push-notifications" ${pushState.supported ? "" : "disabled"}>${escapeHtml(actionLabel)}</button>
+      </div>
+      <div class="push-preference-list">
+        ${role === "athlete" ? `
+          <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
+          <label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>
+          <label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my coach</label>
+          <label><input type="checkbox" data-push-preference="daily_hype" ${preference.daily_hype ? "checked" : ""}> 9am daily coach hype message</label>
+          <label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> My list request is approved</label>
+        ` : ""}
+        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label><label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label><label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>` : ""}
+        ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label><label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my child's coach</label>` : ""}
+      </div>
+      <p>Notifications are set separately on each phone, tablet, or computer. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
+    </section>`;
+}
+
+function currentPushPreferences() {
+  const checkboxValue = (name, fallback = true) => {
+    const input = document.querySelector(`[data-push-preference="${name}"]`);
+    return input ? input.checked : fallback;
+  };
+  return {
+    user_id: state.user.id,
+    leaderboard_overtaken: checkboxValue("leaderboard_overtaken"),
+    crew_chat: checkboxValue("crew_chat"),
+    parent_weekly_summary: checkboxValue("parent_weekly_summary"),
+    coach_messages: checkboxValue("coach_messages"),
+    daily_hype: checkboxValue("daily_hype"),
+    trick_completed: checkboxValue("trick_completed"),
+    list_requests: checkboxValue("list_requests"),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function savePushPreferences({ quiet = false } = {}) {
+  const { error } = await client.from("push_preferences")
+    .upsert(currentPushPreferences(), { onConflict: "user_id" });
+  if (error) throw error;
+  if (!quiet) notify("Notification preferences saved.");
+}
+
+async function enablePushNotifications(button) {
+  if (!supportsPushNotifications()) throw new Error("Push notifications are not supported in this browser.");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error("Notifications are blocked. Allow them in your browser or phone settings, then try again.");
+  }
+  const registration = await withTimeout(navigator.serviceWorker.ready, "Notification setup", 12000);
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(PUSH_VAPID_PUBLIC_KEY),
+    });
+  }
+  const json = subscription.toJSON();
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error("This device did not provide a complete push subscription.");
+  }
+  const { error } = await client.from("push_subscriptions").upsert({
+    user_id: state.user.id,
+    endpoint: json.endpoint,
+    p256dh: json.keys.p256dh,
+    auth: json.keys.auth,
+    enabled: true,
+    user_agent: navigator.userAgent.slice(0, 500),
+    device_label: navigator.platform || "JK Coaching device",
+    last_error: "",
+    failure_count: 0,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "endpoint" });
+  if (error) throw error;
+  await savePushPreferences({ quiet: true });
+  notify("Push notifications are on for this device.");
+  if (button) button.textContent = "Enabled";
+}
+
+async function disablePushNotifications() {
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = registration ? await registration.pushManager.getSubscription() : null;
+  if (subscription) {
+    const { error } = await client.from("push_subscriptions")
+      .delete()
+      .eq("user_id", state.user.id)
+      .eq("endpoint", subscription.endpoint);
+    if (error) throw error;
+    await subscription.unsubscribe();
+  }
+  notify("Push notifications are off on this device.");
+}
+
+async function signOutCurrentDevice() {
+  try {
+    if (supportsPushNotifications()) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = registration ? await registration.pushManager.getSubscription() : null;
+      if (subscription) {
+        await client.from("push_subscriptions")
+          .delete()
+          .eq("user_id", state.user.id)
+          .eq("endpoint", subscription.endpoint);
+        await subscription.unsubscribe();
+      }
+    }
+  } catch (error) {
+    console.warn("Push subscription cleanup failed during sign out", error);
+  }
+  await client.auth.signOut();
+}
+
+async function togglePushNotifications(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Updating...";
+  try {
+    const pushState = await getPushNotificationState();
+    if (pushState.enabled) await disablePushNotifications();
+    else await enablePushNotifications(button);
+    await renderProfile();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Try again";
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function renderProfile() {
+  let trainingHistorySection = "";
+  let coachPbSection = "";
+  let xpProfileSection = "";
+  const pushState = await getPushNotificationState().catch((error) => {
+    console.warn("Push notification settings could not load", error);
+    return {
+      supported: supportsPushNotifications(),
+      enabled: false,
+      permission: supportsPushNotifications() ? Notification.permission : "unsupported",
+      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true, coach_messages: true, daily_hype: true, trick_completed: true, list_requests: true },
+    };
+  });
+  try {
+    if (state.profile.role === "athlete") {
+      const [xpSummary, xpHistory] = await Promise.all([
+        getXpSummary(state.user.id).catch(() => normalizeXpSummary({}, state.profile)),
+        getXpHistory(state.user.id).catch(() => []),
+      ]);
+      xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}</section>${riderAccordionSection("Recent XP Activity", `${xpHistory.length} recent update${xpHistory.length === 1 ? "" : "s"}`, xpHistoryHtml(xpHistory), "xp-activity-accordion")}`;
+    } else if (state.profile.role === "parent") {
+      const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
+      if (error) throw error;
+      const sections = await Promise.all((links || []).map(async (link) => {
+        const historyData = await getTricktionaryData(link.athlete_id);
+        return `<div class="parent-history-block"><div class="panel-title">${escapeHtml(historyData.profile.display_name)}'s training history</div>${previousTrainingSheetsHtml(historyData)}</div>`;
+      }));
+      trainingHistorySection = sections.length ? `<section class="panel"><div class="panel-head"><div><div class="panel-title">Linked rider training history</div><div class="panel-meta">Read-only previous sheets for your linked child/rider</div></div></div>${sections.join("")}</section>` : "";
+    }
+  } catch (error) {
+    if (state.profile.role === "parent") {
+      trainingHistorySection = `<section class="panel"><div class="empty compact-empty">Training history could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
+    } else {
+      console.warn("Rider profile progression could not load", error);
+    }
+  }
+  if (isCoachRole(state.profile?.role)) {
+    try {
+      coachPbSection = coachDailyPbSettingsHtml(await getCoachRoster());
+    } catch (error) {
+      coachPbSection = `<section class="panel"><div class="empty compact-empty">Daily PB repair could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
+    }
+  }
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
+    <div class="profile-grid">
+      <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
+      <section class="panel">
+        <div class="panel-head"><div class="panel-title">Account settings</div></div>
+        <form id="own-avatar-form" class="avatar-settings"><input id="own-avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-own-avatar">Upload / change my picture</button><button class="danger-btn" type="button" id="remove-own-avatar">Remove picture</button></form>
+        <div class="settings-divider"></div>
+        ${pushNotificationSettingsHtml(pushState)}
+        <div class="settings-divider"></div>
+        <form id="profile-form">
+          <div class="field"><label for="profile-theme">Display mode</label><select id="profile-theme" name="appTheme"><option value="dark" ${normalizedTheme(state.profile.app_theme) === "dark" ? "selected" : ""}>Dark mode</option><option value="light" ${normalizedTheme(state.profile.app_theme) === "light" ? "selected" : ""}>Light mode</option></select></div>
+          <div class="field"><label for="profile-name">Display name</label><input id="profile-name" name="displayName" required value="${escapeHtml(state.profile.display_name)}"></div>
+          <div class="field"><label for="profile-phone">Phone number</label><input id="profile-phone" name="phone" type="tel" value="${escapeHtml(state.profile.phone || "")}" placeholder="Optional"></div>
+          ${state.profile.role === "athlete" ? `
+            <div class="ghost-mode-card ${state.profile.ghost_mode ? "active" : ""}">
+              <div>
+                <strong>Ghost Mode</strong>
+                <small>${state.profile.ghost_mode ? "Hidden from public leaderboards. You still earn points, XP and badges." : "Show me on the public leaderboard."}</small>
+                <span>${state.profile.ghost_mode ? "Hidden From Public Leaderboard" : "Public Leaderboard Visible"}</span>
+              </div>
+              <label class="toggle-switch" aria-label="Toggle Ghost Mode">
+                <input name="ghostMode" type="checkbox" ${state.profile.ghost_mode ? "checked" : ""}>
+                <b></b>
+              </label>
+            </div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-stance">Stance</label><select id="profile-stance" name="stance"><option value="">Not set</option><option value="regular" ${state.profile.stance === "regular" ? "selected" : ""}>Regular</option><option value="goofy" ${state.profile.stance === "goofy" ? "selected" : ""}>Goofy</option></select></div>
+              <div class="field"><label for="profile-age">Age</label><input id="profile-age" name="age" type="number" min="3" max="99" value="${state.profile.age || ""}" placeholder="Age"></div>
+            </div>
+            <div class="field"><label for="profile-country">Country</label><select id="profile-country" name="countryCode">${countryOptionsHtml(state.profile.country_code || "")}</select></div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-spin-direction">Spin Direction</label><select id="profile-spin-direction" name="spinDirection"><option value="" ${!state.profile.spin_direction ? "selected" : ""}>Not set</option><option value="left" ${state.profile.spin_direction === "left" ? "selected" : ""}>Left spin</option><option value="right" ${state.profile.spin_direction === "right" ? "selected" : ""}>Right spin</option><option value="both" ${state.profile.spin_direction === "both" ? "selected" : ""}>Both ways</option><option value="not_sure" ${state.profile.spin_direction === "not_sure" ? "selected" : ""}>Not sure yet</option></select></div>
+              <div class="field"><label for="profile-favourite-trick">Favourite Trick</label><input id="profile-favourite-trick" name="favouriteTrick" maxlength="120" value="${escapeHtml(state.profile.favourite_trick || "")}" placeholder="Barspin, flair, 360..."></div>
+            </div>
+            <div class="field"><label for="profile-sponsors">Sponsors</label><textarea id="profile-sponsors" name="sponsors" placeholder="One sponsor per line">${escapeHtml(state.profile.sponsors || "")}</textarea></div>
+            <div class="field"><label for="profile-achievements">Achievements</label><textarea id="profile-achievements" name="achievements" placeholder="Competition wins, landed tricks, milestones...">${escapeHtml(state.profile.achievements || "")}</textarea></div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-instagram">Instagram</label><input id="profile-instagram" name="instagram" type="url" value="${escapeHtml(state.profile.social_links?.instagram || "")}" placeholder="https://instagram.com/..."></div>
+              <div class="field"><label for="profile-tiktok">TikTok</label><input id="profile-tiktok" name="tiktok" type="url" value="${escapeHtml(state.profile.social_links?.tiktok || "")}" placeholder="https://tiktok.com/@..."></div>
+            </div>
+            <div class="two-col-form">
+              <div class="field"><label for="profile-youtube">YouTube</label><input id="profile-youtube" name="youtube" type="url" value="${escapeHtml(state.profile.social_links?.youtube || "")}" placeholder="https://youtube.com/..."></div>
+              <div class="field"><label for="profile-other">Other link</label><input id="profile-other" name="other" type="url" value="${escapeHtml(state.profile.social_links?.other || "")}" placeholder="Website or sponsor profile"></div>
+            </div>
+            <div class="badge-lock-note">Achievement badges are earned through training progress and cannot be edited by riders.</div>
+          ` : ""}
+          <button class="primary-btn wide" type="submit">Save profile</button>
+        </form>
+        <div class="settings-divider"></div>
+        <form id="password-form">
+          <div class="field"><label for="new-password">New password</label><input id="new-password" name="password" type="password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters"></div>
+          <div class="field"><label for="confirm-password">Confirm password</label><input id="confirm-password" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="Type it again"></div>
+          <button class="secondary-btn wide" type="submit">Change password</button>
+        </form>
+        <div class="settings-divider"></div>
+        <button class="danger-btn wide" type="button" id="sign-out">Sign out</button>
+      </section>
+    </div>
+    ${coachPbSection}
+    ${xpProfileSection}
+    ${trainingHistorySection}
+    ${state.profile.role === "athlete" ? `<section class="panel profile-library-card"><div class="panel-head"><div><div class="panel-title">My Tricktionary</div><div class="panel-meta">Your landed trick library and weekly attempt history now live under Profile & Settings.</div></div></div><button class="secondary-btn" type="button" id="open-tricktionary-from-profile">Open My Tricktionary</button></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
+  document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
+  document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);
+  document.querySelector("#remove-own-avatar").addEventListener("click", () => saveOwnAvatar(null));
+  document.querySelector("#open-tricktionary-from-profile")?.addEventListener("click", () => navigate("tricktionary"));
+  document.querySelector("#open-contests-from-profile")?.addEventListener("click", () => navigate("contests"));
+  document.querySelector("#profile-theme")?.addEventListener("change", (event) => applyTheme(event.target.value));
+  document.querySelector("#toggle-push-notifications")?.addEventListener("click", togglePushNotifications);
+  document.querySelectorAll("[data-push-preference]").forEach((input) => input.addEventListener("change", () => {
+    savePushPreferences().catch((error) => notify(messageFrom(error), "error"));
+  }));
+  document.querySelector("#profile-form").addEventListener("submit", updateProfile);
+  document.querySelector("#password-form").addEventListener("submit", updatePassword);
+  document.querySelector("#coach-daily-pb-form")?.addEventListener("submit", saveCoachDailyPb);
+  document.querySelector("#clear-daily-pb")?.addEventListener("click", clearCoachDailyPb);
+  document.querySelector("#sign-out").addEventListener("click", signOutCurrentDevice);
+}
+
+async function updateOwnAvatar(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) return notify("Choose an image under 8MB.", "error");
+  try {
+    const dataUrl = await imageFileToDataUrl(file);
+    await saveOwnAvatar(dataUrl);
+  } catch (_error) {
+    notify("Could not read that image. Try another photo.", "error");
+  }
+}
+
+async function saveOwnAvatar(dataUrl) {
+  const avatar = dataUrl ? { dataUrl, updatedAt: new Date().toISOString() } : {};
+  const { data, error } = await client.from("profiles").update({ avatar, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(dataUrl ? "Your profile picture was updated." : "Your profile picture was removed.");
+  renderShell();
+  navigate("profile");
+}
+
+async function saveOwnProfileMedia(update, message) {
+  const { data, error } = await client.from("profiles").update({ ...update, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  notify(message);
+  renderShell();
+  navigate("profile");
+}
+
+async function updateProfile(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const displayName = form.get("displayName").trim();
+  const updates = {
+    display_name: displayName,
+    phone: String(form.get("phone") || "").trim().slice(0, 40),
+    app_theme: normalizedTheme(form.get("appTheme")),
+    updated_at: new Date().toISOString(),
+  };
+  if (state.profile.role === "athlete") {
+    const age = Number(form.get("age"));
+    const countryCode = String(form.get("countryCode") || "");
+    updates.ghost_mode = form.get("ghostMode") === "on";
+    updates.stance = form.get("stance") || "";
+    updates.spin_direction = form.get("spinDirection") || "";
+    updates.favourite_trick = String(form.get("favouriteTrick") || "").trim().slice(0, 120);
+    updates.age = Number.isFinite(age) && age > 0 ? age : null;
+    updates.country_code = countryCode;
+    updates.country_name = countryNameFromCode(countryCode);
+    updates.sponsors = String(form.get("sponsors") || "").trim();
+    updates.achievements = String(form.get("achievements") || "").trim();
+    updates.social_links = {
+      instagram: String(form.get("instagram") || "").trim(),
+      tiktok: String(form.get("tiktok") || "").trim(),
+      youtube: String(form.get("youtube") || "").trim(),
+      other: String(form.get("other") || "").trim(),
+    };
+  }
+  const { data, error } = await client.from("profiles").update(updates).eq("id", state.user.id).select(PROFILE_SELECT).single();
+  if (error) return notify(messageFrom(error), "error");
+  state.profile = data;
+  cacheClear("leaderboard");
+  cacheClear("coach-command:");
+  applyTheme(data.app_theme);
+  notify("Profile updated.");
+  renderShell();
+  navigate("profile");
+}
+
+async function updatePassword(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const password = form.get("password");
+  const confirmPassword = form.get("confirmPassword");
+  if (password !== confirmPassword) return notify("Passwords do not match.", "error");
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  button.textContent = "Changing...";
+  const { error } = await client.auth.updateUser({ password });
+  if (error) {
+    button.disabled = false;
+    button.textContent = "Change password";
+    return notify(messageFrom(error), "error");
+  }
+  event.currentTarget.reset();
+  button.disabled = false;
+  button.textContent = "Change password";
+  notify("Password changed.");
+}
+
+init().catch((error) => {
+  renderBootRecovery(messageFrom(error));
+  notify(messageFrom(error), "error");
+});
+
+installButton.addEventListener("click", installApp);
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallButton();
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  updateInstallButton();
+  notify("JK Coaching installed. You can launch it from your apps.");
+});
+window.addEventListener("load", async () => {
+  updateInstallButton();
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.register("./sw.js");
+      await registration.update();
+    } catch (error) {
+      console.warn("JKCREW app launcher could not be registered.", error);
+    }
+  }
+});
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
+    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command"] : ["home", "board", "challenges"];
+    const view = allowedViews.includes(event.data.view) ? event.data.view : (isCoachRole(state.profile.role) ? "command" : "home");
+    navigate(view);
+  });
+}

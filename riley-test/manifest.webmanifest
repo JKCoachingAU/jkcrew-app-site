@@ -1,0 +1,34 @@
+{
+  "id": "/jkcrew-app-site/riley-test/",
+  "name": "JKCREW Riley Test",
+  "short_name": "JKCREW Test",
+  "description": "BMX coaching, attempt tracking, timed sessions, progression history, and crew leaderboards.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait-primary",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["sports", "health", "lifestyle"],
+  "icons": [
+    {
+      "src": "icons/app-icon-192.png?v=2.11.77",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/app-icon-512.png?v=2.11.77",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/app-icon-maskable-512.png?v=2.11.77",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
