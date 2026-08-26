@@ -4199,7 +4199,18 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .battle-intro-steps strong { color: #f7fbff; font-size: .88rem; }
 .battle-intro-steps small { margin-top: 2px; color: var(--muted); font-size: .72rem; }
 .battle-intro-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sheet-rules-button { margin-top: 14px; border-color: rgba(32, 227, 195, .42); color: var(--aqua); }
+.sheet-rules-button span { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-right: 8px; border-radius: 50%; background: rgba(32, 227, 195, .15); color: var(--aqua); font: 900 .82rem var(--mono); }
+.sheet-intro-icon { background: linear-gradient(135deg, var(--aqua), #48a7ff); }
+.sheet-rules-grid { display: grid; gap: 8px; margin: 18px 0 20px; }
+.sheet-rules-grid > div { display: grid; grid-template-columns: minmax(90px, .75fr) 1.35fr auto; gap: 10px; align-items: center; padding: 10px 11px; border: 1px solid rgba(183,202,211,.14); border-radius: 12px; background: rgba(255,255,255,.03); }
+.sheet-rules-grid strong { color: #f7fbff; font-size: .82rem; }
+.sheet-rules-grid span { color: var(--muted); font-size: .7rem; line-height: 1.35; }
+.sheet-rules-grid b { color: var(--aqua); font: 900 .68rem var(--mono); white-space: nowrap; }
+.rider-shell #view[data-view="session"] .assignment-group-head .panel-meta,
+.rider-shell #view[data-view="session"] .extra-tricks-panel > summary .panel-meta { display: none; }
 @media (max-width: 480px) { .battle-intro-card { padding: 21px 17px; } .battle-intro-actions { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .sheet-rules-grid > div { grid-template-columns: 1fr auto; } .sheet-rules-grid span { grid-column: 1 / -1; grid-row: 2; } }
 .battle-duration-field { margin: 0; }
 .battle-duration-field select { min-height: 44px; }
 .battle-card { padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }

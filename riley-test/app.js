@@ -1016,7 +1016,7 @@ function renderShell() {
 }
 
 function battleIntroDismissKey() {
-  return `jkcrew-battle-intro:${state.user?.id || "signed-in"}:v1`;
+  return `jkcrew-battle-intro:${state.user?.id || "signed-in"}:v2`;
 }
 
 function rememberBattleIntro() {
@@ -1053,6 +1053,45 @@ function showBattleRulesModal() {
   backdrop.querySelector("[data-close-battle-rules]")?.addEventListener("click", () => backdrop.remove());
   backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
   window.setTimeout(() => backdrop.querySelector("[data-close-battle-rules]")?.focus(), 50);
+}
+
+function sheetRulesMarkup() {
+  return `<div class="battle-intro-icon sheet-intro-icon" aria-hidden="true">✓</div>
+    <div class="eyebrow">Your weekly sheet</div>
+    <h2>How your sheet works</h2>
+    <p>Tap a section to open it, then tick the circle when you complete a trick.</p>
+    <div class="sheet-rules-grid">
+      <div><strong>Daily Tricks</strong><span>Finish the complete Daily list</span><b>1 pt</b></div>
+      <div><strong>One Bangs</strong><span>Land the trick first try</span><b>2 pts</b></div>
+      <div><strong>Dialled</strong><span>Land the trick cleanly</span><b>2 pts</b></div>
+      <div><strong>Lines</strong><span>Land all 3–4 tricks in one run</span><b>3 pts</b></div>
+      <div><strong>Percentage</strong><span>10 tries: 80%=1, 90%=2, 100%=3</span><b>Up to 3</b></div>
+      <div><strong>Foam Pit</strong><span>Practice safely without scoring</span><b>0 pts</b></div>
+      <div><strong>Bonus</strong><span>Complete the gold challenge</span><b>5 pts</b></div>
+    </div>`;
+}
+
+function showSheetRulesModal() {
+  document.querySelector("#sheet-rules-modal")?.remove();
+  const backdrop = document.createElement("div");
+  backdrop.id = "sheet-rules-modal";
+  backdrop.className = "battle-intro-backdrop";
+  backdrop.innerHTML = `<section class="battle-intro-card sheet-rules-card" role="dialog" aria-modal="true" aria-label="How weekly sheets work">
+    ${sheetRulesMarkup()}
+    <button class="primary-btn wide" type="button" data-close-sheet-rules>Got it</button>
+  </section>`;
+  document.body.append(backdrop);
+  backdrop.querySelector("[data-close-sheet-rules]")?.addEventListener("click", () => backdrop.remove());
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
+  window.setTimeout(() => backdrop.querySelector("[data-close-sheet-rules]")?.focus(), 50);
+}
+
+function sheetRulesButtonHtml() {
+  return `<button class="secondary-btn wide sheet-rules-button" type="button" id="open-sheet-rules"><span>✓</span> How Sheets Work</button>`;
+}
+
+function bindSheetRulesButton() {
+  document.querySelector("#open-sheet-rules")?.addEventListener("click", showSheetRulesModal);
 }
 
 function mountBattleIntroPrompt() {
@@ -4571,7 +4610,8 @@ async function renderSession({ forceParkKing = false } = {}) {
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true, state.profile)}
-      ${extraTricksSection(state.profile, true)}`;
+      ${extraTricksSection(state.profile, true)}
+      ${sheetRulesButtonHtml()}`;
     bindVenueSelector();
     bindDailyVenueAccordions();
     bindExtraTrickActions();
@@ -4580,6 +4620,7 @@ async function renderSession({ forceParkKing = false } = {}) {
     document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
     document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     bindSessionQuickJumps();
+    bindSheetRulesButton();
     return;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
@@ -4592,7 +4633,8 @@ async function renderSession({ forceParkKing = false } = {}) {
     ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
     ${assignmentGroups(assignments, true, state.profile)}
     ${extraTricksSection(state.profile, true)}
-    <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>`;
+    <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
+    ${sheetRulesButtonHtml()}`;
   bindVenueSelector();
   bindDailyVenueAccordions();
   bindExtraTrickActions();
@@ -4601,6 +4643,7 @@ async function renderSession({ forceParkKing = false } = {}) {
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
   document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   bindSessionQuickJumps();
+  bindSheetRulesButton();
   updateTimer();
   if (!Number(state.activeTraining.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
 }
