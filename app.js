@@ -1,5 +1,6 @@
 const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
+const RILEY_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57";
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     autoRefreshToken: true,
@@ -766,6 +767,10 @@ async function handleSession(session) {
   if (!state.user) {
     applyTheme("dark");
     renderAuth();
+    return;
+  }
+  if (state.user.id === RILEY_TEST_ACCOUNT_ID) {
+    window.location.replace("./riley-test/");
     return;
   }
   let { data, error } = await retryNetworkRequest(
