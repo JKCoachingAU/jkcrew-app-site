@@ -1,16 +1,19 @@
-const CACHE_NAME = "jkcrew-shell-v2.11.61";
+const CACHE_PREFIX = "jkcrew-shell-";
+const RELEASE_VERSION = "2.12.0";
+const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.11.61",
-  "./app.js?v=2.11.61",
-  "./manifest.webmanifest?v=2.11.60",
-  "./icons/jkc-logo.png?v=2.11.60",
-  "./icons/jkcoaching-wordmark.png?v=2.11.60",
-  "./icons/app-icon-192.png?v=2.11.60",
-  "./icons/app-icon-512.png?v=2.11.60",
-  "./icons/app-icon-maskable-512.png?v=2.11.60",
-  "./icons/apple-touch-icon.png?v=2.11.60",
+  "./styles.css?v=2.12.0",
+  "./app.js?v=2.12.0",
+  "./manifest.webmanifest?v=2.12.0",
+  "./icons/jkc-logo.png?v=2.11.77",
+  "./icons/jkcoaching-wordmark.png?v=2.11.77",
+  "./icons/app-icon-192.png?v=2.11.77",
+  "./icons/app-icon-512.png?v=2.11.77",
+  "./icons/app-icon-maskable-512.png?v=2.11.77",
+  "./icons/apple-touch-icon.png?v=2.11.77",
+  "./icons/badges/prestige-01.png?v=2.12.0",
 ];
 
 self.addEventListener("install", (event) => {
@@ -21,13 +24,14 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
       .then(() => self.clients.matchAll({ type: "window" }))
       .then((clients) => clients.forEach((client) => {
         const url = new URL(client.url);
-        if (url.origin === self.location.origin && !url.searchParams.has("jkcrew-updated")) {
-          url.searchParams.set("jkcrew-updated", "1");
+        if (url.origin === self.location.origin && url.searchParams.get("jkcrew-version") !== RELEASE_VERSION) {
+          url.searchParams.delete("jkcrew-updated");
+          url.searchParams.set("jkcrew-version", RELEASE_VERSION);
           client.navigate(url.href);
         }
       })),
@@ -72,8 +76,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "JK Coaching";
   event.waitUntil(self.registration.showNotification(title, {
     body: payload.body || "You have a new JKCREW update.",
-    icon: "./icons/app-icon-192.png?v=2.11.60",
-    badge: "./icons/app-icon-192.png?v=2.11.60",
+    icon: "./icons/app-icon-192.png?v=2.11.77",
+    badge: "./icons/app-icon-192.png?v=2.11.77",
     tag: payload.notificationId || payload.type || "jkcrew-update",
     renotify: payload.type === "crew_chat",
     data: {

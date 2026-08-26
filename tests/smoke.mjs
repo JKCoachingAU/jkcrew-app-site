@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.11.53";
+const version = "2.12.0";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -26,7 +26,8 @@ for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, m
   assert(!/2\.11\.(16|44|45|46)/.test(contents), `${name} contains a stale asset version`);
 }
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
-assert(serviceWorker.includes(`jkcrew-shell-v${version}`), "service worker cache should use the current version");
+assert(serviceWorker.includes('const CACHE_PREFIX = "jkcrew-shell-"'), "service worker should use the public cache namespace");
+assert(serviceWorker.includes(`const RELEASE_VERSION = "${version}"`), "service worker cache should use the current version");
 
 const localAssetReferences = [...html.matchAll(/(?:src|href)="(?!https?:)([^"#]+)"/g)]
   .map((match) => match[1].split("?")[0])
@@ -52,8 +53,8 @@ for (let level = 1; level <= 45; level += 1) {
 assert(functionBody("levelBadgeImageUrl").includes("safeLevel > 45"), "Levels without supplied artwork need a safe text fallback");
 
 const coachNavBody = app.match(/const coachNav = \[([\s\S]*?)\];/)?.[1] || "";
-assert.equal((coachNavBody.match(/\["/g) || []).length, 5, "Coach mobile navigation must have five items");
-for (const label of ["Command", "Session", "Riders", "Coach Tools", "More"]) {
+assert.equal((coachNavBody.match(/\["/g) || []).length, 6, "Coach mobile navigation must include live Challenge oversight");
+for (const label of ["Command", "Session", "Riders", "Challenges", "Coach Tools", "More"]) {
   assert(coachNavBody.includes(`"${label}"`), `Coach navigation is missing ${label}`);
 }
 
@@ -76,7 +77,7 @@ assert(functionBody("renderParentHome").includes("assignmentGroups(assignments, 
 assert(!functionBody("renderParentTricktionary").includes("editable: true"), "Parent Tricktionary must remain read-only");
 
 const viewerTabs = app.match(/const sessionViewerListTabs = \[([\s\S]*?)\];/)?.[1] || "";
-for (const tab of ["daily", "one_bang", "dialled", "percentage", "foam_pit", "bonus"]) {
+for (const tab of ["daily", "one_bang", "dialled", "lines", "percentage", "foam_pit", "bonus"]) {
   assert(viewerTabs.includes(`id: "${tab}"`), `Session Viewer is missing ${tab}`);
 }
 assert(!/goals|contest_run/.test(viewerTabs), "Session Viewer should not expose Goals or Contest Run tabs");
