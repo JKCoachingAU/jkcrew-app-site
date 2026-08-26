@@ -1016,7 +1016,7 @@ function renderShell() {
 }
 
 function battleIntroDismissKey() {
-  return `jkcrew-battle-intro:${state.user?.id || "signed-in"}:v2`;
+  return `jkcrew-battle-intro:${state.user?.id || "signed-in"}:v3`;
 }
 
 function rememberBattleIntro() {
@@ -1024,6 +1024,7 @@ function rememberBattleIntro() {
 }
 
 function battleIntroAlreadyShown() {
+  if (new URL(window.location.href).searchParams.get("show-battles") === "1") return false;
   try { return localStorage.getItem(battleIntroDismissKey()) === "1"; } catch (_) { return false; }
 }
 
@@ -1108,6 +1109,11 @@ function mountBattleIntroPrompt() {
   </section>`;
   document.body.append(backdrop);
   rememberBattleIntro();
+  const cleanUrl = new URL(window.location.href);
+  if (cleanUrl.searchParams.has("show-battles")) {
+    cleanUrl.searchParams.delete("show-battles");
+    window.history.replaceState({}, "", cleanUrl.href);
+  }
   backdrop.querySelector("[data-dismiss-battle-intro]")?.addEventListener("click", () => {
     backdrop.remove();
     mountPushSetupPrompt();
@@ -9337,7 +9343,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js");
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.11.81", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

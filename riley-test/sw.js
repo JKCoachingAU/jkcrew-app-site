@@ -1,11 +1,12 @@
 const CACHE_PREFIX = "jkcrew-riley-test-";
-const CACHE_NAME = `${CACHE_PREFIX}v2.11.80`;
+const RELEASE_VERSION = "2.11.81";
+const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.11.80",
-  "./app.js?v=2.11.80",
-  "./manifest.webmanifest?v=2.11.80",
+  "./styles.css?v=2.11.81",
+  "./app.js?v=2.11.81",
+  "./manifest.webmanifest?v=2.11.81",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
@@ -27,8 +28,9 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.matchAll({ type: "window" }))
       .then((clients) => clients.forEach((client) => {
         const url = new URL(client.url);
-        if (url.origin === self.location.origin && !url.searchParams.has("jkcrew-updated")) {
-          url.searchParams.set("jkcrew-updated", "1");
+        if (url.origin === self.location.origin && url.searchParams.get("jkcrew-version") !== RELEASE_VERSION) {
+          url.searchParams.delete("jkcrew-updated");
+          url.searchParams.set("jkcrew-version", RELEASE_VERSION);
           client.navigate(url.href);
         }
       })),
