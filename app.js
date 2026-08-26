@@ -342,7 +342,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.1" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.2" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -4012,15 +4012,16 @@ async function renderChallenges() {
       <div class="battle-record" aria-label="Battle record"><span><strong>${battleWins}</strong> wins</span><span><strong>${battleLosses}</strong> losses</span></div>
       <button class="primary-btn wide battle-challenge-cta" type="button" id="toggle-battle-rider-list" ${availableRiders.length && !battleLimitReached ? "" : "disabled"}>${battleLimitReached ? "3 battle limit reached" : availableRiders.length ? "⚡ Challenge another rider" : "No riders available right now"}</button>
       <form id="battle-request-form" class="battle-request-form battle-rider-picker hidden">
-        <div class="field"><label for="rider-battle-size">Battle format</label><select id="rider-battle-size" name="battleSize"><option value="1">1v1</option><option value="2">2v2</option><option value="3">3v3</option></select></div>
-        <div class="battle-team-picker"><div><strong>Your teammates</strong><small id="teammate-count-help">No teammate needed for 1v1</small><div class="battle-rider-list">${availableRiders.map((row) => `<label class="battle-rider-option"><input type="checkbox" name="teammateIds" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${Number(row.weekly_points || 0)} pts this week</small></span></label>`).join("")}</div></div><div><strong>Opposing team</strong><small id="opponent-count-help">Choose 1 rider</small><div class="battle-rider-list">${availableRiders.map((row) => { const record = riderHeadToHeadRecord(battleHistory, row.athlete_id); return `<label class="battle-rider-option"><input type="checkbox" name="opponentIds" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${record.wins} wins · ${record.losses} losses against</small></span><b>${Number(row.weekly_points || 0)} pts</b></label>`; }).join("")}</div></div></div>
+        <div class="field battle-format-field"><label for="rider-battle-size">Battle format</label><select id="rider-battle-size" name="battleSize"><option value="1">1v1</option><option value="2">2v2</option><option value="3">3v3</option></select><small>Selecting more riders automatically increases the battle format.</small></div>
+        <div class="battle-team-picker"><div><strong>Your teammates</strong><small id="teammate-count-help">Choose up to 2 teammates</small><div class="battle-rider-list">${availableRiders.map((row) => `<label class="battle-rider-option"><input type="checkbox" name="teammateIds" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${Number(row.weekly_points || 0)} pts this week</small></span></label>`).join("")}</div></div><div><strong>Opposing team</strong><small id="opponent-count-help">Choose up to 3 riders</small><div class="battle-rider-list">${availableRiders.map((row) => { const record = riderHeadToHeadRecord(battleHistory, row.athlete_id); return `<label class="battle-rider-option"><input type="checkbox" name="opponentIds" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${record.wins} wins · ${record.losses} losses against</small></span><b>${Number(row.weekly_points || 0)} pts</b></label>`; }).join("")}</div></div></div>
         <div class="field battle-duration-field"><label for="battle-duration">Challenge length</label><select id="battle-duration" name="durationDays">${Array.from({ length: 7 }, (_, index) => `<option value="${index + 1}" ${index === 6 ? "selected" : ""}>${index + 1} day${index ? "s" : ""}</option>`).join("")}</select></div>
-        <button class="primary-btn wide" type="submit">Send battle request</button>
+        <button class="primary-btn wide" id="send-rider-battle" type="submit">Choose 1 opponent</button>
       </form>
       <div class="battle-list">${battles.length ? battles.map((battle) => weeklyBattleCardHtml(battle, pointsByRider, battleHistory)).join("") : `<div class="empty compact-empty">No battles this week yet. Pick a rider above to start one.</div>`}</div>
     </section>
     <button class="secondary-btn wide battle-rules-button" type="button" id="open-battle-rules"><span>VS</span> How Battles Work</button>`;
   document.querySelector("#battle-request-form")?.addEventListener("submit", requestWeeklyRiderBattle);
+  document.querySelector("#rider-battle-size")?.addEventListener("input", updateRiderBattlePicker);
   document.querySelector("#rider-battle-size")?.addEventListener("change", updateRiderBattlePicker);
   document.querySelectorAll("#battle-request-form input[type='checkbox']").forEach((input) => input.addEventListener("change", updateRiderBattlePicker));
   document.querySelector("#toggle-battle-rider-list")?.addEventListener("click", (event) => {
@@ -4034,19 +4035,46 @@ async function renderChallenges() {
   document.querySelector("#open-battle-rules")?.addEventListener("click", showBattleRulesModal);
 }
 
-function updateRiderBattlePicker() {
+function riderBattleSelectionSize(currentSize = 1, teammateCount = 0, opponentCount = 0) {
+  return Math.min(3, Math.max(1, Number(currentSize || 1), Number(teammateCount || 0) + 1, Number(opponentCount || 0)));
+}
+
+function updateRiderBattlePicker(event) {
   const form = document.querySelector("#battle-request-form");
   if (!form) return;
-  const size = Number(form.elements.battleSize?.value || 1);
-  const teammateTarget = size - 1;
+  const sizeSelect = form.querySelector('[name="battleSize"]');
   const teammateInputs = [...form.querySelectorAll('[name="teammateIds"]')];
   const opponentInputs = [...form.querySelectorAll('[name="opponentIds"]')];
+  const changedControl = event?.target;
+  let size = Math.min(3, Math.max(1, Number(sizeSelect?.value || 1)));
+
+  if (changedControl === sizeSelect) {
+    teammateInputs.filter((input) => input.checked).slice(Math.max(0, size - 1)).forEach((input) => { input.checked = false; });
+    opponentInputs.filter((input) => input.checked).slice(size).forEach((input) => { input.checked = false; });
+  } else if (changedControl?.matches?.('input[type="checkbox"]') && changedControl.checked) {
+    const oppositeInputs = changedControl.name === "teammateIds" ? opponentInputs : teammateInputs;
+    const duplicate = oppositeInputs.find((input) => input.value === changedControl.value);
+    if (duplicate) duplicate.checked = false;
+    size = riderBattleSelectionSize(size, teammateInputs.filter((input) => input.checked).length, opponentInputs.filter((input) => input.checked).length);
+    if (sizeSelect) sizeSelect.value = String(size);
+  }
+
   const teammateChecked = teammateInputs.filter((input) => input.checked);
   const opponentChecked = opponentInputs.filter((input) => input.checked);
-  teammateInputs.forEach((input) => { input.disabled = teammateTarget === 0 || (!input.checked && teammateChecked.length >= teammateTarget); });
-  opponentInputs.forEach((input) => { input.disabled = !input.checked && opponentChecked.length >= size; });
-  document.querySelector("#teammate-count-help").textContent = teammateTarget ? `Choose ${teammateTarget} · ${teammateChecked.length}/${teammateTarget}` : "No teammate needed for 1v1";
-  document.querySelector("#opponent-count-help").textContent = `Choose ${size} · ${opponentChecked.length}/${size}`;
+  const selectedTeammateIds = new Set(teammateChecked.map((input) => input.value));
+  const selectedOpponentIds = new Set(opponentChecked.map((input) => input.value));
+  const teammateTarget = size - 1;
+  teammateInputs.forEach((input) => { input.disabled = !input.checked && (teammateChecked.length >= 2 || selectedOpponentIds.has(input.value)); });
+  opponentInputs.forEach((input) => { input.disabled = !input.checked && (opponentChecked.length >= 3 || selectedTeammateIds.has(input.value)); });
+  document.querySelector("#teammate-count-help").textContent = teammateTarget ? `${teammateChecked.length}/${teammateTarget} selected · up to 2 teammates` : "No teammate needed for 1v1 · choose one to make it 2v2";
+  document.querySelector("#opponent-count-help").textContent = `${opponentChecked.length}/${size} selected · up to 3 opponents`;
+  const submitButton = form.querySelector("#send-rider-battle");
+  const ready = teammateChecked.length === teammateTarget && opponentChecked.length === size;
+  if (submitButton) {
+    submitButton.disabled = !ready;
+    const ridersRemaining = Math.max(0, teammateTarget - teammateChecked.length) + Math.max(0, size - opponentChecked.length);
+    submitButton.textContent = ready ? `Send ${size}v${size} battle request` : `Choose ${ridersRemaining} more rider${ridersRemaining === 1 ? "" : "s"}`;
+  }
 }
 
 async function requestWeeklyRiderBattle(event) {
@@ -4063,7 +4091,7 @@ async function requestWeeklyRiderBattle(event) {
   const { error } = await client.rpc("request_rider_battle", { p_team_one: [state.user.id, ...teammateIds], p_team_two: opponentIds, p_duration_days: durationDays });
   restoreButton();
   if (error) return notify(messageFrom(error), "error");
-  notify("Battle request sent. It starts when the rider accepts.");
+  notify("Battle request sent. It starts when everyone accepts.");
   await renderChallenges();
 }
 
@@ -9478,7 +9506,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.1", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.2", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

@@ -4209,6 +4209,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .battle-rider-list { display: grid; gap: 7px; max-height: 340px; overflow-y: auto; padding-right: 3px; }
 .battle-rider-option { display: grid; grid-template-columns: 22px 42px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); cursor: pointer; }
 .battle-rider-option:has(input:checked) { border-color: rgba(32,227,195,0.55); background: var(--aqua-soft); }
+.battle-rider-option:has(input:disabled:not(:checked)) { opacity: .42; cursor: not-allowed; }
 .battle-rider-option input { width: 18px; height: 18px; accent-color: var(--aqua); }
 .battle-rider-option .avatar { width: 40px; height: 40px; }
 .battle-rider-option span strong,
@@ -6746,6 +6747,7 @@ html[data-theme="light"] .parent-shell textarea {
 
 /* 2.13 all-user battle and coach-session release */
 .battle-challenge-cta { min-height: 58px; margin: 8px 0 14px; font-family: "Bebas Neue", Impact, sans-serif; font-size: 1.3rem; letter-spacing: .08em; box-shadow: 0 0 28px rgba(29, 224, 211, .18); }
+.battle-format-field > small { display: block; margin-top: 6px; color: var(--muted); font-size: .72rem; line-height: 1.35; }
 .battle-team-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 14px 0; }
 .battle-team-picker > div { min-width: 0; padding: 12px; border: 1px solid rgba(141, 159, 171, .22); border-radius: 16px; background: rgba(3, 9, 13, .44); }
 .battle-team-picker > div > strong, .battle-team-picker > div > small { display: block; }

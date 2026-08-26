@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.1";
+const version = "2.13.2";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -162,6 +162,59 @@ assert(battleMigration.includes("row level security"), "New battle and challenge
 assert(battleContractMigration.includes("'one_bang'"), "Weekly challenges must use the original One Bang category key");
 assert(battleContractMigration.includes("'foam_pit'"), "Weekly challenges must use the original Foam Pit category key");
 assert(functionBody("battleRulesMarkup").includes("1v1, 2v2 or 3v3"), "Rider battle help must explain every team format");
+const battleSelectionSizer = new Function(`${functionBody("riderBattleSelectionSize")}; return riderBattleSelectionSize;`)();
+assert.equal(battleSelectionSizer(1, 0, 0), 1, "An empty rider battle should remain 1v1");
+assert.equal(battleSelectionSizer(1, 1, 1), 2, "Adding one teammate should automatically grow the battle to 2v2");
+assert.equal(battleSelectionSizer(1, 0, 2), 2, "Selecting two opponents should automatically grow the battle to 2v2");
+assert.equal(battleSelectionSizer(1, 0, 3), 3, "Selecting three opponents should automatically grow the battle to 3v3");
+assert.equal(battleSelectionSizer(1, 2, 3), 3, "Selecting two teammates and three opponents should grow the battle to 3v3");
+assert.equal(battleSelectionSizer(3, 0, 1), 3, "An explicitly selected 3v3 format should remain selected while riders are added");
+assert.equal(battleSelectionSizer(1, 99, 99), 3, "The battle format must remain capped at 3v3");
+const riderBattlePicker = functionBody("updateRiderBattlePicker");
+assert(riderBattlePicker.includes("opponentChecked.length >= 3"), "Riders must be able to select up to three opponents");
+assert(riderBattlePicker.includes("teammateChecked.length >= 2"), "Riders must be able to select up to two teammates alongside themselves");
+assert(!riderBattlePicker.includes("opponentChecked.length >= size"), "The current format must not block adding another opponent");
+assert(!riderBattlePicker.includes("teammateTarget === 0"), "The initial 1v1 format must not block adding a teammate");
+assert(riderBattlePicker.includes("sizeSelect.value = String(size)"), "Adding riders should automatically update the battle format");
+assert(riderBattlePicker.includes("duplicate.checked = false"), "A rider selected for one team must be removed from the other team");
+assert(riderBattlePicker.includes("teammateChecked.length === teammateTarget && opponentChecked.length === size"), "A battle request must require two complete equal teams");
+assert(functionBody("renderChallenges").includes('addEventListener("input", updateRiderBattlePicker)'), "Mobile battle-format changes must update immediately");
+const makeBattleCheckbox = (name, value) => ({ name, value, checked: false, disabled: false, matches: (selector) => selector === 'input[type="checkbox"]' });
+const teammateInputs = [makeBattleCheckbox("teammateIds", "opponent-1"), makeBattleCheckbox("teammateIds", "teammate-1"), makeBattleCheckbox("teammateIds", "teammate-2"), makeBattleCheckbox("teammateIds", "teammate-3")];
+const opponentInputs = [makeBattleCheckbox("opponentIds", "opponent-1"), makeBattleCheckbox("opponentIds", "opponent-2"), makeBattleCheckbox("opponentIds", "opponent-3"), makeBattleCheckbox("opponentIds", "opponent-4")];
+const battleSizeControl = { name: "battleSize", value: "1" };
+const teammateHelp = { textContent: "" };
+const opponentHelp = { textContent: "" };
+const sendBattleButton = { disabled: false, textContent: "" };
+const battlePickerForm = {
+  querySelector: (selector) => selector === '[name="battleSize"]' ? battleSizeControl : selector === "#send-rider-battle" ? sendBattleButton : null,
+  querySelectorAll: (selector) => selector === '[name="teammateIds"]' ? teammateInputs : selector === '[name="opponentIds"]' ? opponentInputs : [],
+};
+const battlePickerDocument = { querySelector: (selector) => selector === "#battle-request-form" ? battlePickerForm : selector === "#teammate-count-help" ? teammateHelp : selector === "#opponent-count-help" ? opponentHelp : null };
+const updateBattlePicker = new Function("document", `${functionBody("riderBattleSelectionSize")}\n${functionBody("updateRiderBattlePicker")}; return updateRiderBattlePicker;`)(battlePickerDocument);
+updateBattlePicker();
+assert(opponentInputs.every((input) => !input.disabled), "The initial 1v1 picker must leave extra opponents selectable");
+opponentInputs[0].checked = true; updateBattlePicker({ target: opponentInputs[0] });
+assert.equal(battleSizeControl.value, "1", "One selected opponent should remain 1v1");
+assert.equal(opponentInputs[1].disabled, false, "A second opponent must remain selectable after the first");
+opponentInputs[1].checked = true; updateBattlePicker({ target: opponentInputs[1] });
+assert.equal(battleSizeControl.value, "2", "A second opponent must promote the picker to 2v2");
+opponentInputs[2].checked = true; updateBattlePicker({ target: opponentInputs[2] });
+assert.equal(battleSizeControl.value, "3", "A third opponent must promote the picker to 3v3");
+assert.equal(opponentInputs[3].disabled, true, "The picker must stop at three selected opponents");
+assert.equal(teammateInputs[0].disabled, true, "A selected opponent cannot also be chosen as a teammate");
+teammateInputs[1].checked = true; updateBattlePicker({ target: teammateInputs[1] });
+teammateInputs[2].checked = true; updateBattlePicker({ target: teammateInputs[2] });
+assert.equal(teammateInputs[3].disabled, true, "The picker must stop at two selected teammates plus the current rider");
+assert.equal(sendBattleButton.disabled, false, "A complete 3v3 selection must enable the battle request");
+assert.equal(sendBattleButton.textContent, "Send 3v3 battle request", "The ready action must show the selected battle format");
+const riderBattleRequest = functionBody("requestWeeklyRiderBattle");
+assert(riderBattleRequest.includes("p_team_one: [state.user.id, ...teammateIds]"), "Rider battle requests must send the complete home team array");
+assert(riderBattleRequest.includes("p_team_two: opponentIds"), "Rider battle requests must send every selected opponent");
+assert(battleMigration.includes("cardinality(p_team_two) <> v_size"), "The database must enforce equal battle teams");
+assert(battleMigration.includes("count(distinct chosen.rider_id)"), "The database must prevent duplicate riders across teams");
+assert(battleMigration.includes("unnest(p_team_one)"), "The database must save every home-team rider");
+assert(battleMigration.includes("unnest(p_team_two)"), "The database must save every opposing rider");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-battle"), "Coach battle oversight needs a create-battle action");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-challenge"), "Coaches need a weekly challenge builder");
 assert(functionBody("renderSessionViewer").includes("viewer-venue-tabs"), "Coach Session must use location filter tabs");
