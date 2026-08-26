@@ -6723,3 +6723,71 @@ html[data-theme="light"] .parent-shell textarea {
   .proposal-item-list li { grid-template-columns: 1fr; }
   .proposal-item-list li small { grid-column: 1; }
 }
+.coach-battle-stats { margin-bottom: 16px; }
+.coach-battle-view-section { margin-bottom: 16px; }
+.coach-battle-view-list { display: grid; gap: 12px; }
+.coach-battle-view-card { padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+.coach-battle-view-card.accepted { border-color: rgba(32, 227, 195, .42); box-shadow: inset 3px 0 var(--aqua); }
+.coach-battle-view-card.pending { border-color: rgba(247, 209, 84, .38); box-shadow: inset 3px 0 var(--gold); }
+.coach-battle-view-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.coach-battle-view-head small { color: var(--muted); font: 700 .66rem var(--mono); text-transform: uppercase; }
+.coach-battle-riders { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; }
+.coach-battle-riders > div { display: grid; grid-template-columns: 42px 1fr auto; gap: 10px; align-items: center; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 12px; }
+.coach-battle-riders > span { color: var(--gold); font: 900 .8rem var(--mono); }
+.coach-battle-riders strong { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.coach-battle-riders b { color: var(--aqua); font: 900 .75rem var(--mono); white-space: nowrap; }
+.coach-battle-winner { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--aqua-soft); color: var(--muted); font-size: .78rem; }
+.coach-battle-winner strong { color: var(--aqua); }
+@media (max-width: 680px) {
+  .coach-battle-riders { grid-template-columns: 1fr; }
+  .coach-battle-riders > span { text-align: center; }
+  .coach-battle-view-head { align-items: flex-start; flex-direction: column; }
+}
+
+/* 2.13 all-user battle and coach-session release */
+.battle-challenge-cta { min-height: 58px; margin: 8px 0 14px; font-family: "Bebas Neue", Impact, sans-serif; font-size: 1.3rem; letter-spacing: .08em; box-shadow: 0 0 28px rgba(29, 224, 211, .18); }
+.battle-team-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 14px 0; }
+.battle-team-picker > div { min-width: 0; padding: 12px; border: 1px solid rgba(141, 159, 171, .22); border-radius: 16px; background: rgba(3, 9, 13, .44); }
+.battle-team-picker > div > strong, .battle-team-picker > div > small { display: block; }
+.battle-team-picker > div > small { margin: 3px 0 10px; color: var(--muted); }
+.battle-team-picker .battle-rider-list { max-height: 320px; overflow-y: auto; }
+.battle-format-chip { width: max-content; margin-bottom: 10px; padding: 5px 10px; color: var(--aqua); border: 1px solid color-mix(in srgb, var(--aqua) 55%, transparent); border-radius: 999px; font: 900 .72rem var(--mono); letter-spacing: .08em; }
+.battle-team-versus { align-items: stretch; }
+.battle-team { flex: 1; display: grid; align-content: center; justify-items: center; gap: 6px; min-width: 0; padding: 12px 8px; border-radius: 14px; background: rgba(7, 14, 19, .72); }
+.battle-team.my-team { box-shadow: inset 0 0 0 1px rgba(29, 224, 211, .28); }
+.battle-team > small { color: var(--muted); font-family: var(--mono); text-transform: uppercase; }
+.battle-team > strong { text-align: center; overflow-wrap: anywhere; }
+.battle-team > b { color: var(--aqua); }
+.battle-team-avatars { display: flex; justify-content: center; }
+.battle-team-avatars .avatar + .avatar { margin-left: -9px; }
+.battle-team-avatars .avatar { box-shadow: 0 0 0 2px #071015; }
+.coach-battle-create-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.coach-battle-view-head > b { margin-right: auto; color: var(--aqua); font: 900 .72rem var(--mono); letter-spacing: .1em; }
+.coach-battle-team { flex: 1; display: grid; justify-items: center; gap: 6px; min-width: 0; text-align: center; }
+.coach-battle-team strong { overflow-wrap: anywhere; }
+.coach-battle-team small { color: var(--muted); }
+.coach-battle-riders > .coach-battle-team { grid-template-columns: 1fr; }
+.coach-battle-builder-card { width: min(760px, calc(100vw - 28px)); max-height: min(900px, calc(100vh - 28px)); overflow-y: auto; }
+.coach-battle-team-builder { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 14px; align-items: center; margin: 16px 0; }
+.coach-battle-team-builder fieldset { display: grid; gap: 9px; min-width: 0; padding: 14px; border: 1px solid rgba(141, 159, 171, .25); border-radius: 16px; }
+.coach-battle-team-builder legend { padding: 0 8px; color: var(--aqua); font: 900 .72rem var(--mono); text-transform: uppercase; }
+.coach-builder-vs { color: var(--gold); font: 1.6rem "Bebas Neue", Impact, sans-serif; }
+.coach-challenge-fields { display: grid; grid-template-columns: 1.2fr .6fr 1fr; gap: 10px; }
+.viewer-location-filter { grid-column: span 2; }
+.viewer-venue-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.viewer-venue-tab { min-height: 42px; padding: 9px 15px; color: var(--muted); border: 1px solid rgba(141, 159, 171, .25); border-radius: 999px; background: rgba(4, 11, 15, .64); font: 900 .7rem var(--mono); letter-spacing: .05em; }
+.viewer-venue-tab.active { color: #031013; border-color: var(--aqua); background: var(--aqua); box-shadow: 0 0 18px rgba(29, 224, 211, .2); }
+.viewer-venue-tab:disabled { opacity: .62; }
+.session-group-battles { margin-top: 16px; border-top-color: var(--purple); }
+.session-group-battles .panel-head { align-items: center; }
+@media (max-width: 720px) {
+  .battle-team-picker, .coach-challenge-fields { grid-template-columns: 1fr; }
+  .battle-team-picker .battle-rider-list { max-height: 250px; }
+  .coach-battle-team-builder { grid-template-columns: 1fr; }
+  .coach-builder-vs { text-align: center; }
+  .coach-battle-create-actions > button { flex: 1 1 100%; }
+  .viewer-location-filter { grid-column: auto; }
+  .viewer-venue-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .viewer-venue-tab { flex: 0 0 auto; }
+  .session-group-battles .panel-head { align-items: stretch; }
+}

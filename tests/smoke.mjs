@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.12.0";
+const version = "2.13.0";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -142,6 +142,26 @@ for (const name of [
   assert(body.includes("finally"), `${name} must restore its busy state in finally`);
 }
 assert(functionBody("saveSessionViewerAssignments").includes("weekStartDateForCountry"), "Coach edits must use the rider's local week");
+
+const battleMigration = read("supabase/migrations/20260827010000_release_all_users_battles_and_challenges.sql");
+const battleContractMigration = read("supabase/migrations/20260827013000_finish_battle_release_contracts.sql");
+assert(!battleMigration.includes("Riley Chen test account only"), "The production battle RPC must not retain the Riley-only guard");
+assert(battleMigration.includes("weekly_rider_battle_participants"), "Team battles need normalized participant records");
+assert(battleMigration.includes("battle_size between 1 and 3"), "Battle formats must be limited to 1v1, 2v2 and 3v3");
+assert(battleMigration.includes("response = 'pending'"), "All selected riders must accept before a team battle starts");
+assert(battleMigration.includes("maximum of 3 active battles"), "The three-active-battle limit must remain enforced in the database");
+assert(battleMigration.includes("row level security"), "New battle and challenge tables must enable RLS");
+assert(battleContractMigration.includes("'one_bang'"), "Weekly challenges must use the original One Bang category key");
+assert(battleContractMigration.includes("'foam_pit'"), "Weekly challenges must use the original Foam Pit category key");
+assert(functionBody("battleRulesMarkup").includes("1v1, 2v2 or 3v3"), "Rider battle help must explain every team format");
+assert(functionBody("renderCoachBattleViewer").includes("coach-create-battle"), "Coach battle oversight needs a create-battle action");
+assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-challenge"), "Coaches need a weekly challenge builder");
+assert(functionBody("renderSessionViewer").includes("viewer-venue-tabs"), "Coach Session must use location filter tabs");
+assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
+assert(functionBody("renderSessionViewer").includes("Active challenges in this group"), "Coach Session must show group challenges at the bottom");
+assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignment-attempt"), "Coach Session trick rows should remain one-tap without Attempt buttons");
+assert.equal(read("riley-test/app.js"), app, "Riley test path must use the same all-user app bundle");
+assert.equal(read("riley-test/styles.css"), css, "Riley test path must use the same all-user styles");
 
 const buttonsWithoutType = [...app.matchAll(/<button(?![^>]*\btype=)[^>]*>/g)].map((match) => match[0]);
 assert.deepEqual(buttonsWithoutType, [], `Buttons need explicit types: ${buttonsWithoutType.join(", ")}`);
