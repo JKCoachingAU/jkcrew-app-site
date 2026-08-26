@@ -342,7 +342,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.4" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.5" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1596,7 +1596,7 @@ async function getWeeklyAssignments(athleteId) {
     }
   }
   const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
-    client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("sort_order", { ascending: true }),
+    client.rpc("get_effective_weekly_assignments", { p_athlete_id: athleteId, p_week_start: weekStart }),
     client.from("assignment_progress").select("*").eq("athlete_id", athleteId),
     client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString()),
     client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
@@ -2155,19 +2155,27 @@ function assignmentStatus(assignment) {
 }
 
 function dailyVenues(assignments = []) {
-  const venues = [...new Set(assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueKey(assignment.venue)))];
-  return venues.length ? venues : [""];
+  const venues = new Map();
+  assignments.filter((assignment) => assignment.category === "daily").forEach((assignment) => {
+    const venue = venueKey(assignment.venue);
+    const identity = venueIdentityKey(venue);
+    if (!venues.has(identity)) venues.set(identity, venue);
+  });
+  return [...venues.values()];
 }
 
 function selectedVenueFor(assignments = []) {
   const venues = dailyVenues(assignments);
-  if (!venues.includes(state.selectedVenue)) state.selectedVenue = venues[0] || "";
+  const selectedIdentity = venueIdentityKey(state.selectedVenue);
+  const matchingVenue = venues.find((venue) => venueIdentityKey(venue) === selectedIdentity);
+  if (matchingVenue !== undefined) state.selectedVenue = matchingVenue;
+  else state.selectedVenue = venues[0] || "";
   return state.selectedVenue;
 }
 
 function assignmentsForVenue(assignments = [], venue = "") {
-  const selected = venueKey(venue);
-  return assignments.filter((assignment) => assignment.category !== "daily" || venueKey(assignment.venue) === selected);
+  const selected = venueIdentityKey(venue);
+  return assignments.filter((assignment) => assignment.category !== "daily" || venueIdentityKey(assignment.venue) === selected);
 }
 
 function venueSelectorHtml(assignments = []) {
@@ -2615,31 +2623,35 @@ function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks
   }).join("");
 }
 
-function dailyVenueGroups(assignments, interactive = false, profile = null) {
+function dailyVenueGroups(assignments, interactive = false, profile = null, selectedVenue = "") {
   const dailyAssignments = assignments.filter((assignment) => assignment.category === "daily");
   const info = categoryDisplayInfo("daily", profile);
   const venues = dailyVenues(dailyAssignments);
-  const complete = dailyAssignments.filter(isAssignmentComplete).length;
-  const body = venues.length ? venues.map((venue) => {
+  const selectedIdentity = venueIdentityKey(selectedVenue);
+  const matchingVenues = venues.filter((venue) => venueIdentityKey(venue) === selectedIdentity);
+  const visibleVenues = interactive ? (matchingVenues.length ? matchingVenues : venues.slice(0, 1)) : venues;
+  const visibleAssignments = visibleVenues.flatMap((venue) => assignmentsForVenue(dailyAssignments, venue));
+  const complete = visibleAssignments.filter(isAssignmentComplete).length;
+  const body = visibleVenues.length ? visibleVenues.map((venue) => {
     const items = assignmentsForVenue(dailyAssignments, venue);
     const venueComplete = items.filter(isAssignmentComplete).length;
-    const open = state.sessionOpenDailyVenues.has(venue);
+    const open = interactive || state.sessionOpenDailyVenues.has(venue);
     return `<details class="daily-venue-accordion" data-daily-venue="${escapeHtml(venue)}" ${open ? "open" : ""}>
       <summary><span><strong>${escapeHtml(`${venueLabel(venue)} ${info.label}`)}</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
       <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No ${info.label.toLowerCase()} assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
     </details>`;
   }).join("") : `<div class="empty">No ${escapeHtml(info.label)} assigned for this week yet.</div>`;
   return `<section class="assignment-group daily-venue-group">
-    <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels.daily}</span><div class="category-count">${complete}/${dailyAssignments.length}</div></div></div>
+    <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels.daily}</span><div class="category-count">${complete}/${visibleAssignments.length}</div></div></div>
     <div class="daily-venue-stack">${body}</div>
   </section>`;
 }
 
-function assignmentGroups(assignments, interactive = false, profile = null) {
+function assignmentGroups(assignments, interactive = false, profile = null, selectedVenue = "") {
   const sessionCategoryOrder = ["daily", "one_bang", "dialled", "lines", "percentage", "foam_pit", "bonus"];
   return sessionCategoryOrder.map((category) => {
     const info = categoryDisplayInfo(category, profile);
-    if (category === "daily") return dailyVenueGroups(assignments, interactive, profile);
+    if (category === "daily") return dailyVenueGroups(assignments, interactive, profile, selectedVenue);
     const items = assignments.filter((assignment) => assignment.category === category);
     const sectionKey = category === "one_bang" ? "one-bang" : category === "foam_pit" ? "foam" : category;
     const list = category === "percentage"
@@ -4671,7 +4683,7 @@ async function renderSession({ forceParkKing = false } = {}) {
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
-      ${assignmentGroups(assignments, true, state.profile)}
+      ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
       ${extraTricksSection(state.profile, true)}
       ${sheetRulesButtonHtml()}`;
     bindVenueSelector();
@@ -4694,7 +4706,7 @@ async function renderSession({ forceParkKing = false } = {}) {
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
     ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
-    ${assignmentGroups(assignments, true, state.profile)}
+    ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
     ${sheetRulesButtonHtml()}`;
@@ -5778,13 +5790,17 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
 }
 
 function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
-  const venues = new Set();
-  if (state.sessionViewerVenue) venues.add(state.sessionViewerVenue);
-  schedules.forEach((entry) => entry.allDaily.forEach((assignment) => venues.add(venueKey(assignment.venue))));
-  groupRoster.forEach(() => {});
-  const values = [...venues].filter((venue) => venue !== undefined);
-  if (!values.length) values.push(state.sessionViewerVenue || "");
-  return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.sessionViewerVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  const venues = new Map();
+  const addVenue = (venueValue) => {
+    const venue = venueKey(venueValue);
+    const identity = venueIdentityKey(venue);
+    if (!venues.has(identity)) venues.set(identity, venue);
+  };
+  if (state.sessionViewerVenue) addVenue(state.sessionViewerVenue);
+  schedules.forEach((entry) => entry.allDaily.forEach((assignment) => addVenue(assignment.venue)));
+  const values = [...venues.values()];
+  const selectedIdentity = venueIdentityKey(state.sessionViewerVenue);
+  return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venueIdentityKey(venue) === selectedIdentity ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
 }
 
 function sessionViewerGroupTabs(disabled = false) {
@@ -5799,7 +5815,7 @@ function sessionViewerVenueTabs(groupRoster = [], schedules = [], disabled = fal
   const select = document.createElement("select");
   select.innerHTML = options;
   return [...select.options].map((option) => {
-    const active = option.value === state.sessionViewerVenue;
+    const active = venueIdentityKey(option.value) === venueIdentityKey(state.sessionViewerVenue);
     return `<button class="viewer-filter-tab viewer-venue-tab ${active ? "active" : ""}" type="button" data-viewer-venue="${escapeHtml(option.value)}" aria-pressed="${active}" ${disabled ? "disabled" : ""}>${escapeHtml(option.textContent)}</button>`;
   }).join("");
 }
@@ -9544,7 +9560,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.4", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.5", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

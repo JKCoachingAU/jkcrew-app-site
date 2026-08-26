@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.4";
+const version = "2.13.5";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -59,6 +59,35 @@ assert(assignmentGroupsBody.includes('${open ? "open" : ""}'), "Rider Session ac
 assert((functionBody("renderSession").match(/bindSessionAssignmentAccordions\(\)/g) || []).length >= 2, "Every rider Session render path must bind accordion state");
 assert(functionBody("recordAssignmentAction").includes("sessionOpenAssignmentSections.add(openSection)"), "Ticking a standard trick must preserve its open list");
 assert(functionBody("recordPercentageAttempt").includes("sessionOpenAssignmentSections.add(openSection)"), "Updating a percentage trick must preserve its open list");
+assert(functionBody("getWeeklyAssignments").includes('rpc("get_effective_weekly_assignments"'), "Rider schedules must load each location's latest saved Daily list");
+const venueKeyForTest = (venue = "") => String(venue || "").trim();
+const venueIdentityKeyForTest = (venue = "") => venueKeyForTest(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const dailyVenuesForTest = new Function("venueKey", "venueIdentityKey", `${functionBody("dailyVenues")}; return dailyVenues;`)(venueKeyForTest, venueIdentityKeyForTest);
+assert.deepEqual(
+  dailyVenuesForTest([
+    { category: "daily", venue: "HOTBOX" },
+    { category: "daily", venue: "Hotbox" },
+    { category: "daily", venue: "Beenleigh Skate Park" },
+    { category: "one_bang", venue: "Ignored" },
+  ]),
+  ["HOTBOX", "Beenleigh Skate Park"],
+  "Location selectors must combine harmless spelling/case variants without losing saved lists",
+);
+const assignmentsForVenueForTest = new Function("venueIdentityKey", `${functionBody("assignmentsForVenue")}; return assignmentsForVenue;`)(venueIdentityKeyForTest);
+assert.equal(
+  assignmentsForVenueForTest([
+    { category: "daily", venue: "Beenleigh Skate Park" },
+    { category: "daily", venue: "beenleigh-skate-park" },
+    { category: "daily", venue: "Hotbox" },
+  ], "BEENLEIGH SKATE PARK").length,
+  2,
+  "Opening a location must show its canonically matching saved Daily list",
+);
+const dailyVenueGroupsBody = functionBody("dailyVenueGroups");
+assert(dailyVenueGroupsBody.includes("interactive ? (matchingVenues.length ? matchingVenues : venues.slice(0, 1)) : venues"), "Rider Session must show only the selected Daily location");
+assert(dailyVenueGroupsBody.includes("const open = interactive ||"), "The selected rider Daily location must open automatically");
+assert(dailyVenueGroupsBody.includes("complete}/${visibleAssignments.length}"), "Rider Daily counts must describe the visible selected location only");
+assert(functionBody("renderSession").includes("assignmentGroups(assignments, true, state.profile, selectedVenue)"), "Rider Session must pass the chosen location into the Daily list");
 
 const coachNavBody = app.match(/const coachNav = \[([\s\S]*?)\];/)?.[1] || "";
 assert.equal((coachNavBody.match(/\["/g) || []).length, 6, "Coach mobile navigation must include live Challenge oversight");
@@ -129,6 +158,18 @@ assert(sessionViewerMigration.includes("security definer"), "Combined Session Vi
 assert(sessionViewerMigration.includes("from anon"), "Anonymous users must not execute the coach Session Viewer read");
 assert(sessionViewerMigration.includes("not sources.has_current_daily"), "Missing current Daily lists should use the bounded visibility fallback");
 assert(sessionViewerMigration.includes("assignment.category = 'daily'"), "Fallback must remain Daily-only to protect weekly point logic");
+
+const latestDailyMigration = read("supabase/migrations/20260827021408_restore_latest_daily_lists_by_location.sql");
+assert(latestDailyMigration.includes("get_effective_weekly_assignments"), "Riders need a protected effective weekly-plan read");
+assert(latestDailyMigration.includes("weekly_trick_assignments_latest_daily_location_idx"), "Latest Daily location lookups need a supporting partial index");
+assert(latestDailyMigration.includes("private.jkcrew_venue_key(assignment.venue)"), "Database lookups must use the canonical location identity");
+assert(latestDailyMigration.includes("assignment.week_start <= allowed.requested_week_start"), "Daily location history must exclude future sheets");
+assert(latestDailyMigration.includes("assignment.category <> 'daily'"), "Only current-week non-Daily categories may be returned");
+assert(latestDailyMigration.includes("assignment.category = 'daily'"), "Latest-location fallback must remain Daily-only");
+assert(!latestDailyMigration.includes("56 days"), "Saved Daily locations must not disappear because of an age cutoff");
+assert(latestDailyMigration.includes("from public, anon"), "Anonymous users must not execute the effective rider or coach reads");
+assert(functionBody("sessionViewerVenueOptions").includes("venueIdentityKey"), "Coach location filters must canonicalize saved venue names");
+assert(functionBody("sessionViewerVenueTabs").includes("venueIdentityKey(option.value)"), "Coach location tabs must retain their canonical active location");
 
 const percentageContractMigration = read("supabase/migrations/202607190400_fix_percentage_and_session_viewer_contracts.sql");
 assert(percentageContractMigration.includes("returns jsonb"), "Percentage venue wrapper must match the canonical JSON result");
