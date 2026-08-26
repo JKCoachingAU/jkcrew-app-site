@@ -267,6 +267,7 @@ const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
 };
 const XP_LEVEL_CAP = 50;
 const SCORE_POINTS_PER_LEVEL = 5;
+const PRESTIGE_CYCLE_POINTS = (XP_LEVEL_CAP - 1) * SCORE_POINTS_PER_LEVEL;
 function localXpRequiredForLevel(level = 1) {
   const target = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   let total = 0;
@@ -291,27 +292,34 @@ function localLevelBadge(level = 1) {
   return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, tone: tones };
 }
 function scoreLevelFromPoints(points = 0) {
-  return Math.min(XP_LEVEL_CAP, Math.max(1, Math.floor(Math.max(0, Number(points || 0)) / SCORE_POINTS_PER_LEVEL) + 1));
+  const total = Math.max(0, Number(points || 0));
+  const cyclePoints = total % PRESTIGE_CYCLE_POINTS;
+  return Math.min(XP_LEVEL_CAP, Math.max(1, Math.floor(cyclePoints / SCORE_POINTS_PER_LEVEL) + 1));
 }
 function scoreLevelSummary(points = 0) {
   const total = Math.max(0, Number(points || 0));
+  const prestige_rank = Math.floor(total / PRESTIGE_CYCLE_POINTS);
+  const cycle_points = total % PRESTIGE_CYCLE_POINTS;
   const level = scoreLevelFromPoints(total);
   const current = (level - 1) * SCORE_POINTS_PER_LEVEL;
   const nextLevel = Math.min(XP_LEVEL_CAP, level + 1);
-  const next = level >= XP_LEVEL_CAP ? current : level * SCORE_POINTS_PER_LEVEL;
-  const into = Math.max(0, total - current);
+  const next = level * SCORE_POINTS_PER_LEVEL;
+  const into = Math.max(0, cycle_points - current);
   const span = Math.max(1, next - current);
   return {
     xp_total: total,
+    prestige_rank,
+    cycle_points,
+    prestige_cycle_points: PRESTIGE_CYCLE_POINTS,
     level,
     level_cap: XP_LEVEL_CAP,
     current_level_xp: current,
     next_level: nextLevel,
     next_level_xp: next,
     xp_into_level: into,
-    xp_needed: level >= XP_LEVEL_CAP ? 0 : Math.max(0, next - total),
-    progress_percent: level >= XP_LEVEL_CAP ? 100 : Math.min(100, Math.round((into / span) * 100)),
-    current_badge: localLevelBadge(level),
+    xp_needed: Math.max(0, next - cycle_points),
+    progress_percent: Math.min(100, Math.round((into / span) * 100)),
+    current_badge: { ...localLevelBadge(level), prestige_rank },
     badges: [],
     unit_label: "pts",
     progress_note: "Scoreboard points decide the visible level and badge.",
@@ -358,10 +366,11 @@ function levelBadgeHtml(badge = {}, compact = false) {
   const level = Math.min(XP_LEVEL_CAP, Math.max(1, Number(safe.level || 1)));
   const tone = escapeHtml(safe.tone || "bronze");
   const imageUrl = levelBadgeImageUrl(level);
-  return `<span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
+  const prestigeRank = Math.max(0, Number(safe.prestige_rank || 0));
+  return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.11.82" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -374,9 +383,9 @@ function xpProgressHtml(summary, compact = false) {
   return `<div class="xp-panel ${compact ? "compact" : ""}">
     <div class="xp-badge-wrap">${levelBadgeHtml(xp.current_badge)}</div>
     <div class="xp-copy">
-      <div class="xp-title">Level ${xp.level}<span>${xp.xp_total} ${escapeHtml(unit)}</span></div>
+      <div class="xp-title">${xp.prestige_rank ? `Prestige ${xp.prestige_rank} · ` : ""}Level ${xp.level}<span>${xp.xp_total} ${escapeHtml(unit)}</span></div>
       <div class="xp-bar" aria-label="Level progress"><span style="width:${Math.max(0, Math.min(100, xp.progress_percent))}%"></span></div>
-      <div class="xp-meta">${xp.level >= XP_LEVEL_CAP ? "Max level reached" : `${xp.xp_needed} ${escapeHtml(unit)} to Level ${xp.next_level}`}</div>
+      <div class="xp-meta">${xp.level >= XP_LEVEL_CAP ? `${xp.xp_needed} ${escapeHtml(unit)} to Prestige ${xp.prestige_rank + 1}` : `${xp.xp_needed} ${escapeHtml(unit)} to Level ${xp.next_level}`}</div>
     </div>
   </div>`;
 }
@@ -9343,7 +9352,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.11.81", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.11.82", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
