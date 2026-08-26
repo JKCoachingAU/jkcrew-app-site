@@ -11,7 +11,7 @@ const css = read("styles.css");
 const serviceWorker = read("sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.3";
+const version = "2.13.4";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -238,7 +238,22 @@ assert(battleMigration.includes("unnest(p_team_one)"), "The database must save e
 assert(battleMigration.includes("unnest(p_team_two)"), "The database must save every opposing rider");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-battle"), "Coach battle oversight needs a create-battle action");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-challenge"), "Coaches need a weekly challenge builder");
-assert(functionBody("renderSessionViewer").includes("viewer-venue-tabs"), "Coach Session must use location filter tabs");
+const sessionViewerBindings = functionBody("bindSessionViewerActions");
+const sessionViewerGroupFilters = functionBody("sessionViewerGroupTabs");
+const sessionViewerVenueFilters = functionBody("sessionViewerVenueTabs");
+assert(sessionViewerRender.includes("viewer-group-tabs"), "Coach Session must use group filter tabs");
+assert(sessionViewerRender.includes("viewer-venue-tabs"), "Coach Session must use location filter tabs");
+assert(sessionViewerRender.includes("sessionViewerGroupTabs(started)"), "Coach Session must lock group filters with an active session");
+assert(!sessionViewerRender.includes('<select id="viewer-group"'), "Coach Session must not fall back to a group dropdown");
+assert(sessionViewerBindings.includes('querySelectorAll("[data-viewer-group]")'), "Coach Session must bind every group filter tab");
+assert(sessionViewerBindings.includes("dataset.viewerGroup"), "Coach Session group tabs must update the selected group");
+assert(sessionViewerGroupFilters.includes("viewer-filter-tab viewer-group-tab"), "Group filters must share the location filter styling");
+assert(sessionViewerGroupFilters.includes("aria-pressed"), "Group filters must expose their selected state");
+assert(sessionViewerVenueFilters.includes("viewer-filter-tab viewer-venue-tab"), "Location filters must use the shared filter styling");
+assert(sessionViewerVenueFilters.includes("aria-pressed"), "Location filters must expose their selected state");
+assert(css.includes(".viewer-group-filter,"), "Group and location filters must share the full-width layout");
+assert(css.includes(".viewer-filter-tabs"), "Group and location filters must share a tab row");
+assert(css.includes("overflow-x: auto"), "Session filter tabs must stay usable on narrow screens");
 assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
 assert(functionBody("renderSessionViewer").includes("Active challenges in this group"), "Coach Session must show group challenges at the bottom");
 assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignment-attempt"), "Coach Session trick rows should remain one-tap without Attempt buttons");

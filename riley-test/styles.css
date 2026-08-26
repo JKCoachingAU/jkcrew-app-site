@@ -3313,9 +3313,9 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 }
 .session-viewer-controls {
   display: grid;
-  grid-template-columns: minmax(190px, 0.34fr) minmax(190px, 0.34fr) minmax(260px, 1fr);
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
   margin-bottom: 14px;
 }
 .session-viewer-layout { display: block; }
@@ -6775,11 +6775,13 @@ html[data-theme="light"] .parent-shell textarea {
 .coach-battle-team-builder legend { padding: 0 8px; color: var(--aqua); font: 900 .72rem var(--mono); text-transform: uppercase; }
 .coach-builder-vs { color: var(--gold); font: 1.6rem "Bebas Neue", Impact, sans-serif; }
 .coach-challenge-fields { display: grid; grid-template-columns: 1.2fr .6fr 1fr; gap: 10px; }
-.viewer-location-filter { grid-column: span 2; }
-.viewer-venue-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
-.viewer-venue-tab { min-height: 42px; padding: 9px 15px; color: var(--muted); border: 1px solid rgba(141, 159, 171, .25); border-radius: 999px; background: rgba(4, 11, 15, .64); font: 900 .7rem var(--mono); letter-spacing: .05em; }
-.viewer-venue-tab.active { color: #031013; border-color: var(--aqua); background: var(--aqua); box-shadow: 0 0 18px rgba(29, 224, 211, .2); }
-.viewer-venue-tab:disabled { opacity: .62; }
+.viewer-group-filter,
+.viewer-location-filter { grid-column: 1 / -1; }
+.viewer-search-filter { width: min(100%, 320px); }
+.viewer-filter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.viewer-filter-tab { min-height: 44px; padding: 9px 15px; color: var(--muted); border: 1px solid rgba(141, 159, 171, .25); border-radius: 999px; background: rgba(4, 11, 15, .64); font: 900 .7rem var(--mono); letter-spacing: .05em; }
+.viewer-filter-tab.active { color: #031013; border-color: var(--aqua); background: var(--aqua); box-shadow: 0 0 18px rgba(29, 224, 211, .2); }
+.viewer-filter-tab:disabled { opacity: .62; cursor: not-allowed; }
 .session-group-battles { margin-top: 16px; border-top-color: var(--purple); }
 .session-group-battles .panel-head { align-items: center; }
 @media (max-width: 720px) {
@@ -6788,8 +6790,8 @@ html[data-theme="light"] .parent-shell textarea {
   .coach-battle-team-builder { grid-template-columns: 1fr; }
   .coach-builder-vs { text-align: center; }
   .coach-battle-create-actions > button { flex: 1 1 100%; }
-  .viewer-location-filter { grid-column: auto; }
-  .viewer-venue-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
-  .viewer-venue-tab { flex: 0 0 auto; }
+  .viewer-filter-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .viewer-filter-tabs::-webkit-scrollbar { display: none; }
+  .viewer-filter-tab { flex: 0 0 auto; }
   .session-group-battles .panel-head { align-items: stretch; }
 }

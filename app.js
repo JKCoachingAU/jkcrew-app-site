@@ -342,7 +342,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.3" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.4" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -5688,7 +5688,6 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     state.sessionViewerVenue = activeGroupSession.venue || state.sessionViewerVenue;
   }
   const contestPrepViewer = state.sessionViewerGroup === contestPrepGroupId;
-  const groupOptions = coachGroups.map(([id, label]) => `<option value="${id}" ${state.sessionViewerGroup === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
   const search = state.sessionViewerSearch.toLowerCase().trim();
   const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
   const groupRoster = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id));
@@ -5761,9 +5760,9 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       </div>
     </section>
     <section class="panel session-viewer-controls coach-tone-blue">
-      <div class="field"><label for="viewer-group">Group/session</label><select id="viewer-group" ${started ? "disabled" : ""}>${groupOptions}</select></div>
-      <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-venue-tabs">${sessionViewerVenueTabs(groupRoster, schedules, started)}</div></div>
-      <div class="field"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
+      <div class="field viewer-group-filter"><label>Group filter</label><div class="viewer-filter-tabs viewer-group-tabs" role="group" aria-label="Group filter">${sessionViewerGroupTabs(started)}</div></div>
+      <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-filter-tabs viewer-venue-tabs" role="group" aria-label="Location filter">${sessionViewerVenueTabs(groupRoster, schedules, started)}</div></div>
+      <div class="field viewer-search-filter"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
     </section>
     ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}
     ${extraRiderForm}
@@ -5788,11 +5787,21 @@ function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
   return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.sessionViewerVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
 }
 
+function sessionViewerGroupTabs(disabled = false) {
+  return coachGroups.map(([id, label]) => {
+    const active = id === state.sessionViewerGroup;
+    return `<button class="viewer-filter-tab viewer-group-tab ${active ? "active" : ""}" type="button" data-viewer-group="${escapeHtml(id)}" aria-pressed="${active}" ${disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
+  }).join("");
+}
+
 function sessionViewerVenueTabs(groupRoster = [], schedules = [], disabled = false) {
   const options = sessionViewerVenueOptions(groupRoster, schedules);
   const select = document.createElement("select");
   select.innerHTML = options;
-  return [...select.options].map((option) => `<button class="viewer-venue-tab ${option.value === state.sessionViewerVenue ? "active" : ""}" type="button" data-viewer-venue="${escapeHtml(option.value)}" ${disabled ? "disabled" : ""}>${escapeHtml(option.textContent)}</button>`).join("");
+  return [...select.options].map((option) => {
+    const active = option.value === state.sessionViewerVenue;
+    return `<button class="viewer-filter-tab viewer-venue-tab ${active ? "active" : ""}" type="button" data-viewer-venue="${escapeHtml(option.value)}" aria-pressed="${active}" ${disabled ? "disabled" : ""}>${escapeHtml(option.textContent)}</button>`;
+  }).join("");
 }
 
 function groupSessionElapsedSeconds(session) {
@@ -5928,13 +5937,15 @@ function sessionViewerRunList(entry) {
 
 function bindSessionViewerActions() {
   document.querySelector("#viewer-refresh")?.addEventListener("click", () => renderSessionViewer());
-  document.querySelector("#viewer-group")?.addEventListener("change", (event) => {
-    state.sessionViewerGroup = event.target.value;
+  document.querySelectorAll("[data-viewer-group]").forEach((button) => button.addEventListener("click", (event) => {
+    const nextGroup = event.currentTarget.dataset.viewerGroup;
+    if (!nextGroup || nextGroup === state.sessionViewerGroup) return;
+    state.sessionViewerGroup = nextGroup;
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "daily";
     renderSessionViewer();
-  });
+  }));
   document.querySelectorAll("[data-viewer-venue]").forEach((button) => button.addEventListener("click", (event) => {
     state.sessionViewerVenue = event.currentTarget.dataset.viewerVenue;
     state.sessionViewerOpenAthleteId = "";
@@ -9533,7 +9544,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.3", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.4", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
