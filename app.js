@@ -115,7 +115,7 @@ const coachNavGroups = [
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Planner"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Run Planner"]] },
-  { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
+  { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
   ["home", "Home"],
@@ -127,7 +127,7 @@ function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
   if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
-  if (["more", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
+  if (["more", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
 
@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.56`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.57`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.56" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.57" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.56" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.57" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -951,14 +951,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell ${shellClass}">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.56" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.57" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.56" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.57" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -1089,6 +1089,7 @@ async function navigate(view) {
     sessionViewer: renderSessionViewer,
     coachTools: renderCoachTools,
     more: renderCoachMore,
+    adminRecords: renderCoachAdminRecords,
     planner: renderPlanner,
     parents: renderParents,
     videoReviews: renderVideoReviews,
@@ -4931,12 +4932,47 @@ async function renderCoachMore() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">More</div><h1>Coach <span>admin</span></h1><p>Parent management, leaderboard, profile, account settings, app updates and sign out live here so the main nav stays clean.</p></div></div>
     <section class="coach-hub-grid">
+      ${coachHubCard("adminRecords", "Admin & Records", "Attendance, payments, injuries and rider records", "▦")}
       ${coachHubCard("parents", "Parents", "Linked parent viewer accounts", "P")}
       ${coachHubCard("board", "Board", "Full leaderboard and crew chat", "#")}
       ${coachHubCard("profile", "Profile", "Account settings, theme and password", "●")}
       ${coachHubCard("command", "Command", "Back to the coach dashboard", "◇")}
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+}
+
+async function renderCoachAdminRecords() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const roster = await getCoachRoster();
+  if (!roster.length) {
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">More · Admin & Records</div><h1>No <span>riders</span></h1><p>Add students before using attendance and rider records.</p></div><button class="secondary-btn" type="button" data-view="more">Back to More</button></div><div class="empty">No students linked yet.</div>`;
+    document.querySelector("#view [data-view]")?.addEventListener("click", (event) => navigate(event.currentTarget.dataset.view));
+    return;
+  }
+  const commandData = await getCoachCommandData(roster);
+  const injuredCount = commandData.statuses.filter((status) => status.heat_status === "injured").length;
+  const adminSections = [
+    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster)),
+    commandAccordionSection("payments-section", "Payments / Reimbursements", "Attendance history and outstanding venue costs", attendanceHistoryHtml(commandData.attendanceSessions)),
+    commandAccordionSection("injury-section", "Injury Reports", "Modified training and rider file shortcuts", `<div class="notification-list">${commandData.statuses.filter((status) => status.heat_status === "injured").map((status) => {
+      const athlete = roster.find((entry) => entry.id === status.athlete_id);
+      return `<button class="notification-card" type="button" data-open-student="${escapeHtml(status.athlete_id)}"><span>Injury</span><strong>${escapeHtml(athlete?.display_name || "Rider")} — modified training / injury</strong></button>`;
+    }).join("") || `<div class="empty compact-empty">No injured / modified riders marked.</div>`}</div>`),
+    commandAccordionSection("records-section", "Emergency Contacts / Waivers / Forms", "Open rider files to view private records", `<div class="notification-list">${roster.map((athlete) => `<button class="notification-card" type="button" data-open-student="${athlete.id}"><span>Rider file</span><strong>${escapeHtml(athlete.display_name)} — emergency contacts, waivers, forms</strong></button>`).join("")}</div>`),
+    commandAccordionSection("settings-section", "Settings", "Coach account and app settings", `<button class="secondary-btn" data-view="profile" type="button">Open Coach Profile</button>`),
+  ].join("");
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">More · Coach admin</div><h1>Admin & <span>Records</span></h1><p>Attendance, payments, injuries, rider files and settings.</p></div><button class="secondary-btn" type="button" data-view="more">Back to More</button></div>
+    <section class="command-management-stack">
+      ${commandHubAccordion("admin-records-hub", "01", "Admin & Records", "Attendance, payments, injuries, records and settings", `${injuredCount} modified · ${commandData.attendanceSessions?.length || 0} sessions`, adminSections)}
+    </section>`;
+  document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
+  document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
+  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openStudent;
+    navigate("student");
+  }));
 }
 
 function coachListRequestsHtml(proposals = [], roster = []) {
@@ -4980,7 +5016,6 @@ async function renderCoachCommand() {
     getAllParkKings(),
   ]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
-  const injuredCount = commandData.statuses.filter((status) => status.heat_status === "injured").length;
   const calendarFeed = combinedCoachCalendarItems(commandData);
   const groupedCalendar = groupCoachCalendarItems(calendarFeed, roster);
   const upcoming = groupedCalendar.filter((event) => new Date(event.starts_at) >= new Date()).length;
@@ -4992,16 +5027,6 @@ async function renderCoachCommand() {
     commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
     commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
     commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
-  ].join("");
-  const adminSections = [
-    commandAccordionSection("attendance-section", "Attendance", "Save attendance for group sessions", attendanceForm(roster)),
-    commandAccordionSection("payments-section", "Payments / Reimbursements", "Attendance history and outstanding venue costs", attendanceHistoryHtml(commandData.attendanceSessions)),
-    commandAccordionSection("injury-section", "Injury Reports", "Modified training and rider file shortcuts", `<div class="notification-list">${commandData.statuses.filter((status) => status.heat_status === "injured").map((status) => {
-      const athlete = roster.find((entry) => entry.id === status.athlete_id);
-      return `<button class="notification-card" type="button" data-open-student="${escapeHtml(status.athlete_id)}"><span>Injury</span><strong>${escapeHtml(athlete?.display_name || "Rider")} — modified training / injury</strong></button>`;
-    }).join("") || `<div class="empty compact-empty">No injured / modified riders marked.</div>`}</div>`),
-    commandAccordionSection("records-section", "Emergency Contacts / Waivers / Forms", "Open rider files to view private records", `<div class="notification-list">${roster.map((athlete) => `<button class="notification-card" type="button" data-open-student="${athlete.id}"><span>Rider file</span><strong>${escapeHtml(athlete.display_name)} — emergency contacts, waivers, forms</strong></button>`).join("")}</div>`),
-    commandAccordionSection("settings-section", "Settings", "Coach account and app settings", `<button class="secondary-btn" data-view="profile" type="button">Open Coach Profile</button>`),
   ].join("");
   document.querySelector("#view").innerHTML = `
     <section class="command-page-hero">
@@ -5025,7 +5050,6 @@ async function renderCoachCommand() {
     ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
     <section class="command-management-stack">
       ${commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events and parent updates", `${listRequestCount + pendingRequests} request${listRequestCount + pendingRequests === 1 ? "" : "s"} · ${upcoming} event${upcoming === 1 ? "" : "s"}`, teamSections)}
-      ${commandHubAccordion("admin-records-hub", "02", "Admin & Records", "Attendance, payments, injuries, records and settings", `${injuredCount} modified · ${commandData.attendanceSessions?.length || 0} sessions`, adminSections)}
     </section>`;
   document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
   document.querySelector("#coach-broadcast-form")?.addEventListener("submit", sendCoachBroadcast);
@@ -5036,7 +5060,6 @@ async function renderCoachCommand() {
     if (riderField) riderField.hidden = !individual;
     if (riderSelect) riderSelect.disabled = !individual;
   });
-  document.querySelector("#attendance-form")?.addEventListener("submit", saveAttendanceSession);
   document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
   document.querySelector("#command-park-king-filter")?.addEventListener("change", renderCommandParkKingSelection);
   document.querySelector("#generate-weekly-previews")?.addEventListener("click", () => generateWeeklyNotificationPreviews(roster, commandData));
@@ -5044,7 +5067,6 @@ async function renderCoachCommand() {
   document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
   document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
   document.querySelectorAll("[data-proposal-review]").forEach((form) => form.addEventListener("submit", reviewRiderSheetProposal));
-  document.querySelectorAll(".heat-form").forEach((form) => form.addEventListener("submit", saveHeatStatus));
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
   document.querySelectorAll("#view [data-public-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.publicAthleteId = button.dataset.publicAthlete;
@@ -5766,7 +5788,7 @@ async function saveHeatStatus(event) {
   if (error) return notify(messageFrom(error), "error");
   cacheClear("coach-command:");
   notify("Rider heat status saved.");
-  await renderCoachCommand();
+  await (state.view === "adminRecords" ? renderCoachAdminRecords() : renderCoachCommand());
 }
 
 async function dismissCoachTask(event) {
@@ -5954,7 +5976,7 @@ async function saveAttendanceSession(event) {
   const { error: recordError } = await client.from("attendance_records").insert(rows.map((row) => ({ ...row, attendance_session_id: session.id })));
   if (recordError) return notify(messageFrom(recordError), "error");
   notify("Attendance and reimbursement tracker saved.");
-  await renderCoachCommand();
+  await (state.view === "adminRecords" ? renderCoachAdminRecords() : renderCoachCommand());
 }
 
 function privateRecordForm(record = {}) {
