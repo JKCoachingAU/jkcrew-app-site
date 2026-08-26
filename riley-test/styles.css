@@ -4847,10 +4847,39 @@ html[data-theme="light"] .success-burst {
 }
 
 .coach-message-banner-list article {
+  position: relative;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 14px;
+}
+
+.coach-message-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 92, 92, .65);
+  border-radius: 50%;
+  background: rgba(255, 60, 78, .14);
+  color: #ff5c67;
+  font: 900 20px/1 var(--body);
+  cursor: pointer;
+}
+
+.coach-message-dismiss:hover,
+.coach-message-dismiss:focus-visible {
+  background: #ff3c4e;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 60, 78, .16);
+}
+
+.coach-message-banner-list article p {
+  padding-right: 34px;
 }
 
 .coach-message-banner-list article + article {

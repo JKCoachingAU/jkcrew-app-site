@@ -3668,9 +3668,26 @@ function coachMessagesHtml(messages = []) {
   return `<section class="coach-message-banner" aria-label="Coach messages">
     <div class="coach-message-banner-title"><span>Coach message</span><small>Latest update from JK Coaching</small></div>
     <div class="coach-message-banner-list">
-      ${messages.map((message) => `<article><p>${escapeHtml(message.message)}</p><small>${escapeHtml(message.sender_name || "Coach")} · ${dateLabel(message.sent_at)}</small></article>`).join("")}
+      ${messages.map((message) => `<article data-coach-message-card="${escapeHtml(message.id)}"><button class="coach-message-dismiss" type="button" data-dismiss-coach-message="${escapeHtml(message.id)}" aria-label="Remove coach message">×</button><p>${escapeHtml(message.message)}</p><small>${escapeHtml(message.sender_name || "Coach")} · ${dateLabel(message.sent_at)}</small></article>`).join("")}
     </div>
   </section>`;
+}
+
+async function dismissCoachMessage(event) {
+  const button = event.currentTarget;
+  const messageId = button.dataset.dismissCoachMessage;
+  if (!messageId) return;
+  button.disabled = true;
+  const { error } = await client.rpc("dismiss_my_coach_message", { p_broadcast_id: messageId });
+  if (error) {
+    button.disabled = false;
+    return notify(messageFrom(error, "Unable to remove that coach message."), "error");
+  }
+  const card = button.closest("[data-coach-message-card]");
+  const banner = button.closest(".coach-message-banner");
+  card?.remove();
+  if (!banner?.querySelector("[data-coach-message-card]")) banner?.remove();
+  cacheClear(`coach-messages:${state.user.id}:`);
 }
 
 function coachBroadcastComposerHtml(roster = [], history = []) {
@@ -4171,6 +4188,7 @@ async function renderAthleteHome() {
     ${riderProposalForm(sheetProposals)}
     ${athleteTrickRequestSection(assignments, trickRequests)}`;
   bindGoalActions();
+  document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
   document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
   document.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => document.querySelector("#rider-proposal-builder")?.classList.toggle("hidden"));
   const riderProposalFormElement = document.querySelector("#rider-proposal-form");
