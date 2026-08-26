@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.58`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.59`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.58" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.59" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -789,7 +789,7 @@ async function handleSession(session) {
   state.profile = data;
   applyTheme(data.app_theme);
   const pushView = new URL(window.location.href).searchParams.get("push");
-  const allowedPushViews = new Set(["home", "board"]);
+  const allowedPushViews = new Set(["home", "board", "command"]);
   state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
   if (pushView) {
     const cleanUrl = new URL(window.location.href);
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.58" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.59" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -951,14 +951,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell ${shellClass}">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.58" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.59" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.58" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.59" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -8564,13 +8564,16 @@ async function getPushNotificationState() {
     crew_chat: true,
     parent_weekly_summary: true,
     coach_messages: true,
+    daily_hype: true,
+    trick_completed: true,
+    list_requests: true,
   };
   if (!state.user?.id || !supportsPushNotifications()) {
     return { supported: false, enabled: false, permission: "unsupported", preferences: defaults };
   }
 
   const { data: preferences, error } = await client.from("push_preferences")
-    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary, coach_messages")
+    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary, coach_messages, daily_hype, trick_completed, list_requests")
     .eq("user_id", state.user.id)
     .maybeSingle();
   if (error) throw error;
@@ -8610,8 +8613,10 @@ function pushNotificationSettingsHtml(pushState) {
           <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
           <label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>
           <label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my coach</label>
+          <label><input type="checkbox" data-push-preference="daily_hype" ${preference.daily_hype ? "checked" : ""}> 9am daily coach hype message</label>
+          <label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> My list request is approved</label>
         ` : ""}
-        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>` : ""}
+        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label><label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label><label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>` : ""}
         ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label><label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my child's coach</label>` : ""}
       </div>
       <p>Notifications are set separately on each phone, tablet, or computer. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
@@ -8629,6 +8634,9 @@ function currentPushPreferences() {
     crew_chat: checkboxValue("crew_chat"),
     parent_weekly_summary: checkboxValue("parent_weekly_summary"),
     coach_messages: checkboxValue("coach_messages"),
+    daily_hype: checkboxValue("daily_hype"),
+    trick_completed: checkboxValue("trick_completed"),
+    list_requests: checkboxValue("list_requests"),
     updated_at: new Date().toISOString(),
   };
 }
@@ -8735,7 +8743,7 @@ async function renderProfile() {
       supported: supportsPushNotifications(),
       enabled: false,
       permission: supportsPushNotifications() ? Notification.permission : "unsupported",
-      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true, coach_messages: true },
+      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true, coach_messages: true, daily_hype: true, trick_completed: true, list_requests: true },
     };
   });
   try {
@@ -8970,7 +8978,8 @@ window.addEventListener("load", async () => {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
-    const view = ["home", "board"].includes(event.data.view) ? event.data.view : "home";
+    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command"] : ["home", "board"];
+    const view = allowedViews.includes(event.data.view) ? event.data.view : (isCoachRole(state.profile.role) ? "command" : "home");
     navigate(view);
   });
 }
