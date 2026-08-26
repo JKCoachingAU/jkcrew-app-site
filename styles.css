@@ -6309,7 +6309,15 @@ html[data-theme="light"] .parent-shell textarea {
 .proposal-category-head label { color: var(--aqua); font-weight: 900; }
 .proposal-category-head small { grid-column: 1 / -1; color: var(--muted); }
 .proposal-category-field > small { color: var(--muted); }
-.proposal-category-field textarea { margin: 0; min-height: 88px; }
+.proposal-numbered-list { display: grid; gap: 7px; }
+.proposal-numbered-row { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 6px; align-items: center; }
+.proposal-numbered-row > span { color: var(--muted); font: 800 .72rem var(--mono); text-align: right; }
+.proposal-numbered-row input { margin: 0; min-width: 0; }
+.proposal-category-field.proposal-invalid,
+#proposal-venue-field.proposal-invalid { border-color: var(--red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 22%, transparent); }
+.proposal-category-field.proposal-invalid .proposal-count { color: var(--red); }
+.proposal-numbered-row input[aria-invalid="true"],
+#proposal-venue[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 28%, transparent); }
 .proposal-count { color: var(--muted); font: 800 .72rem var(--mono); }
 .proposal-count.complete { color: var(--aqua); }
 .proposal-count.over { color: var(--red); }

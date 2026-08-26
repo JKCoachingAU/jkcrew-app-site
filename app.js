@@ -365,7 +365,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
-  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.57`;
+  return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.58`;
 }
 function xpProgressHtml(summary, compact = false) {
   const xp = normalizeXpSummary(summary);
@@ -740,7 +740,7 @@ function handleSessionOnce(session) {
 function renderBootRecovery(message = "The app could not finish loading.") {
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
-      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.57" alt="JK Coaching logo"></div>
+      <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.58" alt="JK Coaching logo"></div>
       <h1>JKCREW is having trouble loading</h1>
       <p>${escapeHtml(message)}</p>
       <div class="boot-actions">
@@ -806,7 +806,7 @@ function renderAuth(mode = "login", message = "") {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="auth-logo-stack">
-          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.57" alt="JKCoaching logo"></div>
+          <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.58" alt="JKCoaching logo"></div>
         </div>
         <div class="hero-copy">
           <div class="eyebrow">JKCREW coaching academy</div>
@@ -951,14 +951,14 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell ${shellClass}">
       <aside class="sidebar">
-        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.57" alt="JK Coaching logo"><span>JK Coaching</span></div>
+        <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.58" alt="JK Coaching logo"><span>JK Coaching</span></div>
         <div class="role-pill">${escapeHtml(role)} account</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
       <div class="main-wrap">
         <header class="topbar">
-          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.57" alt="">JKCREW live</div>
+          <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.58" alt="">JKCREW live</div>
           <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
         </header>
         <main id="view" class="content"></main>
@@ -3843,32 +3843,62 @@ function riderProposalForm(proposals = []) {
   const statusRows = recent.length ? recent.map((proposal) => `<div class="proposal-status-row ${escapeHtml(proposal.status)}"><span>${escapeHtml(proposal.status)}</span><strong>${escapeHtml(proposal.title)}</strong><small>${dateLabel(proposal.created_at)}${proposal.coach_note ? ` · ${escapeHtml(proposal.coach_note)}` : ""}</small></div>`).join("") : `<div class="empty compact-empty">You have not sent a list request yet.</div>`;
   const fields = Object.entries(riderProposalRequirements).map(([category, requiredCount]) => {
     const info = categoryInfo[category];
-    return `<div class="proposal-category-field"><div class="proposal-category-head"><label for="proposal-items-${category}">${escapeHtml(info.label)}</label><span class="proposal-count" data-proposal-count="${category}">0/${requiredCount}</span><small>${escapeHtml(info.description)}</small></div><textarea id="proposal-items-${category}" name="proposalItems.${category}" rows="3" placeholder="${category === "lines" ? "Manual → barspin → 180\nFeeble → hard 180 → fakie bar" : "One trick per row"}"></textarea>${category === "lines" ? `<small>Put each complete 3–4 trick run on its own row.</small>` : ""}</div>`;
+    const numberedRows = Array.from({ length: requiredCount }, (_, index) => `<label class="proposal-numbered-row"><span>${index + 1}.</span><input id="proposal-items-${category}-${index + 1}" name="proposalItems.${category}" maxlength="620" autocomplete="off" placeholder="${category === "lines" ? "Enter a complete 3–4 trick run" : `Enter ${info.label.toLowerCase().replace(/s$/, "")} ${index + 1}`}"></label>`).join("");
+    return `<div class="proposal-category-field" data-proposal-category="${category}"><div class="proposal-category-head"><label for="proposal-items-${category}-1">${escapeHtml(info.label)}</label><span class="proposal-count" data-proposal-count="${category}">0/${requiredCount}</span><small>${escapeHtml(info.description)}</small></div><div class="proposal-numbered-list">${numberedRows}</div>${category === "lines" ? `<small>Each numbered row must contain one complete 3–4 trick run.</small>` : ""}</div>`;
   }).join("");
-  return `<section class="panel rider-proposal-panel"><div class="panel-head"><div><div class="panel-title">Request your weekly lists</div><div class="panel-meta">Build the full sheet and send it to your coach${pending.length ? ` · ${pending.length} waiting` : ""}</div></div><button class="secondary-btn compact-btn" type="button" id="toggle-rider-proposal" ${activeThisWeek ? "disabled" : ""}>${activeThisWeek ? (activeThisWeek.status === "accepted" ? "Lists accepted this week" : "Request already sent") : "Build my lists"}</button></div><div id="rider-proposal-builder" class="rider-proposal-builder hidden"><form id="rider-proposal-form"><div class="two-col-form"><div class="field"><label for="proposal-title">Request name</label><input id="proposal-title" name="title" maxlength="100" placeholder="Saturday park session"></div><div class="field"><label for="proposal-venue">Skate park / location</label><input id="proposal-venue" name="venue" maxlength="80" required placeholder="Where your 10 Dailys apply"></div></div><div class="proposal-requirements">Required: 10 Dailys · 5 One Bangs · 5 Dialled · 3 Percentage · 3 Lines · 1 Bonus</div><div class="proposal-sheet-grid">${fields}</div><div class="field"><label for="proposal-note">Note for your coach</label><textarea id="proposal-note" name="note" rows="2" maxlength="500" placeholder="Anything your coach should know"></textarea></div><button class="primary-btn" type="submit">Send all lists to my coach</button></form></div><div class="proposal-status-list">${statusRows}</div></section>`;
+  return `<section class="panel rider-proposal-panel"><div class="panel-head"><div><div class="panel-title">Request your weekly lists</div><div class="panel-meta">Build the full sheet and send it to your coach${pending.length ? ` · ${pending.length} waiting` : ""}</div></div><button class="secondary-btn compact-btn" type="button" id="toggle-rider-proposal" ${activeThisWeek ? "disabled" : ""}>${activeThisWeek ? (activeThisWeek.status === "accepted" ? "Lists accepted this week" : "Request already sent") : "Build my lists"}</button></div><div id="rider-proposal-builder" class="rider-proposal-builder hidden"><form id="rider-proposal-form" novalidate><div class="two-col-form"><div class="field"><label for="proposal-title">Request name</label><input id="proposal-title" name="title" maxlength="100" placeholder="Saturday park session"></div><div class="field" id="proposal-venue-field"><label for="proposal-venue">Skate park / location</label><input id="proposal-venue" name="venue" maxlength="80" placeholder="Where your 10 Dailys apply"></div></div><div class="proposal-requirements">Required: 10 Dailys · 5 One Bangs · 5 Dialled · 3 Percentage · 3 Lines · 1 Bonus</div><div class="proposal-sheet-grid">${fields}</div><div class="field"><label for="proposal-note">Note for your coach</label><textarea id="proposal-note" name="note" rows="2" maxlength="500" placeholder="Anything your coach should know"></textarea></div><button class="primary-btn" type="submit">Send all lists to my coach</button></form></div><div class="proposal-status-list">${statusRows}</div></section>`;
 }
 
 function updateRiderProposalCounts(formElement) {
   const data = new FormData(formElement);
+  const venueInput = formElement.querySelector("#proposal-venue");
+  if (venueInput?.value.trim()) {
+    venueInput.removeAttribute("aria-invalid");
+    formElement.querySelector("#proposal-venue-field")?.classList.remove("proposal-invalid");
+  }
+  formElement.querySelectorAll('.proposal-numbered-row input[aria-invalid="true"]').forEach((input) => {
+    if (input.value.trim()) input.removeAttribute("aria-invalid");
+  });
   Object.entries(riderProposalRequirements).forEach(([category, requiredCount]) => {
-    const count = String(data.get(`proposalItems.${category}`) || "").split("\n").map((line) => line.trim()).filter(Boolean).length;
+    const count = data.getAll(`proposalItems.${category}`).map((line) => String(line).trim()).filter(Boolean).length;
     const counter = formElement.querySelector(`[data-proposal-count="${category}"]`);
     if (!counter) return;
     counter.textContent = `${count}/${requiredCount}`;
     counter.classList.toggle("complete", count === requiredCount);
-    counter.classList.toggle("over", count > requiredCount);
+    const categoryField = formElement.querySelector(`[data-proposal-category="${category}"]`);
+    if (categoryField?.classList.contains("proposal-invalid") && count === requiredCount) categoryField.classList.remove("proposal-invalid");
   });
+}
+
+function focusRiderProposalProblem(element) {
+  element?.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.setTimeout(() => element?.focus({ preventScroll: true }), 350);
 }
 
 async function submitRiderSheetProposal(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
-  const categoryLines = Object.fromEntries(Object.keys(riderProposalRequirements).map((category) => [category, String(form.get(`proposalItems.${category}`) || "").split("\n").map((line) => line.trim()).filter(Boolean)]));
-  const wrongCounts = Object.entries(riderProposalRequirements).filter(([category, count]) => categoryLines[category].length !== count);
-  if (wrongCounts.length) return notify(`Finish the exact lists first. ${wrongCounts.map(([category, count]) => `${categoryInfo[category].label}: ${categoryLines[category].length}/${count}`).join(" · ")}`, "error");
+  formElement.querySelectorAll(".proposal-invalid").forEach((element) => element.classList.remove("proposal-invalid"));
+  formElement.querySelectorAll('[aria-invalid="true"]').forEach((element) => element.removeAttribute("aria-invalid"));
+  const venueInput = formElement.querySelector("#proposal-venue");
   const venue = String(form.get("venue") || "").trim();
-  if (!venue) return notify("Add the skate park or location for the 10 Dailys.", "error");
+  if (!venue) {
+    formElement.querySelector("#proposal-venue-field")?.classList.add("proposal-invalid");
+    venueInput?.setAttribute("aria-invalid", "true");
+    focusRiderProposalProblem(venueInput);
+    return notify("Add the skate park or location for the 10 Dailys.", "error");
+  }
+  const categoryLines = Object.fromEntries(Object.keys(riderProposalRequirements).map((category) => [category, form.getAll(`proposalItems.${category}`).map((line) => String(line).trim()).filter(Boolean)]));
+  const wrongCounts = Object.entries(riderProposalRequirements).filter(([category, count]) => categoryLines[category].length !== count);
+  if (wrongCounts.length) {
+    wrongCounts.forEach(([category]) => formElement.querySelector(`[data-proposal-category="${category}"]`)?.classList.add("proposal-invalid"));
+    const [firstCategory] = wrongCounts[0];
+    const firstMissing = [...formElement.querySelectorAll(`[name="proposalItems.${firstCategory}"]`)].find((input) => !input.value.trim());
+    firstMissing?.setAttribute("aria-invalid", "true");
+    focusRiderProposalProblem(firstMissing || formElement.querySelector(`[data-proposal-category="${firstCategory}"]`));
+    return notify(`Finish the exact lists first. ${wrongCounts.map(([category, count]) => `${categoryInfo[category].label}: ${categoryLines[category].length}/${count}`).join(" · ")}`, "error");
+  }
   const { data: links, error: linkError } = await client.from("coach_athletes").select("coach_id").eq("athlete_id", state.user.id).limit(1);
   if (linkError || !links?.length) return notify("Your account is not linked to a coach yet.", "error");
   const items = Object.keys(riderProposalRequirements).flatMap((category) => categoryLines[category].map((line) => { const [name, ...notes] = line.split(" - "); return { category, trick_name: name.trim().slice(0, 120), notes: notes.join(" - ").trim().slice(0, 500) }; }));
