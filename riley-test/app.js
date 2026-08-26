@@ -31,6 +31,7 @@ const state = {
   publicAthleteId: null,
   selectedVenue: "",
   sessionOpenDailyVenues: new Set(),
+  sessionOpenAssignmentSections: new Set(),
   sessionViewerGroup: "monday",
   sessionViewerVenue: "",
   sessionViewerSearch: "",
@@ -341,7 +342,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.0" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.1" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1202,7 +1203,10 @@ async function navigate(view) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
-  if (view === "session" && previousView !== "session") state.sessionOpenDailyVenues.clear();
+  if (view === "session" && previousView !== "session") {
+    state.sessionOpenDailyVenues.clear();
+    state.sessionOpenAssignmentSections.clear();
+  }
   if (view === "sessionViewer" && previousView !== "sessionViewer") state.sessionViewerOpenAthleteId = "";
   state.view = view;
   const viewElement = document.querySelector("#view");
@@ -2641,7 +2645,8 @@ function assignmentGroups(assignments, interactive = false, profile = null) {
     const list = category === "percentage"
       ? percentageAssignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive)
       : assignmentList(items, `No ${info.label.toLowerCase()} assigned.`, interactive);
-    return `<details class="assignment-group session-assignment-accordion ${category === "bonus" ? "bonus-assignment-group" : ""}" data-assignment-section="${sectionKey}">
+    const open = state.sessionOpenAssignmentSections.has(sectionKey);
+    return `<details class="assignment-group session-assignment-accordion ${category === "bonus" ? "bonus-assignment-group" : ""}" data-assignment-section="${sectionKey}" ${open ? "open" : ""}>
       <summary class="assignment-group-head"><div><div class="panel-title">${info.label}${category === "bonus" ? `<span class="bonus-rare-tag">Gold trick</span>` : ""}</div><div class="panel-meta">${info.description}</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels[category]}</span><div class="category-count">${items.filter(isAssignmentComplete).length}/${items.length}</div><span class="accordion-caret" aria-hidden="true">⌄</span></div></summary>
       <div class="assignment-list">${list}</div>
     </details>`;
@@ -4616,6 +4621,7 @@ async function renderSession({ forceParkKing = false } = {}) {
       ${sheetRulesButtonHtml()}`;
     bindVenueSelector();
     bindDailyVenueAccordions();
+    bindSessionAssignmentAccordions();
     bindExtraTrickActions();
     bindDailyReorder();
     document.querySelector("#create-session").addEventListener("click", startSession);
@@ -4639,6 +4645,7 @@ async function renderSession({ forceParkKing = false } = {}) {
     ${sheetRulesButtonHtml()}`;
   bindVenueSelector();
   bindDailyVenueAccordions();
+  bindSessionAssignmentAccordions();
   bindExtraTrickActions();
   bindDailyReorder();
   document.querySelector("#end-session").addEventListener("click", endSession);
@@ -4657,6 +4664,17 @@ function bindDailyVenueAccordions() {
       if (!venue) return;
       if (details.open) state.sessionOpenDailyVenues.add(venue);
       else state.sessionOpenDailyVenues.delete(venue);
+    });
+  });
+}
+
+function bindSessionAssignmentAccordions() {
+  document.querySelectorAll(".session-assignment-accordion[data-assignment-section]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      const section = details.dataset.assignmentSection;
+      if (!section) return;
+      if (details.open) state.sessionOpenAssignmentSections.add(section);
+      else state.sessionOpenAssignmentSections.delete(section);
     });
   });
 }
@@ -4707,6 +4725,8 @@ async function recordAssignmentAction(event) {
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
+  const openSection = button.closest(".session-assignment-accordion[data-assignment-section]")?.dataset.assignmentSection;
+  if (openSection) state.sessionOpenAssignmentSections.add(openSection);
   const row = button.closest(".assignment-row");
   const trickName = row?.querySelector("strong")?.textContent?.trim() || "Trick";
   const wasComplete = row?.classList.contains("complete");
@@ -4783,6 +4803,8 @@ async function recordPercentageAttempt(event) {
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
+  const openSection = button.closest(".session-assignment-accordion[data-assignment-section]")?.dataset.assignmentSection;
+  if (openSection) state.sessionOpenAssignmentSections.add(openSection);
   button.disabled = true;
   const cycleState = button.dataset.percentageCycle || "";
   const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
@@ -9456,7 +9478,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.0", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.1", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
