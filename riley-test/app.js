@@ -267,7 +267,7 @@ const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
 };
 const XP_LEVEL_CAP = 50;
 const SCORE_POINTS_PER_LEVEL = 5;
-const PRESTIGE_CYCLE_POINTS = (XP_LEVEL_CAP - 1) * SCORE_POINTS_PER_LEVEL;
+const PRESTIGE_CYCLE_POINTS = XP_LEVEL_CAP * SCORE_POINTS_PER_LEVEL;
 function localXpRequiredForLevel(level = 1) {
   const target = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   let total = 0;
@@ -370,7 +370,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.11.82" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.11.83" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9352,7 +9352,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.11.82", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.11.83", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
