@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.10";
+const RELEASE_VERSION = "2.14.11";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -393,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.10" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.11" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8337,11 +8337,6 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   return `<div class="run-map-preview" data-run-map-preview><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}${start ? `<span class="run-endpoint-label start" style="left:${start.x}%;top:${start.y}%">START</span>` : ""}${finish ? `<span class="run-endpoint-label finish" style="left:${finish.x}%;top:${finish.y}%">FINISH</span>` : ""}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span>${safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout><b data-run-playback-number>1</b><span><small>TRICK 1</small><strong data-run-playback-label>${escapeHtml(safePoints[0].label || "Point 1")}</strong></span></span>` : ""}</div>`;
 }
 
-function demoRunParkImage() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#71808a"/><stop offset="1" stop-color="#3f4a52"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="10" stdDeviation="9" flood-opacity=".3"/></filter></defs><rect width="1200" height="720" fill="url(#bg)"/><g fill="#91a0a8" stroke="#e3eaed" stroke-width="8" filter="url(#s)"><path d="M55 525h220V350c-55 0-107 21-145 59-46 46-70 92-75 116z"/><path d="M300 430l170-125 100 132-170 125z"/><path d="M480 170h260v220H480z"/><path d="M765 92h230v185H765z"/><path d="M870 365l170-115c80 87 110 168 95 244l-190 65c-2-75-28-140-75-194z"/><path d="M430 565l115-70 125 175-120 35z"/><path d="M670 500h260l74 110H610z"/></g><g fill="#eef4f5" font-family="monospace" font-size="23" font-weight="700" opacity=".72"><text x="344" y="442">BOX JUMP</text><text x="550" y="285">SPINE</text><text x="817" y="192">DECK</text><text x="974" y="431">QUARTER</text><text x="701" y="570">FINISH JUMP</text></g></svg>`;
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
-
 function runPlaybackDefaultSeconds(points = []) {
   return Math.min(RUN_PLAYBACK_MAX_SECONDS, Math.max(5, (Array.isArray(points) ? points.length : 0) * 2));
 }
@@ -8396,8 +8391,6 @@ function runBuilderPanel(runs = [], options = {}) {
   const body = `<form id="run-builder-form" class="run-builder-form">
       <div class="run-builder-details">
         <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Competition run, safe line..."></div>
-        <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" value="${escapeHtml(builder.venue || "")}" placeholder="Pizzey, Beenleigh..."></div>
-        <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training" ${builder.planType === "training" ? "selected" : ""}>Training line</option><option value="competition" ${builder.planType === "competition" ? "selected" : ""}>Competition run</option><option value="safe" ${builder.planType === "safe" ? "selected" : ""}>Safe run</option><option value="high-risk" ${builder.planType === "high-risk" ? "selected" : ""}>High-risk run</option><option value="best-trick" ${builder.planType === "best-trick" ? "selected" : ""}>Best trick plan</option></select></div>
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
@@ -8406,7 +8399,7 @@ function runBuilderPanel(runs = [], options = {}) {
           ${points.length ? runPlaybackControlsHtml(points, "builder") : ""}
         </div>
         <aside class="run-builder-sidebar">
-          <div class="run-sidebar-section"><div class="eyebrow">Park photo</div><label class="secondary-btn run-photo-button" for="run-photo">CHOOSE PARK PHOTO</label><input id="run-photo" name="photo" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="use-demo-run-park">USE DEMO PARK</button></div>
+          <div class="run-sidebar-section"><div class="eyebrow">Park photo</div><label class="secondary-btn run-photo-button" for="run-photo">CHOOSE PARK PHOTO</label><input id="run-photo" name="photo" type="file" accept="image/*" hidden></div>
           <div class="run-sidebar-divider"></div>
           ${selectedPoint ? `<div class="run-sidebar-section selected-run-point" data-selected-run-point="${selectedIndex}"><div class="run-selected-head"><div><div class="eyebrow">Selected point</div><strong>DOT ${selectedIndex + 1}</strong></div><span class="run-point-role">${selectedIndex === 0 ? "START" : selectedIndex === points.length - 1 ? "FINISH" : "ROUTE"}</span></div><div class="field"><label for="selected-run-trick">Trick at dot ${selectedIndex + 1}</label><input id="selected-run-trick" value="${escapeHtml(selectedPoint.label || "")}" maxlength="80" data-selected-run-label></div><div class="field"><label for="selected-run-note">Run note</label><input id="selected-run-note" value="${escapeHtml(selectedPoint.note || "")}" maxlength="120" placeholder="Speed, setup or landing cue" data-selected-run-note></div><label class="run-bend-control"><span>Bend line into this dot</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend ${selectedIndex === 0 ? "disabled" : ""}><output data-selected-run-bend-output>${selectedIndex === 0 ? "START" : Number(selectedPoint.bend || 0)}</output></div></label><button class="danger-btn" type="button" id="delete-selected-run-point">DELETE DOT ${selectedIndex + 1}</button></div>` : `<div class="run-sidebar-section run-point-empty"><div class="eyebrow">Route points</div><strong>TAP THE PARK TO START</strong><p>Every tap adds the next number. The final dot becomes the finish automatically.</p></div>`}
           <div class="run-sidebar-divider"></div>
@@ -10264,7 +10257,6 @@ async function copyParentUpdate() {
 
 function bindRunBuilderActions() {
   document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
-  document.querySelector("#use-demo-run-park")?.addEventListener("click", useDemoRunPark);
   document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
   document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
   document.querySelectorAll("[data-select-run-point]").forEach((marker) => marker.addEventListener("click", selectRunPoint));
@@ -10305,12 +10297,6 @@ async function setRunBuilderPhoto(event) {
   if (!file) return;
   if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
   state.runBuilder = { ...currentRunFormState(), imageDataUrl: await fileToDataUrl(file), points: state.runBuilder?.points || [] };
-  await runBuilderRefreshView();
-}
-
-async function useDemoRunPark() {
-  stopRunPlayback();
-  state.runBuilder = { ...currentRunFormState(), imageDataUrl: demoRunParkImage(), points: state.runBuilder?.points || [] };
   await runBuilderRefreshView();
 }
 
@@ -10634,8 +10620,8 @@ async function saveRunPlan(event) {
     coach_id: coachId,
     athlete_id: athleteId,
     title: String(form.get("title") || "").trim(),
-    venue: String(form.get("venue") || "").trim(),
-    plan_type: form.get("planType"),
+    venue: String(state.runBuilder?.venue || "").trim(),
+    plan_type: state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training"),
     image_data_url: state.runBuilder.imageDataUrl,
     points: state.runBuilder.points || [],
     notes: String(form.get("notes") || "").trim(),

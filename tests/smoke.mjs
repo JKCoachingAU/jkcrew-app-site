@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.10";
+const version = "2.14.11";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -537,16 +537,22 @@ assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Build
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
 assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "smooth"'), "Opening the Run Builder must take the rider directly to it");
 const runBuilderMarkup = functionBody("runBuilderPanel");
-for (const control of ['id="run-photo"', 'id="run-map"', 'id="use-demo-run-park"', "data-selected-run-label", "data-selected-run-bend", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
+for (const control of ['id="run-photo"', 'id="run-map"', "data-selected-run-label", "data-selected-run-bend", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
   assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
+}
+for (const removedControl of ['id="run-venue"', 'id="run-type"', 'id="use-demo-run-park"']) {
+  assert(!runBuilderMarkup.includes(removedControl), `Run Builder should not show ${removedControl}`);
 }
 assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
 assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
 const runBuilderBindings = functionBody("bindRunBuilderActions");
-for (const binding of ["setRunBuilderPhoto", "useDemoRunPark", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
+for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
 }
+const saveRunPlanBody = functionBody("saveRunPlan");
+assert(saveRunPlanBody.includes('venue: String(state.runBuilder?.venue || "").trim()'), "Hidden event venue must still save with the private run");
+assert(saveRunPlanBody.includes('state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training")'), "Hidden run type must still be derived and saved automatically");
 assert(!functionBody("addRunBuilderPoint").includes("window.prompt"), "Adding a run point must use the compact selected-dot editor, not a blocking prompt");
 assert(functionBody("runPathBetween").includes("point.bend"), "Each route segment must support a rider-controlled curve");
 const runPathForTest = new Function(`${functionBody("runPathBetween")}; return runPathBetween;`)();

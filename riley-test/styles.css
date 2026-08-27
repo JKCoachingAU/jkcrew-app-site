@@ -3458,7 +3458,7 @@ html.coaching-viewer-open body { overflow: hidden; }
 .run-card ol { margin: 8px 0 0; padding-left: 20px; color: #d7ddda; }
 .run-card.archived { opacity: 0.72; border-style: dashed; }
 .run-builder-form { display: grid; gap: 14px; }
-.run-builder-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 190px; gap: 10px; }
+.run-builder-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .visual-run-builder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 14px; align-items: start; }
 .run-map-stage { min-width: 0; overflow: hidden; border: 1px solid rgba(32,227,195,0.26); border-radius: 15px; background: rgba(3,8,10,0.76); }
 .run-map-stage .run-map { min-height: 360px; border: 0; border-radius: 0; }
