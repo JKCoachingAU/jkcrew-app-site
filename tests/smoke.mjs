@@ -14,7 +14,7 @@ const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
 const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
-const version = "2.14.5";
+const version = "2.14.6";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -487,20 +487,35 @@ assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Build
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
 assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "smooth"'), "Opening the Run Builder must take the rider directly to it");
 const runBuilderMarkup = functionBody("runBuilderPanel");
-for (const control of ['id="run-photo"', 'id="run-map"', "PREVIEW FULL RUN", 'data-run-label="${index}"', "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
+for (const control of ['id="run-photo"', 'id="run-map"', 'id="use-demo-run-park"', "data-selected-run-label", "data-selected-run-bend", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
   assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
 }
+assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
+assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
 const runBuilderBindings = functionBody("bindRunBuilderActions");
-for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "playRunPreview", "saveRunPlan", "closeRunBuilder"]) {
+for (const binding of ["setRunBuilderPhoto", "useDemoRunPark", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
 }
+assert(!functionBody("addRunBuilderPoint").includes("window.prompt"), "Adding a run point must use the compact selected-dot editor, not a blocking prompt");
+assert(functionBody("runPathBetween").includes("point.bend"), "Each route segment must support a rider-controlled curve");
+const runPathForTest = new Function(`${functionBody("runPathBetween")}; return runPathBetween;`)();
+assert.notEqual(runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 0 }), runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 60 }), "Changing a dot's bend must change the saved route curve");
+assert(app.includes("const RUN_PLAYBACK_MAX_SECONDS = 60"), "Run playback must be capped at 60 seconds");
+for (const playbackControl of ["data-run-play-toggle", "data-run-play-restart", "data-run-duration", "data-run-scrub"]) {
+  assert(functionBody("runPlaybackControlsHtml").includes(playbackControl), `Run playback is missing ${playbackControl}`);
+}
+assert(functionBody("runPlaybackControlsHtml").includes('max="${RUN_PLAYBACK_MAX_SECONDS}"'), "The playback duration control must enforce the 60-second maximum");
+assert(functionBody("toggleRunPlayback").includes("requestAnimationFrame"), "Run playback must animate continuously and support pause/resume");
+const formatPlaybackForTest = new Function(`const RUN_PLAYBACK_MAX_SECONDS = 60; ${functionBody("formatRunPlaybackTime")}; return formatRunPlaybackTime;`)();
+assert.equal(formatPlaybackForTest(60), "01:00", "The 60-second playback limit must display as 01:00");
+assert(!functionBody("saveRunPlan").includes("points.length"), "Saving must not force a fixed number of run dots");
 const runPointColourForTest = new Function(`${functionBody("runPointColor")}; return runPointColor;`)();
 assert.equal(runPointColourForTest(1), runPointColourForTest(5), "Run points 1–5 must share one route colour");
 assert.notEqual(runPointColourForTest(5), runPointColourForTest(6), "The route colour must change after point 5");
 assert.equal(runPointColourForTest(6), runPointColourForTest(10), "Run points 6–10 must share the next route colour");
 assert.notEqual(runPointColourForTest(10), runPointColourForTest(11), "The route colour must change again after point 10");
-for (const selector of [".shared-events-panel", ".contest-event-card", ".contest-event-modal", ".contest-run-library", ".run-builder-live"]) {
+for (const selector of [".shared-events-panel", ".contest-event-card", ".contest-event-modal", ".contest-run-library", ".run-builder-live", ".visual-run-builder", ".run-playback-controls"]) {
   assert(css.includes(selector), `Contests release styling is missing ${selector}`);
 }
 

@@ -21,12 +21,13 @@ const RIDER_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const RIDER_VIDEO_MAX_SECONDS = 60;
 const COACH_REVIEW_RECORDING_MAX_SECONDS = 90;
+const RUN_PLAYBACK_MAX_SECONDS = 60;
 const VIDEO_STANDARD_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js";
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.5";
+const RELEASE_VERSION = "2.14.6";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -55,6 +56,7 @@ const state = {
   sessionViewerActiveSessionCache: null,
   runBuilder: null,
   runPlaybackTimer: null,
+  runPlayback: null,
   draggedRunPoint: null,
   contestEventEscapeHandler: null,
   contestMergeSourceId: "",
@@ -391,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.5" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.6" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1555,6 +1557,7 @@ async function navigate(view) {
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
   clearInterval(state.timer);
+  stopRunPlayback();
   if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
   if (previousView === "contests" && view !== "contests") {
     closeContestEventModal();
@@ -6706,11 +6709,13 @@ async function openRunBuilder(event = null) {
 }
 
 async function closeRunBuilder() {
+  stopRunPlayback();
   state.runBuilder = null;
   await renderContests();
 }
 
 async function renderContests() {
+  stopRunPlayback();
   closeContestEventModal();
   const [{ events, attendance }, runs] = await Promise.all([
     getSharedUpcomingEventData(),
@@ -8041,20 +8046,22 @@ function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance =
 }
 
 function runPointColor(pointNumber) {
-  const palette = ["#39a7ff", "#f7d154", "#25f68c", "#ff4567", "#a855f7"];
+  const palette = ["#20e3c3", "#8e56ff", "#f7d154", "#ff6658", "#39a7ff"];
   return palette[Math.floor((Math.max(1, Number(pointNumber) || 1) - 1) / 5) % palette.length];
 }
 
 function runPathBetween(previous, point) {
   const dx = point.x - previous.x;
   const dy = point.y - previous.y;
-  const bend = Math.max(4, Math.min(12, Math.hypot(dx, dy) * 0.18));
-  const normalX = dy === 0 ? 0 : -dy / Math.hypot(dx, dy);
-  const normalY = dx === 0 ? 0 : dx / Math.hypot(dx, dy);
-  const c1x = previous.x + dx * 0.35 + normalX * bend;
-  const c1y = previous.y + dy * 0.35 + normalY * bend;
-  const c2x = previous.x + dx * 0.7 + normalX * bend;
-  const c2y = previous.y + dy * 0.7 + normalY * bend;
+  const distance = Math.max(0.001, Math.hypot(dx, dy));
+  const bendValue = Math.max(-100, Math.min(100, Number(point.bend ?? 0)));
+  const bend = distance * (bendValue / 100) * 0.62;
+  const normalX = -dy / distance;
+  const normalY = dx / distance;
+  const c1x = previous.x + dx * 0.34 + normalX * bend;
+  const c1y = previous.y + dy * 0.34 + normalY * bend;
+  const c2x = previous.x + dx * 0.72 + normalX * bend;
+  const c2y = previous.y + dy * 0.72 + normalY * bend;
   return `M ${previous.x} ${previous.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${point.x} ${point.y}`;
 }
 
@@ -8074,9 +8081,38 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   const safePoints = Array.isArray(points) ? points : [];
   const markers = safePoints.map((point, index) => {
     const pointNumber = index + 1;
-    return `<button type="button" class="run-marker" ${editable ? `data-run-point-index="${index}"` : ""} style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
+    const selected = editable && Number(state.runBuilder?.selectedPointIndex) === index;
+    return `<button type="button" class="run-marker ${selected ? "is-selected" : ""}" ${editable ? `data-run-point-index="${index}" data-select-run-point="${index}"` : ""} aria-label="${escapeHtml(`${pointNumber}. ${point.label || `Point ${pointNumber}`}`)}" style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
   }).join("");
-  return `<div class="run-map-preview"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}</div>`;
+  const start = safePoints[0];
+  const finish = safePoints.length > 1 ? safePoints[safePoints.length - 1] : null;
+  return `<div class="run-map-preview" data-run-map-preview><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}${start ? `<span class="run-endpoint-label start" style="left:${start.x}%;top:${start.y}%">START</span>` : ""}${finish ? `<span class="run-endpoint-label finish" style="left:${finish.x}%;top:${finish.y}%">FINISH</span>` : ""}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span></div>`;
+}
+
+function demoRunParkImage() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#71808a"/><stop offset="1" stop-color="#3f4a52"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="10" stdDeviation="9" flood-opacity=".3"/></filter></defs><rect width="1200" height="720" fill="url(#bg)"/><g fill="#91a0a8" stroke="#e3eaed" stroke-width="8" filter="url(#s)"><path d="M55 525h220V350c-55 0-107 21-145 59-46 46-70 92-75 116z"/><path d="M300 430l170-125 100 132-170 125z"/><path d="M480 170h260v220H480z"/><path d="M765 92h230v185H765z"/><path d="M870 365l170-115c80 87 110 168 95 244l-190 65c-2-75-28-140-75-194z"/><path d="M430 565l115-70 125 175-120 35z"/><path d="M670 500h260l74 110H610z"/></g><g fill="#eef4f5" font-family="monospace" font-size="23" font-weight="700" opacity=".72"><text x="344" y="442">BOX JUMP</text><text x="550" y="285">SPINE</text><text x="817" y="192">DECK</text><text x="974" y="431">QUARTER</text><text x="701" y="570">FINISH JUMP</text></g></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function runPlaybackDefaultSeconds(points = []) {
+  return Math.min(RUN_PLAYBACK_MAX_SECONDS, Math.max(5, (Array.isArray(points) ? points.length : 0) * 2));
+}
+
+function formatRunPlaybackTime(seconds = 0) {
+  const safe = Math.max(0, Math.min(RUN_PLAYBACK_MAX_SECONDS, Number(seconds) || 0));
+  const wholeSeconds = Math.floor(safe);
+  return `${String(Math.floor(wholeSeconds / 60)).padStart(2, "0")}:${String(wholeSeconds % 60).padStart(2, "0")}`;
+}
+
+function runPlaybackControlsHtml(points = [], id = "run") {
+  const duration = runPlaybackDefaultSeconds(points);
+  return `<div class="run-playback-controls" data-run-playback-controls="${escapeHtml(id)}" data-run-duration="${duration}">
+    <button class="run-playback-main" type="button" data-run-play-toggle>▶ PLAY RUN</button>
+    <button class="run-playback-restart" type="button" data-run-play-restart aria-label="Restart run playback">↺</button>
+    <label class="run-playback-duration"><span>RUN TIME</span><input type="range" min="1" max="${RUN_PLAYBACK_MAX_SECONDS}" step="1" value="${duration}" data-run-duration><output data-run-duration-output>${duration}s</output></label>
+    <label class="run-playback-scrub"><span class="sr-only">Playback position</span><input type="range" min="0" max="1000" step="1" value="0" data-run-scrub></label>
+    <span class="run-playback-time" data-run-time>${formatRunPlaybackTime(0)} / ${formatRunPlaybackTime(duration)}</span>
+  </div>`;
 }
 
 function canEditRun(run = {}) {
@@ -8085,6 +8121,7 @@ function canEditRun(run = {}) {
 }
 
 function runBuilderRefreshView() {
+  stopRunPlayback();
   if (isCoachRole(state.profile?.role) && state.view === "student") return renderStudentProfile();
   if (state.view === "contests") return renderContests();
   return renderProfile();
@@ -8094,32 +8131,47 @@ function runPlansHtml(runs = []) {
   if (!runs.length) return `<div class="empty compact-empty">No saved run plans yet.</div>`;
   const activeRuns = runs.filter((run) => !run.archived_at);
   const archivedRuns = runs.filter((run) => run.archived_at);
-  const card = (run) => `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runMapHtml(run.image_data_url, run.points, run.title)}<ol>${(Array.isArray(run.points) ? run.points : []).map((point) => `<li>${escapeHtml(point.label || "Point")}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}<button class="secondary-btn compact-btn" type="button" data-play-run="${run.id}">Slow playback</button></div></article>`;
+  const card = (run) => {
+    const points = Array.isArray(run.points) ? run.points : [];
+    return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}</div></article>`;
+  };
   return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
 }
 
 function runBuilderPanel(runs = [], options = {}) {
   const builder = state.runBuilder || { points: [] };
   const points = builder.points || [];
+  const selectedIndex = points.length ? Math.max(0, Math.min(points.length - 1, Number(builder.selectedPointIndex ?? points.length - 1))) : -1;
+  const selectedPoint = selectedIndex >= 0 ? points[selectedIndex] : null;
   const submitLabel = builder.id ? "Save run changes" : "Save run plan";
   const body = `<form id="run-builder-form" class="run-builder-form">
-      <div class="two-col-form">
+      <div class="run-builder-details">
         <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Competition run, safe line..."></div>
         <div class="field"><label for="run-venue">Venue</label><input id="run-venue" name="venue" value="${escapeHtml(builder.venue || "")}" placeholder="Pizzey, Beenleigh..."></div>
         <div class="field"><label for="run-type">Run type</label><select id="run-type" name="planType"><option value="training" ${builder.planType === "training" ? "selected" : ""}>Training line</option><option value="competition" ${builder.planType === "competition" ? "selected" : ""}>Competition run</option><option value="safe" ${builder.planType === "safe" ? "selected" : ""}>Safe run</option><option value="high-risk" ${builder.planType === "high-risk" ? "selected" : ""}>High-risk run</option><option value="best-trick" ${builder.planType === "best-trick" ? "selected" : ""}>Best trick plan</option></select></div>
-        <div class="field"><label for="run-photo">Park/course photo</label><input id="run-photo" name="photo" type="file" accept="image/*"></div>
       </div>
-      <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map", true) : "Upload a photo, then tap the image to add start/trick points."}</div>
-      <div class="run-builder-actions">${points.length ? `<button class="secondary-btn compact-btn" type="button" id="play-run-builder">▶ PREVIEW FULL RUN</button>` : ""}<span class="panel-meta">Tap the park to add numbered points. Drag numbers to move them and name every trick below.</span></div>
-      <div class="run-point-list editable-run-points">${points.length ? points.map((point, index) => `<div class="run-point-editor"><span class="public-badge" style="--run-color:${runPointColor(index + 1)}">${index + 1}</span><input value="${escapeHtml(point.label || "")}" data-run-label="${index}" aria-label="Point ${index + 1} label"><button class="secondary-btn compact-btn" type="button" data-run-up="${index}">↑</button><button class="secondary-btn compact-btn" type="button" data-run-down="${index}">↓</button><button class="danger-btn compact-btn" type="button" data-run-delete="${index}">Delete</button></div>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
+      <div class="visual-run-builder">
+        <div class="run-map-stage">
+          <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map", true) : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then tap anywhere on it to add the start and numbered trick points.</span></div>`}</div>
+          <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${points.length > 1 ? `Finish is point ${points.length}` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
+          ${points.length ? runPlaybackControlsHtml(points, "builder") : ""}
+        </div>
+        <aside class="run-builder-sidebar">
+          <div class="run-sidebar-section"><div class="eyebrow">Park photo</div><label class="secondary-btn run-photo-button" for="run-photo">CHOOSE PARK PHOTO</label><input id="run-photo" name="photo" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="use-demo-run-park">USE DEMO PARK</button></div>
+          <div class="run-sidebar-divider"></div>
+          ${selectedPoint ? `<div class="run-sidebar-section selected-run-point" data-selected-run-point="${selectedIndex}"><div class="run-selected-head"><div><div class="eyebrow">Selected point</div><strong>DOT ${selectedIndex + 1}</strong></div><span class="run-point-role">${selectedIndex === 0 ? "START" : selectedIndex === points.length - 1 ? "FINISH" : "ROUTE"}</span></div><div class="field"><label for="selected-run-trick">Trick at dot ${selectedIndex + 1}</label><input id="selected-run-trick" value="${escapeHtml(selectedPoint.label || "")}" maxlength="80" data-selected-run-label></div><div class="field"><label for="selected-run-note">Run note</label><input id="selected-run-note" value="${escapeHtml(selectedPoint.note || "")}" maxlength="120" placeholder="Speed, setup or landing cue" data-selected-run-note></div><label class="run-bend-control"><span>Bend line into this dot</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend ${selectedIndex === 0 ? "disabled" : ""}><output data-selected-run-bend-output>${selectedIndex === 0 ? "START" : Number(selectedPoint.bend || 0)}</output></div></label><button class="danger-btn" type="button" id="delete-selected-run-point">DELETE DOT ${selectedIndex + 1}</button></div>` : `<div class="run-sidebar-section run-point-empty"><div class="eyebrow">Route points</div><strong>TAP THE PARK TO START</strong><p>Every tap adds the next number. The final dot becomes the finish automatically.</p></div>`}
+          <div class="run-sidebar-divider"></div>
+          <div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>CLEAR ALL DOTS</button><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>DONE · PLAY RUN →</button></div>
+        </aside>
+      </div>
       <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
-      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button>${options.live ? `<button class="secondary-btn" id="close-run-builder" type="button">Close builder</button>` : ""}<button class="primary-btn" type="submit">${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
+      <div class="actions">${options.live ? `<button class="secondary-btn" id="close-run-builder" type="button">Close builder</button>` : ""}<button class="primary-btn" type="submit">${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
     </form>
     ${options.showRunList === false ? "" : `<div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`}`;
   if (options.collapsed) {
-    return closedPanelAccordion("Visual run builder", "Upload a park photo, tap points, name each trick, then save", body, "run-builder-panel");
+    return closedPanelAccordion("Contest Run Planner", "The same visual dot-and-curve planner used by riders", body, "run-builder-panel");
   }
-  return `<section class="panel run-builder-live" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">Build mode</div><div class="panel-title">Contest Run Builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, preview the route, then save</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
+  return `<section class="panel run-builder-live" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">Build mode</div><div class="panel-title">Contest Run Planner</div><div class="panel-meta">Tap the park, bend the coloured route, finish on any number, then control the full playback up to 60 seconds</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
     ${body}
   </section>`;
 }
@@ -9966,20 +10018,23 @@ async function copyParentUpdate() {
 
 function bindRunBuilderActions() {
   document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
+  document.querySelector("#use-demo-run-park")?.addEventListener("click", useDemoRunPark);
   document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
   document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
+  document.querySelectorAll("[data-select-run-point]").forEach((marker) => marker.addEventListener("click", selectRunPoint));
   document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
   document.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
   document.querySelector("#close-run-builder-top")?.addEventListener("click", closeRunBuilder);
-  document.querySelector("#play-run-builder")?.addEventListener("click", () => playRunPreview(document.querySelector("#run-map .run-map-preview")));
+  document.querySelector("#finish-run-builder")?.addEventListener("click", playFinishedRunBuilder);
+  document.querySelector("#delete-selected-run-point")?.addEventListener("click", deleteSelectedRunPoint);
   document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
-  document.querySelectorAll("[data-run-label]").forEach((input) => input.addEventListener("input", updateRunPointLabel));
-  document.querySelectorAll("[data-run-up]").forEach((button) => button.addEventListener("click", moveRunPoint));
-  document.querySelectorAll("[data-run-down]").forEach((button) => button.addEventListener("click", moveRunPoint));
-  document.querySelectorAll("[data-run-delete]").forEach((button) => button.addEventListener("click", deleteRunPoint));
+  document.querySelector("[data-selected-run-label]")?.addEventListener("input", updateSelectedRunPoint);
+  document.querySelector("[data-selected-run-note]")?.addEventListener("input", updateSelectedRunPoint);
+  document.querySelector("[data-selected-run-bend]")?.addEventListener("input", updateSelectedRunPoint);
+  document.querySelector("[data-selected-run-bend]")?.addEventListener("change", updateSelectedRunPoint);
   document.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
   document.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
-  document.querySelectorAll("[data-play-run]").forEach((button) => button.addEventListener("click", () => playRunPreview(button.closest(".run-card")?.querySelector(".run-map-preview"))));
+  bindRunPlaybackControls();
 }
 
 function currentRunFormState() {
@@ -9995,6 +10050,7 @@ function currentRunFormState() {
     contestItemId: state.runBuilder?.contestItemId || null,
     points: state.runBuilder?.points || [],
     imageDataUrl: state.runBuilder?.imageDataUrl || "",
+    selectedPointIndex: state.runBuilder?.selectedPointIndex ?? -1,
   };
 }
 
@@ -10006,16 +10062,23 @@ async function setRunBuilderPhoto(event) {
   await runBuilderRefreshView();
 }
 
+async function useDemoRunPark() {
+  stopRunPlayback();
+  state.runBuilder = { ...currentRunFormState(), imageDataUrl: demoRunParkImage(), points: state.runBuilder?.points || [] };
+  await runBuilderRefreshView();
+}
+
 async function addRunBuilderPoint(event) {
   if (!state.runBuilder?.imageDataUrl || event.target.closest(".run-marker")) return;
+  stopRunPlayback();
   const map = event.currentTarget.querySelector(".run-map-preview") || event.currentTarget;
   const rect = map.getBoundingClientRect();
   const x = Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10;
   const y = Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10;
-  const label = window.prompt("Name this point or trick:", state.runBuilder.points.length ? `Trick ${state.runBuilder.points.length}` : "Start");
-  if (!label) return;
   state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points || [] };
-  state.runBuilder.points.push({ x, y, label: label.slice(0, 80) });
+  const pointNumber = state.runBuilder.points.length + 1;
+  state.runBuilder.points.push({ x, y, label: pointNumber === 1 ? "Start" : `Trick ${pointNumber}`, note: "", bend: 0 });
+  state.runBuilder.selectedPointIndex = state.runBuilder.points.length - 1;
   await runBuilderRefreshView();
 }
 
@@ -10034,13 +10097,22 @@ function updateRunBuilderMapDom() {
     marker.style.top = `${point.y}%`;
     marker.style.setProperty("--run-color", runPointColor(index + 1));
   });
+  const start = state.runBuilder.points[0];
+  const finish = state.runBuilder.points.length > 1 ? state.runBuilder.points[state.runBuilder.points.length - 1] : null;
+  const startLabel = preview.querySelector(".run-endpoint-label.start");
+  const finishLabel = preview.querySelector(".run-endpoint-label.finish");
+  if (startLabel && start) { startLabel.style.left = `${start.x}%`; startLabel.style.top = `${start.y}%`; }
+  if (finishLabel && finish) { finishLabel.style.left = `${finish.x}%`; finishLabel.style.top = `${finish.y}%`; }
 }
 
 function startRunPointDrag(event) {
   if (!state.runBuilder?.points) return;
   event.preventDefault();
   event.stopPropagation();
+  stopRunPlayback();
   state.draggedRunPoint = Number(event.currentTarget.dataset.runPointIndex);
+  state.runBuilder.selectedPointIndex = state.draggedRunPoint;
+  document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.classList.toggle("is-selected", marker === event.currentTarget));
   event.currentTarget.setPointerCapture?.(event.pointerId);
   document.addEventListener("pointermove", dragRunPoint);
   document.addEventListener("pointerup", stopRunPointDrag, { once: true });
@@ -10063,56 +10135,188 @@ function stopRunPointDrag() {
   state.draggedRunPoint = null;
 }
 
-function updateRunPointLabel(event) {
-  const index = Number(event.currentTarget.dataset.runLabel);
+async function selectRunPoint(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const index = Number(event.currentTarget.dataset.selectRunPoint);
   if (!state.runBuilder?.points?.[index]) return;
-  state.runBuilder.points[index] = { ...state.runBuilder.points[index], label: event.currentTarget.value.slice(0, 80) };
-}
-
-async function moveRunPoint(event) {
-  const up = event.currentTarget.dataset.runUp;
-  const down = event.currentTarget.dataset.runDown;
-  const index = Number(up ?? down);
-  const nextIndex = up !== undefined ? index - 1 : index + 1;
-  if (!state.runBuilder?.points?.[index] || !state.runBuilder.points[nextIndex]) return;
-  state.runBuilder = { ...currentRunFormState(), points: [...state.runBuilder.points] };
-  [state.runBuilder.points[index], state.runBuilder.points[nextIndex]] = [state.runBuilder.points[nextIndex], state.runBuilder.points[index]];
+  state.runBuilder = { ...currentRunFormState(), selectedPointIndex: index };
   await runBuilderRefreshView();
 }
 
-async function deleteRunPoint(event) {
-  const index = Number(event.currentTarget.dataset.runDelete);
+function updateSelectedRunPoint(event) {
+  const index = Number(state.runBuilder?.selectedPointIndex);
   if (!state.runBuilder?.points?.[index]) return;
+  const point = { ...state.runBuilder.points[index] };
+  if (event.currentTarget.matches("[data-selected-run-label]")) point.label = event.currentTarget.value.slice(0, 80);
+  if (event.currentTarget.matches("[data-selected-run-note]")) point.note = event.currentTarget.value.slice(0, 120);
+  if (event.currentTarget.matches("[data-selected-run-bend]")) {
+    point.bend = Math.max(-100, Math.min(100, Number(event.currentTarget.value) || 0));
+    const output = document.querySelector("[data-selected-run-bend-output]");
+    if (output) output.textContent = String(point.bend);
+  }
+  state.runBuilder.points[index] = point;
+  const marker = document.querySelector(`[data-run-point-index="${index}"]`);
+  if (marker) marker.setAttribute("aria-label", `${index + 1}. ${point.label || `Point ${index + 1}`}`);
+  updateRunBuilderMapDom();
+}
+
+async function deleteSelectedRunPoint() {
+  const index = Number(state.runBuilder?.selectedPointIndex);
+  if (!state.runBuilder?.points?.[index]) return;
+  stopRunPlayback();
   state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points.filter((_point, pointIndex) => pointIndex !== index) };
+  state.runBuilder.selectedPointIndex = state.runBuilder.points.length ? Math.min(index, state.runBuilder.points.length - 1) : -1;
   await runBuilderRefreshView();
 }
 
-function playRunPreview(preview) {
-  if (!preview) return;
-  clearTimeout(state.runPlaybackTimer);
-  const markers = [...preview.querySelectorAll(".run-marker")];
-  const segments = [...preview.querySelectorAll("[data-run-segment]")];
-  if (!markers.length) return;
-  markers.forEach((marker) => marker.classList.remove("play-active", "play-done"));
-  segments.forEach((segment) => segment.classList.remove("play-active", "play-done"));
-  let index = 0;
-  const step = () => {
-    markers.forEach((marker, markerIndex) => {
-      marker.classList.toggle("play-active", markerIndex === index);
-      marker.classList.toggle("play-done", markerIndex < index);
-    });
-    segments.forEach((segment, segmentIndex) => {
-      segment.classList.toggle("play-active", segmentIndex === index - 1);
-      segment.classList.toggle("play-done", segmentIndex < index - 1);
-    });
-    index += 1;
-    if (index <= markers.length) state.runPlaybackTimer = setTimeout(step, 850);
+function runPlaybackSurface(controls) {
+  return controls?.closest(".run-playback-surface, .run-map-stage") || null;
+}
+
+function paintRunPlayback(controls, progress = 0) {
+  const surface = runPlaybackSurface(controls);
+  const preview = surface?.querySelector("[data-run-map-preview]");
+  const markers = [...(preview?.querySelectorAll(".run-marker") || [])];
+  const segments = [...(preview?.querySelectorAll("[data-run-segment]") || [])];
+  if (!preview || !markers.length) return;
+  const safeProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+  const routePosition = markers.length > 1 ? safeProgress * (markers.length - 1) : 0;
+  const segmentIndex = Math.min(Math.max(0, markers.length - 2), Math.floor(routePosition));
+  const localProgress = markers.length > 1 ? routePosition - segmentIndex : 0;
+  const completedMarker = safeProgress >= 1 ? markers.length - 1 : Math.floor(routePosition);
+  markers.forEach((marker, index) => {
+    marker.classList.toggle("play-active", index === completedMarker);
+    marker.classList.toggle("play-done", index < completedMarker || safeProgress >= 1);
+  });
+  segments.forEach((segment, index) => {
+    segment.classList.toggle("play-active", index === segmentIndex && safeProgress > 0 && safeProgress < 1);
+    segment.classList.toggle("play-done", index < segmentIndex || safeProgress >= 1);
+  });
+  const playhead = preview.querySelector("[data-run-playhead]");
+  if (playhead) {
+    let x = Number.parseFloat(markers[0].style.left) || 0;
+    let y = Number.parseFloat(markers[0].style.top) || 0;
+    const segment = segments[segmentIndex];
+    if (segment && typeof segment.getTotalLength === "function") {
+      const point = segment.getPointAtLength(segment.getTotalLength() * localProgress);
+      x = point.x;
+      y = point.y;
+    } else if (markers[segmentIndex + 1]) {
+      const startX = Number.parseFloat(markers[segmentIndex].style.left) || 0;
+      const startY = Number.parseFloat(markers[segmentIndex].style.top) || 0;
+      const endX = Number.parseFloat(markers[segmentIndex + 1].style.left) || startX;
+      const endY = Number.parseFloat(markers[segmentIndex + 1].style.top) || startY;
+      x = startX + ((endX - startX) * localProgress);
+      y = startY + ((endY - startY) * localProgress);
+    }
+    playhead.hidden = false;
+    playhead.style.left = `${x}%`;
+    playhead.style.top = `${y}%`;
+  }
+  const scrub = controls.querySelector("[data-run-scrub]");
+  if (scrub) scrub.value = String(Math.round(safeProgress * 1000));
+  const duration = Math.max(1, Math.min(RUN_PLAYBACK_MAX_SECONDS, Number(controls.dataset.runDuration) || runPlaybackDefaultSeconds(markers)));
+  const time = controls.querySelector("[data-run-time]");
+  if (time) time.textContent = `${formatRunPlaybackTime(duration * safeProgress)} / ${formatRunPlaybackTime(duration)}`;
+}
+
+function stopRunPlayback(reset = false) {
+  if (state.runPlaybackTimer) window.cancelAnimationFrame(state.runPlaybackTimer);
+  state.runPlaybackTimer = null;
+  const session = state.runPlayback;
+  if (session?.controls?.isConnected) {
+    session.controls.classList.remove("is-playing");
+    const button = session.controls.querySelector("[data-run-play-toggle]");
+    if (button) button.textContent = reset ? "▶ PLAY RUN" : "▶ RESUME";
+    if (reset) paintRunPlayback(session.controls, 0);
+  }
+  state.runPlayback = null;
+}
+
+function toggleRunPlayback(event) {
+  const controls = event.currentTarget.closest("[data-run-playback-controls]");
+  if (!controls) return;
+  if (state.runPlayback?.controls === controls) {
+    stopRunPlayback(false);
+    return;
+  }
+  stopRunPlayback(false);
+  let progress = Math.max(0, Math.min(1, Number(controls.querySelector("[data-run-scrub]")?.value || 0) / 1000));
+  if (progress >= 1) progress = 0;
+  const duration = Math.max(1, Math.min(RUN_PLAYBACK_MAX_SECONDS, Number(controls.dataset.runDuration) || 10));
+  const session = { controls, duration, progress, startedAt: performance.now() };
+  state.runPlayback = session;
+  controls.classList.add("is-playing");
+  event.currentTarget.textContent = "Ⅱ PAUSE";
+  const tick = (timestamp) => {
+    if (state.runPlayback !== session) return;
+    const nextProgress = Math.min(1, session.progress + ((timestamp - session.startedAt) / 1000 / session.duration));
+    paintRunPlayback(controls, nextProgress);
+    if (nextProgress >= 1) {
+      stopRunPlayback(false);
+      const button = controls.querySelector("[data-run-play-toggle]");
+      if (button) button.textContent = "↺ REPLAY";
+      return;
+    }
+    state.runPlaybackTimer = window.requestAnimationFrame(tick);
   };
-  step();
+  paintRunPlayback(controls, progress);
+  state.runPlaybackTimer = window.requestAnimationFrame(tick);
+}
+
+function scrubRunPlayback(event) {
+  const controls = event.currentTarget.closest("[data-run-playback-controls]");
+  if (!controls) return;
+  if (state.runPlayback?.controls === controls) stopRunPlayback(false);
+  paintRunPlayback(controls, Number(event.currentTarget.value || 0) / 1000);
+  const button = controls.querySelector("[data-run-play-toggle]");
+  if (button) button.textContent = Number(event.currentTarget.value || 0) >= 1000 ? "↺ REPLAY" : "▶ PLAY RUN";
+}
+
+function updateRunPlaybackDuration(event) {
+  const controls = event.currentTarget.closest("[data-run-playback-controls]");
+  if (!controls) return;
+  const duration = Math.max(1, Math.min(RUN_PLAYBACK_MAX_SECONDS, Number(event.currentTarget.value) || 1));
+  controls.dataset.runDuration = String(duration);
+  const output = controls.querySelector("[data-run-duration-output]");
+  if (output) output.textContent = `${duration}s`;
+  if (state.runPlayback?.controls === controls) stopRunPlayback(false);
+  paintRunPlayback(controls, Number(controls.querySelector("[data-run-scrub]")?.value || 0) / 1000);
+}
+
+function restartRunPlayback(event) {
+  const controls = event.currentTarget.closest("[data-run-playback-controls]");
+  if (!controls) return;
+  stopRunPlayback(false);
+  paintRunPlayback(controls, 0);
+  const button = controls.querySelector("[data-run-play-toggle]");
+  if (button) button.textContent = "▶ PLAY RUN";
+}
+
+function bindRunPlaybackControls() {
+  document.querySelectorAll("[data-run-play-toggle]").forEach((button) => button.addEventListener("click", toggleRunPlayback));
+  document.querySelectorAll("[data-run-play-restart]").forEach((button) => button.addEventListener("click", restartRunPlayback));
+  document.querySelectorAll("[data-run-scrub]").forEach((input) => input.addEventListener("input", scrubRunPlayback));
+  document.querySelectorAll("[data-run-duration]").forEach((input) => {
+    input.addEventListener("input", updateRunPlaybackDuration);
+    input.addEventListener("change", updateRunPlaybackDuration);
+  });
+}
+
+function playFinishedRunBuilder() {
+  const controls = document.querySelector("#run-builder-live [data-run-playback-controls]");
+  const playButton = controls?.querySelector("[data-run-play-toggle]");
+  if (!playButton) return notify("Add at least one numbered point first.", "error");
+  restartRunPlayback({ currentTarget: controls.querySelector("[data-run-play-restart]") });
+  controls.scrollIntoView({ behavior: "smooth", block: "center" });
+  playButton.click();
 }
 
 async function clearRunBuilder() {
+  stopRunPlayback();
   state.runBuilder = { ...currentRunFormState(), points: [] };
+  state.runBuilder.selectedPointIndex = -1;
   await runBuilderRefreshView();
 }
 
@@ -10131,6 +10335,7 @@ async function editRunPlan(event) {
     contestItemId: run.contest_item_id || null,
     imageDataUrl: run.image_data_url,
     points: Array.isArray(run.points) ? run.points : [],
+    selectedPointIndex: Array.isArray(run.points) && run.points.length ? run.points.length - 1 : -1,
   };
   await runBuilderRefreshView();
   document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
