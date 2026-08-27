@@ -1779,6 +1779,113 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   text-transform: uppercase;
 }
 .coach-review-colour input { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; }
+.coach-review-recorder {
+  position: relative;
+  margin-top: 10px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,108,85,0.28);
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(255,108,85,0.075), rgba(146,84,255,0.045));
+}
+.coach-review-recorder::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(var(--red), var(--purple));
+}
+.coach-review-recorder-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+.coach-review-recorder-head strong,
+.coach-review-recorder-head small { display: block; }
+.coach-review-recorder-head strong { margin-top: 3px; font-size: 1rem; }
+.coach-review-recorder-head small { margin-top: 4px; color: var(--muted); line-height: 1.35; }
+.coach-review-record-button {
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(120deg, #ff5c4b, #e94169);
+  box-shadow: 0 10px 28px rgba(255,92,75,0.2);
+  font: 900 0.72rem var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.coach-review-record-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.coach-review-record-button:disabled { transform: none; filter: grayscale(0.25); }
+.coach-review-record-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  color: var(--muted);
+  font: 800 0.68rem var(--mono);
+  text-transform: uppercase;
+}
+.coach-review-record-status strong { color: #c7d2d7; }
+.coach-review-record-status time { margin-left: auto; color: #fff; font-variant-numeric: tabular-nums; }
+.coach-review-record-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #718087;
+}
+.coach-review-recorder.is-recording {
+  border-color: rgba(255,92,75,0.72);
+  box-shadow: 0 0 0 2px rgba(255,92,75,0.08), 0 14px 34px rgba(255,50,50,0.12);
+}
+.coach-review-recorder.is-recording .coach-review-record-dot {
+  background: #ff5c4b;
+  box-shadow: 0 0 14px rgba(255,92,75,0.85);
+  animation: coach-review-record-pulse 1.1s ease-in-out infinite;
+}
+.coach-review-recorder.is-recording .coach-review-record-button {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  z-index: 250;
+  width: min(320px, calc(100vw - 32px));
+  background: linear-gradient(120deg, #ff3f36, #c92350);
+  box-shadow: 0 14px 42px rgba(255,32,58,0.4), 0 0 0 2px rgba(255,255,255,0.1);
+}
+.coach-review-recorder.is-finalising .coach-review-record-dot { background: #ffcf3a; }
+.coach-review-recorded-preview {
+  display: grid;
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 11px;
+  padding: 10px;
+  border: 1px solid rgba(32,227,195,0.25);
+  border-radius: 11px;
+  background: rgba(32,227,195,0.055);
+}
+.coach-review-recorded-preview video { width: 100%; max-height: 190px; border-radius: 9px; background: #000; }
+.coach-review-recorded-preview strong,
+.coach-review-recorded-preview small { display: block; }
+.coach-review-recorded-preview small { margin: 4px 0 10px; color: var(--muted); line-height: 1.4; }
+.coach-review-recording-canvas {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 2px;
+  height: 2px;
+  opacity: 0.01;
+  pointer-events: none;
+}
+@keyframes coach-review-record-pulse {
+  0%, 100% { transform: scale(0.82); opacity: 0.65; }
+  50% { transform: scale(1.18); opacity: 1; }
+}
 .coach-review-editor-note {
   margin-top: 10px;
   padding: 9px 10px;
@@ -1850,6 +1957,13 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   .coach-review-load-stage { min-height: 280px; }
   .coach-review-playback button { flex: 1; }
   .coach-review-playback span { order: 4; width: 100%; text-align: center; }
+  .coach-review-recorder-head,
+  .coach-review-recorded-preview { grid-template-columns: 1fr; }
+  .coach-review-record-button { width: 100%; }
+  .coach-review-recorded-preview video { max-height: 280px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-review-recorder.is-recording .coach-review-record-dot { animation: none; }
 }
 .trick-request-form {
   display: grid;

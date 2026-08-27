@@ -19,6 +19,7 @@ const RIDER_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const VIDEO_ANALYSIS_TEST_MAX_BYTES = RIDER_VIDEO_MAX_BYTES;
 const VIDEO_ANALYSIS_TEST_MAX_SECONDS = 60;
+const COACH_REVIEW_RECORDING_MAX_SECONDS = 90;
 const VIDEO_STANDARD_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js";
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
@@ -62,6 +63,9 @@ const state = {
   videoReviewSearch: "",
   videoReviewSearchTimer: null,
   videoReviewMedia: new Map(),
+  videoReviewRecordedReplies: new Map(),
+  videoReviewRecording: null,
+  videoReviewRecordingStarting: null,
   videoReviewActiveRequestId: "",
   videoReviewDrawings: new Map(),
   videoReviewDraftDrawing: null,
@@ -90,6 +94,12 @@ const state = {
   commandParkKingVenues: [],
   helpVideoPreviewUrl: "",
 };
+
+window.addEventListener("beforeunload", (event) => {
+  if (!state.videoReviewRecording && !state.videoReviewRecordingStarting && !state.videoReviewRecordedReplies.size) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 let tusClientPromise = null;
 
@@ -363,7 +373,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.7" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.8" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -543,7 +553,7 @@ async function uploadHelpVideoResumable(file, path, onProgress = () => {}) {
       metadata: {
         bucketName: TRICK_HELP_VIDEO_BUCKET,
         objectName: path,
-        contentType: file.type || "video/mp4",
+        contentType: baseVideoMimeType(file.type) || "video/mp4",
         cacheControl: "3600",
       },
       onError: (error) => reject(error),
@@ -557,13 +567,14 @@ async function uploadHelpVideoResumable(file, path, onProgress = () => {}) {
 async function uploadHelpVideoFile(file, kind = "student", onProgress = () => {}) {
   if (!state.user?.id) throw new Error("Sign in again before uploading a video.");
   const ext = videoFileExtension(file);
+  const contentType = baseVideoMimeType(file.type) || "video/mp4";
   const path = `${state.user.id}/${kind}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
   if (file.size > VIDEO_STANDARD_UPLOAD_MAX_BYTES) {
     await uploadHelpVideoResumable(file, path, onProgress);
     return {
       path,
       fileName: file.name || `${kind}-video.${ext}`,
-      mimeType: file.type || "video/mp4",
+      mimeType: contentType,
       size: file.size || 0,
     };
   }
@@ -571,7 +582,7 @@ async function uploadHelpVideoFile(file, kind = "student", onProgress = () => {}
     .from(TRICK_HELP_VIDEO_BUCKET)
     .upload(path, file, {
       cacheControl: "3600",
-      contentType: file.type || "video/mp4",
+      contentType,
       upsert: false,
     });
   if (error) throw error;
@@ -579,7 +590,7 @@ async function uploadHelpVideoFile(file, kind = "student", onProgress = () => {}
   return {
     path: data?.path || path,
     fileName: file.name || `${kind}-video.${ext}`,
-    mimeType: file.type || "video/mp4",
+    mimeType: contentType,
     size: file.size || 0,
   };
 }
@@ -621,8 +632,16 @@ function videoDurationSeconds(file) {
   });
 }
 
+function baseVideoMimeType(value = "") {
+  return String(value || "").split(";")[0].trim().toLowerCase();
+}
+
+function selectCoachReplyVideoFile(selectedFile, recordedReply) {
+  return selectedFile?.size ? selectedFile : recordedReply?.file;
+}
+
 function supportedHelpVideoFile(file = {}) {
-  const mimeType = String(file.type || "").toLowerCase();
+  const mimeType = baseVideoMimeType(file.type);
   const extension = videoFileExtension(file);
   return ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/m4v", "video/3gpp", "video/3gpp2"].includes(mimeType)
     || (!mimeType && ["mp4", "mov", "m4v", "webm", "3gp", "3g2"].includes(extension));
@@ -1346,6 +1365,20 @@ async function mountPushSetupPrompt() {
 
 async function navigate(view) {
   const previousView = state.view;
+  if (view === previousView && view === "videoReviews" && (state.videoReviewRecording || state.videoReviewRecordingStarting)) return;
+  if (previousView === "videoReviews" && view !== "videoReviews") {
+    const hasActiveCapture = Boolean(state.videoReviewRecording || state.videoReviewRecordingStarting);
+    const hasUnsentReview = state.videoReviewRecordedReplies.size > 0;
+    if (hasActiveCapture || hasUnsentReview) {
+      const leaveReview = window.confirm(hasActiveCapture
+        ? "A review is being recorded. Leave this page and discard it?"
+        : "You have an unsent recorded review. Leave this page and discard it?");
+      if (!leaveReview) return;
+      discardCoachReviewRecording();
+      [...state.videoReviewRecordedReplies.keys()].forEach(clearCoachRecordedReply);
+    }
+    [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
+  }
   clearInterval(state.timer);
   if (previousView === "session" && view !== "session") clearHelpVideoPreview();
   if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
@@ -9004,10 +9037,15 @@ async function submitTrickRequest(event) {
 
 async function replyToHelpRequest(event) {
   event.preventDefault();
+  if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before sending feedback.", "error");
   const originatingView = state.view;
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
-  const file = form.get("video");
+  const requestId = formElement.dataset.helpReply;
+  const recordedReply = state.videoReviewRecordedReplies.get(requestId);
+  const selectedFile = form.get("video");
+  const file = selectCoachReplyVideoFile(selectedFile, recordedReply);
+  const usesRecordedReply = Boolean(recordedReply && file === recordedReply.file);
   const comment = String(form.get("comment") || "").trim();
   if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
   if (file?.size && !supportedHelpVideoFile(file)) return notify("Choose an MP4, MOV, M4V, WebM or phone video file.", "error");
@@ -9028,7 +9066,7 @@ async function replyToHelpRequest(event) {
     if (file?.size) {
       const { data: previous, error: previousError } = await client.from("trick_help_requests")
         .select("coach_video_storage_path")
-        .eq("id", formElement.dataset.helpReply)
+        .eq("id", requestId)
         .maybeSingle();
       if (previousError) throw previousError;
       previousCoachVideoPath = previous?.coach_video_storage_path || "";
@@ -9041,17 +9079,18 @@ async function replyToHelpRequest(event) {
     }
     const { data, error } = await client.from("trick_help_requests")
       .update(update)
-      .eq("id", formElement.dataset.helpReply)
+      .eq("id", requestId)
       .select("id, status");
     if (error) throw error;
     if (!data?.length) throw new Error("Unable to save feedback for this video. Check the rider is still linked to your coach account.");
     committed = true;
-    if (upload?.path) state.videoReviewMedia.delete(formElement.dataset.helpReply);
+    if (upload?.path) releaseVideoReviewMedia(requestId);
+    if (recordedReply) clearCoachRecordedReply(requestId);
     if (previousCoachVideoPath && previousCoachVideoPath !== upload?.path) {
       const { error: staleReplyError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([previousCoachVideoPath]);
       if (staleReplyError) console.warn("Could not remove the previous coach video reply.", staleReplyError);
     }
-    notify("Coach feedback sent to rider.");
+    notify(usesRecordedReply ? "Recorded review saved and sent to Riley." : "Coach feedback sent to rider.");
     if (state.view === originatingView && originatingView === "videoReviews") await renderVideoReviews();
     else if (state.view === originatingView && originatingView === "student") await renderStudentProfile();
   } catch (error) {
@@ -9124,15 +9163,25 @@ function coachReviewWorkspaceHtml(request) {
   const athlete = request.athlete || { display_name: "Unknown rider", avatar: null };
   const status = request.status || "open";
   const media = state.videoReviewMedia.get(request.id) || {};
-  const riderVideoUrl = media.video_url || media.video_data_url || "";
+  const originalRiderVideoUrl = media.video_url || media.video_data_url || "";
+  const riderVideoUrl = media.video_playback_url || media.video_data_url || "";
+  const recordedReply = state.videoReviewRecordedReplies.get(request.id) || null;
   const reviewed = status === "reviewed";
   const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
   const hasSavedReply = Boolean(request.coach_comment || request.coach_video_storage_path || coachVideoUrl || ["replied", "reviewed"].includes(status));
   const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
   const sourceExtension = String(request.video_file_name || "").split(".").pop();
   const videoFormat = sourceExtension && sourceExtension !== request.video_file_name ? sourceExtension.toUpperCase() : "VIDEO";
+  const recorderPanel = riderVideoUrl ? `<section class="coach-review-recorder ${recordedReply ? "has-recording" : ""}" aria-label="Record voice and drawing review">
+      <div class="coach-review-recorder-head">
+        <div><span class="eyebrow">Record your review</span><strong>Voice + video + drawings</strong><small>Your microphone starts only after you press record. Maximum ${COACH_REVIEW_RECORDING_MAX_SECONDS} seconds.</small></div>
+        <button class="coach-review-record-button" type="button" data-review-record-toggle data-review-request="${request.id}">${recordedReply ? "Record again" : "Start recording review"}</button>
+      </div>
+      <div class="coach-review-record-status" aria-live="polite"><span class="coach-review-record-dot" aria-hidden="true"></span><strong data-review-record-status>${recordedReply ? "Recording ready to send" : "Ready when you are"}</strong><time data-review-record-time>${recordedReply ? videoReviewTimeLabel(recordedReply.durationSeconds) : "0:00"}</time></div>
+      ${recordedReply ? `<div class="coach-review-recorded-preview"><video src="${escapeHtml(recordedReply.url)}" controls playsinline preload="metadata"></video><div><strong>Saved review preview</strong><small>${videoReviewTimeLabel(recordedReply.durationSeconds)} · ${videoSizeLabel(recordedReply.file?.size)} · private until you send it</small><button class="secondary-btn compact-btn" type="button" data-review-record-remove="${request.id}">Remove recording</button></div></div>` : ""}
+    </section>` : "";
   const player = riderVideoUrl ? `<div class="coach-review-stage" id="coach-review-stage">
-      <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" playsinline preload="metadata"></video>
+      <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" crossorigin="anonymous" playsinline preload="auto"></video>
       <canvas id="coach-review-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Video drawing layer"></canvas>
       <div class="coach-review-stage-label"><span>Private rider video</span><strong id="coach-review-speed-label">1×</strong></div>
     </div>
@@ -9153,11 +9202,12 @@ function coachReviewWorkspaceHtml(request) {
       <label class="coach-review-colour">Colour <input type="color" value="${escapeHtml(state.videoReviewDrawColor)}" data-review-draw-colour></label>
       <button type="button" data-review-draw-undo>Undo</button>
       <button type="button" data-review-draw-clear>Clear</button>
-    </div>` : `<div class="coach-review-load-stage">
+    </div>
+    ${recorderPanel}` : `<div class="coach-review-load-stage">
       <div class="coach-review-load-icon" aria-hidden="true">▶</div>
       <strong>Riley's private video is ready</strong>
       <p>Load the submitted clip to begin frame-by-frame analysis.</p>
-      <button class="primary-btn" type="button" data-load-help-video="${request.id}">Load private video</button>
+      <button class="primary-btn" type="button" data-load-help-video="${request.id}" data-coach-analysis="1">Load private video</button>
     </div>`;
   const savedReply = hasSavedReply ? `<div class="coach-review-saved-reply"><strong>Feedback already sent</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>` : ""}</div>` : "";
   return `<section class="coach-review-workspace" aria-label="Riley video analysis workspace">
@@ -9169,16 +9219,16 @@ function coachReviewWorkspaceHtml(request) {
     <div class="coach-review-workspace-grid">
       <div class="coach-review-editor">
         ${player}
-        <div class="coach-review-editor-note">Slow motion, precise stepping and a visual scratch layer are available for this Riley test. Drawings currently stay on this review screen; send written or video feedback to return coaching to Riley.</div>
-        <div class="video-actions">${riderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download original</button></div>
+        <div class="coach-review-editor-note">Play, pause or slow the clip while you speak and draw. Your finished recording combines Riley's video, your live markings and your microphone into one private reply.</div>
+        <div class="video-actions">${originalRiderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(originalRiderVideoUrl)}" target="_blank" rel="noopener">Open original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download original</button></div>
       </div>
       <aside class="coach-review-feedback">
         <div><div class="eyebrow">Coach response</div><h3>Send feedback to Riley</h3><p>Explain the biggest correction first, then give Riley one clear cue for the next attempt.</p></div>
         ${savedReply}
         <form class="reply-form" data-help-reply="${request.id}">
           <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="Example: Keep your eyes through the turn and drive your outside shoulder...">${escapeHtml(request.coach_comment || "")}</textarea></div>
-          <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*"><small>Record or choose a reply up to 50 MB.</small></div>
-          <button class="primary-btn wide" type="submit">Send feedback to Riley</button>
+          <div class="field"><label for="central-reply-video-${request.id}">${recordedReply ? "Or choose a different video" : "Optional video reply"}</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*"><small>${recordedReply ? "Your recorded review is selected. Choosing a file here will replace it." : "Record above or choose a reply up to 50 MB."}</small></div>
+          <button class="primary-btn wide" type="submit">${recordedReply ? "Send recorded review to Riley" : "Send feedback to Riley"}</button>
         </form>
         <button class="secondary-btn wide" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Review completed" : "Mark review complete"}</button>
       </aside>
@@ -9186,7 +9236,54 @@ function coachReviewWorkspaceHtml(request) {
   </section>`;
 }
 
+function releaseVideoReviewMedia(requestId) {
+  const media = state.videoReviewMedia.get(requestId);
+  if (media?.video_playback_url) URL.revokeObjectURL(media.video_playback_url);
+  state.videoReviewMedia.delete(requestId);
+}
+
+function clearCoachRecordedReply(requestId) {
+  const reply = state.videoReviewRecordedReplies.get(requestId);
+  if (reply?.url) URL.revokeObjectURL(reply.url);
+  state.videoReviewRecordedReplies.delete(requestId);
+}
+
+function cleanupCoachReviewRecordingSession(session) {
+  if (!session || session.cleanedUp) return;
+  session.cleanedUp = true;
+  if (session.rafId) window.cancelAnimationFrame(session.rafId);
+  if (session.timerId) window.clearInterval(session.timerId);
+  if (session.stopWatchdogId) window.clearTimeout(session.stopWatchdogId);
+  if (session.visibilityHandler) document.removeEventListener("visibilitychange", session.visibilityHandler);
+  if (session.pageHideHandler) window.removeEventListener("pagehide", session.pageHideHandler);
+  [session.micStream, session.canvasStream, session.combinedStream].forEach((stream) => {
+    stream?.getTracks?.().forEach((track) => track.stop());
+  });
+  if (session.sourceVideo?.isConnected) session.sourceVideo.muted = session.sourceWasMuted;
+  session.outputCanvas?.remove();
+  session.chunks = [];
+  if (state.videoReviewRecording === session) state.videoReviewRecording = null;
+}
+
+function discardCoachReviewRecording() {
+  if (state.videoReviewRecordingStarting) {
+    state.videoReviewRecordingStarting.cancelled = true;
+    state.videoReviewRecordingStarting = null;
+  }
+  const session = state.videoReviewRecording;
+  if (!session) return;
+  session.discarded = true;
+  session.stopping = true;
+  try {
+    if (session.recorder?.state !== "inactive") session.recorder.stop();
+  } catch (error) {
+    console.warn("Could not stop the discarded coach review recording.", error);
+  }
+  cleanupCoachReviewRecordingSession(session);
+}
+
 function teardownCoachVideoReviewEditor() {
+  discardCoachReviewRecording();
   if (state.videoReviewResizeHandler) window.removeEventListener("resize", state.videoReviewResizeHandler);
   if (state.videoReviewFullscreenHandler) {
     document.removeEventListener("fullscreenchange", state.videoReviewFullscreenHandler);
@@ -9201,7 +9298,8 @@ function teardownCoachVideoReviewEditor() {
 function resetVideoReviewPrivateState() {
   teardownCoachVideoReviewEditor();
   clearTimeout(state.videoReviewSearchTimer);
-  state.videoReviewMedia.clear();
+  [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
+  [...state.videoReviewRecordedReplies.keys()].forEach(clearCoachRecordedReply);
   state.videoReviewDrawings.clear();
   state.videoReviewActiveRequestId = "";
   state.videoReviewStatus = "all";
@@ -9267,6 +9365,320 @@ function drawCoachReviewShape(context, drawing, width, height) {
     context.moveTo(end.x, end.y);
     context.lineTo(end.x - size * Math.cos(angle + Math.PI / 6), end.y - size * Math.sin(angle + Math.PI / 6));
     context.stroke();
+  }
+}
+
+function coachReviewRecordingMimeTypes() {
+  return [
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/mp4",
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ];
+}
+
+function createCoachReviewMediaRecorder(stream) {
+  const bitrateOptions = { videoBitsPerSecond: 2500000, audioBitsPerSecond: 96000 };
+  for (const mimeType of coachReviewRecordingMimeTypes()) {
+    if (typeof MediaRecorder.isTypeSupported === "function" && !MediaRecorder.isTypeSupported(mimeType)) continue;
+    try {
+      return new MediaRecorder(stream, { ...bitrateOptions, mimeType });
+    } catch (error) {
+      console.warn(`MediaRecorder could not use ${mimeType}.`, error);
+    }
+  }
+  try {
+    return new MediaRecorder(stream, bitrateOptions);
+  } catch (error) {
+    return new MediaRecorder(stream);
+  }
+}
+
+function coachReviewRecordingSize(video) {
+  const sourceWidth = Math.max(1, Number(video.videoWidth || 1280));
+  const sourceHeight = Math.max(1, Number(video.videoHeight || 720));
+  const scale = Math.min(1, 1280 / Math.max(sourceWidth, sourceHeight));
+  const even = (value) => Math.max(2, Math.round(value * scale / 2) * 2);
+  return { width: even(sourceWidth), height: even(sourceHeight) };
+}
+
+function paintCoachReviewRecordingFrame(session) {
+  if (!session || session.discarded || session.cleanedUp) return;
+  const { context, outputCanvas, sourceVideo, requestId } = session;
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+  if (sourceVideo.readyState >= 2) context.drawImage(sourceVideo, 0, 0, outputCanvas.width, outputCanvas.height);
+  const drawings = state.videoReviewDrawings.get(requestId) || [];
+  [...drawings, state.videoReviewActiveRequestId === requestId ? state.videoReviewDraftDrawing : null]
+    .filter(Boolean)
+    .forEach((drawing) => drawCoachReviewShape(context, drawing, outputCanvas.width, outputCanvas.height));
+  session.rafId = window.requestAnimationFrame(() => paintCoachReviewRecordingFrame(session));
+}
+
+function setCoachReviewRecordingControlsLocked(locked) {
+  document.querySelectorAll("[data-open-video-review], #video-review-status, #video-review-rider, #video-review-search, [data-open-student], [data-mark-help-reviewed], [data-review-fullscreen]")
+    .forEach((control) => { control.disabled = locked; });
+}
+
+function updateCoachReviewRecordingClock(session) {
+  if (!session || state.videoReviewRecording !== session) return;
+  const elapsedSeconds = Math.min(COACH_REVIEW_RECORDING_MAX_SECONDS, (Date.now() - session.startedAt) / 1000);
+  const time = document.querySelector("[data-review-record-time]");
+  if (time) time.textContent = videoReviewTimeLabel(elapsedSeconds);
+  if (elapsedSeconds >= COACH_REVIEW_RECORDING_MAX_SECONDS) stopCoachReviewRecording("Maximum recording length reached — saving your review...");
+}
+
+async function finishCoachReviewRecording(session) {
+  if (!session || session.finished) return;
+  session.finished = true;
+  const stillCurrent = !session.discarded
+    && state.user?.id === session.userId
+    && state.videoReviewRecording === session;
+  if (!stillCurrent) {
+    cleanupCoachReviewRecordingSession(session);
+    return;
+  }
+  const durationSeconds = Math.max(0.1, (Date.now() - session.startedAt) / 1000);
+  const mimeType = baseVideoMimeType(session.recorder.mimeType || session.mimeType || session.chunks.find((chunk) => chunk?.type)?.type);
+  const extension = mimeType === "video/mp4" ? "mp4" : mimeType === "video/webm" ? "webm" : "";
+  try {
+    if (session.failure) throw session.failure;
+    if (!extension) throw new Error("This browser created an unsupported review format. Use the video upload option instead.");
+    const blob = new Blob(session.chunks, { type: mimeType });
+    if (!blob.size) throw new Error("The review recording was empty. Please record it again.");
+    if (blob.size > COACH_VIDEO_MAX_BYTES) throw new Error("That review is over 50 MB. Please record a shorter reply.");
+    const file = new File([blob], `coach-review-${Date.now()}.${extension}`, { type: mimeType, lastModified: Date.now() });
+    clearCoachRecordedReply(session.requestId);
+    state.videoReviewRecordedReplies.set(session.requestId, {
+      file,
+      url: URL.createObjectURL(file),
+      durationSeconds,
+      mimeType,
+    });
+  } catch (error) {
+    cleanupCoachReviewRecordingSession(session);
+    setCoachReviewRecordingControlsLocked(state.videoReviewRecordedReplies.has(session.requestId));
+    const panel = document.querySelector(".coach-review-recorder");
+    panel?.classList.remove("is-recording", "is-finalising");
+    const button = document.querySelector("[data-review-record-toggle]");
+    const previousRecordingReady = state.videoReviewRecordedReplies.has(session.requestId);
+    if (button) {
+      button.disabled = false;
+      button.textContent = previousRecordingReady ? "Record again" : "Start recording review";
+    }
+    const status = document.querySelector("[data-review-record-status]");
+    if (status) status.textContent = previousRecordingReady ? "Previous recording is still ready to send" : "Recording was not saved";
+    notify(previousRecordingReady ? `New recording was not saved. Your previous recording is still ready. ${messageFrom(error)}` : messageFrom(error), "error");
+    return;
+  }
+  cleanupCoachReviewRecordingSession(session);
+  notify("Review recording ready. Preview it, then send it to Riley.");
+  if (state.view === "videoReviews" && state.videoReviewActiveRequestId === session.requestId) {
+    try {
+      await renderVideoReviews();
+    } catch (error) {
+      console.warn("The recorded review is ready, but the review screen did not refresh.", error);
+      notify("Your recording is ready. Refresh the review screen to preview it.", "error");
+    }
+  }
+}
+
+function stopCoachReviewRecording(message = "Saving your recorded review...") {
+  const session = state.videoReviewRecording;
+  if (!session || session.stopping) return;
+  session.stopping = true;
+  const panel = document.querySelector(".coach-review-recorder");
+  panel?.classList.remove("is-recording");
+  panel?.classList.add("is-finalising");
+  const button = document.querySelector("[data-review-record-toggle]");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Saving...";
+  }
+  const status = document.querySelector("[data-review-record-status]");
+  if (status) status.textContent = message;
+  try {
+    if (session.recorder.state !== "inactive") {
+      session.recorder.stop();
+      session.stopWatchdogId = window.setTimeout(() => {
+        if (state.videoReviewRecording !== session || session.finished) return;
+        session.failure = new Error("The browser did not finish saving this recording. Please try again.");
+        finishCoachReviewRecording(session);
+      }, 6000);
+    }
+    else finishCoachReviewRecording(session);
+  } catch (error) {
+    session.failure = error;
+    finishCoachReviewRecording(session);
+  }
+}
+
+function waitForCoachReviewVideoFrame(video) {
+  if (video.videoWidth && video.videoHeight && video.readyState >= 2) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("The rider video is not ready yet. Wait a moment, then try recording again."));
+    }, 8000);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadeddata", ready);
+      video.removeEventListener("error", failed);
+    };
+    const ready = () => { cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error("The rider video could not be prepared for recording.")); };
+    video.addEventListener("loadeddata", ready, { once: true });
+    video.addEventListener("error", failed, { once: true });
+    video.load();
+  });
+}
+
+async function startCoachReviewRecording(requestId) {
+  if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop the current review recording first.", "error");
+  const video = document.querySelector("#coach-review-video");
+  const canvas = document.querySelector("#coach-review-canvas");
+  const panel = document.querySelector(".coach-review-recorder");
+  const button = document.querySelector("[data-review-record-toggle]");
+  const status = document.querySelector("[data-review-record-status]");
+  if (!video || !canvas || !panel || !button) return;
+  if (!window.MediaRecorder || !window.MediaStream || !HTMLCanvasElement.prototype.captureStream || !navigator.mediaDevices?.getUserMedia) {
+    return notify("Voice-and-drawing recording is not available in this browser. You can still upload a video reply.", "error");
+  }
+  const startAttempt = { requestId, userId: state.user?.id, cancelled: false };
+  state.videoReviewRecordingStarting = startAttempt;
+  state.videoReviewRenderSerial += 1;
+  clearTimeout(state.videoReviewSearchTimer);
+  state.videoReviewSearchTimer = null;
+  setCoachReviewRecordingControlsLocked(true);
+  button.disabled = true;
+  button.textContent = "Allow microphone...";
+  if (status) status.textContent = "Waiting for microphone permission";
+  let micStream = null;
+  let outputCanvas = null;
+  let canvasStream = null;
+  let combinedStream = null;
+  let recordingSession = null;
+  const ensureCurrentStart = () => {
+    const current = state.videoReviewRecordingStarting === startAttempt
+      && !startAttempt.cancelled
+      && state.user?.id === startAttempt.userId
+      && state.view === "videoReviews"
+      && state.videoReviewActiveRequestId === requestId
+      && video.isConnected
+      && canvas.isConnected
+      && panel.isConnected
+      && button.isConnected;
+    if (current) return;
+    const error = new Error("Recording start was cancelled.");
+    error.name = "AbortError";
+    throw error;
+  };
+  try {
+    await waitForCoachReviewVideoFrame(video);
+    ensureCurrentStart();
+    if (!String(video.currentSrc || video.src || "").startsWith("blob:") && !String(video.currentSrc || video.src || "").startsWith("data:")) {
+      throw new Error("Reload the private video before recording so the finished review can include your drawings.");
+    }
+    micStream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    ensureCurrentStart();
+    outputCanvas = document.createElement("canvas");
+    const { width, height } = coachReviewRecordingSize(video);
+    outputCanvas.width = width;
+    outputCanvas.height = height;
+    outputCanvas.className = "coach-review-recording-canvas";
+    outputCanvas.setAttribute("aria-hidden", "true");
+    panel.appendChild(outputCanvas);
+    const context = outputCanvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("This browser could not prepare the video recorder.");
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(video, 0, 0, width, height);
+    context.getImageData(0, 0, 1, 1);
+    canvasStream = outputCanvas.captureStream(30);
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    const audioTrack = micStream.getAudioTracks()[0];
+    if (!videoTrack || !audioTrack) throw new Error("The video or microphone track could not start.");
+    combinedStream = new MediaStream([videoTrack, audioTrack]);
+    const recorder = createCoachReviewMediaRecorder(combinedStream);
+    const session = {
+      requestId,
+      userId: state.user?.id,
+      recorder,
+      mimeType: recorder.mimeType,
+      micStream,
+      canvasStream,
+      combinedStream,
+      outputCanvas,
+      context,
+      sourceVideo: video,
+      sourceWasMuted: video.muted,
+      chunks: [],
+      bytes: 0,
+      startedAt: Date.now(),
+      stopping: false,
+      discarded: false,
+      cleanedUp: false,
+    };
+    recordingSession = session;
+    state.videoReviewRecordingStarting = null;
+    state.videoReviewRecording = session;
+    video.muted = true;
+    state.videoReviewDrawEnabled = true;
+    canvas.classList.add("drawing");
+    const drawToggle = document.querySelector("[data-review-draw-toggle]");
+    drawToggle?.classList.add("active");
+    if (drawToggle) drawToggle.textContent = "Drawing on";
+    recorder.addEventListener("dataavailable", (event) => {
+      if (session.discarded || !event.data?.size) return;
+      session.chunks.push(event.data);
+      session.bytes += event.data.size;
+      if (session.bytes >= COACH_VIDEO_MAX_BYTES * 0.94) stopCoachReviewRecording("Storage limit nearly reached — saving your review...");
+    });
+    recorder.addEventListener("stop", () => finishCoachReviewRecording(session), { once: true });
+    recorder.addEventListener("error", (event) => {
+      session.failure = event.error || new Error("The review recording stopped unexpectedly.");
+      stopCoachReviewRecording("Recording stopped — saving what was captured...");
+    });
+    audioTrack.addEventListener("ended", () => stopCoachReviewRecording("Microphone stopped — saving your review..."), { once: true });
+    session.visibilityHandler = () => {
+      if (document.visibilityState === "hidden" && state.videoReviewRecording === session) stopCoachReviewRecording("App moved to the background — saving your review...");
+    };
+    session.pageHideHandler = () => {
+      if (state.videoReviewRecording === session) discardCoachReviewRecording();
+    };
+    document.addEventListener("visibilitychange", session.visibilityHandler);
+    window.addEventListener("pagehide", session.pageHideHandler);
+    paintCoachReviewRecordingFrame(session);
+    recorder.start(1000);
+    session.startedAt = Date.now();
+    session.timerId = window.setInterval(() => updateCoachReviewRecordingClock(session), 250);
+    setCoachReviewRecordingControlsLocked(true);
+    panel.classList.add("is-recording");
+    panel.classList.remove("is-finalising");
+    button.disabled = false;
+    button.textContent = "Stop & save recording";
+    if (status) status.textContent = "Recording voice, video and drawings";
+    updateCoachReviewRecordingClock(session);
+  } catch (error) {
+    if (state.videoReviewRecordingStarting === startAttempt) state.videoReviewRecordingStarting = null;
+    if (recordingSession) {
+      recordingSession.discarded = true;
+      cleanupCoachReviewRecordingSession(recordingSession);
+    } else {
+      [micStream, canvasStream, combinedStream].forEach((stream) => stream?.getTracks?.().forEach((track) => track.stop()));
+      outputCanvas?.remove();
+    }
+    if (state.view === "videoReviews" && state.videoReviewActiveRequestId === requestId && panel.isConnected) {
+      setCoachReviewRecordingControlsLocked(state.videoReviewRecordedReplies.has(requestId));
+      button.disabled = false;
+      button.textContent = state.videoReviewRecordedReplies.has(requestId) ? "Record again" : "Start recording review";
+      if (status) status.textContent = state.videoReviewRecordedReplies.has(requestId) ? "Previous recording is still ready to send" : "Ready when you are";
+    }
+    if (error?.name !== "AbortError") notify(error?.name === "NotAllowedError" ? "Microphone access is needed to record your spoken review. You can still upload a video reply." : messageFrom(error), "error");
   }
 }
 
@@ -9338,8 +9750,31 @@ function bindCoachVideoReviewEditor() {
   video.addEventListener("play", updateCoachReviewPlayerUi);
   video.addEventListener("pause", updateCoachReviewPlayerUi);
   video.addEventListener("error", () => {
-    state.videoReviewMedia.delete(state.videoReviewActiveRequestId);
-    notify("This video could not play in this browser. Use Open or Download original instead.", "error");
+    const requestId = state.videoReviewActiveRequestId;
+    const recording = state.videoReviewRecording?.requestId === requestId ? state.videoReviewRecording : null;
+    releaseVideoReviewMedia(requestId);
+    if (recording) {
+      recording.failure = new Error("The rider video stopped playing, so this recording was not saved. Reload the clip and try again.");
+      stopCoachReviewRecording("Video playback failed — stopping the recording...");
+    } else if (state.videoReviewRecordingStarting?.requestId !== requestId) {
+      notify("This video could not play in this browser. Use Open or Download original instead.", "error");
+    }
+  });
+  document.querySelector("[data-review-record-toggle]")?.addEventListener("click", (event) => {
+    const requestId = event.currentTarget.dataset.reviewRequest;
+    if (state.videoReviewRecording?.requestId === requestId) stopCoachReviewRecording();
+    else startCoachReviewRecording(requestId);
+  });
+  document.querySelector("[data-review-record-remove]")?.addEventListener("click", async (event) => {
+    clearCoachRecordedReply(event.currentTarget.dataset.reviewRecordRemove);
+    notify("Recorded review removed.");
+    await renderVideoReviews();
+  });
+  document.querySelector('.coach-review-feedback input[name="video"]')?.addEventListener("change", (event) => {
+    const submit = event.currentTarget.closest("form")?.querySelector('button[type="submit"]');
+    if (!submit) return;
+    if (event.currentTarget.files?.[0]?.size) submit.textContent = "Send selected video to Riley";
+    else submit.textContent = state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId) ? "Send recorded review to Riley" : "Send feedback to Riley";
   });
   document.querySelector("[data-review-play]")?.addEventListener("click", () => video.paused ? video.play().catch((error) => notify(messageFrom(error), "error")) : video.pause());
   document.querySelectorAll("[data-review-step]").forEach((button) => button.addEventListener("click", () => {
@@ -9421,6 +9856,7 @@ function bindCoachVideoReviewEditor() {
   });
   refreshCanvas();
   updateCoachReviewPlayerUi();
+  if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) setCoachReviewRecordingControlsLocked(true);
 }
 
 function videoReviewCardHtml(request) {
@@ -9469,10 +9905,12 @@ function videoReviewCardHtml(request) {
 
 async function renderVideoReviews() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
+  if (state.videoReviewRecording || state.videoReviewRecordingStarting) return;
   teardownCoachVideoReviewEditor();
   const renderSerial = ++state.videoReviewRenderSerial;
+  const previousActiveRequestId = state.videoReviewActiveRequestId;
   const { roster, requests } = await getCoachVideoReviews();
-  if (renderSerial !== state.videoReviewRenderSerial || state.view !== "videoReviews") return;
+  if (renderSerial !== state.videoReviewRenderSerial || state.view !== "videoReviews" || state.videoReviewRecording || state.videoReviewRecordingStarting) return;
   const search = state.videoReviewSearch.toLowerCase().trim();
   const filtered = requests.filter((request) => {
     const status = request.status || "new";
@@ -9487,6 +9925,7 @@ async function renderVideoReviews() {
   if (!filtered.some((request) => request.id === state.videoReviewActiveRequestId)) {
     state.videoReviewActiveRequestId = (filtered.find((request) => isRileyCoachVideoCanary(request) && !["replied", "reviewed"].includes(request.status || "open")) || filtered[0])?.id || "";
   }
+  if (previousActiveRequestId && previousActiveRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousActiveRequestId);
   const activeRequest = filtered.find((request) => request.id === state.videoReviewActiveRequestId) || null;
   const activeReviewHtml = activeRequest
     ? (isRileyCoachVideoCanary(activeRequest) ? coachReviewWorkspaceHtml(activeRequest) : videoReviewCardHtml(activeRequest))
@@ -9504,20 +9943,30 @@ async function renderVideoReviews() {
       <div class="coach-review-active">${activeReviewHtml}</div>
     </section>`;
   document.querySelector("#video-review-status")?.addEventListener("change", (event) => {
+    if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
+    if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
     state.videoReviewStatus = event.target.value;
     renderVideoReviews();
   });
   document.querySelector("#video-review-rider")?.addEventListener("change", (event) => {
+    if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
+    if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
     state.videoReviewRider = event.target.value;
     renderVideoReviews();
   });
   document.querySelector("#video-review-search")?.addEventListener("input", (event) => {
+    if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
+    if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
     state.videoReviewSearch = event.target.value;
     clearTimeout(state.videoReviewSearchTimer);
     state.videoReviewSearchTimer = setTimeout(() => renderVideoReviews(), 250);
   });
   document.querySelectorAll("[data-open-video-review]").forEach((button) => button.addEventListener("click", async () => {
+    if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before opening another rider.", "error");
+    if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before opening another rider.", "error");
+    const previousRequestId = state.videoReviewActiveRequestId;
     state.videoReviewActiveRequestId = button.dataset.openVideoReview;
+    if (previousRequestId && previousRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousRequestId);
     state.videoReviewDrawEnabled = false;
     state.videoReviewDraftDrawing = null;
     await renderVideoReviews();
@@ -9545,9 +9994,29 @@ async function fetchHelpVideoMedia(requestId) {
   if (error) throw error;
   if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
   const [media] = await hydrateHelpRequestMediaUrls(data);
-  const freshMedia = { ...media, _signedAt: Date.now() };
+  const freshMedia = { ...media, ...(cached?.video_playback_url ? { video_playback_url: cached.video_playback_url } : {}), _signedAt: Date.now() };
   state.videoReviewMedia.set(requestId, freshMedia);
   return freshMedia;
+}
+
+async function prepareCoachReviewPlaybackMedia(requestId, media = {}) {
+  if (media.video_playback_url || media.video_data_url || !media.video_storage_path) return media;
+  const userId = state.user?.id;
+  const { data, error } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).download(media.video_storage_path);
+  if (error) throw error;
+  if (!data?.size) throw new Error("The private rider video could not be downloaded for recording.");
+  const playbackUrl = URL.createObjectURL(data);
+  if (state.user?.id !== userId || state.view !== "videoReviews" || state.videoReviewActiveRequestId !== requestId) {
+    URL.revokeObjectURL(playbackUrl);
+    const aborted = new Error("The selected review changed while the private video was loading.");
+    aborted.name = "AbortError";
+    throw aborted;
+  }
+  const current = state.videoReviewMedia.get(requestId) || media;
+  if (current.video_playback_url) URL.revokeObjectURL(current.video_playback_url);
+  const prepared = { ...current, video_playback_url: playbackUrl };
+  state.videoReviewMedia.set(requestId, prepared);
+  return prepared;
 }
 
 async function loadHelpVideo(event) {
@@ -9557,13 +10026,16 @@ async function loadHelpVideo(event) {
   button.disabled = true;
   button.textContent = "Loading...";
   try {
-    const media = await fetchHelpVideoMedia(button.dataset.loadHelpVideo);
+    let media = await fetchHelpVideoMedia(button.dataset.loadHelpVideo);
+    if (button.dataset.coachAnalysis === "1") media = await prepareCoachReviewPlaybackMedia(button.dataset.loadHelpVideo, media);
     if (!(media.video_url || media.video_data_url)) notify("No student video found for this request.", "error");
     await renderVideoReviews();
   } catch (error) {
-    button.disabled = false;
-    button.textContent = "Load video";
-    notify(messageFrom(error), "error");
+    if (button.isConnected) {
+      button.disabled = false;
+      button.textContent = button.dataset.coachAnalysis === "1" ? "Load private video" : "Load video";
+    }
+    if (error?.name !== "AbortError") notify(messageFrom(error), "error");
   }
 }
 
@@ -10123,7 +10595,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.7", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.8", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
