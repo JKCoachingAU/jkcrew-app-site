@@ -13,6 +13,8 @@ const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 const installButton = document.querySelector("#install-app");
 let deferredInstallPrompt = null;
+let notificationAudioContext = null;
+let lastNotificationSoundAt = 0;
 const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
 const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
 const RIDER_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
@@ -24,6 +26,8 @@ const VIDEO_STANDARD_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js";
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
+const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
+const WHATS_NEW_RELEASE_ID = "2026-08-major";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
   session: null,
@@ -373,7 +377,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.8" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.9" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -390,7 +394,7 @@ function xpProgressHtml(summary, compact = false) {
       <div class="xp-bar" aria-label="Level progress"><span style="width:${Math.max(0, Math.min(100, xp.progress_percent))}%"></span></div>
       <div class="xp-meta">${xp.level >= XP_LEVEL_CAP ? `${xp.xp_needed} ${escapeHtml(unit)} to Prestige ${xp.prestige_rank + 1}` : `${xp.xp_needed} ${escapeHtml(unit)} to Level ${xp.next_level}`}</div>
     </div>
-  </div>`;
+    </div>`;
 }
 function levelBadgesGridHtml(summary) {
   const xp = normalizeXpSummary(summary);
@@ -700,9 +704,75 @@ function bindHelpRequestForm() {
   });
 }
 
+function notificationSoundEnabled() {
+  try {
+    return localStorage.getItem(NOTIFICATION_SOUND_KEY) !== "off";
+  } catch (_) {
+    return true;
+  }
+}
+
+function rememberNotificationSound(enabled) {
+  try {
+    localStorage.setItem(NOTIFICATION_SOUND_KEY, enabled ? "on" : "off");
+  } catch (error) {
+    console.warn("Notification sound preference could not be saved.", error);
+  }
+}
+
+async function unlockNotificationSound() {
+  if (!notificationSoundEnabled()) return false;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return false;
+  try {
+    if (!notificationAudioContext) notificationAudioContext = new AudioContextClass();
+    if (notificationAudioContext.state === "suspended") await notificationAudioContext.resume();
+    return notificationAudioContext.state === "running";
+  } catch (error) {
+    console.warn("JKCREW notification sound could not start.", error);
+    return false;
+  }
+}
+
+function playNotificationSound(kind = "update") {
+  if (!notificationSoundEnabled() || document.visibilityState !== "visible") return;
+  const context = notificationAudioContext;
+  if (!context || context.state !== "running") return;
+  const nowMs = Date.now();
+  if (nowMs - lastNotificationSoundAt < 450) return;
+  lastNotificationSoundAt = nowMs;
+  try {
+    const start = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const errorTone = kind === "error";
+    const badgeTone = kind === "badge";
+    oscillator.type = errorTone ? "triangle" : "sine";
+    oscillator.frequency.setValueAtTime(errorTone ? 270 : badgeTone ? 660 : 520, start);
+    oscillator.frequency.exponentialRampToValueAtTime(errorTone ? 220 : badgeTone ? 990 : 780, start + 0.16);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(kind === "daily" ? 0.02 : 0.032, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + 0.21);
+  } catch (error) {
+    console.warn("JKCREW notification sound could not play.", error);
+  }
+}
+
+async function updateNotificationSoundPreference(event) {
+  const enabled = Boolean(event.currentTarget.checked);
+  rememberNotificationSound(enabled);
+  if (enabled) await unlockNotificationSound();
+  notify(enabled ? "Notification sounds are on." : "Notification sounds are off.");
+}
+
 function notify(message, type = "ok") {
   toast.textContent = message;
   toast.className = `toast show ${type === "error" ? "error" : ""}`;
+  playNotificationSound(type === "error" ? "error" : "update");
   clearTimeout(notify.timeout);
   notify.timeout = setTimeout(() => { toast.className = "toast"; }, 3600);
 }
@@ -735,6 +805,7 @@ function showProgressPopup({ kind = "xp", title = "Progress updated", message = 
     : `<span class="progress-popup-xp">+XP</span>`;
   popup.innerHTML = `${marker}<span class="progress-popup-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(message)}</small></span>`;
   stack.appendChild(popup);
+  playNotificationSound(kind);
   requestAnimationFrame(() => popup.classList.add("show"));
   setTimeout(() => {
     popup.classList.remove("show");
@@ -1156,9 +1227,91 @@ function renderShell() {
         <main id="view" class="content"></main>
       </div>
       <nav class="bottom-nav">${bottomNavHtml}</nav>
-    </div>`;
+  </div>`;
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
-  if (!mountBattleIntroPrompt()) mountPushSetupPrompt();
+  if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
+}
+
+function whatsNewDismissKey() {
+  return `jkcrew-whats-new:${state.user?.id || "signed-in"}:${WHATS_NEW_RELEASE_ID}`;
+}
+
+function rememberWhatsNew() {
+  try { localStorage.setItem(whatsNewDismissKey(), "1"); } catch (_) {}
+}
+
+function whatsNewAlreadyShown() {
+  if (new URL(window.location.href).searchParams.get("show-updates") === "1") return false;
+  try { return localStorage.getItem(whatsNewDismissKey()) === "1"; } catch (_) { return false; }
+}
+
+function whatsNewItems(role = "athlete") {
+  if (role === "parent") return [
+    ["01", "New Parent View", "A calmer Home with the most important progress first."],
+    ["02", "Weekly Progress", "See the current sheet, Daily locations and completion at a glance."],
+    ["03", "Coaching Inbox", "Coach messages and approved feedback now live in one private place."],
+    ["04", "Family Calendar", "Sessions, events and tasks are easier to follow."],
+    ["05", "Progress History", "XP, badges, Tricktionary and previous weeks stay one tap away."],
+    ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
+  ];
+  if (isCoachRole(role)) return [
+    ["01", "New Coach HQ", "Cleaner Command, Session, Riders, Challenges, Tools and More hubs."],
+    ["02", "Faster Sessions", "Choose the group and location, then manage several riders together."],
+    ["03", "Battles + Challenges", "Create 1v1, 2v2 or 3v3 match-ups and weekly crew targets."],
+    ["04", "Run + List Planning", "Review run plans, list requests and next-week sheets in one flow."],
+    ["05", "Clearer Rider Profiles", "Current lists, XP, history and key actions are easier to find."],
+    ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
+  ];
+  return [
+    ["01", "A New Layout", "Home, Session, Challenges, Coaching, Board and Profile are easier to use."],
+    ["02", "Better Run Planner", "Build a route on a park photo, label tricks and replay the full line."],
+    ["03", "Battles + Challenges", "Go 1v1, 2v2 or 3v3 and complete weekly targets for points."],
+    ["04", "Smarter Sheets", "Cleaner sections, Lines and saved Daily lists for every location."],
+    ["05", "Level 50 + Prestige", "Keep earning lifetime XP after Level 50 and rank up again."],
+    ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
+  ];
+}
+
+function mountWhatsNewPrompt() {
+  if (!state.user?.id || whatsNewAlreadyShown() || !document.querySelector(".main-wrap")) return false;
+  const items = whatsNewItems(state.profile?.role);
+  const backdrop = document.createElement("div");
+  backdrop.id = "whats-new-modal";
+  backdrop.className = "battle-intro-backdrop whats-new-backdrop";
+  backdrop.innerHTML = `<section class="battle-intro-card whats-new-card" role="dialog" aria-modal="true" aria-label="What's new in JKCREW">
+    <div class="whats-new-topline"><div class="battle-intro-icon whats-new-icon" aria-hidden="true">NEW</div><span>Major update</span></div>
+    <div class="eyebrow">New in JKCREW</div>
+    <h2>The biggest JKCREW update yet</h2>
+    <p>A cleaner app, smarter training tools and more ways for the crew to progress together.</p>
+    <div class="whats-new-grid">${items.map(([number, title, copy]) => `<article><b>${escapeHtml(number)}</b><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(copy)}</small></span></article>`).join("")}</div>
+    <div class="whats-new-note">There is more inside. Open the new hubs and take a look around.</div>
+    <div class="battle-intro-actions">
+      <button class="primary-btn" type="button" data-explore-update>Explore JKCREW</button>
+      <button class="secondary-btn" type="button" data-dismiss-update>Got it</button>
+    </div>
+  </section>`;
+  document.body.append(backdrop);
+  rememberWhatsNew();
+  if (state.profile?.role === "athlete") rememberBattleIntro();
+  const cleanUrl = new URL(window.location.href);
+  if (cleanUrl.searchParams.has("show-updates")) {
+    cleanUrl.searchParams.delete("show-updates");
+    window.history.replaceState({}, "", cleanUrl.href);
+  }
+  const closePrompt = () => {
+    backdrop.remove();
+    mountPushSetupPrompt();
+  };
+  backdrop.querySelector("[data-dismiss-update]")?.addEventListener("click", closePrompt);
+  backdrop.querySelector("[data-explore-update]")?.addEventListener("click", async () => {
+    backdrop.remove();
+    const target = state.profile?.role === "athlete" ? "home" : isCoachRole(state.profile?.role) ? "command" : "home";
+    await navigate(target);
+    mountPushSetupPrompt();
+  });
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closePrompt(); });
+  window.setTimeout(() => backdrop.querySelector("[data-explore-update]")?.focus(), 50);
+  return true;
 }
 
 function battleIntroDismissKey() {
@@ -10246,6 +10399,7 @@ function pushNotificationSettingsHtml(pushState) {
         <button class="${pushState.enabled ? "secondary-btn" : "primary-btn"}" type="button" id="toggle-push-notifications" ${pushState.supported ? "" : "disabled"}>${escapeHtml(actionLabel)}</button>
       </div>
       <div class="push-preference-list">
+        <label><input type="checkbox" id="notification-sound-toggle" ${notificationSoundEnabled() ? "checked" : ""}> Play the JKCREW sound for in-app notification pop-ups</label>
         ${role === "athlete" ? `
           <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
           <label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>
@@ -10256,7 +10410,7 @@ function pushNotificationSettingsHtml(pushState) {
         ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label><label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label><label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>` : ""}
         ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label><label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my child's coach</label>` : ""}
       </div>
-      <p>Notifications are set separately on each phone, tablet, or computer. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
+      <p>Notifications are set separately on each phone, tablet, or computer. In-app sounds work after you interact with the app; background push alerts use the device's own sound, mute and Focus settings. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
     </section>`;
 }
 
@@ -10483,6 +10637,7 @@ async function renderProfile() {
   document.querySelector("#open-contests-from-profile")?.addEventListener("click", () => navigate("contests"));
   document.querySelector("#profile-theme")?.addEventListener("change", (event) => applyTheme(event.target.value));
   document.querySelector("#toggle-push-notifications")?.addEventListener("click", togglePushNotifications);
+  document.querySelector("#notification-sound-toggle")?.addEventListener("change", updateNotificationSoundPreference);
   document.querySelectorAll("[data-push-preference]").forEach((input) => input.addEventListener("change", () => {
     savePushPreferences().catch((error) => notify(messageFrom(error), "error"));
   }));
@@ -10585,6 +10740,9 @@ async function updatePassword(event) {
   notify("Password changed.");
 }
 
+document.addEventListener("pointerdown", () => { void unlockNotificationSound(); }, { passive: true });
+document.addEventListener("keydown", () => { void unlockNotificationSound(); });
+
 init().catch((error) => {
   renderBootRecovery(messageFrom(error));
   notify(messageFrom(error), "error");
@@ -10605,7 +10763,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.8", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.9", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

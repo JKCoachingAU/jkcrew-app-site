@@ -1,19 +1,19 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.13.8";
+const RELEASE_VERSION = "2.13.9";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=2.13.8",
-  "./app.js?v=2.13.8",
-  "./manifest.webmanifest?v=2.13.8",
+  "./styles.css?v=2.13.9",
+  "./app.js?v=2.13.9",
+  "./manifest.webmanifest?v=2.13.9",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.13.8",
+  "./icons/badges/prestige-01.png?v=2.13.9",
 ];
 
 self.addEventListener("install", (event) => {
@@ -80,6 +80,7 @@ self.addEventListener("push", (event) => {
     badge: "./icons/app-icon-192.png?v=2.11.77",
     tag: payload.notificationId || payload.type || "jkcrew-update",
     renotify: payload.type === "crew_chat",
+    silent: false,
     data: {
       url: payload.url || "./",
       view: payload.view || (payload.type === "parent_weekly_summary" ? "home" : "board"),

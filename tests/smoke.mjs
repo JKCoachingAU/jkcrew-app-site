@@ -12,7 +12,7 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.8";
+const version = "2.13.9";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -29,6 +29,18 @@ for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, m
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
 assert(serviceWorker.includes('const CACHE_PREFIX = "jkcrew-shell-"'), "service worker should use the public cache namespace");
 assert(serviceWorker.includes(`const RELEASE_VERSION = "${version}"`), "service worker cache should use the current version");
+assert(serviceWorker.includes("silent: false"), "Background push should request the device's normal notification sound");
+
+const shellRenderer = functionBody("renderShell");
+assert(shellRenderer.includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
+assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-major"'), "What's New needs an explicit campaign key");
+assert(functionBody("mountWhatsNewPrompt").includes("rememberBattleIntro()"), "The all-update prompt should prevent a duplicate battle onboarding popup");
+assert(functionBody("mountWhatsNewPrompt").includes("mountPushSetupPrompt()"), "Notification setup should follow the What's New popup");
+assert(app.includes('const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1"'), "In-app notification sound needs a per-device preference");
+assert(functionBody("notify").includes("playNotificationSound"), "General in-app notifications should request the JKCREW chime");
+assert(functionBody("showProgressPopup").includes("playNotificationSound"), "XP, badge and score popups should request the JKCREW chime");
+assert(functionBody("playNotificationSound").includes('document.visibilityState !== "visible"'), "In-app sound must stay silent while the app is hidden");
+assert(functionBody("pushNotificationSettingsHtml").includes("notification-sound-toggle"), "Every role needs an in-app notification sound control");
 
 const localAssetReferences = [...html.matchAll(/(?:src|href)="(?!https?:)([^"#]+)"/g)]
   .map((match) => match[1].split("?")[0])
