@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.6";
+const RELEASE_VERSION = "2.14.7";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -393,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.6" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.7" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -470,8 +470,10 @@ const motivationalQuotes = [
 const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
 const defaultVenues = ["Pizzey", "Beenleigh", "Elanora", "Nerang", "RampFest", "Other / Custom Venue"];
 const venueKey = (venue = "") => String(venue || "").trim();
-const venueIdentityKey = (venue = "") => venueKey(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-const venueLabel = (venue = "") => venueKey(venue) || "Default Daily List";
+const rawVenueIdentityKey = (venue = "") => venueKey(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const venueAliases = Object.freeze({ beenleighskatepark: "beenleigh" });
+const venueIdentityKey = (venue = "") => venueAliases[rawVenueIdentityKey(venue)] || rawVenueIdentityKey(venue);
+const venueLabel = (venue = "") => venueIdentityKey(venue) === "beenleigh" ? "Beenleigh" : venueKey(venue) || "Default Daily List";
 
 function avatarHtml(profile = {}, className = "") {
   const image = avatarUrl(profile);
@@ -2649,9 +2651,40 @@ function dailyVenues(assignments = []) {
   assignments.filter((assignment) => assignment.category === "daily").forEach((assignment) => {
     const venue = venueKey(assignment.venue);
     const identity = venueIdentityKey(venue);
-    if (!venues.has(identity)) venues.set(identity, venue);
+    if (!venues.has(identity)) venues.set(identity, venueLabel(venue));
   });
   return [...venues.values()];
+}
+
+function newestDailyListForVenue(assignments = [], venue = "") {
+  const selected = venueIdentityKey(venue);
+  const candidates = assignments.filter((assignment) => assignment.category === "daily" && venueIdentityKey(assignment.venue) === selected);
+  if (candidates.length < 2) return candidates;
+  const lists = new Map();
+  candidates.forEach((assignment) => {
+    const sourceKey = rawVenueIdentityKey(assignment.venue);
+    const rows = lists.get(sourceKey) || [];
+    rows.push(assignment);
+    lists.set(sourceKey, rows);
+  });
+  if (lists.size < 2) return candidates;
+  const timestamp = (value) => {
+    const parsed = Date.parse(value || "");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const rank = (rows) => [
+    Math.max(...rows.map((row) => timestamp(row.updated_at))),
+    Math.max(...rows.map((row) => timestamp(row.created_at))),
+    Math.max(...rows.map((row) => timestamp(`${row.week_start || ""}T00:00:00Z`))),
+    Math.max(...rows.map((row) => Number(row.sort_order || 0))),
+  ];
+  const compareRank = (left, right) => {
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return left[index] - right[index];
+    }
+    return 0;
+  };
+  return [...lists.entries()].sort((left, right) => compareRank(rank(right[1]), rank(left[1])) || right[0].localeCompare(left[0]))[0]?.[1] || candidates;
 }
 
 function selectedVenueFor(assignments = []) {
@@ -2665,7 +2698,8 @@ function selectedVenueFor(assignments = []) {
 
 function assignmentsForVenue(assignments = [], venue = "") {
   const selected = venueIdentityKey(venue);
-  return assignments.filter((assignment) => assignment.category !== "daily" || venueIdentityKey(assignment.venue) === selected);
+  const newestDailyIds = new Set(newestDailyListForVenue(assignments, venue).map((assignment) => assignment.id));
+  return assignments.filter((assignment) => assignment.category !== "daily" || (venueIdentityKey(assignment.venue) === selected && newestDailyIds.has(assignment.id)));
 }
 
 function venueSelectorHtml(assignments = []) {
@@ -9391,7 +9425,7 @@ function parseAssignmentLine(line, index, category, venue = "", athleteId = stat
     week_start: weekStart,
     trick_name: trickName.slice(0, 120),
     category,
-    venue: category === "daily" ? venueKey(venue).slice(0, 80) : "",
+    venue: category === "daily" ? venueLabel(venue).slice(0, 80) : "",
     target_reps: targetReps,
     notes: note.slice(0, 500),
     sort_order: index,
@@ -9420,16 +9454,16 @@ function dailyVenueRowsFromForm(form) {
       const index = key.slice("dailyVenueName:".length);
       return {
         index,
-        name: String(value || "").trim().slice(0, 80),
+        name: venueLabel(String(value || "").trim()).slice(0, 80),
         tricks: String(form.get(`dailyVenueTricks:${index}`) || ""),
       };
     })
     .filter((row) => row.name);
   const customVenue = String(form.get("customDailyVenue") || "").trim().slice(0, 80);
-  if (customVenue) rows.push({ index: "custom", name: customVenue, tricks: String(form.get("customDaily") || "") });
+  if (customVenue) rows.push({ index: "custom", name: venueLabel(customVenue), tricks: String(form.get("customDaily") || "") });
   const seen = new Set();
   return rows.filter((row) => {
-    const key = row.name.toLowerCase();
+    const key = venueIdentityKey(row.name);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -9445,18 +9479,18 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
   [...baseVenueNames, ...assignments.filter((assignment) => assignment.category === "daily").map((assignment) => venueLabel(assignment.venue))]
     .filter(Boolean)
     .forEach((venue) => {
-      const key = venueKey(venue).toLowerCase();
+      const key = venueIdentityKey(venue);
       if (!venueNameMap.has(key)) venueNameMap.set(key, venueLabel(venue));
     });
   const venueNames = [...venueNameMap.values()];
-  const assignmentsForVenue = (venue) => assignments.filter((assignment) => assignment.category === "daily" && venueKey(assignment.venue).toLowerCase() === venueKey(venue).toLowerCase());
-  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueKey(venue).toLowerCase() === venueKey(state.coachPlanVenue || "").toLowerCase()));
+  const dailyAssignmentsForVenue = (venue) => newestDailyListForVenue(assignments, venue);
+  const selectedPlanVenueIndex = Math.max(0, venueNames.findIndex((venue) => venueIdentityKey(venue) === venueIdentityKey(state.coachPlanVenue || "")));
   const venueOptions = venueNames.map((venue, venueIndex) => {
-    const count = assignmentsForVenue(venue).length;
+    const count = dailyAssignmentsForVenue(venue).length;
     return `<option value="${venueIndex}" ${venueIndex === selectedPlanVenueIndex ? "selected" : ""}>${escapeHtml(venue)} · ${count} trick${count === 1 ? "" : "s"}</option>`;
   }).join("");
   const dailyVenueEditors = venueNames.map((venue, venueIndex) => {
-    const venueAssignments = assignmentsForVenue(venue);
+    const venueAssignments = dailyAssignmentsForVenue(venue);
     const venueDailyCount = venueAssignments.length;
     const assignmentText = venueAssignments.map((assignment) => {
       const notes = assignment.notes ? ` - ${assignment.notes}` : "";

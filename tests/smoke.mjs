@@ -14,7 +14,8 @@ const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
 const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
-const version = "2.14.6";
+const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
+const version = "2.14.7";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -148,8 +149,11 @@ assert(functionBody("sessionViewerAssignmentEditor").includes("Example: Manual -
 assert(css.includes(".viewer-trick-row.viewer-attempt-row {\n  grid-template-columns: auto minmax(0, 1fr);"), "Coach Session Line labels must have a wrapping text column");
 assert(functionBody("getWeeklyAssignments").includes('rpc("get_effective_weekly_assignments"'), "Rider schedules must load each location's latest saved Daily list");
 const venueKeyForTest = (venue = "") => String(venue || "").trim();
-const venueIdentityKeyForTest = (venue = "") => venueKeyForTest(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-const dailyVenuesForTest = new Function("venueKey", "venueIdentityKey", `${functionBody("dailyVenues")}; return dailyVenues;`)(venueKeyForTest, venueIdentityKeyForTest);
+const rawVenueIdentityKeyForTest = (venue = "") => venueKeyForTest(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const venueAliasesForTest = Object.freeze({ beenleighskatepark: "beenleigh" });
+const venueIdentityKeyForTest = (venue = "") => venueAliasesForTest[rawVenueIdentityKeyForTest(venue)] || rawVenueIdentityKeyForTest(venue);
+const venueLabelForTest = (venue = "") => venueIdentityKeyForTest(venue) === "beenleigh" ? "Beenleigh" : venueKeyForTest(venue) || "Default Daily List";
+const dailyVenuesForTest = new Function("venueKey", "venueIdentityKey", "venueLabel", `${functionBody("dailyVenues")}; return dailyVenues;`)(venueKeyForTest, venueIdentityKeyForTest, venueLabelForTest);
 assert.deepEqual(
   dailyVenuesForTest([
     { category: "daily", venue: "HOTBOX" },
@@ -157,19 +161,25 @@ assert.deepEqual(
     { category: "daily", venue: "Beenleigh Skate Park" },
     { category: "one_bang", venue: "Ignored" },
   ]),
-  ["HOTBOX", "Beenleigh Skate Park"],
-  "Location selectors must combine harmless spelling/case variants without losing saved lists",
+  ["HOTBOX", "Beenleigh"],
+  "Location selectors must merge the duplicate Beenleigh names under the requested label",
 );
-const assignmentsForVenueForTest = new Function("venueIdentityKey", `${functionBody("assignmentsForVenue")}; return assignmentsForVenue;`)(venueIdentityKeyForTest);
+const assignmentsForVenueForTest = new Function("venueIdentityKey", "rawVenueIdentityKey", `${functionBody("newestDailyListForVenue")}\n${functionBody("assignmentsForVenue")}; return assignmentsForVenue;`)(venueIdentityKeyForTest, rawVenueIdentityKeyForTest);
 assert.equal(
   assignmentsForVenueForTest([
-    { category: "daily", venue: "Beenleigh Skate Park" },
-    { category: "daily", venue: "beenleigh-skate-park" },
-    { category: "daily", venue: "Hotbox" },
-  ], "BEENLEIGH SKATE PARK").length,
+    { id: "older", category: "daily", venue: "Beenleigh", updated_at: "2026-08-26T01:00:00Z", sort_order: 1 },
+    { id: "newer-1", category: "daily", venue: "Beenleigh Skate Park", updated_at: "2026-08-27T01:00:00Z", sort_order: 40 },
+    { id: "newer-2", category: "daily", venue: "beenleigh-skate-park", updated_at: "2026-08-27T01:00:00Z", sort_order: 41 },
+    { id: "other", category: "daily", venue: "Hotbox", updated_at: "2026-08-27T02:00:00Z", sort_order: 1 },
+  ], "Beenleigh").length,
   2,
-  "Opening a location must show its canonically matching saved Daily list",
+  "Opening Beenleigh must keep only that rider's most recently saved Daily list",
 );
+assert(functionBody("scheduleEditorHtml").includes("newestDailyListForVenue(assignments, venue)"), "Coach list editors must use the same newest Beenleigh list as the rider view");
+assert(beenleighMigration.includes("when 'beenleighskatepark' then 'beenleigh'"), "The database must canonicalize both Beenleigh location names");
+assert(beenleighMigration.includes("source_venue_key"), "Daily-list reads must keep enough source identity to select one newest list");
+assert(beenleighMigration.includes("private.retired_coach_venue_backups"), "The removed duplicate coach location needs a private recovery backup");
+assert(!beenleighMigration.includes("delete from public.weekly_trick_assignments"), "Merging Beenleigh must not delete historical rider tricks or linked progress");
 const dailyVenueGroupsBody = functionBody("dailyVenueGroups");
 assert(dailyVenueGroupsBody.includes("interactive ? (matchingVenues.length ? matchingVenues : venues.slice(0, 1)) : venues"), "Rider Session must show only the selected Daily location");
 assert(dailyVenueGroupsBody.includes("const open = interactive ||"), "The selected rider Daily location must open automatically");
