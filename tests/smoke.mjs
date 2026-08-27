@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.15";
+const version = "2.14.16";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -86,6 +86,9 @@ assert(assignmentGroupsBody.includes('${open ? "open" : ""}'), "Rider Session ac
 assert((functionBody("renderSession").match(/bindSessionAssignmentAccordions\(\)/g) || []).length >= 2, "Every rider Session render path must bind accordion state");
 assert(functionBody("recordAssignmentAction").includes("sessionOpenAssignmentSections.add(openSection)"), "Ticking a standard trick must preserve its open list");
 assert(functionBody("recordPercentageAttempt").includes("sessionOpenAssignmentSections.add(openSection)"), "Updating a percentage trick must preserve its open list");
+const navigateBody = functionBody("navigate");
+assert(navigateBody.includes('if (view === "session")'), "Every fresh rider Session navigation must reset its accordion layout");
+assert(!navigateBody.includes('view === "session" && previousView !== "session"'), "Re-tapping Session must restore the clean Daily-first layout");
 const assignmentPresentationForTest = new Function(`${functionBody("assignmentPresentation")}; return assignmentPresentation;`)();
 assert.deepEqual(
   assignmentPresentationForTest({ category: "lines", trick_name: "Manual", notes: "Barspin - 180" }),
@@ -463,7 +466,14 @@ assert(css.includes(".viewer-group-filter,"), "Group and location filters must s
 assert(css.includes(".viewer-filter-tabs"), "Group and location filters must share a tab row");
 assert(css.includes("overflow-x: auto"), "Session filter tabs must stay usable on narrow screens");
 assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
-assert(functionBody("renderSessionViewer").includes("Active challenges in this group"), "Coach Session must show group challenges at the bottom");
+assert(functionBody("renderSessionViewer").includes("sessionGroupBattlesHtml(groupBattles"), "Coach Session must show the compact group battle tab at the bottom");
+const sessionGroupBattlesMarkup = functionBody("sessionGroupBattlesHtml");
+assert(sessionGroupBattlesMarkup.includes('<details class="panel session-group-battles'), "Coach Session battles must stay minimised until the coach opens them");
+assert(!sessionGroupBattlesMarkup.includes('<details open'), "Coach Session battles must be closed by default");
+assert(sessionGroupBattlesMarkup.includes("session-battle-stats"), "Opening the coach Session battle tab must reveal live, waiting and rider statistics");
+assert(sessionGroupBattlesMarkup.includes("battles.map(coachBattleCardHtml)"), "Opening the coach Session battle tab must reveal the full battle cards");
+assert(sessionGroupBattlesMarkup.includes('id="session-create-battle"'), "The expanded group battle tab must retain the create-battle action");
+assert(css.includes(".session-group-battles-summary"), "The compact coach Session battle tab needs dedicated styling");
 assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignment-attempt"), "Coach Session trick rows should remain one-tap without Attempt buttons");
 const contestsRenderer = functionBody("renderContests");
 assert(contestsRenderer.includes("getSharedUpcomingEventData()"), "Events & Runs must load the shared upcoming-event catalogue");

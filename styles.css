@@ -9125,8 +9125,47 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 .viewer-filter-tab { min-height: 44px; padding: 9px 15px; color: var(--muted); border: 1px solid rgba(141, 159, 171, .25); border-radius: 999px; background: rgba(4, 11, 15, .64); font: 900 .7rem var(--mono); letter-spacing: .05em; }
 .viewer-filter-tab.active { color: #031013; border-color: var(--aqua); background: var(--aqua); box-shadow: 0 0 18px rgba(29, 224, 211, .2); }
 .viewer-filter-tab:disabled { opacity: .62; cursor: not-allowed; }
-.session-group-battles { margin-top: 16px; border-top-color: var(--purple); }
-.session-group-battles .panel-head { align-items: center; }
+.session-group-battles { margin-top: 16px; padding: 0; overflow: hidden; border-top-color: var(--purple); }
+.session-group-battles-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 82px;
+  padding: 15px 18px;
+  cursor: pointer;
+  list-style: none;
+  background: linear-gradient(110deg, rgba(146, 84, 255, .1), rgba(32, 227, 195, .035));
+}
+.session-group-battles-summary::-webkit-details-marker { display: none; }
+.session-group-battles[open] .session-group-battles-summary { border-bottom: 1px solid color-mix(in srgb, var(--purple) 34%, var(--line)); }
+.session-battle-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(146, 84, 255, .48);
+  border-radius: 14px;
+  color: #d8c8ff;
+  background: linear-gradient(145deg, rgba(146, 84, 255, .28), rgba(58, 156, 255, .12));
+  font: 900 .76rem var(--mono);
+  box-shadow: 0 0 20px rgba(146, 84, 255, .12);
+}
+.session-battle-summary-copy { min-width: 0; }
+.session-battle-summary-copy strong,
+.session-battle-summary-copy small { display: block; }
+.session-battle-summary-copy strong { color: var(--text); font: 900 1.08rem var(--display); text-transform: uppercase; letter-spacing: .03em; }
+.session-battle-summary-copy small { margin-top: 3px; overflow: hidden; color: var(--muted); font: 700 .68rem var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.session-battle-summary-count { display: grid; place-items: center; min-width: 38px; height: 38px; padding: 0 9px; border-radius: 999px; color: var(--aqua); background: rgba(32, 227, 195, .1); font: 900 .9rem var(--mono); }
+.session-battle-close-label { display: none; }
+.session-group-battles[open] .session-battle-open-label { display: none; }
+.session-group-battles[open] .session-battle-close-label { display: inline; }
+.session-group-battles-body { display: grid; gap: 14px; padding: 16px 18px 18px; }
+.session-battle-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.session-battle-stats article { padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: rgba(4, 11, 15, .56); text-align: center; }
+.session-battle-stats span { display: block; color: var(--muted); font: 800 .62rem var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.session-battle-stats strong { display: block; margin-top: 4px; color: var(--aqua); font: 900 1.45rem var(--display); }
+.session-group-battles-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 @media (max-width: 720px) {
   .battle-team-picker, .coach-challenge-fields { grid-template-columns: 1fr; }
   .battle-team-picker .battle-rider-list { max-height: 250px; }
@@ -9136,5 +9175,10 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   .viewer-filter-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
   .viewer-filter-tabs::-webkit-scrollbar { display: none; }
   .viewer-filter-tab { flex: 0 0 auto; }
-  .session-group-battles .panel-head { align-items: stretch; }
+  .session-group-battles-summary { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; min-height: 74px; padding: 13px; }
+  .session-battle-summary-count { display: none; }
+  .session-group-battles-summary .accordion-caret { grid-column: 3; }
+  .session-group-battles-body { padding: 13px; }
+  .session-group-battles-actions { align-items: stretch; flex-direction: column; }
+  .session-group-battles-actions button { width: 100%; }
 }

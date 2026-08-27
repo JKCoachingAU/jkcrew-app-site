@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.15";
+const RELEASE_VERSION = "2.14.16";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -394,7 +394,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.15" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.16" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1608,7 +1608,7 @@ async function navigate(view) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
-  if (view === "session" && previousView !== "session") {
+  if (view === "session") {
     state.sessionOpenDailyVenues.clear();
     state.sessionOpenAssignmentSections.clear();
   }
@@ -7082,6 +7082,30 @@ function coachBattleCardHtml(battle) {
   </article>`;
 }
 
+function sessionGroupBattlesHtml(battles = [], groupLabel = "") {
+  const live = battles.filter((battle) => battle.status === "accepted");
+  const waiting = battles.filter((battle) => battle.status === "pending");
+  const riderCount = new Set(battles.flatMap((battle) => (battle.participants || []).map((participant) => participant.athlete_id).filter(Boolean))).size;
+  const countLabel = battles.length ? `${battles.length} active ${battles.length === 1 ? "battle" : "battles"}` : "No active battles";
+  return `<details class="panel session-group-battles coach-tone-purple">
+    <summary class="session-group-battles-summary">
+      <span class="session-battle-icon" aria-hidden="true">VS</span>
+      <span class="session-battle-summary-copy"><strong>Group Battles</strong><small>${escapeHtml(groupLabel)} · ${escapeHtml(countLabel)}</small></span>
+      <span class="session-battle-summary-count">${battles.length}</span>
+      <span class="accordion-caret"><span class="session-battle-open-label">View</span><span class="session-battle-close-label">Close</span></span>
+    </summary>
+    <div class="session-group-battles-body">
+      <div class="session-battle-stats" aria-label="Group battle summary">
+        <article><span>Live</span><strong>${live.length}</strong></article>
+        <article><span>Waiting</span><strong>${waiting.length}</strong></article>
+        <article><span>Riders</span><strong>${riderCount}</strong></article>
+      </div>
+      <div class="session-group-battles-actions"><div><div class="panel-title">Active challenges in this group</div><div class="panel-meta">Scores, riders, duration and invite status</div></div><button class="primary-btn compact-btn" type="button" id="session-create-battle">＋ Create Battle</button></div>
+      <div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">No active challenges for this group.</div>`}</div>
+    </div>
+  </details>`;
+}
+
 function coachBattleSection(title, meta, battles) {
   return `<section class="panel coach-battle-view-section"><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill">${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
 }
@@ -7503,7 +7527,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     <section class="session-viewer-layout">
       <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>
-    <section class="panel session-group-battles"><div class="panel-head"><div><div class="panel-title">Active challenges in this group</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · live and waiting battles</div></div><button class="primary-btn compact-btn" type="button" id="session-create-battle">＋ Create Battle</button></div><div class="coach-battle-view-list">${groupBattles.length ? groupBattles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">No active challenges for this group.</div>`}</div></section>`;
+    ${sessionGroupBattlesHtml(groupBattles, coachGroupLabel(state.sessionViewerGroup))}`;
   bindSessionViewerActions();
   document.querySelector("#session-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(groupRoster, () => renderSessionViewer()));
   updateGroupSessionTimerDom();
