@@ -411,6 +411,9 @@ assert(!battleControlMigration.includes("hotbox - aus national training facility
 assert(battleControlMigration.includes("create or replace function public.forfeit_rider_battle"), "Database must support rider forfeits");
 assert(battleControlMigration.includes("create or replace function public.delete_rider_battle"), "Database must support coach battle deletion");
 assert(battleControlMigration.includes("delete from public.leaderboard_point_adjustments"), "Deleting a completed battle must reverse its point transfer");
+const retiredVenueMigration = read("supabase/migrations/20260827054000_retire_duplicate_coach_venues.sql");
+assert(retiredVenueMigration.includes("private.retired_coach_venue_backups"), "Removed coach location buttons need a private recovery archive");
+assert(retiredVenueMigration.includes("lower(trim(venue.name)) in ('hotbox', 'default daily list')"), "Coach location cleanup must target only the exact duplicate menu entries");
 assert(functionBody("renderStudentProfile").includes("Edit current list"), "Coach rider profiles need a prominent current-list action");
 assert(functionBody("renderStudentProfile").includes("Schedule next week's list"), "Coach rider profiles need a prominent next-week planner action");
 assert(functionBody("renderStudentProfile").includes("compactStudentProfilePanels(view)"), "Coach rider profile tools should be collapsed into clean sections");
