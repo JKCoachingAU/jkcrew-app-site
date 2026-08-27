@@ -1,5 +1,6 @@
 const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
+const RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57";
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     autoRefreshToken: true,
@@ -14,8 +15,13 @@ const installButton = document.querySelector("#install-app");
 let deferredInstallPrompt = null;
 const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
 const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
-const RIDER_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
-const COACH_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const RIDER_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+const COACH_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+const VIDEO_ANALYSIS_TEST_MAX_BYTES = RIDER_VIDEO_MAX_BYTES;
+const VIDEO_ANALYSIS_TEST_MAX_SECONDS = 60;
+const VIDEO_STANDARD_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
+const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js";
+const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -72,7 +78,10 @@ const state = {
   commandParkKingVenue: "",
   commandParkKingRows: [],
   commandParkKingVenues: [],
+  helpVideoPreviewUrl: "",
 };
+
+let tusClientPromise = null;
 
 function cacheGet(key, ttlMs = 8000) {
   const entry = state.cache?.[key];
@@ -229,6 +238,8 @@ function applyTheme(value = "dark") {
   }
 }
 const firstName = (profile = {}) => String(profile.display_name || "This rider").split(/\s+/).filter(Boolean)[0] || "This rider";
+const isRileyVideoAnalysisTester = () => state.user?.id === RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID && state.profile?.role === "athlete";
+const isRileyTestRoute = () => /\/riley-test\/?$/.test(window.location.pathname);
 const isCoachRole = (role) => ["coach", "admin"].includes(role);
 const linesHtml = (value = "", emptyText = "Not added yet") => {
   const lines = String(value || "").split(/\n|,/).map((line) => line.trim()).filter(Boolean);
@@ -342,7 +353,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.5" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.6" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -480,10 +491,72 @@ function downloadDataUrl(dataUrl, filename = "jkcrew-video") {
   link.remove();
 }
 
-async function uploadHelpVideoFile(file, kind = "student") {
+function loadTusClient() {
+  if (window.tus?.Upload) return Promise.resolve(window.tus);
+  if (tusClientPromise) return tusClientPromise;
+  tusClientPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = TUS_CLIENT_URL;
+    script.integrity = TUS_CLIENT_INTEGRITY;
+    script.crossOrigin = "anonymous";
+    script.referrerPolicy = "no-referrer";
+    script.onload = () => window.tus?.Upload ? resolve(window.tus) : reject(new Error("The resumable video uploader did not start."));
+    script.onerror = () => reject(new Error("The resumable video uploader could not be loaded."));
+    document.head.appendChild(script);
+  }).catch((error) => {
+    tusClientPromise = null;
+    throw error;
+  });
+  return tusClientPromise;
+}
+
+async function uploadHelpVideoResumable(file, path, onProgress = () => {}) {
+  const [{ data: sessionData, error: sessionError }, tus] = await Promise.all([
+    client.auth.getSession(),
+    loadTusClient(),
+  ]);
+  if (sessionError) throw sessionError;
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Sign in again before uploading a video.");
+  const projectRef = new URL(SUPABASE_URL).hostname.split(".")[0];
+  await new Promise((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_KEY,
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      chunkSize: VIDEO_STANDARD_UPLOAD_MAX_BYTES,
+      metadata: {
+        bucketName: TRICK_HELP_VIDEO_BUCKET,
+        objectName: path,
+        contentType: file.type || "video/mp4",
+        cacheControl: "3600",
+      },
+      onError: (error) => reject(error),
+      onProgress: (uploaded, total) => onProgress(total ? Math.round((uploaded / total) * 100) : 0),
+      onSuccess: resolve,
+    });
+    upload.start();
+  });
+}
+
+async function uploadHelpVideoFile(file, kind = "student", onProgress = () => {}) {
   if (!state.user?.id) throw new Error("Sign in again before uploading a video.");
   const ext = videoFileExtension(file);
   const path = `${state.user.id}/${kind}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  if (file.size > VIDEO_STANDARD_UPLOAD_MAX_BYTES) {
+    await uploadHelpVideoResumable(file, path, onProgress);
+    return {
+      path,
+      fileName: file.name || `${kind}-video.${ext}`,
+      mimeType: file.type || "video/mp4",
+      size: file.size || 0,
+    };
+  }
   const { data, error } = await client.storage
     .from(TRICK_HELP_VIDEO_BUCKET)
     .upload(path, file, {
@@ -492,6 +565,7 @@ async function uploadHelpVideoFile(file, kind = "student") {
       upsert: false,
     });
   if (error) throw error;
+  onProgress(100);
   return {
     path: data?.path || path,
     fileName: file.name || `${kind}-video.${ext}`,
@@ -534,6 +608,66 @@ function videoDurationSeconds(file) {
       reject(new Error("Could not read video duration."));
     };
     video.src = url;
+  });
+}
+
+function supportedHelpVideoFile(file = {}) {
+  const mimeType = String(file.type || "").toLowerCase();
+  const extension = videoFileExtension(file);
+  return ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/m4v", "video/3gpp", "video/3gpp2"].includes(mimeType)
+    || (!mimeType && ["mp4", "mov", "m4v", "webm", "3gp", "3g2"].includes(extension));
+}
+
+function videoSizeLabel(bytes = 0) {
+  const megabytes = Number(bytes || 0) / (1024 * 1024);
+  return `${megabytes >= 10 ? Math.round(megabytes) : megabytes.toFixed(1)} MB`;
+}
+
+function clearHelpVideoPreview() {
+  if (state.helpVideoPreviewUrl) URL.revokeObjectURL(state.helpVideoPreviewUrl);
+  state.helpVideoPreviewUrl = "";
+}
+
+function bindHelpRequestForm() {
+  const form = document.querySelector("#help-request-form");
+  const input = form?.querySelector("#help-video");
+  const preview = form?.querySelector("#help-video-preview");
+  const meta = form?.querySelector("#help-video-meta");
+  if (!form || !input || !preview || !meta) return;
+  form.addEventListener("submit", submitHelpRequest);
+  input.addEventListener("change", async () => {
+    clearHelpVideoPreview();
+    const file = input.files?.[0];
+    preview.hidden = true;
+    preview.removeAttribute("src");
+    meta.textContent = "Choose a short riding clip to preview it here.";
+    meta.classList.remove("error");
+    if (!file) return;
+    if (!supportedHelpVideoFile(file)) {
+      meta.textContent = "Choose an MP4, MOV, M4V, WebM or phone video file.";
+      meta.classList.add("error");
+      return;
+    }
+    if (file.size > VIDEO_ANALYSIS_TEST_MAX_BYTES) {
+      meta.textContent = `This clip is ${videoSizeLabel(file.size)}. Trim it below 50 MB before sending.`;
+      meta.classList.add("error");
+      return;
+    }
+    try {
+      const duration = await videoDurationSeconds(file);
+      if (duration > VIDEO_ANALYSIS_TEST_MAX_SECONDS) {
+        meta.textContent = `This clip is ${Math.ceil(duration)} seconds. Trim it to 60 seconds or less.`;
+        meta.classList.add("error");
+        return;
+      }
+      state.helpVideoPreviewUrl = URL.createObjectURL(file);
+      preview.src = state.helpVideoPreviewUrl;
+      preview.hidden = false;
+      meta.textContent = `${file.name || "Selected clip"} · ${Math.ceil(duration)} sec · ${videoSizeLabel(file.size)}`;
+    } catch (error) {
+      meta.textContent = messageFrom(error);
+      meta.classList.add("error");
+    }
   });
 }
 
@@ -787,6 +921,12 @@ async function handleSession(session) {
   if (!state.user) {
     applyTheme("dark");
     renderAuth();
+    return;
+  }
+  if (state.user.id === RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID && !isRileyTestRoute()) {
+    const testUrl = new URL("./riley-test/", window.location.href);
+    testUrl.search = window.location.search;
+    window.location.replace(testUrl.href);
     return;
   }
   let { data, error } = await retryNetworkRequest(
@@ -1195,6 +1335,7 @@ async function mountPushSetupPrompt() {
 async function navigate(view) {
   const previousView = state.view;
   clearInterval(state.timer);
+  if (previousView === "session" && view !== "session") clearHelpVideoPreview();
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
@@ -2701,20 +2842,28 @@ function helpRequestsHtml(requests, mode = "athlete") {
 }
 
 function helpUploadSection(requests) {
-  return `<details class="panel help-section session-panel-accordion">
-    <summary class="panel-head"><div><div class="panel-title">Need Help With A Trick?</div><div class="panel-meta">Upload longer videos, save coach replies, and keep feedback in one place</div></div><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
-    <div class="session-panel-accordion-body">
-      <div class="video-review-hint">Tip: trim if you can, but longer riding clips are supported. CoachNow-style drawing/voice-over needs a dedicated video annotation service later.</div>
-      <form id="help-request-form" class="help-form">
-        <div class="field"><label for="help-question">Short note or question</label><textarea id="help-question" name="question" required placeholder="I keep missing my barspin. What should I change?"></textarea></div>
-        <div class="field"><label for="help-video">Trick video</label><input id="help-video" name="video" type="file" accept="video/*" required></div>
-        <button class="primary-btn wide" type="submit">Submit to coach</button>
-      </form>
-      <div class="settings-divider"></div>
-      <div class="panel-title">My coach feedback</div>
-      <div class="help-list">${helpRequestsHtml(requests)}</div>
+  const waiting = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "open")).length;
+  const returned = requests.filter((request) => ["replied", "reviewed"].includes(request.status || "open")).length;
+  return `<section class="panel help-section video-analysis-canary" aria-labelledby="video-analysis-title">
+    <div class="video-analysis-head">
+      <div><div class="eyebrow">Private Riley test · not live for other riders</div><h2 id="video-analysis-title">Video <span>Analysis</span></h2><p>Record or choose a short attempt and send it privately to Coach JK for feedback.</p></div>
+      <span class="video-analysis-beta">Beta</span>
     </div>
-  </details>`;
+    <div class="video-analysis-steps" aria-label="Video analysis steps">
+      <span><b>1</b> Choose clip</span><span><b>2</b> Ask your question</span><span><b>3</b> Coach reviews</span><span><b>4</b> Feedback returns here</span>
+    </div>
+    <form id="help-request-form" class="help-form video-analysis-form" novalidate>
+      <div class="field"><label for="help-video">Record or choose video</label><input id="help-video" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" required><small>Maximum 60 seconds and 50 MB. Larger clips use resumable upload.</small></div>
+      <video id="help-video-preview" class="help-video video-analysis-preview" controls playsinline preload="metadata" hidden></video>
+      <div id="help-video-meta" class="video-analysis-file-meta" aria-live="polite">Choose a short riding clip to preview it here.</div>
+      <div class="field"><label for="help-question">What should Coach JK look at?</label><textarea id="help-question" name="question" required maxlength="500" placeholder="Example: My front wheel keeps dropping on this 540. Can you check my head and shoulder position?"></textarea></div>
+      <div class="video-analysis-privacy"><span aria-hidden="true">🔒</span><p><strong>Private coaching review.</strong> The clip and feedback are restricted to this rider, Coach JK and any linked parent viewer.</p></div>
+      <button class="primary-btn wide video-analysis-send" type="submit">Send privately to Coach JK</button>
+    </form>
+    <div class="settings-divider"></div>
+    <div class="panel-head video-analysis-history-head"><div><div class="panel-title">My video reviews</div><div class="panel-meta">${waiting} waiting · ${returned} feedback returned</div></div></div>
+    <div class="help-list">${helpRequestsHtml(requests)}</div>
+  </section>`;
 }
 
 const trickRequestCategoryLabels = {
@@ -4655,10 +4804,16 @@ async function getActiveSession() {
 async function renderSession({ forceParkKing = false } = {}) {
   const renderVersion = ++state.sessionRenderVersion;
   const todayStartIso = new Date(`${localDate()}T00:00:00+10:00`).toISOString();
-  const [schedule, leaderboard, todayTrainingResult] = await Promise.all([
+  const [schedule, leaderboard, todayTrainingResult, helpRequests] = await Promise.all([
     getWeeklyAssignments(state.user.id),
     getLeaderboard(),
     client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at").eq("athlete_id", state.user.id).gte("started_at", todayStartIso).order("started_at", { ascending: false }).limit(8),
+    isRileyVideoAnalysisTester()
+      ? getHelpRequests(state.user.id).catch((error) => {
+        console.warn("Riley video analysis history did not load.", error);
+        return [];
+      })
+      : Promise.resolve([]),
   ]);
   if (state.view !== "session" || renderVersion !== state.sessionRenderVersion) return;
   const { assignments, awards } = schedule;
@@ -4672,11 +4827,13 @@ async function renderSession({ forceParkKing = false } = {}) {
     percent: weeklyCompletionPercent(assignments, awards),
     rank,
   });
+  const videoAnalysisSection = isRileyVideoAnalysisTester() ? helpUploadSection(helpRequests) : "";
   const requestedVenueKey = venueIdentityKey(selectedVenue);
   const parkKingPromise = contestPrepSession ? Promise.resolve(null) : getParkKing(selectedVenue, { force: forceParkKing });
   await loadActiveSession();
   const parkKing = await parkKingPromise;
   if (state.view !== "session" || renderVersion !== state.sessionRenderVersion || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
+  clearHelpVideoPreview();
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       ${statBar}
@@ -4685,7 +4842,8 @@ async function renderSession({ forceParkKing = false } = {}) {
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
       ${extraTricksSection(state.profile, true)}
-      ${sheetRulesButtonHtml()}`;
+      ${sheetRulesButtonHtml()}
+      ${videoAnalysisSection}`;
     bindVenueSelector();
     bindDailyVenueAccordions();
     bindSessionAssignmentAccordions();
@@ -4696,6 +4854,7 @@ async function renderSession({ forceParkKing = false } = {}) {
     document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     bindSessionQuickJumps();
     bindSheetRulesButton();
+    bindHelpRequestForm();
     return;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
@@ -4709,7 +4868,8 @@ async function renderSession({ forceParkKing = false } = {}) {
     ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
-    ${sheetRulesButtonHtml()}`;
+    ${sheetRulesButtonHtml()}
+    ${videoAnalysisSection}`;
   bindVenueSelector();
   bindDailyVenueAccordions();
   bindSessionAssignmentAccordions();
@@ -4720,6 +4880,7 @@ async function renderSession({ forceParkKing = false } = {}) {
   document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   bindSessionQuickJumps();
   bindSheetRulesButton();
+  bindHelpRequestForm();
   updateTimer();
   if (!Number(state.activeTraining.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
 }
@@ -8745,18 +8906,27 @@ async function getLinkedCoachIdForCurrentAthlete() {
 
 async function submitHelpRequest(event) {
   event.preventDefault();
+  if (!isRileyVideoAnalysisTester()) return notify("Video Analysis is only enabled for Riley's test account right now.", "error");
   const form = new FormData(event.currentTarget);
   const video = form.get("video");
   const question = String(form.get("question") || "").trim();
   if (!video?.size) return notify("Upload a trick video first.", "error");
-  if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Choose a video under 500MB.", "error");
+  if (!supportedHelpVideoFile(video)) return notify("Choose an MP4, MOV, M4V, WebM or phone video file.", "error");
+  if (video.size > VIDEO_ANALYSIS_TEST_MAX_BYTES) return notify("Trim the video below 50MB before sending it.", "error");
+  if (!question) return notify("Tell Coach JK what you want checked in the clip.", "error");
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
-  button.textContent = "Uploading...";
+  button.textContent = "Checking clip...";
+  let upload = null;
   try {
+    const duration = await videoDurationSeconds(video);
+    if (duration > VIDEO_ANALYSIS_TEST_MAX_SECONDS) throw new Error("Trim the video to 60 seconds or less before sending it.");
     const coachId = await getLinkedCoachIdForCurrentAthlete();
     if (!coachId) throw new Error("Ask your coach to add you to their crew first.");
-    const upload = await uploadHelpVideoFile(video, "student");
+    upload = await uploadHelpVideoFile(video, "student", (percent) => {
+      if (button.isConnected) button.textContent = `Uploading ${percent}%`;
+    });
+    button.textContent = "Saving request...";
     const { error } = await client.from("trick_help_requests").insert({
       athlete_id: state.user.id,
       coach_id: coachId,
@@ -8768,11 +8938,17 @@ async function submitHelpRequest(event) {
       video_size_bytes: upload.size,
     });
     if (error) throw error;
-    notify("Video sent to your coach.");
-    await renderAthleteHome();
+    clearHelpVideoPreview();
+    notify("Video sent privately to Coach JK.");
+    if (state.view === "session") await renderSession();
+    else await renderAthleteHome();
   } catch (error) {
+    if (upload?.path) {
+      const { error: cleanupError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([upload.path]);
+      if (cleanupError) console.warn("Could not clean up failed video request upload.", cleanupError);
+    }
     button.disabled = false;
-    button.textContent = "Submit to coach";
+    button.textContent = "Send privately to Coach JK";
     notify(messageFrom(error), "error");
   }
 }
@@ -8819,7 +8995,7 @@ async function replyToHelpRequest(event) {
   const file = form.get("video");
   const comment = String(form.get("comment") || "").trim();
   if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
-  if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 500MB.", "error");
+  if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 50MB.", "error");
   const button = formElement.querySelector("button");
   button.disabled = true;
   button.textContent = "Sending...";
@@ -8918,7 +9094,7 @@ function videoReviewCardHtml(request) {
     ${coachReply}
     <form class="reply-form" data-help-reply="${request.id}">
       <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="What should they fix?">${escapeHtml(request.coach_comment || "")}</textarea></div>
-      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"><small>Coach replies can be up to 500MB.</small></div>
+      <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/*"><small>Coach replies can be up to 50MB.</small></div>
       <button class="primary-btn" type="submit">Send coach reply</button>
     </form>
     <button class="secondary-btn compact-btn" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Reviewed" : "Mark reviewed"}</button>
@@ -9560,7 +9736,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.5", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.6", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

@@ -9,9 +9,10 @@ const app = read("app.js");
 const html = read("index.html");
 const css = read("styles.css");
 const serviceWorker = read("sw.js");
+const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.5";
+const version = "2.13.6";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -298,6 +299,26 @@ assert(css.includes("overflow-x: auto"), "Session filter tabs must stay usable o
 assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
 assert(functionBody("renderSessionViewer").includes("Active challenges in this group"), "Coach Session must show group challenges at the bottom");
 assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignment-attempt"), "Coach Session trick rows should remain one-tap without Attempt buttons");
+assert(app.includes('const RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57"'), "Video Analysis canary must use Riley's immutable account id");
+assert(app.includes('state.profile?.role === "athlete"'), "Video Analysis canary must require an athlete profile");
+assert(functionBody("handleSession(").includes("!isRileyTestRoute()"), "Riley should be routed to the isolated test path from the main app");
+const riderSessionBody = functionBody("renderSession");
+assert(riderSessionBody.includes("isRileyVideoAnalysisTester()"), "Rider Session must gate Video Analysis to Riley");
+assert(riderSessionBody.includes("getHelpRequests(state.user.id)"), "Riley Session must load private video-review history");
+assert.equal((riderSessionBody.match(/\$\{videoAnalysisSection\}/g) || []).length, 2, "Both idle and active Rider Session layouts must place Video Analysis at the bottom");
+assert.equal((riderSessionBody.match(/bindHelpRequestForm\(\)/g) || []).length, 2, "Both Rider Session layouts must bind Video Analysis uploads");
+assert(functionBody("helpUploadSection").includes("Private Riley test · not live for other riders"), "The canary must identify itself clearly");
+assert(functionBody("submitHelpRequest").includes("VIDEO_ANALYSIS_TEST_MAX_BYTES"), "Rider video upload must enforce the hosted file limit");
+assert(functionBody("submitHelpRequest").includes("VIDEO_ANALYSIS_TEST_MAX_SECONDS"), "Rider video upload must enforce the clip duration limit");
+assert(functionBody("submitHelpRequest").includes('state.view === "session"'), "Successful Session uploads must keep the rider on Session");
+assert(functionBody("uploadHelpVideoFile").includes("uploadHelpVideoResumable"), "Phone videos above 6MB must use resumable upload");
+assert(functionBody("loadTusClient").includes("TUS_CLIENT_INTEGRITY"), "The pinned resumable uploader must verify its CDN integrity");
+assert(rileyServiceWorker.includes('const CACHE_PREFIX = "jkcrew-riley-shell-"'), "Riley test cache must not delete the production app cache");
+const videoCanaryMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
+assert(videoCanaryMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");
+assert(videoCanaryMigration.includes("allowed_mime_types"), "Video bucket must enforce media types");
+assert(videoCanaryMigration.includes('"Trick help video owners can delete"'), "Failed uploads need owner cleanup permission");
+assert(videoCanaryMigration.includes("ca.coach_id = trick_help_requests.coach_id"), "Rider requests must target their linked coach");
 assert.equal(read("riley-test/app.js"), app, "Riley test path must use the same all-user app bundle");
 assert.equal(read("riley-test/styles.css"), css, "Riley test path must use the same all-user styles");
 
