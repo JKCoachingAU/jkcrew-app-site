@@ -385,7 +385,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.9" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.10" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2517,6 +2517,17 @@ function assignmentStatus(assignment) {
   return isAssignmentComplete(assignment) ? "Done this week" : "To do this week";
 }
 
+function assignmentPresentation(assignment = {}) {
+  const title = String(assignment.trick_name || "").trim();
+  const notes = String(assignment.notes || "").trim();
+  if (assignment.category !== "lines" || !notes || title.includes("→")) return { title, notes };
+  const steps = [title, ...notes.split(/\s+-\s+/)]
+    .map((step) => String(step || "").trim())
+    .filter(Boolean);
+  if (steps.length < 3 || steps.length > 4) return { title, notes };
+  return { title: steps.join(" → "), notes: "" };
+}
+
 function dailyVenues(assignments = []) {
   const venues = new Map();
   assignments.filter((assignment) => assignment.category === "daily").forEach((assignment) => {
@@ -2935,13 +2946,14 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
   if (!assignments.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
   const ordered = assignments.some((assignment) => assignment.category === "daily") ? orderedAssignments(assignments) : assignments;
   return ordered.map((assignment) => {
+    const presentation = assignmentPresentation(assignment);
     const complete = isAssignmentComplete(assignment);
     const action = complete ? "unlanded" : "landed";
     const label = complete ? "Untick trick" : "Tick trick complete";
     const draggable = interactive && state.profile?.role === "athlete" && assignment.category === "daily";
     const metaParts = assignment.category === "daily"
-      ? [assignment.notes].filter(Boolean)
-      : [assignmentStatus(assignment), assignment.notes].filter(Boolean);
+      ? [presentation.notes].filter(Boolean)
+      : [assignmentStatus(assignment), presentation.notes].filter(Boolean);
     const meta = metaParts.join(" · ");
     const controls = interactive ? `
       <div class="assignment-actions">
@@ -2950,7 +2962,7 @@ function assignmentList(assignments, emptyText = "No tricks assigned for this we
     return `
     <div class="list-row assignment-row ${isAssignmentComplete(assignment) ? "complete" : ""}" ${draggable ? `data-daily-row="${assignment.id}" aria-label="Hold and drag ${escapeHtml(assignment.trick_name)} to reorder Daily Tricks"` : ""}>
       ${controls}
-      <div><strong>${escapeHtml(assignment.trick_name)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>
+      <div><strong>${escapeHtml(presentation.title)}</strong>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>
     </div>`;
   }).join("");
 }
@@ -4251,9 +4263,10 @@ function previousTrainingSheetsHtml(data = {}) {
       const rows = assignments.filter((assignment) => trickObstacleCategory(assignment) === label);
       if (!rows.length) return "";
       return `<div class="previous-sheet-group"><strong>${escapeHtml(label)}</strong>${rows.map((assignment) => {
+        const presentation = assignmentPresentation(assignment);
         const done = Boolean(progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length);
         const attempts = attemptsByAssignment.get(assignment.id) || 0;
-        return `<div class="list-row previous-sheet-row ${done ? "complete" : ""}"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(categoryInfo[assignment.category]?.label || assignment.category)} · ${done ? "Completed" : "Not completed"} · Attempts: ${attempts}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></div><span class="assignment-check">${done ? "✓" : ""}</span></div>`;
+        return `<div class="list-row previous-sheet-row ${done ? "complete" : ""}"><div><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(categoryInfo[assignment.category]?.label || assignment.category)} · ${done ? "Completed" : "Not completed"} · Attempts: ${attempts}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></div><span class="assignment-check">${done ? "✓" : ""}</span></div>`;
       }).join("")}</div>`;
     }).filter(Boolean).join("");
     const dailyTotal = assignments.filter((assignment) => assignment.category === "daily").length;
@@ -4902,17 +4915,21 @@ function parentLatestFeedbackHtml(requests = []) {
 
 function parentRecentActivityHtml(assignments = [], assignmentAttempts = [], awards = [], sessions = []) {
   const assignmentById = new Map(assignments.map((assignment) => [assignment.id, assignment]));
+  const assignmentLabel = (assignmentId, fallback) => {
+    const assignment = assignmentById.get(assignmentId);
+    return assignment ? assignmentPresentation(assignment).title : fallback;
+  };
   const rows = [
     ...assignmentAttempts.slice(0, 4).map((attempt) => ({
       at: attempt.attempted_at,
       tone: "blue",
-      label: assignmentById.get(attempt.assignment_id)?.trick_name || "Trick attempted",
+      label: assignmentLabel(attempt.assignment_id, "Trick attempted"),
       meta: "Training attempt",
     })),
     ...awards.slice(0, 4).map((award) => ({
       at: award.created_at,
       tone: "aqua",
-      label: assignmentById.get(award.assignment_id)?.trick_name || "Sheet progress",
+      label: assignmentLabel(award.assignment_id, "Sheet progress"),
       meta: `${Number(award.points || 0)} point${Number(award.points || 0) === 1 ? "" : "s"} earned`,
     })),
     ...sessions.slice(0, 3).map((session) => ({
@@ -6213,7 +6230,10 @@ function coachListRequestsHtml(proposals = [], roster = []) {
   return proposals.map((proposal) => {
     const athlete = roster.find((entry) => entry.id === proposal.athlete_id);
     const items = Array.isArray(proposal.items) ? proposal.items : [];
-    const rows = items.map((item) => `<li><span>${escapeHtml(categoryInfo[item.category]?.label || item.category || "Trick")}</span><strong>${escapeHtml(item.trick_name || "")}</strong>${item.notes ? `<small>${escapeHtml(item.notes)}</small>` : ""}</li>`).join("");
+    const rows = items.map((item) => {
+      const presentation = assignmentPresentation(item);
+      return `<li><span>${escapeHtml(categoryInfo[item.category]?.label || item.category || "Trick")}</span><strong>${escapeHtml(presentation.title)}</strong>${presentation.notes ? `<small>${escapeHtml(presentation.notes)}</small>` : ""}</li>`;
+    }).join("");
     return `<article class="proposal-review-card"><div class="proposal-review-head"><span>Waiting for approval</span><h3>${escapeHtml(athlete?.display_name || "Rider")} · ${escapeHtml(proposal.title)}</h3><small>${escapeHtml(proposal.venue || "No location added")} · ${dateLabel(proposal.created_at)}</small></div>${proposal.rider_note ? `<p>${escapeHtml(proposal.rider_note)}</p>` : ""}<ul class="proposal-item-list">${rows}</ul><form data-proposal-review="${proposal.id}"><div class="field"><label>Optional reply</label><input name="coachNote" maxlength="500" placeholder="Looks good, or explain what to change"></div><div class="proposal-review-actions"><button class="primary-btn" type="submit" data-proposal-decision="accepted">Accept all lists</button><button class="danger-btn" type="submit" data-proposal-decision="declined">Decline</button></div></form></article>`;
   }).join("");
 }
@@ -6526,10 +6546,11 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
     return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-percentage-list">${percentageAssignmentList(assignments, "No Percentage Tricks assigned.", true)}</div>`;
   }
   const list = assignments.length ? assignments.map((assignment) => {
+    const presentation = assignmentPresentation(assignment);
     const done = isAssignmentComplete(assignment);
     return `<div class="viewer-trick-row viewer-attempt-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}">
       <button class="assignment-check" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}" data-assignment-category="${assignment.category}" data-athlete-id="${assignment.athlete_id || entry.athlete.id}" aria-label="${done ? "Untick landed" : "Mark landed"}">${done ? "✓" : ""}</button>
-      <span><strong>${escapeHtml(assignment.trick_name)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${assignment.notes ? ` · ${escapeHtml(assignment.notes)}` : ""}</small></span>
+      <span><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></span>
     </div>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
   const label = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
@@ -6551,7 +6572,9 @@ function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
     ? `Editing ${venueLabel(entry.venue)} only. One trick per line.`
     : listId === "percentage"
       ? "Maximum 3 percentage tricks. One trick per line."
-      : "One trick per line. Add notes after a dash.";
+      : listId === "lines"
+        ? "One complete 3–4 trick run per row. Example: Manual - Barspin - 180."
+        : "One trick per line. Add notes after a dash.";
   return `<details class="viewer-edit-panel">
     <summary>Edit ${escapeHtml(editLabel)}</summary>
     <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
@@ -7655,7 +7678,7 @@ function plannerCompletedStrip(assignments = [], show = false) {
   }
   return `<div class="planner-completed-strip">
     <strong>Completed this week</strong>
-    <div class="planner-completed-chips">${completed.map((assignment) => `<span class="planner-completed-chip">${escapeHtml(assignment.trick_name)}</span>`).join("")}</div>
+    <div class="planner-completed-chips">${completed.map((assignment) => `<span class="planner-completed-chip">${escapeHtml(assignmentPresentation(assignment).title)}</span>`).join("")}</div>
   </div>`;
 }
 
@@ -11049,7 +11072,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.9", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.10", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

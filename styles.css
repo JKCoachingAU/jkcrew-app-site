@@ -475,7 +475,7 @@ button[aria-busy="true"] {
 .attempt-count { color: var(--aqua); }
 .viewer-attempt-row {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
 }
@@ -4060,7 +4060,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   cursor: pointer;
 }
 .viewer-trick-row.viewer-attempt-row {
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
 }
 .viewer-trick-row .assignment-check {
   pointer-events: auto;

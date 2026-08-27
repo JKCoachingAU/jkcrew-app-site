@@ -12,7 +12,7 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.9";
+const version = "2.13.10";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -72,6 +72,69 @@ assert(assignmentGroupsBody.includes('${open ? "open" : ""}'), "Rider Session ac
 assert((functionBody("renderSession").match(/bindSessionAssignmentAccordions\(\)/g) || []).length >= 2, "Every rider Session render path must bind accordion state");
 assert(functionBody("recordAssignmentAction").includes("sessionOpenAssignmentSections.add(openSection)"), "Ticking a standard trick must preserve its open list");
 assert(functionBody("recordPercentageAttempt").includes("sessionOpenAssignmentSections.add(openSection)"), "Updating a percentage trick must preserve its open list");
+const assignmentPresentationForTest = new Function(`${functionBody("assignmentPresentation")}; return assignmentPresentation;`)();
+assert.deepEqual(
+  assignmentPresentationForTest({ category: "lines", trick_name: "Manual", notes: "Barspin - 180" }),
+  { title: "Manual → Barspin → 180", notes: "" },
+  "A three-trick Line must display as one complete run",
+);
+assert.deepEqual(
+  assignmentPresentationForTest({ category: "lines", trick_name: "Drop in", notes: "Box jump - Flair - Quarter land" }),
+  { title: "Drop in → Box jump → Flair → Quarter land", notes: "" },
+  "A four-trick Line must display as one complete run",
+);
+assert.deepEqual(
+  assignmentPresentationForTest({ category: "lines", trick_name: "Manual", notes: "Stay low" }),
+  { title: "Manual", notes: "Stay low" },
+  "A two-part legacy Line must keep its coaching note instead of treating it as a run",
+);
+assert.deepEqual(
+  assignmentPresentationForTest({ category: "lines", trick_name: "Manual → Barspin → 180", notes: "Stay low - keep speed" }),
+  { title: "Manual → Barspin → 180", notes: "Stay low - keep speed" },
+  "An already formatted Line must not turn a coaching note into extra steps",
+);
+for (const category of ["daily", "one_bang", "dialled", "percentage", "foam_pit", "bonus"]) {
+  assert.deepEqual(
+    assignmentPresentationForTest({ category, trick_name: "Barspin", notes: "Keep speed - land clean" }),
+    { title: "Barspin", notes: "Keep speed - land clean" },
+    `${category} notes must not be converted into Line steps`,
+  );
+}
+const escapeHtmlForTest = (value = "") => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+const assignmentListForTest = new Function(
+  "orderedAssignments",
+  "isAssignmentComplete",
+  "assignmentPresentation",
+  "assignmentStatus",
+  "escapeHtml",
+  "state",
+  `${functionBody("assignmentList")}; return assignmentList;`,
+)(
+  (assignments) => assignments,
+  () => false,
+  assignmentPresentationForTest,
+  () => "To do this week",
+  escapeHtmlForTest,
+  { profile: null },
+);
+const lineMarkupForTest = assignmentListForTest([
+  { id: "line-1", category: "lines", trick_name: "Manual", notes: "<img onerror=bad> - 180" },
+]);
+assert(lineMarkupForTest.includes("<strong>Manual → &lt;img onerror=bad&gt; → 180</strong>"), "A complete Line must render in the primary label and escape every step");
+assert(lineMarkupForTest.includes("<small>To do this week</small>"), "A Line must keep its completion state beneath the run");
+assert(!lineMarkupForTest.includes("<small>To do this week ·"), "Continuation tricks must not be repeated as grey notes");
+const assignmentListBody = functionBody("assignmentList");
+assert(assignmentListBody.includes("assignmentPresentation(assignment)"), "Rider and parent sheet lists must show a complete Line sequence");
+assert(assignmentListBody.includes("escapeHtml(presentation.title)"), "Line sequences must be escaped before rendering");
+const viewerListBody = functionBody("sessionViewerListContent");
+assert(viewerListBody.includes("assignmentPresentation(assignment)"), "Coach Session Viewer must show a complete Line sequence");
+assert(viewerListBody.includes("escapeHtml(presentation.title)"), "Coach Line sequences must be escaped before rendering");
+assert(functionBody("coachListRequestsHtml").includes("assignmentPresentation(item)"), "List Requests must show each Line as one run");
+assert(functionBody("previousTrainingSheetsHtml").includes("assignmentPresentation(assignment)"), "Sheet history must show each Line as one run");
+assert(functionBody("parentRecentActivityHtml").includes("assignmentPresentation(assignment).title"), "Parent activity must use the full Line label");
+assert(functionBody("plannerCompletedStrip").includes("assignmentPresentation(assignment).title"), "Planner completion chips must use the full Line label");
+assert(functionBody("sessionViewerAssignmentEditor").includes("Example: Manual - Barspin - 180"), "Coach Line editor must show the exact 3–4 trick run format");
+assert(css.includes(".viewer-trick-row.viewer-attempt-row {\n  grid-template-columns: auto minmax(0, 1fr);"), "Coach Session Line labels must have a wrapping text column");
 assert(functionBody("getWeeklyAssignments").includes('rpc("get_effective_weekly_assignments"'), "Rider schedules must load each location's latest saved Daily list");
 const venueKeyForTest = (venue = "") => String(venue || "").trim();
 const venueIdentityKeyForTest = (venue = "") => venueKeyForTest(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
