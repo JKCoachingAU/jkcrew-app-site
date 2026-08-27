@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.14";
+const version = "2.14.15";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -654,10 +654,22 @@ assert(closeAthleteViewerBody.includes("releaseVideoReviewMedia(requestId)"), "C
 assert(functionBody("handleSession(").includes("closeAthleteReviewViewer()"), "Signing out or switching accounts must close any private Coaching review");
 const athleteHomeBody = functionBody("renderAthleteHome");
 assert(athleteHomeBody.includes("getHelpRequestSummaries(state.user.id)"), "Athlete Home must load lightweight Coaching reply status");
+assert(athleteHomeBody.includes("getAthleteHomeLeaderboard()"), "Athlete Home must avoid the heavier profile-hydrated leaderboard path");
+assert(athleteHomeBody.includes("getWeeklyAssignments(state.user.id, { includeAssignmentAttempts: false })"), "Athlete Home must skip detailed attempt history it does not display");
+assert(!athleteHomeBody.includes("getRiderBattleHistory()"), "Athlete Home must not request the same battle payload twice");
+assert(athleteHomeBody.includes('battle.status === "completed"'), "Athlete Home must derive battle history from its one battle response");
+assert(athleteHomeBody.includes("athleteHomeRenderVersion"), "Background Home hydration must be guarded against stale renders");
+assert(athleteHomeBody.includes('id="athlete-home-week"'), "Athlete Home must render its main dashboard before secondary weekly data finishes");
 assert(athleteHomeBody.includes("athleteRunBuilderCtaHtml()"), "Athlete Home must display the live Run Builder action");
 assert(athleteHomeBody.includes('navigate("contests")'), "The Home Run Builder action must open Contests");
 assert(athleteHomeBody.includes("athleteCoachingCtaHtml(coachingRequests)"), "Athlete Home must display the video-help action");
 assert(!athleteHomeBody.includes("rememberCoachingReplies(coachingRequests)"), "The Home notification badge must remain visible until the Coaching page actually opens");
+const homeLeaderboardBody = functionBody("getAthleteHomeLeaderboard");
+assert(homeLeaderboardBody.includes('client.rpc("get_weekly_leaderboard")'), "The lightweight Home leaderboard must use the existing leaderboard rules");
+assert(!homeLeaderboardBody.includes('client.from("profiles")'), "The Home leaderboard must not perform a second profile-hydration query");
+const weeklyAssignmentsBody = functionBody("getWeeklyAssignments");
+assert(weeklyAssignmentsBody.includes("includeAssignmentAttempts = true"), "Detailed weekly assignment history must remain the default away from Home");
+assert(weeklyAssignmentsBody.includes("Promise.resolve({ data: [], error: null })"), "The Home summary must be able to omit detailed assignment attempts safely");
 const coachingCtaMarkup = functionBody("athleteCoachingCtaHtml");
 assert(coachingCtaMarkup.includes("GET HELP — SEND VIDEO"), "Athlete Home must use the requested Coaching button label");
 assert(coachingCtaMarkup.includes("unreadCoachingReplyCount(requests)"), "The Home Coaching button must calculate unseen replies");
