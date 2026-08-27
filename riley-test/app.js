@@ -60,7 +60,17 @@ const state = {
   videoReviewStatus: "all",
   videoReviewRider: "all",
   videoReviewSearch: "",
+  videoReviewSearchTimer: null,
   videoReviewMedia: new Map(),
+  videoReviewActiveRequestId: "",
+  videoReviewDrawings: new Map(),
+  videoReviewDraftDrawing: null,
+  videoReviewDrawTool: "pen",
+  videoReviewDrawColor: "#20e3c3",
+  videoReviewDrawEnabled: false,
+  videoReviewResizeHandler: null,
+  videoReviewFullscreenHandler: null,
+  videoReviewRenderSerial: 0,
   trickRequestSearchTimer: null,
   realtimeChannel: null,
   syncRefreshTimer: null,
@@ -353,7 +363,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.6" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.7" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -913,6 +923,8 @@ function renderBootRecovery(message = "The app could not finish loading.") {
 async function handleSession(session) {
   clearInterval(state.timer);
   teardownRealtimeSync();
+  const nextUserId = session?.user?.id || "";
+  if ((state.user?.id || "") !== nextUserId) resetVideoReviewPrivateState();
   state.session = session;
   state.user = session?.user || null;
   state.profile = null;
@@ -950,7 +962,7 @@ async function handleSession(session) {
   state.profile = data;
   applyTheme(data.app_theme);
   const pushView = new URL(window.location.href).searchParams.get("push");
-  const allowedPushViews = new Set(["home", "board", "challenges", "command"]);
+  const allowedPushViews = new Set(["home", "board", "challenges", "command", "videoReviews"]);
   state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
   if (pushView) {
     const cleanUrl = new URL(window.location.href);
@@ -1336,6 +1348,7 @@ async function navigate(view) {
   const previousView = state.view;
   clearInterval(state.timer);
   if (previousView === "session" && view !== "session") clearHelpVideoPreview();
+  if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
@@ -5077,6 +5090,7 @@ async function saveDashboardItem(event, refresh) {
   const endAt = form.get("endAt");
   if (dueAt && endAt && new Date(endAt) < new Date(dueAt)) return notify("Finish date must be after the start date.", "error");
   const button = formElement.querySelector("button");
+  const originalButtonText = button.textContent;
   button.disabled = true;
   button.textContent = "Adding...";
   const { error } = await client.from("dashboard_items").insert({
@@ -8990,15 +9004,21 @@ async function submitTrickRequest(event) {
 
 async function replyToHelpRequest(event) {
   event.preventDefault();
+  const originatingView = state.view;
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
   const file = form.get("video");
   const comment = String(form.get("comment") || "").trim();
   if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
+  if (file?.size && !supportedHelpVideoFile(file)) return notify("Choose an MP4, MOV, M4V, WebM or phone video file.", "error");
   if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 50MB.", "error");
   const button = formElement.querySelector("button");
+  const originalButtonText = button.textContent;
   button.disabled = true;
   button.textContent = "Sending...";
+  let upload = null;
+  let previousCoachVideoPath = "";
+  let committed = false;
   try {
     const update = {
       coach_comment: comment || "",
@@ -9006,7 +9026,13 @@ async function replyToHelpRequest(event) {
       replied_at: new Date().toISOString(),
     };
     if (file?.size) {
-      const upload = await uploadHelpVideoFile(file, "coach-reply");
+      const { data: previous, error: previousError } = await client.from("trick_help_requests")
+        .select("coach_video_storage_path")
+        .eq("id", formElement.dataset.helpReply)
+        .maybeSingle();
+      if (previousError) throw previousError;
+      previousCoachVideoPath = previous?.coach_video_storage_path || "";
+      upload = await uploadHelpVideoFile(file, "coach-reply");
       update.coach_video_data_url = "";
       update.coach_video_storage_path = upload.path;
       update.coach_video_file_name = upload.fileName;
@@ -9019,13 +9045,27 @@ async function replyToHelpRequest(event) {
       .select("id, status");
     if (error) throw error;
     if (!data?.length) throw new Error("Unable to save feedback for this video. Check the rider is still linked to your coach account.");
-    state.videoReviewMedia.delete(formElement.dataset.helpReply);
+    committed = true;
+    if (upload?.path) state.videoReviewMedia.delete(formElement.dataset.helpReply);
+    if (previousCoachVideoPath && previousCoachVideoPath !== upload?.path) {
+      const { error: staleReplyError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([previousCoachVideoPath]);
+      if (staleReplyError) console.warn("Could not remove the previous coach video reply.", staleReplyError);
+    }
     notify("Coach feedback sent to rider.");
-    if (state.view === "videoReviews") await renderVideoReviews();
-    else await renderStudentProfile();
+    if (state.view === originatingView && originatingView === "videoReviews") await renderVideoReviews();
+    else if (state.view === originatingView && originatingView === "student") await renderStudentProfile();
   } catch (error) {
+    if (upload?.path && !committed) {
+      const { error: cleanupError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([upload.path]);
+      if (cleanupError) console.warn("Could not clean up failed coach video reply upload.", cleanupError);
+    }
     button.disabled = false;
-    button.textContent = "Send coach reply";
+    button.textContent = originalButtonText;
+    if (committed) {
+      console.warn("Coach feedback saved, but the review screen did not refresh.", error);
+      notify("Feedback was sent. Refresh the review list to see the update.", "error");
+      return;
+    }
     notify(messageFrom(error), "error");
   }
 }
@@ -9055,6 +9095,332 @@ function videoReviewFilterHtml(roster = []) {
     <div class="field"><label for="video-review-rider">Rider</label><select id="video-review-rider"><option value="all" ${state.videoReviewRider === "all" ? "selected" : ""}>All riders</option>${riderOptions}</select></div>
     <div class="field"><label for="video-review-search">Search</label><input id="video-review-search" value="${escapeHtml(state.videoReviewSearch)}" placeholder="Trick, question, rider..."></div>
   </section>`;
+}
+
+function isRileyCoachVideoCanary(request = {}) {
+  return request.athlete_id === RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID;
+}
+
+function videoReviewTimeLabel(seconds = 0) {
+  const numeric = Number(seconds || 0);
+  const safe = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+  const minutes = Math.floor(safe / 60);
+  const remainder = Math.floor(safe % 60);
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function coachReviewQueueItemHtml(request) {
+  const athlete = request.athlete || { display_name: "Unknown rider", avatar: null };
+  const status = request.status || "open";
+  const active = state.videoReviewActiveRequestId === request.id;
+  return `<button class="coach-review-queue-item ${active ? "active" : ""}" type="button" data-open-video-review="${request.id}" aria-pressed="${active}">
+    ${avatarHtml(athlete)}
+    <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(request.question || "Video review")}</small><em>${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)}</em></span>
+    <b class="coach-review-status status-${escapeHtml(status)}">${escapeHtml(status === "open" ? "New" : status)}</b>
+  </button>`;
+}
+
+function coachReviewWorkspaceHtml(request) {
+  const athlete = request.athlete || { display_name: "Unknown rider", avatar: null };
+  const status = request.status || "open";
+  const media = state.videoReviewMedia.get(request.id) || {};
+  const riderVideoUrl = media.video_url || media.video_data_url || "";
+  const reviewed = status === "reviewed";
+  const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
+  const hasSavedReply = Boolean(request.coach_comment || request.coach_video_storage_path || coachVideoUrl || ["replied", "reviewed"].includes(status));
+  const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
+  const sourceExtension = String(request.video_file_name || "").split(".").pop();
+  const videoFormat = sourceExtension && sourceExtension !== request.video_file_name ? sourceExtension.toUpperCase() : "VIDEO";
+  const player = riderVideoUrl ? `<div class="coach-review-stage" id="coach-review-stage">
+      <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" playsinline preload="metadata"></video>
+      <canvas id="coach-review-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Video drawing layer"></canvas>
+      <div class="coach-review-stage-label"><span>Private rider video</span><strong id="coach-review-speed-label">1×</strong></div>
+    </div>
+    <div class="coach-review-playback" aria-label="Video playback controls">
+      <button type="button" data-review-step="-0.033" aria-label="Step back 33 milliseconds">−33 ms</button>
+      <button class="coach-review-play" type="button" data-review-play>Play</button>
+      <button type="button" data-review-step="0.033" aria-label="Step forward 33 milliseconds">+33 ms</button>
+      <span id="coach-review-time">0:00 / 0:00</span>
+      <input id="coach-review-scrubber" type="range" min="0" max="1000" value="0" aria-label="Video timeline">
+      <button type="button" data-review-fullscreen aria-label="Open video full screen">Full screen</button>
+    </div>
+    <div class="coach-review-speed-row"><span>Slow motion</span>${[1, 0.5, 0.25, 0.125].map((speed) => `<button class="${speed === 1 ? "active" : ""}" type="button" data-review-speed="${speed}">${speed === 1 ? "1×" : speed === 0.5 ? "½×" : speed === 0.25 ? "¼×" : "⅛×"}</button>`).join("")}</div>
+    <div class="coach-review-analysis-tools" aria-label="On-screen drawing tools">
+      <button class="coach-review-draw-toggle ${state.videoReviewDrawEnabled ? "active" : ""}" type="button" data-review-draw-toggle>${state.videoReviewDrawEnabled ? "Drawing on" : "Draw on video"}</button>
+      <button class="${state.videoReviewDrawTool === "pen" ? "active" : ""}" type="button" data-review-draw-tool="pen">Freehand</button>
+      <button class="${state.videoReviewDrawTool === "line" ? "active" : ""}" type="button" data-review-draw-tool="line">Line</button>
+      <button class="${state.videoReviewDrawTool === "arrow" ? "active" : ""}" type="button" data-review-draw-tool="arrow">Arrow</button>
+      <label class="coach-review-colour">Colour <input type="color" value="${escapeHtml(state.videoReviewDrawColor)}" data-review-draw-colour></label>
+      <button type="button" data-review-draw-undo>Undo</button>
+      <button type="button" data-review-draw-clear>Clear</button>
+    </div>` : `<div class="coach-review-load-stage">
+      <div class="coach-review-load-icon" aria-hidden="true">▶</div>
+      <strong>Riley's private video is ready</strong>
+      <p>Load the submitted clip to begin frame-by-frame analysis.</p>
+      <button class="primary-btn" type="button" data-load-help-video="${request.id}">Load private video</button>
+    </div>`;
+  const savedReply = hasSavedReply ? `<div class="coach-review-saved-reply"><strong>Feedback already sent</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>` : ""}</div>` : "";
+  return `<section class="coach-review-workspace" aria-label="Riley video analysis workspace">
+    <header class="coach-review-workspace-head">
+      <div class="person">${avatarHtml(athlete)}<div class="person-name"><div class="eyebrow">Riley-only coach test</div><strong>${escapeHtml(athlete.display_name)}</strong><small>Submitted ${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)} ${escapeHtml(videoFormat)}</small></div></div>
+      <div class="coach-review-head-actions"><span class="coach-review-status status-${escapeHtml(status)}">${escapeHtml(status === "open" ? "New review" : status)}</span><button class="secondary-btn compact-btn" type="button" data-open-student="${escapeHtml(request.athlete_id)}">Open rider</button></div>
+    </header>
+    <div class="coach-review-question"><span>Rider question</span><strong>“${escapeHtml(request.question || "Please review this attempt.")}”</strong></div>
+    <div class="coach-review-workspace-grid">
+      <div class="coach-review-editor">
+        ${player}
+        <div class="coach-review-editor-note">Slow motion, precise stepping and a visual scratch layer are available for this Riley test. Drawings currently stay on this review screen; send written or video feedback to return coaching to Riley.</div>
+        <div class="video-actions">${riderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download original</button></div>
+      </div>
+      <aside class="coach-review-feedback">
+        <div><div class="eyebrow">Coach response</div><h3>Send feedback to Riley</h3><p>Explain the biggest correction first, then give Riley one clear cue for the next attempt.</p></div>
+        ${savedReply}
+        <form class="reply-form" data-help-reply="${request.id}">
+          <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="Example: Keep your eyes through the turn and drive your outside shoulder...">${escapeHtml(request.coach_comment || "")}</textarea></div>
+          <div class="field"><label for="central-reply-video-${request.id}">Optional video reply</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*"><small>Record or choose a reply up to 50 MB.</small></div>
+          <button class="primary-btn wide" type="submit">Send feedback to Riley</button>
+        </form>
+        <button class="secondary-btn wide" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Review completed" : "Mark review complete"}</button>
+      </aside>
+    </div>
+  </section>`;
+}
+
+function teardownCoachVideoReviewEditor() {
+  if (state.videoReviewResizeHandler) window.removeEventListener("resize", state.videoReviewResizeHandler);
+  if (state.videoReviewFullscreenHandler) {
+    document.removeEventListener("fullscreenchange", state.videoReviewFullscreenHandler);
+    document.removeEventListener("webkitfullscreenchange", state.videoReviewFullscreenHandler);
+  }
+  state.videoReviewResizeHandler = null;
+  state.videoReviewFullscreenHandler = null;
+  state.videoReviewDraftDrawing = null;
+  state.videoReviewDrawEnabled = false;
+}
+
+function resetVideoReviewPrivateState() {
+  teardownCoachVideoReviewEditor();
+  clearTimeout(state.videoReviewSearchTimer);
+  state.videoReviewMedia.clear();
+  state.videoReviewDrawings.clear();
+  state.videoReviewActiveRequestId = "";
+  state.videoReviewStatus = "all";
+  state.videoReviewRider = "all";
+  state.videoReviewSearch = "";
+  state.videoReviewSearchTimer = null;
+  state.videoReviewRenderSerial += 1;
+}
+
+function activeCoachReviewDrawings() {
+  const requestId = state.videoReviewActiveRequestId;
+  if (!requestId) return [];
+  if (!state.videoReviewDrawings.has(requestId)) state.videoReviewDrawings.set(requestId, []);
+  return state.videoReviewDrawings.get(requestId);
+}
+
+function coachReviewCanvasPoint(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width))),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height))),
+  };
+}
+
+function drawCoachReviewShape(context, drawing, width, height) {
+  const points = drawing?.points || [];
+  if (!points.length) return;
+  const point = (entry) => ({ x: entry.x * width, y: entry.y * height });
+  context.strokeStyle = drawing.color || "#20e3c3";
+  context.fillStyle = drawing.color || "#20e3c3";
+  context.lineWidth = 3;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  if (drawing.tool === "pen") {
+    if (points.length === 1) {
+      const only = point(points[0]);
+      context.beginPath();
+      context.arc(only.x, only.y, 2, 0, Math.PI * 2);
+      context.fill();
+      return;
+    }
+    context.beginPath();
+    points.forEach((entry, index) => {
+      const next = point(entry);
+      if (!index) context.moveTo(next.x, next.y);
+      else context.lineTo(next.x, next.y);
+    });
+    context.stroke();
+    return;
+  }
+  const start = point(points[0]);
+  const end = point(points[points.length - 1]);
+  context.beginPath();
+  context.moveTo(start.x, start.y);
+  context.lineTo(end.x, end.y);
+  context.stroke();
+  if (drawing.tool === "arrow") {
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    const size = 15;
+    context.beginPath();
+    context.moveTo(end.x, end.y);
+    context.lineTo(end.x - size * Math.cos(angle - Math.PI / 6), end.y - size * Math.sin(angle - Math.PI / 6));
+    context.moveTo(end.x, end.y);
+    context.lineTo(end.x - size * Math.cos(angle + Math.PI / 6), end.y - size * Math.sin(angle + Math.PI / 6));
+    context.stroke();
+  }
+}
+
+function redrawCoachReviewCanvas() {
+  const canvas = document.querySelector("#coach-review-canvas");
+  if (!canvas) return;
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  if (!context || !rect.width || !rect.height) return;
+  const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+  const expectedWidth = Math.round(rect.width * pixelRatio);
+  const expectedHeight = Math.round(rect.height * pixelRatio);
+  if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
+    canvas.width = expectedWidth;
+    canvas.height = expectedHeight;
+  }
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+  [...activeCoachReviewDrawings(), state.videoReviewDraftDrawing].filter(Boolean).forEach((drawing) => drawCoachReviewShape(context, drawing, rect.width, rect.height));
+}
+
+function updateCoachReviewPlayerUi() {
+  const video = document.querySelector("#coach-review-video");
+  const scrubber = document.querySelector("#coach-review-scrubber");
+  const time = document.querySelector("#coach-review-time");
+  const play = document.querySelector("[data-review-play]");
+  if (!video) return;
+  if (scrubber) scrubber.value = String(video.duration ? Math.round((video.currentTime / video.duration) * 1000) : 0);
+  if (time) time.textContent = `${videoReviewTimeLabel(video.currentTime)} / ${videoReviewTimeLabel(video.duration)}`;
+  if (play) play.textContent = video.paused ? "Play" : "Pause";
+}
+
+function bindCoachVideoReviewEditor() {
+  teardownCoachVideoReviewEditor();
+  const video = document.querySelector("#coach-review-video");
+  const canvas = document.querySelector("#coach-review-canvas");
+  if (!video || !canvas) return;
+  const stage = document.querySelector("#coach-review-stage");
+  const refreshCanvas = () => window.requestAnimationFrame(() => {
+    if (stage && video.videoWidth && video.videoHeight) {
+      const isFullscreen = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+      if (!isFullscreen) {
+        const mediaRatio = video.videoWidth / video.videoHeight;
+        const maxHeight = Math.min(window.innerHeight * 0.68, 760);
+        const availableWidth = stage.parentElement?.clientWidth || stage.clientWidth || 720;
+        stage.style.width = `${Math.min(availableWidth, maxHeight * mediaRatio)}px`;
+        stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+      }
+      const stageRect = stage.getBoundingClientRect();
+      const mediaRatio = video.videoWidth / video.videoHeight;
+      const stageRatio = stageRect.width / Math.max(1, stageRect.height);
+      const displayWidth = stageRatio > mediaRatio ? stageRect.height * mediaRatio : stageRect.width;
+      const displayHeight = stageRatio > mediaRatio ? stageRect.height : stageRect.width / mediaRatio;
+      canvas.style.inset = "auto";
+      canvas.style.left = `${(stageRect.width - displayWidth) / 2}px`;
+      canvas.style.top = `${(stageRect.height - displayHeight) / 2}px`;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+    }
+    redrawCoachReviewCanvas();
+  });
+  state.videoReviewResizeHandler = refreshCanvas;
+  state.videoReviewFullscreenHandler = refreshCanvas;
+  window.addEventListener("resize", state.videoReviewResizeHandler);
+  document.addEventListener("fullscreenchange", state.videoReviewFullscreenHandler);
+  document.addEventListener("webkitfullscreenchange", state.videoReviewFullscreenHandler);
+  video.addEventListener("loadedmetadata", () => { updateCoachReviewPlayerUi(); refreshCanvas(); });
+  video.addEventListener("timeupdate", updateCoachReviewPlayerUi);
+  video.addEventListener("play", updateCoachReviewPlayerUi);
+  video.addEventListener("pause", updateCoachReviewPlayerUi);
+  video.addEventListener("error", () => {
+    state.videoReviewMedia.delete(state.videoReviewActiveRequestId);
+    notify("This video could not play in this browser. Use Open or Download original instead.", "error");
+  });
+  document.querySelector("[data-review-play]")?.addEventListener("click", () => video.paused ? video.play().catch((error) => notify(messageFrom(error), "error")) : video.pause());
+  document.querySelectorAll("[data-review-step]").forEach((button) => button.addEventListener("click", () => {
+    video.pause();
+    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + Number(button.dataset.reviewStep || 0)));
+    updateCoachReviewPlayerUi();
+  }));
+  document.querySelector("#coach-review-scrubber")?.addEventListener("input", (event) => {
+    if (!video.duration) return;
+    video.currentTime = (Number(event.target.value || 0) / 1000) * video.duration;
+  });
+  document.querySelectorAll("[data-review-speed]").forEach((button) => button.addEventListener("click", () => {
+    const requestedSpeed = Number(button.dataset.reviewSpeed || 1);
+    try {
+      video.playbackRate = requestedSpeed;
+    } catch (error) {
+      notify("This browser cannot use that slow-motion speed.", "error");
+    }
+    document.querySelectorAll("[data-review-speed]").forEach((entry) => entry.classList.toggle("active", entry === button));
+    const label = document.querySelector("#coach-review-speed-label");
+    if (label) label.textContent = video.playbackRate === requestedSpeed ? button.textContent : `${video.playbackRate}×`;
+  }));
+  document.querySelector("[data-review-fullscreen]")?.addEventListener("click", () => {
+    const stage = document.querySelector("#coach-review-stage");
+    if (stage?.requestFullscreen) stage.requestFullscreen().catch(() => {
+      if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+      else notify("Full screen is not available in this browser.", "error");
+    });
+    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    else notify("Full screen is not available in this browser.", "error");
+  });
+  document.querySelector("[data-review-draw-toggle]")?.addEventListener("click", (event) => {
+    state.videoReviewDrawEnabled = !state.videoReviewDrawEnabled;
+    canvas.classList.toggle("drawing", state.videoReviewDrawEnabled);
+    event.currentTarget.classList.toggle("active", state.videoReviewDrawEnabled);
+    event.currentTarget.textContent = state.videoReviewDrawEnabled ? "Drawing on" : "Draw on video";
+    if (state.videoReviewDrawEnabled) video.pause();
+  });
+  document.querySelectorAll("[data-review-draw-tool]").forEach((button) => button.addEventListener("click", () => {
+    state.videoReviewDrawTool = button.dataset.reviewDrawTool;
+    document.querySelectorAll("[data-review-draw-tool]").forEach((entry) => entry.classList.toggle("active", entry === button));
+  }));
+  document.querySelector("[data-review-draw-colour]")?.addEventListener("input", (event) => { state.videoReviewDrawColor = event.target.value; });
+  document.querySelector("[data-review-draw-undo]")?.addEventListener("click", () => { activeCoachReviewDrawings().pop(); redrawCoachReviewCanvas(); });
+  document.querySelector("[data-review-draw-clear]")?.addEventListener("click", () => { state.videoReviewDrawings.set(state.videoReviewActiveRequestId, []); redrawCoachReviewCanvas(); });
+  let activePointerId = null;
+  const finishDrawing = (event) => {
+    if (!state.videoReviewDraftDrawing) return;
+    if (activePointerId !== null && event?.pointerId !== activePointerId) return;
+    if (event?.pointerId !== undefined && canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    activeCoachReviewDrawings().push(state.videoReviewDraftDrawing);
+    state.videoReviewDraftDrawing = null;
+    activePointerId = null;
+    redrawCoachReviewCanvas();
+  };
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!state.videoReviewDrawEnabled || event.isPrimary === false || activePointerId !== null) return;
+    event.preventDefault();
+    activePointerId = event.pointerId;
+    canvas.setPointerCapture?.(event.pointerId);
+    state.videoReviewDraftDrawing = { tool: state.videoReviewDrawTool, color: state.videoReviewDrawColor, points: [coachReviewCanvasPoint(canvas, event)] };
+    redrawCoachReviewCanvas();
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    const drawing = state.videoReviewDraftDrawing;
+    if (!drawing || event.pointerId !== activePointerId) return;
+    event.preventDefault();
+    const next = coachReviewCanvasPoint(canvas, event);
+    if (drawing.tool === "pen") drawing.points.push(next);
+    else drawing.points = [drawing.points[0], next];
+    redrawCoachReviewCanvas();
+  });
+  canvas.addEventListener("pointerup", finishDrawing);
+  canvas.addEventListener("pointercancel", (event) => {
+    if (activePointerId !== null && event.pointerId !== activePointerId) return;
+    state.videoReviewDraftDrawing = null;
+    activePointerId = null;
+    redrawCoachReviewCanvas();
+  });
+  refreshCanvas();
+  updateCoachReviewPlayerUi();
 }
 
 function videoReviewCardHtml(request) {
@@ -9103,7 +9469,10 @@ function videoReviewCardHtml(request) {
 
 async function renderVideoReviews() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
+  teardownCoachVideoReviewEditor();
+  const renderSerial = ++state.videoReviewRenderSerial;
   const { roster, requests } = await getCoachVideoReviews();
+  if (renderSerial !== state.videoReviewRenderSerial || state.view !== "videoReviews") return;
   const search = state.videoReviewSearch.toLowerCase().trim();
   const filtered = requests.filter((request) => {
     const status = request.status || "new";
@@ -9115,16 +9484,24 @@ async function renderVideoReviews() {
     return statusMatch && riderMatch && (!search || haystack.includes(search));
   });
   const newCount = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "new")).length;
+  if (!filtered.some((request) => request.id === state.videoReviewActiveRequestId)) {
+    state.videoReviewActiveRequestId = (filtered.find((request) => isRileyCoachVideoCanary(request) && !["replied", "reviewed"].includes(request.status || "open")) || filtered[0])?.id || "";
+  }
+  const activeRequest = filtered.find((request) => request.id === state.videoReviewActiveRequestId) || null;
+  const activeReviewHtml = activeRequest
+    ? (isRileyCoachVideoCanary(activeRequest) ? coachReviewWorkspaceHtml(activeRequest) : videoReviewCardHtml(activeRequest))
+    : `<div class="empty compact-empty">No videos match those filters.</div>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Video <span>Reviews</span></h1><p>All rider trick-help videos in one coach-only inbox.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Video Review <span>Studio</span></h1><p>Open a rider submission, inspect the movement in slow motion, then return clear coaching feedback.</p></div></div>
     <section class="stats-grid">
       ${statCard("New", newCount, "", "Waiting")}
       ${statCard("Total", requests.length, "", "Submissions")}
       ${statCard("Riders", new Set(requests.map((request) => request.athlete_id)).size, "", "With videos")}
     </section>
     ${videoReviewFilterHtml(roster)}
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Review inbox</div><div class="panel-meta">${filtered.length} visible video${filtered.length === 1 ? "" : "s"}</div></div></div>
-      <div class="video-review-list">${filtered.length ? filtered.map(videoReviewCardHtml).join("") : `<div class="empty compact-empty">No videos match those filters.</div>`}</div>
+    <section class="coach-review-console">
+      <aside class="coach-review-queue panel"><div class="panel-head"><div><div class="panel-title">Review inbox</div><div class="panel-meta">${filtered.length} video${filtered.length === 1 ? "" : "s"}</div></div></div><div class="coach-review-queue-list">${filtered.length ? filtered.map(coachReviewQueueItemHtml).join("") : `<div class="empty compact-empty">Nothing waiting.</div>`}</div></aside>
+      <div class="coach-review-active">${activeReviewHtml}</div>
     </section>`;
   document.querySelector("#video-review-status")?.addEventListener("change", (event) => {
     state.videoReviewStatus = event.target.value;
@@ -9139,6 +9516,12 @@ async function renderVideoReviews() {
     clearTimeout(state.videoReviewSearchTimer);
     state.videoReviewSearchTimer = setTimeout(() => renderVideoReviews(), 250);
   });
+  document.querySelectorAll("[data-open-video-review]").forEach((button) => button.addEventListener("click", async () => {
+    state.videoReviewActiveRequestId = button.dataset.openVideoReview;
+    state.videoReviewDrawEnabled = false;
+    state.videoReviewDraftDrawing = null;
+    await renderVideoReviews();
+  }));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
     state.selectedAthleteId = button.dataset.openStudent;
     navigate("student");
@@ -9147,11 +9530,14 @@ async function renderVideoReviews() {
   document.querySelectorAll("[data-load-help-video]").forEach((button) => button.addEventListener("click", loadHelpVideo));
   document.querySelectorAll("[data-save-help-video]").forEach((button) => button.addEventListener("click", saveHelpVideo));
   document.querySelectorAll("[data-mark-help-reviewed]").forEach((button) => button.addEventListener("click", markHelpReviewed));
+  if (activeRequest && isRileyCoachVideoCanary(activeRequest)) bindCoachVideoReviewEditor();
 }
 
 async function fetchHelpVideoMedia(requestId) {
   const cached = state.videoReviewMedia.get(requestId);
-  if (cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url) return cached;
+  const usesSignedUrl = Boolean(cached?.video_storage_path || cached?.coach_video_storage_path);
+  const signedUrlFresh = !usesSignedUrl || (Date.now() - Number(cached?._signedAt || 0)) < ((HELP_VIDEO_SIGNED_URL_SECONDS - 60) * 1000);
+  if (signedUrlFresh && (cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url)) return cached;
   const { data, error } = await client.from("trick_help_requests")
     .select("id, video_data_url, coach_video_data_url, video_storage_path, coach_video_storage_path")
     .eq("id", requestId)
@@ -9159,8 +9545,9 @@ async function fetchHelpVideoMedia(requestId) {
   if (error) throw error;
   if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
   const [media] = await hydrateHelpRequestMediaUrls(data);
-  state.videoReviewMedia.set(requestId, media);
-  return media;
+  const freshMedia = { ...media, _signedAt: Date.now() };
+  state.videoReviewMedia.set(requestId, freshMedia);
+  return freshMedia;
 }
 
 async function loadHelpVideo(event) {
@@ -9736,7 +10123,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.6", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.7", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);

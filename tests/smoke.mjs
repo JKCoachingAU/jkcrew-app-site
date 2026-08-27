@@ -12,7 +12,7 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.6";
+const version = "2.13.7";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -313,6 +313,53 @@ assert(functionBody("submitHelpRequest").includes("VIDEO_ANALYSIS_TEST_MAX_SECON
 assert(functionBody("submitHelpRequest").includes('state.view === "session"'), "Successful Session uploads must keep the rider on Session");
 assert(functionBody("uploadHelpVideoFile").includes("uploadHelpVideoResumable"), "Phone videos above 6MB must use resumable upload");
 assert(functionBody("loadTusClient").includes("TUS_CLIENT_INTEGRITY"), "The pinned resumable uploader must verify its CDN integrity");
+const coachReviewWorkspace = functionBody("coachReviewWorkspaceHtml");
+assert(coachReviewWorkspace.includes("Riley-only coach test"), "The enhanced coach review workspace must remain labelled as a Riley canary");
+assert(coachReviewWorkspace.includes("coach-review-canvas"), "Coach review must include an on-video drawing layer");
+assert(coachReviewWorkspace.includes("[1, 0.5, 0.25, 0.125]"), "Coach review must include eighth-speed slow motion");
+assert(coachReviewWorkspace.includes("data-help-reply"), "Coach review must preserve the existing private reply workflow");
+const coachReviewTestState = { videoReviewMedia: new Map(), videoReviewDrawEnabled: false, videoReviewDrawTool: "pen", videoReviewDrawColor: "#20e3c3" };
+const renderCoachReviewWorkspace = new Function("state", "escapeHtml", "avatarHtml", "dateLabel", "videoSizeLabel", `return (${coachReviewWorkspace});`)(
+  coachReviewTestState,
+  (value = "") => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"),
+  () => '<span class="avatar">RC</span>',
+  () => "Today",
+  () => "0.5 MB",
+);
+const coachReviewRequest = { id: "review-1", athlete_id: "e230a5a6-68ad-4362-b410-b52f45f58e57", athlete: { display_name: "Riley Chen" }, status: "open", question: "Can’t <land> it", created_at: new Date().toISOString(), video_size_bytes: 520171 };
+const unloadedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
+assert(unloadedCoachReview.includes("Load private video"), "Riley review must start with an intentional private-media load step");
+assert(unloadedCoachReview.includes("Can’t &lt;land&gt; it"), "Rider questions must remain escaped in the coach workspace");
+coachReviewTestState.videoReviewMedia.set("review-1", { video_url: "https://signed.example/video.mov" });
+const loadedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
+assert(loadedCoachReview.includes('id="coach-review-video"'), "Loaded Riley media must render in the analysis player");
+assert(loadedCoachReview.includes('id="coach-review-canvas"'), "Loaded Riley media must retain the drawing canvas");
+assert(loadedCoachReview.includes("Open original"), "Loaded Riley media must offer a browser fallback for phone MOV files");
+const coachReviewCanaryGate = new Function("RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID", `${functionBody("isRileyCoachVideoCanary")}; return isRileyCoachVideoCanary;`)("e230a5a6-68ad-4362-b410-b52f45f58e57");
+assert.equal(coachReviewCanaryGate(coachReviewRequest), true, "Riley requests must receive the enhanced review workspace");
+assert.equal(coachReviewCanaryGate({ athlete_id: "another-rider" }), false, "Other riders must remain outside the enhanced review canary");
+const coachReviewRender = functionBody("renderVideoReviews");
+assert(coachReviewRender.includes("isRileyCoachVideoCanary(activeRequest)"), "Enhanced coach analysis must be gated to Riley's request");
+assert(coachReviewRender.includes("coachReviewQueueItemHtml"), "Coach reviews must provide a selectable rider inbox");
+assert(coachReviewRender.includes("renderSerial !== state.videoReviewRenderSerial"), "Slow coach review reads must not overwrite a newer screen");
+const coachReviewBindings = functionBody("bindCoachVideoReviewEditor");
+assert(coachReviewBindings.includes("video.playbackRate"), "Coach review must bind slow-motion playback");
+assert(coachReviewBindings.includes('canvas.addEventListener("pointerdown"'), "Coach review must bind touch and pointer drawing");
+assert(coachReviewBindings.includes("video.videoWidth / video.videoHeight"), "Portrait and landscape videos must size the drawing layer from real media dimensions");
+assert(coachReviewBindings.includes('canvas.addEventListener("pointercancel"'), "Canceled iPad drawing gestures must be handled separately");
+assert(coachReviewBindings.includes("state.videoReviewDraftDrawing = null"), "Canceled drawing gestures must discard the unfinished stroke");
+const coachReplyBody = functionBody("replyToHelpRequest");
+assert(coachReplyBody.includes("Could not clean up failed coach video reply upload"), "Failed coach replies must clean up uploaded media");
+assert(coachReplyBody.includes("upload?.path && !committed"), "A committed coach reply must never have its uploaded video deleted by a later render error");
+assert(coachReplyBody.includes("previousCoachVideoPath"), "Replacing a coach reply must clean up the previous private video");
+assert(coachReplyBody.includes('state.view === originatingView && originatingView === "videoReviews"'), "A completed upload must not replace a screen the coach navigated to");
+assert(functionBody("fetchHelpVideoMedia").includes("_signedAt"), "Expired private video links must be refreshed instead of cached indefinitely");
+const coachReviewReset = functionBody("resetVideoReviewPrivateState");
+assert(coachReviewReset.includes("state.videoReviewMedia.clear()"), "Signing out or switching users must clear private signed video links");
+assert(coachReviewReset.includes('state.videoReviewRider = "all"'), "Switching users must clear the previous coach's rider filter");
+assert(coachReviewReset.includes('state.videoReviewSearch = ""'), "Switching users must clear the previous coach's private search text");
+assert(coachReviewReset.includes("clearTimeout(state.videoReviewSearchTimer)"), "Switching users must stop a pending private-search render");
+assert(app.includes('"videoReviews"]'), "Coach review links must be able to open the Video Reviews view directly");
 assert(rileyServiceWorker.includes('const CACHE_PREFIX = "jkcrew-riley-shell-"'), "Riley test cache must not delete the production app cache");
 const videoCanaryMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
 assert(videoCanaryMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");
