@@ -355,6 +355,7 @@ assert(coachReviewRender.includes("isRileyCoachVideoCanary(activeRequest)"), "En
 assert(coachReviewRender.includes("coachReviewQueueItemHtml"), "Coach reviews must provide a selectable rider inbox");
 assert(coachReviewRender.includes("renderSerial !== state.videoReviewRenderSerial"), "Slow coach review reads must not overwrite a newer screen");
 assert(coachReviewRender.includes("state.videoReviewRecording || state.videoReviewRecordingStarting"), "An in-flight review read must not replace a recorder that started while it was loading");
+assert((coachReviewRender.match(/disableStaleCoachReviewRecordButton\(\)/g) || []).length >= 4, "Every queue, filter and search change must disable the outgoing workspace recorder immediately");
 const coachReviewBindings = functionBody("bindCoachVideoReviewEditor");
 assert(coachReviewBindings.includes("video.playbackRate"), "Coach review must bind slow-motion playback");
 assert(coachReviewBindings.includes('canvas.addEventListener("pointerdown"'), "Coach review must bind touch and pointer drawing");

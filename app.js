@@ -9421,6 +9421,11 @@ function setCoachReviewRecordingControlsLocked(locked) {
     .forEach((control) => { control.disabled = locked; });
 }
 
+function disableStaleCoachReviewRecordButton() {
+  const button = document.querySelector("[data-review-record-toggle]");
+  if (button) button.disabled = true;
+}
+
 function updateCoachReviewRecordingClock(session) {
   if (!session || state.videoReviewRecording !== session) return;
   const elapsedSeconds = Math.min(COACH_REVIEW_RECORDING_MAX_SECONDS, (Date.now() - session.startedAt) / 1000);
@@ -9946,18 +9951,21 @@ async function renderVideoReviews() {
   document.querySelector("#video-review-status")?.addEventListener("change", (event) => {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
+    disableStaleCoachReviewRecordButton();
     state.videoReviewStatus = event.target.value;
     renderVideoReviews();
   });
   document.querySelector("#video-review-rider")?.addEventListener("change", (event) => {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
+    disableStaleCoachReviewRecordButton();
     state.videoReviewRider = event.target.value;
     renderVideoReviews();
   });
   document.querySelector("#video-review-search")?.addEventListener("input", (event) => {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
+    disableStaleCoachReviewRecordButton();
     state.videoReviewSearch = event.target.value;
     clearTimeout(state.videoReviewSearchTimer);
     state.videoReviewSearchTimer = setTimeout(() => renderVideoReviews(), 250);
@@ -9966,8 +9974,7 @@ async function renderVideoReviews() {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before opening another rider.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before opening another rider.", "error");
     const previousRequestId = state.videoReviewActiveRequestId;
-    const staleRecordButton = document.querySelector("[data-review-record-toggle]");
-    if (staleRecordButton) staleRecordButton.disabled = true;
+    disableStaleCoachReviewRecordButton();
     state.videoReviewActiveRequestId = button.dataset.openVideoReview;
     if (previousRequestId && previousRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousRequestId);
     state.videoReviewDrawEnabled = false;
