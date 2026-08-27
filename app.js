@@ -26,7 +26,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.4";
+const RELEASE_VERSION = "2.14.5";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -57,6 +57,8 @@ const state = {
   runPlaybackTimer: null,
   draggedRunPoint: null,
   contestEventEscapeHandler: null,
+  contestMergeSourceId: "",
+  contestMergeEscapeHandler: null,
   coachPlanVenue: "",
   plannerAthleteId: null,
   coachTricktionaryAthleteId: null,
@@ -389,7 +391,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.4" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.5" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1554,7 +1556,10 @@ async function navigate(view) {
   }
   clearInterval(state.timer);
   if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
-  if (previousView === "contests" && view !== "contests") closeContestEventModal();
+  if (previousView === "contests" && view !== "contests") {
+    closeContestEventModal();
+    closeContestMergeModal();
+  }
   if (["session", "coaching"].includes(previousView) && view !== previousView) clearHelpVideoPreview();
   if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
   if (state.sessionViewerTimer) {
@@ -6373,15 +6378,25 @@ function contestEventDataAttributes(item = {}) {
   return `data-event-id="${escapeHtml(item.id)}" data-event-title="${escapeHtml(item.title)}" data-event-details="${escapeHtml(item.details || "")}" data-event-date="${escapeHtml(item.due_at || "")}"`;
 }
 
+function contestDateTimeInputValue(value = "") {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+  return local.toISOString().slice(0, 16);
+}
+
 function contestEventCardsHtml(events = [], runs = [], attendance = []) {
   if (!events.length) return `<div class="contest-empty"><strong>No upcoming events yet</strong><span>Add the first event below. It will then be available to the whole crew.</span></div>`;
   const athleteView = state.profile?.role === "athlete";
+  const coachView = isCoachRole(state.profile?.role);
   return `<div class="contest-event-grid">${events.map((item) => {
     const attendees = contestEventAttendees(attendance, item.id);
     const going = attendees.some((row) => row.athlete_id === state.user?.id);
     const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
     const searchText = normalizeContestEventTitle(`${item.title} ${item.details || ""}`);
-    return `<article class="contest-event-card ${going ? "is-going" : ""}" data-contest-event-card data-event-search="${escapeHtml(searchText)}">
+    const mergeSelected = state.contestMergeSourceId === item.id;
+    return `<article class="contest-event-card ${going ? "is-going" : ""} ${coachView ? "coach-merge-event" : ""} ${mergeSelected ? "merge-source-selected" : ""}" data-contest-event-card data-contest-event-id="${escapeHtml(item.id)}" data-event-search="${escapeHtml(searchText)}" ${coachView ? 'draggable="true"' : ""}>
       <button class="contest-event-main" type="button" data-open-contest-event="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.title)} and see who is going">
         <span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span>
         <span class="contest-event-copy"><span class="eyebrow">${going ? "You're going" : "Upcoming event"}${linkedRuns ? ` · ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"}` : ""}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
@@ -6389,6 +6404,7 @@ function contestEventCardsHtml(events = [], runs = [], attendance = []) {
         <span class="contest-event-chevron" aria-hidden="true">›</span>
       </button>
       ${athleteView ? `<div class="contest-event-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ GOING" : "+ I'M GOING"}</button><button class="secondary-btn compact-btn contest-build-button" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>${linkedRuns ? "ADD PRIVATE RUN" : "BUILD PRIVATE RUN"}</button></div>` : ""}
+      ${coachView ? `<div class="contest-event-merge-actions"><span class="contest-merge-grip" aria-hidden="true">⠿</span><span>Drag onto the matching event</span><button class="secondary-btn compact-btn" type="button" data-select-event-merge="${escapeHtml(item.id)}">${mergeSelected ? "Selected · choose another" : "Merge"}</button></div>` : ""}
     </article>`;
   }).join("")}</div>`;
 }
@@ -6442,6 +6458,94 @@ function openContestEventModal(item = {}, attendees = [], runs = []) {
   backdrop.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
   backdrop.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
   backdrop.querySelector("[data-close-contest-event]")?.focus();
+}
+
+function closeContestMergeModal({ keepSelection = false } = {}) {
+  const backdrop = document.querySelector("#contest-merge-backdrop");
+  if (state.contestMergeEscapeHandler) document.removeEventListener("keydown", state.contestMergeEscapeHandler);
+  state.contestMergeEscapeHandler = null;
+  document.documentElement.classList.remove("contest-merge-open");
+  backdrop?.remove();
+  if (!keepSelection) state.contestMergeSourceId = "";
+}
+
+function contestMergeAttendees(attendance = [], sourceId = "", targetId = "") {
+  const byAthlete = new Map();
+  attendance.filter((row) => row.event_id === sourceId || row.event_id === targetId).forEach((row) => byAthlete.set(row.athlete_id, row));
+  return [...byAthlete.values()];
+}
+
+function contestMergeModalHtml(source = {}, target = {}, attendees = []) {
+  const sourceStart = source.due_at ? new Date(source.due_at).getTime() : Number.POSITIVE_INFINITY;
+  const targetStart = target.due_at ? new Date(target.due_at).getTime() : Number.POSITIVE_INFINITY;
+  const startsAt = Number.isFinite(Math.min(sourceStart, targetStart)) ? new Date(Math.min(sourceStart, targetStart)).toISOString() : "";
+  const sourceEnd = contestEventEndsAt(source)?.getTime() || 0;
+  const targetEnd = contestEventEndsAt(target)?.getTime() || 0;
+  const endsAt = Math.max(sourceEnd, targetEnd) ? new Date(Math.max(sourceEnd, targetEnd)).toISOString() : "";
+  const details = target.details || source.details || "";
+  return `<section class="contest-event-modal contest-merge-modal" role="dialog" aria-modal="true" aria-labelledby="contest-merge-title">
+    <header class="contest-event-modal-head"><div><div class="eyebrow">Coach event merge</div><h2 id="contest-merge-title">Merge into one event</h2><p>Review the final details before saving.</p></div><button class="contest-event-modal-close" type="button" data-close-contest-merge aria-label="Cancel merge">×</button></header>
+    <div class="contest-merge-route"><article><small>Moving</small><strong>${escapeHtml(source.title)}</strong><span>${source.due_at ? dateLabel(source.due_at) : "Date TBC"}</span></article><b aria-hidden="true">→</b><article><small>Keeping</small><strong>${escapeHtml(target.title)}</strong><span>${target.due_at ? dateLabel(target.due_at) : "Date TBC"}</span></article></div>
+    <form id="contest-merge-form" class="contest-merge-form">
+      <input type="hidden" name="sourceEventId" value="${escapeHtml(source.id)}">
+      <input type="hidden" name="targetEventId" value="${escapeHtml(target.id)}">
+      <div class="field contest-merge-title-field"><label for="contest-merge-event-name">Final event name</label><input id="contest-merge-event-name" name="title" required maxlength="120" value="${escapeHtml(target.title || source.title || "")}"></div>
+      <div class="field contest-merge-details-field"><label for="contest-merge-details">Location / details</label><input id="contest-merge-details" name="details" maxlength="180" value="${escapeHtml(details)}" placeholder="Venue, city or event details"></div>
+      <div class="field"><label for="contest-merge-start">Starts</label><input id="contest-merge-start" name="dueAt" type="datetime-local" required value="${escapeHtml(contestDateTimeInputValue(startsAt))}"></div>
+      <div class="field"><label for="contest-merge-end">Ends</label><input id="contest-merge-end" name="endAt" type="datetime-local" value="${escapeHtml(contestDateTimeInputValue(endsAt))}"></div>
+      <section class="contest-merge-summary"><div><strong>${attendees.length}</strong><span>unique rider${attendees.length === 1 ? "" : "s"} will be combined</span></div><div class="contest-event-faces">${attendees.slice(0, 6).map((row) => { const profile = row.profile || {}; const image = avatarUrl(profile); return `<span class="contest-event-avatar ${image ? "image-avatar" : ""}">${image ? `<img src="${escapeHtml(image)}" alt="">` : escapeHtml(initials(profile.display_name))}</span>`; }).join("")}</div></section>
+      <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private runs stay private</strong><p>Any private run plans attached to either event stay with their rider and will point to the merged event.</p></div></div>
+      <div class="contest-merge-submit"><button class="primary-btn" type="submit">SAVE MERGED EVENT</button><button class="secondary-btn" type="button" data-close-contest-merge>Cancel</button></div>
+    </form>
+  </section>`;
+}
+
+function openContestMergeModal(source = {}, target = {}, attendance = []) {
+  if (!isCoachRole(state.profile?.role) || !source.id || !target.id || source.id === target.id) return;
+  closeContestMergeModal({ keepSelection: true });
+  const backdrop = document.createElement("div");
+  backdrop.id = "contest-merge-backdrop";
+  backdrop.className = "contest-event-backdrop contest-merge-backdrop";
+  backdrop.innerHTML = contestMergeModalHtml(source, target, contestMergeAttendees(attendance, source.id, target.id));
+  document.body.append(backdrop);
+  document.documentElement.classList.add("contest-merge-open");
+  backdrop.querySelectorAll("[data-close-contest-merge]").forEach((button) => button.addEventListener("click", () => closeContestMergeModal()));
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeContestMergeModal(); });
+  state.contestMergeEscapeHandler = (event) => { if (event.key === "Escape") closeContestMergeModal(); };
+  document.addEventListener("keydown", state.contestMergeEscapeHandler);
+  backdrop.querySelector("#contest-merge-form")?.addEventListener("submit", saveMergedContestEvent);
+  backdrop.querySelector("#contest-merge-event-name")?.focus();
+}
+
+async function saveMergedContestEvent(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can merge events.", "error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const title = String(form.get("title") || "").trim();
+  const details = String(form.get("details") || "").trim();
+  const dueAt = new Date(String(form.get("dueAt") || ""));
+  const endValue = String(form.get("endAt") || "");
+  const endAt = endValue ? new Date(endValue) : null;
+  if (title.length < 3 || Number.isNaN(dueAt.getTime())) return notify("Add the final event name and start date.", "error");
+  if (endAt && (Number.isNaN(endAt.getTime()) || endAt < dueAt)) return notify("The event finish must be after it starts.", "error");
+  const button = formElement.querySelector("button[type='submit']");
+  const restore = setButtonBusy(button, "MERGING...");
+  const { error } = await client.rpc("merge_contest_events", {
+    p_source_event_id: String(form.get("sourceEventId") || ""),
+    p_target_event_id: String(form.get("targetEventId") || ""),
+    p_title: title,
+    p_details: details,
+    p_due_at: dueAt.toISOString(),
+    p_end_at: endAt ? endAt.toISOString() : null,
+  });
+  if (error) {
+    restore();
+    return notify(messageFrom(error), "error");
+  }
+  closeContestMergeModal();
+  notify("Events merged. Riders and private run plans now use the single event.");
+  await renderContests();
 }
 
 async function setContestAttendance(eventId, attending) {
@@ -6520,6 +6624,55 @@ async function saveSharedContestEvent(event) {
   }
 }
 
+function clearContestMergeDragState() {
+  document.querySelectorAll("[data-contest-event-card]").forEach((card) => card.classList.remove("is-merge-dragging", "merge-drop-target"));
+}
+
+function bindCoachContestMergeActions(events = [], attendance = []) {
+  if (!isCoachRole(state.profile?.role)) return;
+  const eventById = new Map(events.map((item) => [item.id, item]));
+  document.querySelectorAll("[data-contest-event-card]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      const eventId = card.dataset.contestEventId;
+      if (!eventId) return event.preventDefault();
+      state.contestMergeSourceId = eventId;
+      card.classList.add("is-merge-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", eventId);
+    });
+    card.addEventListener("dragover", (event) => {
+      const sourceId = event.dataTransfer.getData("text/plain") || state.contestMergeSourceId;
+      if (!sourceId || sourceId === card.dataset.contestEventId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      document.querySelectorAll(".merge-drop-target").forEach((item) => { if (item !== card) item.classList.remove("merge-drop-target"); });
+      card.classList.add("merge-drop-target");
+    });
+    card.addEventListener("dragleave", () => card.classList.remove("merge-drop-target"));
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const sourceId = event.dataTransfer.getData("text/plain") || state.contestMergeSourceId;
+      const targetId = card.dataset.contestEventId;
+      clearContestMergeDragState();
+      const source = eventById.get(sourceId);
+      const target = eventById.get(targetId);
+      if (source && target && source.id !== target.id) openContestMergeModal(source, target, attendance);
+    });
+    card.addEventListener("dragend", clearContestMergeDragState);
+  });
+  document.querySelectorAll("[data-select-event-merge]").forEach((button) => button.addEventListener("click", async () => {
+    const selectedId = button.dataset.selectEventMerge;
+    if (!state.contestMergeSourceId || state.contestMergeSourceId === selectedId) {
+      state.contestMergeSourceId = state.contestMergeSourceId === selectedId ? "" : selectedId;
+      await renderContests();
+      return;
+    }
+    const source = eventById.get(state.contestMergeSourceId);
+    const target = eventById.get(selectedId);
+    if (source && target) openContestMergeModal(source, target, attendance);
+  }));
+}
+
 function bindContestEventActions(events = [], attendance = [], runs = []) {
   const eventById = new Map(events.map((item) => [item.id, item]));
   document.querySelector("#contest-event-search")?.addEventListener("input", (event) => {
@@ -6532,6 +6685,7 @@ function bindContestEventActions(events = [], attendance = [], runs = []) {
   }));
   document.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
   document.querySelector("#shared-contest-event-form")?.addEventListener("submit", saveSharedContestEvent);
+  bindCoachContestMergeActions(events, attendance);
 }
 
 async function openRunBuilder(event = null) {
@@ -6567,7 +6721,7 @@ async function renderContests() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head contests-page-head"><div><div class="eyebrow">Events & private planning</div><h1>Events & <span>runs</span></h1><p>See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders.</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
     <section class="panel shared-events-panel">
-      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>Events are shared once for the whole crew. Tap one to see who's going.</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
+      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>${isCoachRole(state.profile?.role) ? "Drag duplicate events together, or tap Merge on two cards. Review the final details before saving." : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
       ${contestEventCardsHtml(events, runs, attendance)}
     </section>
     ${state.runBuilder ? runBuilderPanel([], { live: true, showRunList: false }) : ""}

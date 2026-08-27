@@ -13,7 +13,8 @@ const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
-const version = "2.14.4";
+const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
+const version = "2.14.5";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -450,6 +451,8 @@ assert(contestCardsBody.includes("data-open-contest-event"), "Each event must op
 assert(contestCardsBody.includes("data-toggle-contest-attendance"), "Riders must be able to join an existing shared event");
 assert(contestCardsBody.includes("BUILD PRIVATE RUN"), "Each upcoming event must launch a private run plan");
 assert(contestCardsBody.includes("contestEventFacesHtml(attendees)"), "Event cards must show who is attending at a glance");
+assert(contestCardsBody.includes('draggable="true"'), "Coach event cards must support drag-to-merge");
+assert(contestCardsBody.includes("data-select-event-merge"), "Touch devices need a two-tap event merge fallback");
 const contestModalBody = functionBody("contestEventModalHtml");
 assert(contestModalBody.includes("Who's going"), "Opening an event must show the attendee list");
 assert(contestModalBody.includes("row.profile?.display_name"), "The attendee list must show rider names");
@@ -459,6 +462,17 @@ assert(sharedEventSaveBody.includes("normalizeContestEventTitle(item.title)"), "
 assert(sharedEventSaveBody.includes("contestEventDay(item.due_at)"), "Shared event matching must include its start day");
 assert(sharedEventSaveBody.includes("setContestAttendance(sharedEvent.id, true)"), "The event creator must automatically be marked as attending");
 assert(functionBody("toggleContestAttendance").includes("setContestAttendance"), "Attendance controls must update the shared attendee table");
+assert(functionBody("bindCoachContestMergeActions").includes('addEventListener("drop"'), "Coach event cards must accept dragged duplicate events");
+assert(functionBody("bindCoachContestMergeActions").includes("openContestMergeModal(source, target, attendance)"), "Dropping an event must open the merge review instead of changing data immediately");
+assert(functionBody("contestMergeModalHtml").includes("Final event name"), "The coach must be able to edit the merged event name");
+assert(functionBody("contestMergeModalHtml").includes("unique rider"), "The merge review must show the combined attendee count");
+assert(functionBody("saveMergedContestEvent").includes('rpc("merge_contest_events"'), "Saving a merge must use the atomic database operation");
+assert(mergeEventMigration.includes("insert into public.event_attendees"), "Event merges must combine attendee records");
+assert(mergeEventMigration.includes("on conflict (event_id, athlete_id) do nothing"), "Event merges must deduplicate riders attending both events");
+assert(mergeEventMigration.includes("update public.run_plans"), "Private run plans must be relinked to the surviving event");
+assert(mergeEventMigration.includes("private.event_merge_audit"), "Event merges need a private recovery audit");
+assert(mergeEventMigration.includes("Only coaches can merge events"), "The database must reject rider event merges");
+assert(mergeEventMigration.includes("security invoker"), "The public merge endpoint must not bypass RLS itself");
 assert(eventMigration.includes("create table if not exists public.event_attendees"), "The database must store shared event attendance separately");
 assert(eventMigration.includes("alter table public.event_attendees enable row level security"), "Shared attendance must have RLS enabled");
 assert(eventMigration.includes("athlete_id = (select auth.uid())"), "A rider must only change their own attendance");
