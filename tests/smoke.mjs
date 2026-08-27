@@ -391,6 +391,7 @@ const recordingPaint = functionBody("paintCoachReviewRecordingFrame");
 assert(recordingPaint.indexOf("context.drawImage(sourceVideo") < recordingPaint.indexOf("drawCoachReviewShape(context"), "The compositor must paint the rider video before live drawings");
 const recordingStart = functionBody("startCoachReviewRecording");
 assert(recordingStart.includes("navigator.mediaDevices.getUserMedia"), "Recording must request the coach microphone from a direct action");
+assert(recordingStart.indexOf("requestId !== state.videoReviewActiveRequestId") < recordingStart.indexOf("state.videoReviewRecordingStarting = startAttempt"), "A stale workspace must be rejected before it can lock the recorder state");
 assert(recordingStart.includes("state.videoReviewRecordingStarting = startAttempt"), "Recording startup must synchronously block stale queue renders");
 assert(recordingStart.includes("state.videoReviewRenderSerial += 1"), "Recording startup must invalidate a coach review render that is already in flight");
 assert(recordingStart.includes("video.isConnected"), "Recording startup must reject detached video controls after microphone permission");

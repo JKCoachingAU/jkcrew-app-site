@@ -9536,6 +9536,7 @@ function waitForCoachReviewVideoFrame(video) {
 
 async function startCoachReviewRecording(requestId) {
   if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop the current review recording first.", "error");
+  if (!requestId || requestId !== state.videoReviewActiveRequestId) return notify("That review changed before recording started. Open it again and retry.", "error");
   const video = document.querySelector("#coach-review-video");
   const canvas = document.querySelector("#coach-review-canvas");
   const panel = document.querySelector(".coach-review-recorder");
@@ -9965,6 +9966,8 @@ async function renderVideoReviews() {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before opening another rider.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before opening another rider.", "error");
     const previousRequestId = state.videoReviewActiveRequestId;
+    const staleRecordButton = document.querySelector("[data-review-record-toggle]");
+    if (staleRecordButton) staleRecordButton.disabled = true;
     state.videoReviewActiveRequestId = button.dataset.openVideoReview;
     if (previousRequestId && previousRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousRequestId);
     state.videoReviewDrawEnabled = false;
