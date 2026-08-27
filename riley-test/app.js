@@ -1,6 +1,6 @@
 const SUPABASE_URL = "https://soanwttlorlgdfrzbvtp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Y93G0kTt_csEsNzDl9NFEA_0h5UElXh";
-const RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57";
+const RILEY_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57";
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     autoRefreshToken: true,
@@ -19,15 +19,14 @@ const TRICK_HELP_VIDEO_BUCKET = "trick-help-videos";
 const HELP_VIDEO_SIGNED_URL_SECONDS = 60 * 60;
 const RIDER_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const COACH_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
-const VIDEO_ANALYSIS_TEST_MAX_BYTES = RIDER_VIDEO_MAX_BYTES;
-const VIDEO_ANALYSIS_TEST_MAX_SECONDS = 60;
+const RIDER_VIDEO_MAX_SECONDS = 60;
 const COACH_REVIEW_RECORDING_MAX_SECONDS = 90;
 const VIDEO_STANDARD_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js";
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const WHATS_NEW_RELEASE_ID = "2026-08-major";
+const WHATS_NEW_RELEASE_ID = "2026-08-live-tools";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
   session: null,
@@ -176,6 +175,10 @@ function parentPrimaryView(view = "") {
   return view;
 }
 
+function athletePrimaryView(view = "") {
+  return view === "coaching" ? "home" : view;
+}
+
 const escapeHtml = (value = "") => String(value)
   .replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;")
@@ -270,7 +273,6 @@ function applyTheme(value = "dark") {
   }
 }
 const firstName = (profile = {}) => String(profile.display_name || "This rider").split(/\s+/).filter(Boolean)[0] || "This rider";
-const isRileyVideoAnalysisTester = () => state.user?.id === RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID && state.profile?.role === "athlete";
 const isRileyTestRoute = () => /\/riley-test\/?$/.test(window.location.pathname);
 const isCoachRole = (role) => ["coach", "admin"].includes(role);
 const linesHtml = (value = "", emptyText = "Not added yet") => {
@@ -385,7 +387,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.13.10" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.0" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -689,14 +691,14 @@ function bindHelpRequestForm() {
       meta.classList.add("error");
       return;
     }
-    if (file.size > VIDEO_ANALYSIS_TEST_MAX_BYTES) {
+    if (file.size > RIDER_VIDEO_MAX_BYTES) {
       meta.textContent = `This clip is ${videoSizeLabel(file.size)}. Trim it below 50 MB before sending.`;
       meta.classList.add("error");
       return;
     }
     try {
       const duration = await videoDurationSeconds(file);
-      if (duration > VIDEO_ANALYSIS_TEST_MAX_SECONDS) {
+      if (duration > RIDER_VIDEO_MAX_SECONDS) {
         meta.textContent = `This clip is ${Math.ceil(duration)} seconds. Trim it to 60 seconds or less.`;
         meta.classList.add("error");
         return;
@@ -1033,7 +1035,7 @@ async function handleSession(session) {
     renderAuth();
     return;
   }
-  if (state.user.id === RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID && !isRileyTestRoute()) {
+  if (state.user.id === RILEY_TEST_ACCOUNT_ID && !isRileyTestRoute()) {
     const testUrl = new URL("./riley-test/", window.location.href);
     testUrl.search = window.location.search;
     window.location.replace(testUrl.href);
@@ -1060,7 +1062,7 @@ async function handleSession(session) {
   state.profile = data;
   applyTheme(data.app_theme);
   const pushView = new URL(window.location.href).searchParams.get("push");
-  const allowedPushViews = new Set(["home", "board", "challenges", "command", "videoReviews"]);
+  const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "command", "videoReviews"]);
   state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
   if (pushView) {
     const cleanUrl = new URL(window.location.href);
@@ -1208,7 +1210,7 @@ function renderShell() {
   const role = state.profile.role;
   const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
+  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
   const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
@@ -1275,8 +1277,8 @@ function whatsNewItems(role = "athlete") {
     ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
   ];
   return [
-    ["01", "A New Layout", "Home, Session, Challenges, Contests, Board and Profile are easier to use."],
-    ["02", "Better Run Planner", "Build a route on a park photo, label tricks and replay the full line."],
+    ["01", "Run Builder Is Live", "Open Contests, choose an event and build the full route directly on a park photo."],
+    ["02", "Private Trick Reviews", "Tap GET HELP on Home to send a short clip and receive Coach JK's video feedback."],
     ["03", "Battles + Challenges", "Go 1v1, 2v2 or 3v3 and complete weekly targets for points."],
     ["04", "Smarter Sheets", "Cleaner sections, Lines and saved Daily lists for every location."],
     ["05", "Level 50 + Prestige", "Keep earning lifetime XP after Level 50 and rank up again."],
@@ -1545,7 +1547,7 @@ async function navigate(view) {
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
   clearInterval(state.timer);
-  if (previousView === "session" && view !== "session") clearHelpVideoPreview();
+  if (["session", "coaching"].includes(previousView) && view !== previousView) clearHelpVideoPreview();
   if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
@@ -1565,18 +1567,19 @@ async function navigate(view) {
   if (viewElement) viewElement.dataset.view = view;
   const activeView = isCoachRole(state.profile?.role)
     ? coachPrimaryView(view)
-    : state.profile?.role === "parent" ? parentPrimaryView(view) : view;
+    : state.profile?.role === "parent" ? parentPrimaryView(view) : athletePrimaryView(view);
   document.querySelectorAll("[data-view]").forEach((button) => {
     const buttonView = button.dataset.view;
     const buttonActiveView = isCoachRole(state.profile?.role)
       ? coachPrimaryView(buttonView)
-      : state.profile?.role === "parent" ? parentPrimaryView(buttonView) : buttonView;
+      : state.profile?.role === "parent" ? parentPrimaryView(buttonView) : athletePrimaryView(buttonView);
     const isSubnav = button.classList.contains("nav-sub-btn");
     button.classList.toggle("active", buttonView === view || (!isSubnav && buttonActiveView === activeView));
   });
   setLoading();
   const renders = {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
+    coaching: renderAthleteCoaching,
     parentWeek: renderParentWeek,
     parentCoaching: renderParentCoaching,
     parentCalendar: renderParentCalendar,
@@ -1691,6 +1694,7 @@ async function setupRealtimeSync() {
     "xp_ledger",
     "trick_requests",
     "rider_sheet_proposals",
+    "trick_help_requests",
   ].map((table) => ({ table, filter: athleteFilter })).filter((entry) => entry.filter);
   subscriptions.push(
     { table: "coach_broadcast_recipients", filter: `recipient_id=eq.${state.user.id}` },
@@ -1788,6 +1792,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
     if (!state.user?.id || !state.profile) return;
     try {
       if (state.view === "session") await renderSession();
+      else if (state.view === "coaching" && state.profile.role === "athlete") await renderAthleteCoaching();
       else if (state.view === "sessionViewer") await refreshSessionViewerLight();
       else if (state.view === "board") await renderBoard();
       else if (state.view === "challenges") await renderChallenges();
@@ -2006,6 +2011,40 @@ async function getHelpRequests(athleteId) {
   const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
   if (error) throw error;
   return hydrateHelpRequestMediaUrls(data || []);
+}
+
+async function getHelpRequestSummaries(athleteId) {
+  const { data, error } = await client.from("trick_help_requests")
+    .select("id,status,coach_comment,coach_video_storage_path,created_at")
+    .eq("athlete_id", athleteId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return data || [];
+}
+
+function coachingReplySeenKey() {
+  return `jkcrew-coaching-replies-seen:${state.user?.id || "athlete"}`;
+}
+
+function returnedHelpRequestIds(requests = []) {
+  return requests
+    .filter((request) => ["replied", "reviewed"].includes(request.status || "open") || request.coach_comment || request.coach_video_storage_path)
+    .map((request) => request.id)
+    .filter(Boolean);
+}
+
+function seenCoachingReplyIds() {
+  try { return new Set(JSON.parse(localStorage.getItem(coachingReplySeenKey()) || "[]")); } catch (_) { return new Set(); }
+}
+
+function unreadCoachingReplyCount(requests = []) {
+  const seen = seenCoachingReplyIds();
+  return returnedHelpRequestIds(requests).filter((id) => !seen.has(id)).length;
+}
+
+function rememberCoachingReplies(requests = []) {
+  try { localStorage.setItem(coachingReplySeenKey(), JSON.stringify(returnedHelpRequestIds(requests))); } catch (_) {}
 }
 
 async function getTrickRequestsForAthlete(athleteId, statuses = []) {
@@ -3078,13 +3117,10 @@ function helpRequestsHtml(requests, mode = "athlete") {
 function helpUploadSection(requests) {
   const waiting = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "open")).length;
   const returned = requests.filter((request) => ["replied", "reviewed"].includes(request.status || "open")).length;
-  return `<section class="panel help-section video-analysis-canary" aria-labelledby="video-analysis-title">
+  return `<section class="panel help-section video-analysis-hub" aria-labelledby="video-analysis-title">
     <div class="video-analysis-head">
-      <div><div class="eyebrow">Private Riley test · not live for other riders</div><h2 id="video-analysis-title">Video <span>Analysis</span></h2><p>Record or choose a short attempt and send it privately to Coach JK for feedback.</p></div>
-      <span class="video-analysis-beta">Beta</span>
-    </div>
-    <div class="video-analysis-steps" aria-label="Video analysis steps">
-      <span><b>1</b> Choose clip</span><span><b>2</b> Ask your question</span><span><b>3</b> Coach reviews</span><span><b>4</b> Feedback returns here</span>
+      <div><div class="eyebrow">Private coaching</div><h2 id="video-analysis-title">Trick <span>Review</span></h2><p>Record or choose a short attempt and send it privately to Coach JK for feedback.</p></div>
+      <span class="video-analysis-beta">Coach reply</span>
     </div>
     <form id="help-request-form" class="help-form video-analysis-form" novalidate>
       <div class="field"><label for="help-video">Record or choose video</label><input id="help-video" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" required><small>Maximum 60 seconds and 50 MB. Larger clips use resumable upload.</small></div>
@@ -4706,8 +4742,29 @@ async function submitRiderSheetProposal(event) {
   await renderAthleteHome();
 }
 
+function athleteCoachingCtaHtml(requests = []) {
+  const unread = unreadCoachingReplyCount(requests);
+  const waiting = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "open")).length;
+  return `<section class="athlete-coaching-cta panel">
+    <div class="coaching-cta-icon" aria-hidden="true">▶</div>
+    <div class="coaching-cta-copy"><div class="eyebrow">Private video coaching</div><h2>Get help with a trick</h2><p>Send Coach JK a short riding clip and get voice, drawing or written feedback back here.</p><div class="coaching-cta-status">${waiting ? `${waiting} waiting for review` : "Ready when you need help"}${unread ? ` · ${unread} new ${unread === 1 ? "reply" : "replies"}` : ""}</div></div>
+    <button id="open-athlete-coaching" class="primary-btn coaching-cta-button" type="button">GET HELP — SEND VIDEO${unread ? `<span class="coaching-reply-badge" aria-label="${unread} unread coach ${unread === 1 ? "reply" : "replies"}">${unread}</span>` : ""}</button>
+  </section>`;
+}
+
+async function renderAthleteCoaching() {
+  if (state.profile?.role !== "athlete") return navigate("home");
+  const requests = await getHelpRequests(state.user.id);
+  rememberCoachingReplies(requests);
+  document.querySelector("#view").innerHTML = `
+    <div class="page-head coaching-page-head"><div><div class="eyebrow">Private coaching</div><h1>Get trick <span>help</span></h1><p>Send one short clip. Coach JK can reply with voice, on-screen drawings, video and written cues.</p></div><button class="secondary-btn" id="back-to-athlete-home" type="button">Back home</button></div>
+    ${helpUploadSection(requests)}`;
+  document.querySelector("#back-to-athlete-home")?.addEventListener("click", () => navigate("home"));
+  bindHelpRequestForm();
+}
+
 async function renderAthleteHome() {
-  const [leaderboard, schedule, trickRequests, sheetProposals, coachMessages, riderBattles, battleHistory] = await Promise.all([
+  const [leaderboard, schedule, trickRequests, sheetProposals, coachMessages, riderBattles, battleHistory, coachingRequests] = await Promise.all([
     getLeaderboard(),
     getWeeklyAssignments(state.user.id),
     getTrickRequestsForAthlete(state.user.id).catch(() => []),
@@ -4722,6 +4779,10 @@ async function renderAthleteHome() {
     }),
     getRiderBattleHistory().catch((error) => {
       console.warn("Battle history unavailable", error);
+      return [];
+    }),
+    getHelpRequestSummaries(state.user.id).catch((error) => {
+      console.warn("Coaching reply summary unavailable", error);
       return [];
     }),
   ]);
@@ -4747,6 +4808,7 @@ async function renderAthleteHome() {
       </div>
       ${xpProgressHtml(xp)}
     </section>
+    ${athleteCoachingCtaHtml(coachingRequests)}
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
@@ -4754,6 +4816,10 @@ async function renderAthleteHome() {
     ${riderProposalForm(sheetProposals)}
     ${athleteTrickRequestSection(assignments, trickRequests)}`;
   bindGoalActions();
+  document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => {
+    rememberCoachingReplies(coachingRequests);
+    navigate("coaching");
+  });
   document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
   document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
   document.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => document.querySelector("#rider-proposal-builder")?.classList.toggle("hidden"));
@@ -5306,16 +5372,10 @@ async function getActiveSession() {
 async function renderSession({ forceParkKing = false } = {}) {
   const renderVersion = ++state.sessionRenderVersion;
   const todayStartIso = new Date(`${localDate()}T00:00:00+10:00`).toISOString();
-  const [schedule, leaderboard, todayTrainingResult, helpRequests] = await Promise.all([
+  const [schedule, leaderboard, todayTrainingResult] = await Promise.all([
     getWeeklyAssignments(state.user.id),
     getLeaderboard(),
     client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at").eq("athlete_id", state.user.id).gte("started_at", todayStartIso).order("started_at", { ascending: false }).limit(8),
-    isRileyVideoAnalysisTester()
-      ? getHelpRequests(state.user.id).catch((error) => {
-        console.warn("Riley video analysis history did not load.", error);
-        return [];
-      })
-      : Promise.resolve([]),
   ]);
   if (state.view !== "session" || renderVersion !== state.sessionRenderVersion) return;
   const { assignments, awards } = schedule;
@@ -5329,7 +5389,6 @@ async function renderSession({ forceParkKing = false } = {}) {
     percent: weeklyCompletionPercent(assignments, awards),
     rank,
   });
-  const videoAnalysisSection = isRileyVideoAnalysisTester() ? helpUploadSection(helpRequests) : "";
   const requestedVenueKey = venueIdentityKey(selectedVenue);
   const parkKingPromise = contestPrepSession ? Promise.resolve(null) : getParkKing(selectedVenue, { force: forceParkKing });
   await loadActiveSession();
@@ -5344,8 +5403,7 @@ async function renderSession({ forceParkKing = false } = {}) {
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
       ${extraTricksSection(state.profile, true)}
-      ${sheetRulesButtonHtml()}
-      ${videoAnalysisSection}`;
+      ${sheetRulesButtonHtml()}`;
     bindVenueSelector();
     bindDailyVenueAccordions();
     bindSessionAssignmentAccordions();
@@ -5356,7 +5414,6 @@ async function renderSession({ forceParkKing = false } = {}) {
     document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     bindSessionQuickJumps();
     bindSheetRulesButton();
-    bindHelpRequestForm();
     return;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
@@ -5370,8 +5427,7 @@ async function renderSession({ forceParkKing = false } = {}) {
     ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
     ${extraTricksSection(state.profile, true)}
     <section class="panel"><div class="panel-head"><div class="panel-title">This session</div><div class="panel-meta">${state.attempts.length} landed</div></div><div class="attempt-list">${attemptsHtml}</div></section>
-    ${sheetRulesButtonHtml()}
-    ${videoAnalysisSection}`;
+    ${sheetRulesButtonHtml()}`;
   bindVenueSelector();
   bindDailyVenueAccordions();
   bindSessionAssignmentAccordions();
@@ -5382,7 +5438,6 @@ async function renderSession({ forceParkKing = false } = {}) {
   document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   bindSessionQuickJumps();
   bindSheetRulesButton();
-  bindHelpRequestForm();
   updateTimer();
   if (!Number(state.activeTraining.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
 }
@@ -6012,6 +6067,39 @@ async function submitCrewPost(event) {
   await renderAthleteCrew();
 }
 
+function contestEventCardsHtml(events = [], runs = []) {
+  if (!events.length) return `<div class="contest-empty"><strong>No upcoming contests yet</strong><span>Add the event below, then build and save the run plan.</span></div>`;
+  return `<div class="contest-event-grid">${events.map((item) => {
+    const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
+    return `<article class="contest-event-card">
+    <div class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></div>
+    <div class="contest-event-copy"><div class="eyebrow">Upcoming contest${linkedRuns ? ` · ${linkedRuns} saved ${linkedRuns === 1 ? "run" : "runs"}` : ""}</div><h3>${escapeHtml(item.title)}</h3><p>${item.details ? escapeHtml(item.details) : "Park and event details can be added below."}</p><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></div>
+    <button class="primary-btn contest-build-button" type="button" data-build-event-run="${item.id}" data-event-id="${item.id}" data-event-title="${escapeHtml(item.title)}" data-event-details="${escapeHtml(item.details || "")}" data-event-date="${escapeHtml(item.due_at || "")}">${linkedRuns ? "ADD ANOTHER RUN" : "BUILD RUN PLAN"}</button>
+  </article>`; }).join("")}</div>`;
+}
+
+async function openRunBuilder(event = null) {
+  const button = event?.currentTarget;
+  const eventTitle = button?.dataset.eventTitle || "";
+  const eventDetails = button?.dataset.eventDetails || "";
+  const eventDate = button?.dataset.eventDate || "";
+  state.runBuilder = {
+    points: [],
+    title: eventTitle ? `${eventTitle} · Run` : "",
+    venue: eventDetails,
+    planType: eventTitle ? "competition" : "training",
+    notes: eventTitle ? `Contest: ${eventTitle}${eventDate ? ` · ${dateLabel(eventDate)}` : ""}` : "",
+    contestItemId: button?.dataset.eventId || null,
+  };
+  await renderContests();
+  document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function closeRunBuilder() {
+  state.runBuilder = null;
+  await renderContests();
+}
+
 async function renderContests() {
   const [items, runs] = await Promise.all([
     getDashboardItems(state.user.id),
@@ -6023,10 +6111,20 @@ async function renderContests() {
       <div class="settings-divider"></div>
       ${dashboardItemForm(state.user.id)}`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Contests</div><h1>Events & <span>runs</span></h1><p>Plan competition lines, view upcoming contests, and keep old runs archived for later.</p></div></div>
-    ${closedPanelAccordion("Upcoming events & contests", `${upcoming.length} upcoming · dates can include start and finish`, contestsBody, "contests-overview")}
-    ${runBuilderPanel(runs, { collapsed: true })}`;
+    <div class="page-head contests-page-head"><div><div class="eyebrow">Contests</div><h1>Events & <span>runs</span></h1><p>Build your exact line on a park photo, label every trick, replay it from start to finish and save it for review.</p></div><button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ BUILD A RUN</button></div>
+    <section class="panel contest-command">
+      <div class="contest-command-icon" aria-hidden="true">↗</div>
+      <div><div class="eyebrow">Run Builder</div><h2>Map your contest run</h2><p>Upload the park, tap numbered points, drag them into place and add the trick for every ramp. Route colours change every five points.</p></div>
+      <button class="primary-btn" type="button" data-open-run-builder>OPEN RUN BUILDER</button>
+    </section>
+    <section class="panel contest-events-panel"><div class="panel-head"><div><div class="panel-title">Upcoming events & contests</div><div class="panel-meta">${upcoming.length} upcoming · open an event to start its run</div></div></div>${contestEventCardsHtml(upcoming, runs)}</section>
+    ${state.runBuilder ? runBuilderPanel([], { live: true, showRunList: false }) : ""}
+    <section class="panel contest-run-library"><div class="panel-head"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">Open, replay or keep refining plans with your coach</div></div>${runs.length ? `<span class="public-badge">${runs.filter((run) => !run.archived_at).length} active</span>` : ""}</div><div class="run-list">${runPlansHtml(runs)}</div></section>
+    ${closedPanelAccordion("Manage events", "Add dates, edit event details or mark contests complete", contestsBody, "contests-overview")}`;
   bindDashboardItemActions(renderContests);
+  document.querySelector("#open-run-builder")?.addEventListener("click", openRunBuilder);
+  document.querySelectorAll("[data-open-run-builder]").forEach((button) => button.addEventListener("click", openRunBuilder));
+  document.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", openRunBuilder));
   bindRunBuilderActions();
 }
 
@@ -7325,10 +7423,8 @@ function parentUpdatePanel(athlete, schedule, _dashboardItems = [], attendance =
 }
 
 function runPointColor(pointNumber) {
-  if (pointNumber >= 15) return "#ff4567";
-  if (pointNumber >= 10) return "#25f68c";
-  if (pointNumber >= 5) return "#f7d154";
-  return "#39a7ff";
+  const palette = ["#39a7ff", "#f7d154", "#25f68c", "#ff4567", "#a855f7"];
+  return palette[Math.floor((Math.max(1, Number(pointNumber) || 1) - 1) / 5) % palette.length];
 }
 
 function runPathBetween(previous, point) {
@@ -7396,16 +7492,16 @@ function runBuilderPanel(runs = [], options = {}) {
         <div class="field"><label for="run-photo">Park/course photo</label><input id="run-photo" name="photo" type="file" accept="image/*"></div>
       </div>
       <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map", true) : "Upload a photo, then tap the image to add start/trick points."}</div>
-      <div class="run-builder-actions">${points.length ? `<button class="secondary-btn compact-btn" type="button" id="play-run-builder">Watch slow playback</button>` : ""}<span class="panel-meta">Drag numbers to move them. Edit labels below.</span></div>
+      <div class="run-builder-actions">${points.length ? `<button class="secondary-btn compact-btn" type="button" id="play-run-builder">▶ PREVIEW FULL RUN</button>` : ""}<span class="panel-meta">Tap the park to add numbered points. Drag numbers to move them and name every trick below.</span></div>
       <div class="run-point-list editable-run-points">${points.length ? points.map((point, index) => `<div class="run-point-editor"><span class="public-badge" style="--run-color:${runPointColor(index + 1)}">${index + 1}</span><input value="${escapeHtml(point.label || "")}" data-run-label="${index}" aria-label="Point ${index + 1} label"><button class="secondary-btn compact-btn" type="button" data-run-up="${index}">↑</button><button class="secondary-btn compact-btn" type="button" data-run-down="${index}">↓</button><button class="danger-btn compact-btn" type="button" data-run-delete="${index}">Delete</button></div>`).join("") : `<span class="public-badge muted-badge">No points added yet</span>`}</div>
       <div class="field"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
-      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button><button class="primary-btn" type="submit">${submitLabel}</button></div>
+      <div class="actions"><button class="secondary-btn" id="clear-run-builder" type="button">Clear points</button>${options.live ? `<button class="secondary-btn" id="close-run-builder" type="button">Close builder</button>` : ""}<button class="primary-btn" type="submit">${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
     </form>
-    <div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`;
+    ${options.showRunList === false ? "" : `<div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`}`;
   if (options.collapsed) {
     return closedPanelAccordion("Visual run builder", "Upload a park photo, tap points, name each trick, then save", body, "run-builder-panel");
   }
-  return `<section class="panel"><div class="panel-head"><div><div class="panel-title">Visual run builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, then save</div></div></div>
+  return `<section class="panel run-builder-live" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">Build mode</div><div class="panel-title">Contest Run Builder</div><div class="panel-meta">Upload a park photo, tap points, name each trick, preview the route, then save</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
     ${body}
   </section>`;
 }
@@ -9209,6 +9305,8 @@ function bindRunBuilderActions() {
   document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
   document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
   document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
+  document.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
+  document.querySelector("#close-run-builder-top")?.addEventListener("click", closeRunBuilder);
   document.querySelector("#play-run-builder")?.addEventListener("click", () => playRunPreview(document.querySelector("#run-map .run-map-preview")));
   document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
   document.querySelectorAll("[data-run-label]").forEach((input) => input.addEventListener("input", updateRunPointLabel));
@@ -9230,6 +9328,7 @@ function currentRunFormState() {
     venue: String(data.get("venue") || state.runBuilder?.venue || "").trim(),
     planType: data.get("planType") || state.runBuilder?.planType || "training",
     notes: String(data.get("notes") || state.runBuilder?.notes || "").trim(),
+    contestItemId: state.runBuilder?.contestItemId || null,
     points: state.runBuilder?.points || [],
     imageDataUrl: state.runBuilder?.imageDataUrl || "",
   };
@@ -9349,7 +9448,7 @@ function playRunPreview(preview) {
 }
 
 async function clearRunBuilder() {
-  state.runBuilder = null;
+  state.runBuilder = { ...currentRunFormState(), points: [] };
   await runBuilderRefreshView();
 }
 
@@ -9365,10 +9464,12 @@ async function editRunPlan(event) {
     venue: run.venue,
     planType: run.plan_type,
     notes: run.notes,
+    contestItemId: run.contest_item_id || null,
     imageDataUrl: run.image_data_url,
     points: Array.isArray(run.points) ? run.points : [],
   };
   await runBuilderRefreshView();
+  document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function archiveRunPlan(event) {
@@ -9395,6 +9496,7 @@ async function saveRunPlan(event) {
     image_data_url: state.runBuilder.imageDataUrl,
     points: state.runBuilder.points || [],
     notes: String(form.get("notes") || "").trim(),
+    contest_item_id: state.runBuilder.contestItemId || null,
     updated_at: new Date().toISOString(),
   };
   const query = state.runBuilder.id
@@ -9415,13 +9517,13 @@ async function getLinkedCoachIdForCurrentAthlete() {
 
 async function submitHelpRequest(event) {
   event.preventDefault();
-  if (!isRileyVideoAnalysisTester()) return notify("Video Analysis is only enabled for Riley's test account right now.", "error");
+  if (state.profile?.role !== "athlete") return notify("Video coaching is available from an athlete account.", "error");
   const form = new FormData(event.currentTarget);
   const video = form.get("video");
   const question = String(form.get("question") || "").trim();
   if (!video?.size) return notify("Upload a trick video first.", "error");
   if (!supportedHelpVideoFile(video)) return notify("Choose an MP4, MOV, M4V, WebM or phone video file.", "error");
-  if (video.size > VIDEO_ANALYSIS_TEST_MAX_BYTES) return notify("Trim the video below 50MB before sending it.", "error");
+  if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Trim the video below 50MB before sending it.", "error");
   if (!question) return notify("Tell Coach JK what you want checked in the clip.", "error");
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
@@ -9429,7 +9531,7 @@ async function submitHelpRequest(event) {
   let upload = null;
   try {
     const duration = await videoDurationSeconds(video);
-    if (duration > VIDEO_ANALYSIS_TEST_MAX_SECONDS) throw new Error("Trim the video to 60 seconds or less before sending it.");
+    if (duration > RIDER_VIDEO_MAX_SECONDS) throw new Error("Trim the video to 60 seconds or less before sending it.");
     const coachId = await getLinkedCoachIdForCurrentAthlete();
     if (!coachId) throw new Error("Ask your coach to add you to their crew first.");
     upload = await uploadHelpVideoFile(video, "student", (percent) => {
@@ -9449,7 +9551,7 @@ async function submitHelpRequest(event) {
     if (error) throw error;
     clearHelpVideoPreview();
     notify("Video sent privately to Coach JK.");
-    if (state.view === "session") await renderSession();
+    if (state.view === "coaching") await renderAthleteCoaching();
     else await renderAthleteHome();
   } catch (error) {
     if (upload?.path) {
@@ -9552,7 +9654,7 @@ async function replyToHelpRequest(event) {
       const { error: staleReplyError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([previousCoachVideoPath]);
       if (staleReplyError) console.warn("Could not remove the previous coach video reply.", staleReplyError);
     }
-    notify(usesRecordedReply ? "Recorded review saved and sent to Riley." : "Coach feedback sent to rider.");
+    notify(usesRecordedReply ? "Recorded review saved and sent to the rider." : "Coach feedback sent to the rider.");
     if (state.view === originatingView && originatingView === "videoReviews") await renderVideoReviews();
     else if (state.view === originatingView && originatingView === "student") await renderStudentProfile();
   } catch (error) {
@@ -9598,10 +9700,6 @@ function videoReviewFilterHtml(roster = []) {
   </section>`;
 }
 
-function isRileyCoachVideoCanary(request = {}) {
-  return request.athlete_id === RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID;
-}
-
 function videoReviewTimeLabel(seconds = 0) {
   const numeric = Number(seconds || 0);
   const safe = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
@@ -9623,6 +9721,7 @@ function coachReviewQueueItemHtml(request) {
 
 function coachReviewWorkspaceHtml(request) {
   const athlete = request.athlete || { display_name: "Unknown rider", avatar: null };
+  const athleteFirstName = firstName(athlete);
   const status = request.status || "open";
   const media = state.videoReviewMedia.get(request.id) || {};
   const originalRiderVideoUrl = media.video_url || media.video_data_url || "";
@@ -9667,30 +9766,30 @@ function coachReviewWorkspaceHtml(request) {
     </div>
     ${recorderPanel}` : `<div class="coach-review-load-stage">
       <div class="coach-review-load-icon" aria-hidden="true">▶</div>
-      <strong>Riley's private video is ready</strong>
+      <strong>${escapeHtml(athleteFirstName)}'s private video is ready</strong>
       <p>Load the submitted clip to begin frame-by-frame analysis.</p>
       <button class="primary-btn" type="button" data-load-help-video="${request.id}" data-coach-analysis="1">Load private video</button>
     </div>`;
   const savedReply = hasSavedReply ? `<div class="coach-review-saved-reply"><strong>Feedback already sent</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>` : ""}</div>` : "";
-  return `<section class="coach-review-workspace" aria-label="Riley video analysis workspace">
+  return `<section class="coach-review-workspace" aria-label="Rider video analysis workspace">
     <header class="coach-review-workspace-head">
-      <div class="person">${avatarHtml(athlete)}<div class="person-name"><div class="eyebrow">Riley-only coach test</div><strong>${escapeHtml(athlete.display_name)}</strong><small>Submitted ${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)} ${escapeHtml(videoFormat)}</small></div></div>
+      <div class="person">${avatarHtml(athlete)}<div class="person-name"><div class="eyebrow">Private rider review</div><strong>${escapeHtml(athlete.display_name)}</strong><small>Submitted ${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)} ${escapeHtml(videoFormat)}</small></div></div>
       <div class="coach-review-head-actions"><span class="coach-review-status status-${escapeHtml(status)}">${escapeHtml(status === "open" ? "New review" : status)}</span><button class="secondary-btn compact-btn" type="button" data-open-student="${escapeHtml(request.athlete_id)}">Open rider</button></div>
     </header>
     <div class="coach-review-question"><span>Rider question</span><strong>“${escapeHtml(request.question || "Please review this attempt.")}”</strong></div>
     <div class="coach-review-workspace-grid">
       <div class="coach-review-editor">
         ${player}
-        <div class="coach-review-editor-note">Play, pause or slow the clip while you speak and draw. Your finished recording combines Riley's video, your live markings and your microphone into one private reply.</div>
+        <div class="coach-review-editor-note">Play, pause or slow the clip while you speak and draw. Your finished recording combines the rider's video, your live markings and your microphone into one private reply.</div>
         <div class="video-actions">${originalRiderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(originalRiderVideoUrl)}" target="_blank" rel="noopener">Open original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download original</button></div>
       </div>
       <aside class="coach-review-feedback">
-        <div><div class="eyebrow">Coach response</div><h3>Send feedback to Riley</h3><p>Explain the biggest correction first, then give Riley one clear cue for the next attempt.</p></div>
+        <div><div class="eyebrow">Coach response</div><h3>Send feedback to ${escapeHtml(athleteFirstName)}</h3><p>Explain the biggest correction first, then give ${escapeHtml(athleteFirstName)} one clear cue for the next attempt.</p></div>
         ${savedReply}
         <form class="reply-form" data-help-reply="${request.id}">
           <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="Example: Keep your eyes through the turn and drive your outside shoulder...">${escapeHtml(request.coach_comment || "")}</textarea></div>
           <div class="field"><label for="central-reply-video-${request.id}">${recordedReply ? "Or choose a different video" : "Optional video reply"}</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*"><small>${recordedReply ? "Your recorded review is selected. Choosing a file here will replace it." : "Record above or choose a reply up to 50 MB."}</small></div>
-          <button class="primary-btn wide" type="submit">${recordedReply ? "Send recorded review to Riley" : "Send feedback to Riley"}</button>
+          <button class="primary-btn wide" type="submit">${recordedReply ? `Send recorded review to ${escapeHtml(athleteFirstName)}` : `Send feedback to ${escapeHtml(athleteFirstName)}`}</button>
         </form>
         <button class="secondary-btn wide" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Review completed" : "Mark review complete"}</button>
       </aside>
@@ -9940,7 +10039,7 @@ async function finishCoachReviewRecording(session) {
     return;
   }
   cleanupCoachReviewRecordingSession(session);
-  notify("Review recording ready. Preview it, then send it to Riley.");
+  notify("Review recording ready. Preview it, then send it to the rider.");
   if (state.view === "videoReviews" && state.videoReviewActiveRequestId === session.requestId) {
     try {
       await renderVideoReviews();
@@ -10241,8 +10340,8 @@ function bindCoachVideoReviewEditor() {
   document.querySelector('.coach-review-feedback input[name="video"]')?.addEventListener("change", (event) => {
     const submit = event.currentTarget.closest("form")?.querySelector('button[type="submit"]');
     if (!submit) return;
-    if (event.currentTarget.files?.[0]?.size) submit.textContent = "Send selected video to Riley";
-    else submit.textContent = state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId) ? "Send recorded review to Riley" : "Send feedback to Riley";
+    if (event.currentTarget.files?.[0]?.size) submit.textContent = "Send selected video to rider";
+    else submit.textContent = state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId) ? "Send recorded review to rider" : "Send feedback to rider";
   });
   document.querySelector("[data-review-play]")?.addEventListener("click", () => video.paused ? video.play().catch((error) => notify(messageFrom(error), "error")) : video.pause());
   document.querySelectorAll("[data-review-step]").forEach((button) => button.addEventListener("click", () => {
@@ -10391,12 +10490,12 @@ async function renderVideoReviews() {
   });
   const newCount = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "new")).length;
   if (!filtered.some((request) => request.id === state.videoReviewActiveRequestId)) {
-    state.videoReviewActiveRequestId = (filtered.find((request) => isRileyCoachVideoCanary(request) && !["replied", "reviewed"].includes(request.status || "open")) || filtered[0])?.id || "";
+    state.videoReviewActiveRequestId = (filtered.find((request) => !["replied", "reviewed"].includes(request.status || "open")) || filtered[0])?.id || "";
   }
   if (previousActiveRequestId && previousActiveRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousActiveRequestId);
   const activeRequest = filtered.find((request) => request.id === state.videoReviewActiveRequestId) || null;
   const activeReviewHtml = activeRequest
-    ? (isRileyCoachVideoCanary(activeRequest) ? coachReviewWorkspaceHtml(activeRequest) : videoReviewCardHtml(activeRequest))
+    ? coachReviewWorkspaceHtml(activeRequest)
     : `<div class="empty compact-empty">No videos match those filters.</div>`;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Video Review <span>Studio</span></h1><p>Open a rider submission, inspect the movement in slow motion, then return clear coaching feedback.</p></div></div>
@@ -10451,7 +10550,7 @@ async function renderVideoReviews() {
   document.querySelectorAll("[data-load-help-video]").forEach((button) => button.addEventListener("click", loadHelpVideo));
   document.querySelectorAll("[data-save-help-video]").forEach((button) => button.addEventListener("click", saveHelpVideo));
   document.querySelectorAll("[data-mark-help-reviewed]").forEach((button) => button.addEventListener("click", markHelpReviewed));
-  if (activeRequest && isRileyCoachVideoCanary(activeRequest)) bindCoachVideoReviewEditor();
+  if (activeRequest) bindCoachVideoReviewEditor();
 }
 
 async function fetchHelpVideoMedia(requestId) {
@@ -11072,7 +11171,7 @@ window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.13.10", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=2.14.0", { updateViaCache: "none" });
       await registration.update();
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
@@ -11083,7 +11182,7 @@ window.addEventListener("load", async () => {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
-    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command"] : ["home", "board", "challenges"];
+    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command"] : ["home", "coaching", "board", "challenges"];
     const view = allowedViews.includes(event.data.view) ? event.data.view : (isCoachRole(state.profile.role) ? "command" : "home");
     navigate(view);
   });

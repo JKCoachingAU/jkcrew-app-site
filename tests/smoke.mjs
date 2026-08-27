@@ -12,7 +12,7 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.13.10";
+const version = "2.14.0";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -33,7 +33,7 @@ assert(serviceWorker.includes("silent: false"), "Background push should request 
 
 const shellRenderer = functionBody("renderShell");
 assert(shellRenderer.includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
-assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-major"'), "What's New needs an explicit campaign key");
+assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-live-tools"'), "What's New needs the all-athlete live-tools campaign key");
 assert(functionBody("mountWhatsNewPrompt").includes("rememberBattleIntro()"), "The all-update prompt should prevent a duplicate battle onboarding popup");
 assert(functionBody("mountWhatsNewPrompt").includes("mountPushSetupPrompt()"), "Notification setup should follow the What's New popup");
 assert(app.includes('const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1"'), "In-app notification sound needs a per-device preference");
@@ -409,59 +409,115 @@ assert(css.includes("overflow-x: auto"), "Session filter tabs must stay usable o
 assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
 assert(functionBody("renderSessionViewer").includes("Active challenges in this group"), "Coach Session must show group challenges at the bottom");
 assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignment-attempt"), "Coach Session trick rows should remain one-tap without Attempt buttons");
-assert(app.includes('const RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57"'), "Video Analysis canary must use Riley's immutable account id");
-assert(app.includes('state.profile?.role === "athlete"'), "Video Analysis canary must require an athlete profile");
+const contestsRenderer = functionBody("renderContests");
+assert(contestsRenderer.includes("+ BUILD A RUN"), "Athlete Contests must expose a prominent Run Builder action");
+assert(contestsRenderer.includes("OPEN RUN BUILDER"), "Athlete Contests must include a second visible Run Builder entry");
+assert(contestsRenderer.includes("contestEventCardsHtml(upcoming, runs)"), "Athlete Contests must show upcoming event run-plan actions and saved-run links");
+assert(contestsRenderer.includes("runBuilderPanel([], { live: true, showRunList: false })"), "The live Run Builder must open inline without duplicating the saved-run library");
+assert(contestsRenderer.includes("runPlansHtml(runs)"), "Athlete Contests must retain every saved run plan");
+assert(!contestsRenderer.includes("runBuilderPanel(runs, { collapsed: true })"), "The released Run Builder must not remain buried in the old collapsed panel");
+assert(functionBody("contestEventCardsHtml").includes("BUILD RUN PLAN"), "Every upcoming contest must be able to launch its own run plan");
+const openRunBuilderBody = functionBody("openRunBuilder");
+assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
+assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
+assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "smooth"'), "Opening the Run Builder must take the rider directly to it");
+const runBuilderMarkup = functionBody("runBuilderPanel");
+for (const control of ['id="run-photo"', 'id="run-map"', "PREVIEW FULL RUN", 'data-run-label="${index}"', "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
+  assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
+}
+assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
+const runBuilderBindings = functionBody("bindRunBuilderActions");
+for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "playRunPreview", "saveRunPlan", "closeRunBuilder"]) {
+  assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
+}
+const runPointColourForTest = new Function(`${functionBody("runPointColor")}; return runPointColor;`)();
+assert.equal(runPointColourForTest(1), runPointColourForTest(5), "Run points 1–5 must share one route colour");
+assert.notEqual(runPointColourForTest(5), runPointColourForTest(6), "The route colour must change after point 5");
+assert.equal(runPointColourForTest(6), runPointColourForTest(10), "Run points 6–10 must share the next route colour");
+assert.notEqual(runPointColourForTest(10), runPointColourForTest(11), "The route colour must change again after point 10");
+for (const selector of [".contest-command", ".contest-event-card", ".contest-run-library", ".run-builder-live"]) {
+  assert(css.includes(selector), `Contests release styling is missing ${selector}`);
+}
+
+assert(app.includes('const RILEY_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57"'), "The isolated Riley route must retain its immutable test account id");
 assert(functionBody("handleSession(").includes("!isRileyTestRoute()"), "Riley should be routed to the isolated test path from the main app");
 const riderSessionBody = functionBody("renderSession");
-assert(riderSessionBody.includes("isRileyVideoAnalysisTester()"), "Rider Session must gate Video Analysis to Riley");
-assert(riderSessionBody.includes("getHelpRequests(state.user.id)"), "Riley Session must load private video-review history");
-assert.equal((riderSessionBody.match(/\$\{videoAnalysisSection\}/g) || []).length, 2, "Both idle and active Rider Session layouts must place Video Analysis at the bottom");
-assert.equal((riderSessionBody.match(/bindHelpRequestForm\(\)/g) || []).length, 2, "Both Rider Session layouts must bind Video Analysis uploads");
-assert(functionBody("helpUploadSection").includes("Private Riley test · not live for other riders"), "The canary must identify itself clearly");
-assert(functionBody("submitHelpRequest").includes("VIDEO_ANALYSIS_TEST_MAX_BYTES"), "Rider video upload must enforce the hosted file limit");
-assert(functionBody("submitHelpRequest").includes("VIDEO_ANALYSIS_TEST_MAX_SECONDS"), "Rider video upload must enforce the clip duration limit");
-assert(functionBody("submitHelpRequest").includes('state.view === "session"'), "Successful Session uploads must keep the rider on Session");
+assert(!riderSessionBody.includes("getHelpRequests(state.user.id)"), "Private video Coaching must no longer clutter Rider Session");
+assert(!riderSessionBody.includes("helpUploadSection"), "Rider Session must not embed the Coaching upload panel");
+assert(!riderSessionBody.includes("bindHelpRequestForm"), "Rider Session must not bind the separate Coaching form");
+assert(functionBody("athletePrimaryView").includes('view === "coaching" ? "home" : view'), "The Coaching page must keep Home selected in athlete navigation");
+assert(app.includes("coaching: renderAthleteCoaching"), "All athlete accounts must be able to navigate to Coaching");
+const athleteCoachingBody = functionBody("renderAthleteCoaching");
+assert(athleteCoachingBody.includes('state.profile?.role !== "athlete"'), "Private Coaching must require an athlete account");
+assert(athleteCoachingBody.includes("getHelpRequests(state.user.id)"), "Athlete Coaching must load the signed-in rider's private history");
+assert(athleteCoachingBody.includes("rememberCoachingReplies(requests)"), "Opening Coaching must mark returned feedback seen on this device");
+assert(athleteCoachingBody.includes("helpUploadSection(requests)"), "Athlete Coaching must render the upload and feedback history");
+assert(athleteCoachingBody.includes("bindHelpRequestForm()"), "Athlete Coaching must bind video uploads");
+const helpUploadMarkup = functionBody("helpUploadSection");
+assert(helpUploadMarkup.includes("Private coaching"), "The rider upload must identify its private audience");
+assert(helpUploadMarkup.includes("Maximum 60 seconds and 50 MB"), "The rider upload must state its hosted limits");
+assert(!helpUploadMarkup.includes("Private Riley"), "The live Coaching flow must not retain Riley-only wording");
+assert(!helpUploadMarkup.includes("video-analysis-steps"), "The compact Coaching page must not restore the removed explainer section");
+const athleteHomeBody = functionBody("renderAthleteHome");
+assert(athleteHomeBody.includes("getHelpRequestSummaries(state.user.id)"), "Athlete Home must load lightweight Coaching reply status");
+assert(athleteHomeBody.includes("athleteCoachingCtaHtml(coachingRequests)"), "Athlete Home must display the video-help action");
+assert(athleteHomeBody.indexOf("rememberCoachingReplies(coachingRequests)") < athleteHomeBody.indexOf('navigate("coaching")'), "Opening Coaching must record visible replies before navigation");
+const coachingCtaMarkup = functionBody("athleteCoachingCtaHtml");
+assert(coachingCtaMarkup.includes("GET HELP — SEND VIDEO"), "Athlete Home must use the requested Coaching button label");
+assert(coachingCtaMarkup.includes("unreadCoachingReplyCount(requests)"), "The Home Coaching button must calculate unseen replies");
+assert(coachingCtaMarkup.includes("coaching-reply-badge"), "Returned coach feedback must create a notification badge on Home");
+assert(functionBody("coachingReplySeenKey").includes("state.user?.id"), "Seen Coaching replies must be scoped to the signed-in rider");
+assert(functionBody("rememberCoachingReplies").includes("localStorage.setItem"), "Seen Coaching replies must persist on the rider's device");
+assert(functionBody("setupRealtimeSync").includes('"trick_help_requests"'), "Video request updates must arrive through realtime sync");
+assert(functionBody("scheduleRealtimeRefresh").includes('state.view === "coaching"'), "Realtime coach replies must refresh the open Coaching screen");
+assert(css.includes(".athlete-coaching-cta"), "Athlete Home needs released Coaching-card styling");
+assert(css.includes(".coaching-reply-badge"), "Athlete Home needs visible unread-reply badge styling");
+const submitHelpRequestBody = functionBody("submitHelpRequest");
+assert(submitHelpRequestBody.includes('state.profile?.role !== "athlete"'), "Video Coaching uploads must require an athlete account");
+assert(submitHelpRequestBody.includes("RIDER_VIDEO_MAX_BYTES"), "Rider video upload must enforce the hosted file limit");
+assert(submitHelpRequestBody.includes("RIDER_VIDEO_MAX_SECONDS"), "Rider video upload must enforce the clip duration limit");
+assert(submitHelpRequestBody.includes('state.view === "coaching"'), "Successful Coaching uploads must refresh the Coaching page");
+assert(!submitHelpRequestBody.includes("RILEY"), "All linked athletes must be able to submit private videos");
 assert(functionBody("uploadHelpVideoFile").includes("uploadHelpVideoResumable"), "Phone videos above 6MB must use resumable upload");
 assert(functionBody("loadTusClient").includes("TUS_CLIENT_INTEGRITY"), "The pinned resumable uploader must verify its CDN integrity");
 const coachReviewWorkspace = functionBody("coachReviewWorkspaceHtml");
-assert(coachReviewWorkspace.includes("Riley-only coach test"), "The enhanced coach review workspace must remain labelled as a Riley canary");
+assert(!coachReviewWorkspace.includes("Riley-only"), "The live coach review workspace must not retain canary wording");
 assert(coachReviewWorkspace.includes("coach-review-canvas"), "Coach review must include an on-video drawing layer");
 assert(coachReviewWorkspace.includes("[1, 0.5, 0.25, 0.125]"), "Coach review must include eighth-speed slow motion");
 assert(coachReviewWorkspace.includes("data-help-reply"), "Coach review must preserve the existing private reply workflow");
-assert(coachReviewWorkspace.includes("data-review-record-toggle"), "Riley coach review must include voice-and-drawing recording controls");
-assert(coachReviewWorkspace.includes('data-coach-analysis="1"'), "Riley private media must use the origin-clean analysis loader");
+assert(coachReviewWorkspace.includes("data-review-record-toggle"), "Every coach review must include voice-and-drawing recording controls");
+assert(coachReviewWorkspace.includes('data-coach-analysis="1"'), "Private rider media must use the origin-clean analysis loader");
 const coachReviewTestState = { videoReviewMedia: new Map(), videoReviewRecordedReplies: new Map(), videoReviewDrawEnabled: false, videoReviewDrawTool: "pen", videoReviewDrawColor: "#20e3c3" };
-const renderCoachReviewWorkspace = new Function("state", "escapeHtml", "avatarHtml", "dateLabel", "videoSizeLabel", "videoReviewTimeLabel", "COACH_REVIEW_RECORDING_MAX_SECONDS", `return (${coachReviewWorkspace});`)(
+const renderCoachReviewWorkspace = new Function("state", "escapeHtml", "avatarHtml", "dateLabel", "videoSizeLabel", "videoReviewTimeLabel", "firstName", "COACH_REVIEW_RECORDING_MAX_SECONDS", `return (${coachReviewWorkspace});`)(
   coachReviewTestState,
   (value = "") => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"),
   () => '<span class="avatar">RC</span>',
   () => "Today",
   () => "0.5 MB",
   (seconds = 0) => `0:${String(Math.floor(seconds)).padStart(2, "0")}`,
+  (athlete = {}) => String(athlete.display_name || "Rider").split(/\s+/)[0],
   90,
 );
 const coachReviewRequest = { id: "review-1", athlete_id: "e230a5a6-68ad-4362-b410-b52f45f58e57", athlete: { display_name: "Riley Chen" }, status: "open", question: "Can’t <land> it", created_at: new Date().toISOString(), video_size_bytes: 520171 };
 const unloadedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
-assert(unloadedCoachReview.includes("Load private video"), "Riley review must start with an intentional private-media load step");
+assert(unloadedCoachReview.includes("Load private video"), "Every rider review must start with an intentional private-media load step");
 assert(unloadedCoachReview.includes("Can’t &lt;land&gt; it"), "Rider questions must remain escaped in the coach workspace");
 coachReviewTestState.videoReviewMedia.set("review-1", { video_url: "https://signed.example/video.mov" });
 const signedOnlyCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
 assert(signedOnlyCoachReview.includes("Load private video"), "A signed URL alone must still offer authenticated Blob preparation for recording");
 coachReviewTestState.videoReviewMedia.set("review-1", { video_url: "https://signed.example/video.mov", video_playback_url: "blob:private-video" });
 const loadedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
-assert(loadedCoachReview.includes('id="coach-review-video"'), "Loaded Riley media must render in the analysis player");
-assert(loadedCoachReview.includes('id="coach-review-canvas"'), "Loaded Riley media must retain the drawing canvas");
-assert(loadedCoachReview.includes("Open original"), "Loaded Riley media must offer a browser fallback for phone MOV files");
-assert(loadedCoachReview.includes("Voice + video + drawings"), "Loaded Riley media must explain the combined review recording");
+assert(loadedCoachReview.includes('id="coach-review-video"'), "Loaded rider media must render in the analysis player");
+assert(loadedCoachReview.includes('id="coach-review-canvas"'), "Loaded rider media must retain the drawing canvas");
+assert(loadedCoachReview.includes("Open original"), "Loaded rider media must offer a browser fallback for phone MOV files");
+assert(loadedCoachReview.includes("Voice + video + drawings"), "Loaded rider media must explain the combined review recording");
 coachReviewTestState.videoReviewRecordedReplies.set("review-1", { file: { size: 2048 }, url: "blob:review", durationSeconds: 8 });
 const recordedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
 assert(recordedCoachReview.includes("Send recorded review to Riley"), "A finished review must be previewable and sendable through the private reply form");
 assert(recordedCoachReview.includes("Remove recording"), "A coach must be able to discard an unsent recording");
-const coachReviewCanaryGate = new Function("RILEY_VIDEO_ANALYSIS_TEST_ACCOUNT_ID", `${functionBody("isRileyCoachVideoCanary")}; return isRileyCoachVideoCanary;`)("e230a5a6-68ad-4362-b410-b52f45f58e57");
-assert.equal(coachReviewCanaryGate(coachReviewRequest), true, "Riley requests must receive the enhanced review workspace");
-assert.equal(coachReviewCanaryGate({ athlete_id: "another-rider" }), false, "Other riders must remain outside the enhanced review canary");
 const coachReviewRender = functionBody("renderVideoReviews");
-assert(coachReviewRender.includes("isRileyCoachVideoCanary(activeRequest)"), "Enhanced coach analysis must be gated to Riley's request");
+assert(coachReviewRender.includes("coachReviewWorkspaceHtml(activeRequest)"), "Every selected rider submission must use the full review studio");
+assert(!coachReviewRender.includes("isRileyCoachVideoCanary"), "The full coach review studio must not be gated to a test rider");
 assert(coachReviewRender.includes("coachReviewQueueItemHtml"), "Coach reviews must provide a selectable rider inbox");
 assert(coachReviewRender.includes("renderSerial !== state.videoReviewRenderSerial"), "Slow coach review reads must not overwrite a newer screen");
 assert(coachReviewRender.includes("state.videoReviewRecording || state.videoReviewRecordingStarting"), "An in-flight review read must not replace a recorder that started while it was loading");
@@ -487,8 +543,8 @@ assert(coachReplyBody.includes("upload?.path && !committed"), "A committed coach
 assert(coachReplyBody.includes("previousCoachVideoPath"), "Replacing a coach reply must clean up the previous private video");
 assert(coachReplyBody.includes('state.view === originatingView && originatingView === "videoReviews"'), "A completed upload must not replace a screen the coach navigated to");
 assert(functionBody("fetchHelpVideoMedia").includes("_signedAt"), "Expired private video links must be refreshed instead of cached indefinitely");
-assert(functionBody("prepareCoachReviewPlaybackMedia").includes(".download(media.video_storage_path)"), "Riley analysis must download the private clip through authenticated Storage before canvas capture");
-assert(functionBody("prepareCoachReviewPlaybackMedia").includes("URL.createObjectURL(data)"), "Riley analysis must use an origin-clean local playback URL");
+assert(functionBody("prepareCoachReviewPlaybackMedia").includes(".download(media.video_storage_path)"), "Rider analysis must download the private clip through authenticated Storage before canvas capture");
+assert(functionBody("prepareCoachReviewPlaybackMedia").includes("URL.createObjectURL(data)"), "Rider analysis must use an origin-clean local playback URL");
 const revokedReviewUrls = [];
 const releaseMediaState = { videoReviewMedia: new Map([["review-1", { video_playback_url: "blob:private-source" }]]) };
 const releasePrivateMedia = new Function("state", "URL", `${functionBody("releaseVideoReviewMedia")}; return releaseVideoReviewMedia;`)(releaseMediaState, { revokeObjectURL: (url) => revokedReviewUrls.push(url) });
@@ -530,15 +586,21 @@ assert(functionBody("navigate").includes("state.videoReviewRecordedReplies.size 
 assert(functionBody("navigate").includes("[...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia)"), "Leaving Video Reviews must release downloaded private video Blobs");
 assert(functionBody("navigate").includes('view === previousView && view === "videoReviews"'), "Re-clicking Video Reviews must not hide an active recorder behind a loading screen");
 assert(app.includes('"videoReviews"]'), "Coach review links must be able to open the Video Reviews view directly");
-assert(!functionBody("videoReviewCardHtml").includes("data-review-record-toggle"), "The recording canary must not alter non-Riley coach review cards");
+assert(!functionBody("videoReviewCardHtml").includes("data-review-record-toggle"), "Legacy summary cards must not create a second review recorder");
 assert(css.includes(".coach-review-recorder.is-recording"), "Active coach recording needs a clear visual state");
 assert(css.includes(".coach-review-recording-canvas"), "The attached Safari recording canvas needs safe off-screen styling");
 assert(rileyServiceWorker.includes('const CACHE_PREFIX = "jkcrew-riley-shell-"'), "Riley test cache must not delete the production app cache");
-const videoCanaryMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
-assert(videoCanaryMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");
-assert(videoCanaryMigration.includes("allowed_mime_types"), "Video bucket must enforce media types");
-assert(videoCanaryMigration.includes('"Trick help video owners can delete"'), "Failed uploads need owner cleanup permission");
-assert(videoCanaryMigration.includes("ca.coach_id = trick_help_requests.coach_id"), "Rider requests must target their linked coach");
+const riderVideoMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
+assert(riderVideoMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");
+assert(riderVideoMigration.includes("allowed_mime_types"), "Video bucket must enforce media types");
+assert(riderVideoMigration.includes('"Trick help video owners can delete"'), "Failed uploads need owner cleanup permission");
+assert(riderVideoMigration.includes("ca.coach_id = trick_help_requests.coach_id"), "Rider requests must target their linked coach");
+const coachingPushMigration = read("supabase/migrations/20260827182500_release_video_coaching_notifications.sql");
+assert(coachingPushMigration.includes("video_review_requested"), "New rider videos must notify the linked coach");
+assert(coachingPushMigration.includes("video_review_returned"), "Returned video reviews must notify the athlete");
+assert(coachingPushMigration.includes("'./?push=coaching'"), "Returned review notifications must deep-link to athlete Coaching");
+const contestRunMigration = read("supabase/migrations/20260827182700_link_run_plans_to_contests.sql");
+assert(contestRunMigration.includes("contest_item_id"), "Saved runs must remain linked to their selected contest");
 assert.equal(read("riley-test/app.js"), app, "Riley test path must use the same all-user app bundle");
 assert.equal(read("riley-test/styles.css"), css, "Riley test path must use the same all-user styles");
 
