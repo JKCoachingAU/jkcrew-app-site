@@ -13,7 +13,7 @@ const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
-const version = "2.14.3";
+const version = "2.14.4";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -400,6 +400,20 @@ assert(battleMigration.includes("unnest(p_team_one)"), "The database must save e
 assert(battleMigration.includes("unnest(p_team_two)"), "The database must save every opposing rider");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-battle"), "Coach battle oversight needs a create-battle action");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-challenge"), "Coaches need a weekly challenge builder");
+assert(functionBody("weeklyBattleCardHtml").includes("data-forfeit-battle"), "Live rider battles need a forfeit action");
+assert(functionBody("forfeitWeeklyRiderBattle").includes('rpc("forfeit_rider_battle"'), "Rider forfeits must use the protected database RPC");
+assert(functionBody("coachBattleCardHtml").includes("data-delete-coach-battle"), "Every coach battle card needs a delete action");
+assert(functionBody("deleteCoachBattle").includes('rpc("delete_rider_battle"'), "Coach battle deletion must use the protected database RPC");
+const battleControlMigration = read("supabase/migrations/20260827053000_daily_cleanup_and_battle_controls.sql");
+assert(battleControlMigration.includes("private.retired_daily_assignment_backups"), "Removed duplicate Daily assignments need a private recovery archive");
+assert(battleControlMigration.includes("lower(trim(assignment.venue)) in ('hotbox', 'default daily list')"), "Daily cleanup must target only the two exact duplicate location names");
+assert(!battleControlMigration.includes("hotbox - aus national training facility')\n+on conflict"), "Daily cleanup must never select the Aus National Training Facility list");
+assert(battleControlMigration.includes("create or replace function public.forfeit_rider_battle"), "Database must support rider forfeits");
+assert(battleControlMigration.includes("create or replace function public.delete_rider_battle"), "Database must support coach battle deletion");
+assert(battleControlMigration.includes("delete from public.leaderboard_point_adjustments"), "Deleting a completed battle must reverse its point transfer");
+assert(functionBody("renderStudentProfile").includes("Edit current list"), "Coach rider profiles need a prominent current-list action");
+assert(functionBody("renderStudentProfile").includes("Schedule next week's list"), "Coach rider profiles need a prominent next-week planner action");
+assert(functionBody("renderStudentProfile").includes("compactStudentProfilePanels(view)"), "Coach rider profile tools should be collapsed into clean sections");
 const sessionViewerBindings = functionBody("bindSessionViewerActions");
 const sessionViewerGroupFilters = functionBody("sessionViewerGroupTabs");
 const sessionViewerVenueFilters = functionBody("sessionViewerVenueTabs");

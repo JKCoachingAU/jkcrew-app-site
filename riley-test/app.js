@@ -26,7 +26,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.3";
+const RELEASE_VERSION = "2.14.4";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -389,7 +389,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.3" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.4" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1572,7 +1572,10 @@ async function navigate(view) {
   if (view === "sessionViewer" && previousView !== "sessionViewer") state.sessionViewerOpenAthleteId = "";
   state.view = view;
   const viewElement = document.querySelector("#view");
-  if (viewElement) viewElement.dataset.view = view;
+  if (viewElement) {
+    viewElement.dataset.view = view;
+    viewElement.classList.toggle("student-profile-page", view === "student");
+  }
   const activeView = isCoachRole(state.profile?.role)
     ? coachPrimaryView(view)
     : state.profile?.role === "parent" ? parentPrimaryView(view) : athletePrimaryView(view);
@@ -4672,6 +4675,9 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
   const pendingActions = battle.status === "pending" && mine?.response === "pending"
     ? `<div class="battle-actions compact-battle-actions"><button class="battle-response-btn accept" type="button" data-battle-response="accepted" data-battle-id="${battle.id}" aria-label="Accept battle" title="Accept battle">✓</button><button class="battle-response-btn decline" type="button" data-battle-response="declined" data-battle-id="${battle.id}" aria-label="Decline battle" title="Decline battle">×</button></div>`
     : "";
+  const forfeitAction = battle.status === "accepted"
+    ? `<button class="battle-forfeit-btn" type="button" data-forfeit-battle="${battle.id}">Forfeit battle</button>`
+    : "";
   const durationCopy = `${Number(battle.duration_days || 7)} day${Number(battle.duration_days || 7) === 1 ? "" : "s"}`;
   const statusCopy = battle.status === "pending"
     ? `${participants.filter((participant) => participant.response === "pending").length} rider${participants.filter((participant) => participant.response === "pending").length === 1 ? "" : "s"} still to respond`
@@ -4684,6 +4690,7 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
     ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(battleParticipantFirstName(rivals[0]))}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>5 points split across the winning team</strong></div>`}
     <div class="battle-status"><span class="status-chip">${escapeHtml(battle.status)}</span><small>${escapeHtml(statusCopy)}</small></div>
     ${pendingActions}
+    ${forfeitAction}
   </article>`;
 }
 
@@ -4744,6 +4751,7 @@ async function renderChallenges() {
   });
   updateRiderBattlePicker();
   document.querySelectorAll("[data-battle-response]").forEach((button) => button.addEventListener("click", respondWeeklyRiderBattle));
+  document.querySelectorAll("[data-forfeit-battle]").forEach((button) => button.addEventListener("click", forfeitWeeklyRiderBattle));
   document.querySelector("#open-battle-rules")?.addEventListener("click", showBattleRulesModal);
 }
 
@@ -4814,6 +4822,17 @@ async function respondWeeklyRiderBattle(event) {
   restoreButton();
   if (error) return notify(messageFrom(error), "error");
   notify(button.dataset.battleResponse === "accepted" ? (data === "accepted" ? "Everyone accepted. The battle is live!" : "Accepted. Waiting for the other riders.") : "Battle declined.");
+  await renderChallenges();
+}
+
+async function forfeitWeeklyRiderBattle(event) {
+  const button = event.currentTarget;
+  if (!window.confirm("Forfeit this battle? The other team will win and the 5 battle points will be split using the normal battle rules.")) return;
+  const restoreButton = setButtonBusy(button, "Forfeiting...");
+  const { error } = await client.rpc("forfeit_rider_battle", { p_battle_id: button.dataset.forfeitBattle });
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify("Battle forfeited. The result and leaderboard have been updated.");
   await renderChallenges();
 }
 
@@ -6582,6 +6601,7 @@ function coachBattleCardHtml(battle) {
       ${coachBattleTeamHtml(battle, 2)}
     </div>
     ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · 5 points split across the team</div>` : ""}
+    <div class="coach-battle-card-actions"><button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
   </article>`;
 }
 
@@ -6610,6 +6630,18 @@ async function renderCoachBattleViewer() {
   document.querySelector("#refresh-coach-battles")?.addEventListener("click", renderCoachBattleViewer);
   document.querySelector("#coach-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(roster, renderCoachBattleViewer));
   document.querySelector("#coach-create-weekly-challenge")?.addEventListener("click", () => showWeeklyChallengeBuilder(renderCoachBattleViewer));
+  document.querySelectorAll("[data-delete-coach-battle]").forEach((button) => button.addEventListener("click", deleteCoachBattle));
+}
+
+async function deleteCoachBattle(event) {
+  const button = event.currentTarget;
+  if (!window.confirm("Delete this battle? Any battle point transfer will also be removed. This cannot be undone from the app.")) return;
+  const restoreButton = setButtonBusy(button, "Deleting...");
+  const { error } = await client.rpc("delete_rider_battle", { p_battle_id: button.dataset.deleteCoachBattle });
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify("Battle deleted.");
+  await renderCoachBattleViewer();
 }
 
 function coachBattleRiderSelect(roster, team, slot) {
@@ -8952,6 +8984,26 @@ async function deleteSelectedAthlete(athlete) {
   await navigate("crew");
 }
 
+function compactStudentProfilePanels(view) {
+  [...view.children].filter((element) => element.matches("section.panel") && !element.matches(".athlete-profile-hero, .student-profile-summary, .danger-zone")).forEach((panel) => {
+    const title = panel.querySelector(":scope > .panel-head .panel-title")?.textContent?.trim() || "Rider details";
+    const meta = panel.querySelector(":scope > .panel-head .panel-meta")?.textContent?.trim() || "Open to view and manage";
+    const details = document.createElement("details");
+    details.className = `panel panel-accordion student-profile-accordion ${panel.className.replace(/\bpanel\b/g, "").trim()}`.trim();
+    details.dataset.profilePanel = title.toLowerCase();
+    const summary = document.createElement("summary");
+    summary.className = "panel-accordion-summary";
+    summary.innerHTML = `<div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="secondary-btn compact-btn accordion-caret">Open</span>`;
+    const body = document.createElement("div");
+    body.className = "panel-accordion-body";
+    const originalHead = panel.querySelector(":scope > .panel-head");
+    if (originalHead) originalHead.remove();
+    while (panel.firstChild) body.append(panel.firstChild);
+    details.append(summary, body);
+    panel.replaceWith(details);
+  });
+}
+
 async function renderStudentProfile() {
   const roster = await getCoachRoster();
   if (!roster.length) {
@@ -8996,12 +9048,27 @@ async function renderStudentProfile() {
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
   const scoreXp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
-  document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Student profile</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>Manage this athlete's picture, group, weekly tricks, and live progress.</p></div><div class="actions">${template ? `<button class="primary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}<button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
+  const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
+  const assignedWeekly = assignments.filter((assignment) => assignment.category !== "daily").length;
+  const view = document.querySelector("#view");
+  view.classList.add("student-profile-page");
+  view.innerHTML = `
+    <div class="page-head student-profile-head"><div><div class="eyebrow">Rider overview</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>The important progress first. Open a section below only when you need to manage it.</p></div><div class="actions"><button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
       <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
       <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
+    </section>
+    <section class="student-profile-primary-actions" aria-label="Training list actions">
+      <button class="primary-btn" type="button" id="edit-current-list">Edit current list</button>
+      <button class="secondary-btn next-week-list-btn" type="button" id="schedule-next-week-list">Schedule next week's list</button>
+      ${template ? `<button class="secondary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}
+    </section>
+    <section class="student-profile-summary" aria-label="Rider progress summary">
+      <article><span>Weekly points</span><strong>${Number(weeklyRow?.weekly_points || 0)}</strong></article>
+      <article><span>Daily days</span><strong>${dailyDone}/7</strong></article>
+      <article><span>XP level</span><strong>L${scoreXp.level}</strong></article>
+      <article><span>Weekly sheet</span><strong>${completedWeekly}/${assignedWeekly}</strong></article>
     </section>
     <section class="panel xp-coach-panel">
       <div class="panel-head"><div><div class="panel-title">XP Level & Badges</div><div class="panel-meta">Follows the original lifetime XP progression system</div></div></div>
@@ -9061,7 +9128,18 @@ async function renderStudentProfile() {
     <section class="panel danger-zone"><div class="panel-head"><div><div class="panel-title">Delete student account</div><div class="panel-meta">Removes this rider from JKCREW, including their login and saved app data.</div></div></div>
       <button class="danger-btn wide" id="delete-student-account" type="button">Delete ${escapeHtml(athlete.display_name)}</button>
     </section>`;
+  compactStudentProfilePanels(view);
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
+  document.querySelector("#edit-current-list")?.addEventListener("click", () => {
+    const editor = document.querySelector('[data-profile-panel="student plan builder"]');
+    if (!editor) return;
+    editor.open = true;
+    editor.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  document.querySelector("#schedule-next-week-list")?.addEventListener("click", () => {
+    state.plannerAthleteId = athlete.id;
+    navigate("planner");
+  });
   document.querySelectorAll("[data-preview-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.previewView)));
   document.querySelector("#import-monday-plan")?.addEventListener("click", () => importScheduleTemplate(template));
   document.querySelector("#assignment-form").addEventListener("submit", saveWeeklyAssignments);
