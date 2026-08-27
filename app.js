@@ -26,7 +26,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.2";
+const RELEASE_VERSION = "2.14.3";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -56,6 +56,7 @@ const state = {
   runBuilder: null,
   runPlaybackTimer: null,
   draggedRunPoint: null,
+  contestEventEscapeHandler: null,
   coachPlanVenue: "",
   plannerAthleteId: null,
   coachTricktionaryAthleteId: null,
@@ -388,7 +389,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.2" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.3" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1027,6 +1028,7 @@ async function handleSession(session) {
   const nextUserId = session?.user?.id || "";
   if ((state.user?.id || "") !== nextUserId) {
     closeAthleteReviewViewer();
+    closeContestEventModal();
     resetVideoReviewPrivateState();
   }
   state.session = session;
@@ -1552,6 +1554,7 @@ async function navigate(view) {
   }
   clearInterval(state.timer);
   if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
+  if (previousView === "contests" && view !== "contests") closeContestEventModal();
   if (["session", "coaching"].includes(previousView) && view !== previousView) clearHelpVideoPreview();
   if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
   if (state.sessionViewerTimer) {
@@ -1718,6 +1721,12 @@ async function setupRealtimeSync() {
     if (state.view === "sessionViewer" && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
     if (state.view === "command") refreshCommandParkKings();
   });
+  channel.on("postgres_changes", { event: "*", schema: "public", table: "dashboard_items", filter: "item_type=eq.event" }, () => {
+    scheduleRealtimeRefresh("shared-events");
+  });
+  channel.on("postgres_changes", { event: "*", schema: "public", table: "event_attendees" }, () => {
+    scheduleRealtimeRefresh("event-attendance");
+  });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
       if (!isRelevantRealtimePayload(table, payload)) return;
@@ -1802,6 +1811,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
       else if (state.view === "sessionViewer") await refreshSessionViewerLight();
       else if (state.view === "board") await renderBoard();
       else if (state.view === "challenges") await renderChallenges();
+      else if (state.view === "contests") await renderContests();
       else if (state.view === "home") {
         if (state.profile.role === "parent") await renderParentHome();
         else if (state.profile.role === "athlete") await renderAthleteHome();
@@ -2084,6 +2094,47 @@ async function getDashboardItems(athleteId) {
   const { data, error } = await client.from("dashboard_items").select("*").eq("owner_id", athleteId).order("completed", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
+}
+
+function contestEventEndsAt(item = {}) {
+  if (item.end_at) return new Date(item.end_at);
+  if (item.due_at) return new Date(new Date(item.due_at).getTime() + (24 * 60 * 60 * 1000));
+  return null;
+}
+
+function contestEventIsUpcoming(item = {}, now = Date.now()) {
+  if (item.completed) return false;
+  const endsAt = contestEventEndsAt(item);
+  return !endsAt || endsAt.getTime() >= now;
+}
+
+function normalizeContestEventTitle(value = "") {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function contestEventDay(value = "") {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+async function getSharedUpcomingEventData() {
+  const { data: eventRows, error: eventError } = await client.from("dashboard_items")
+    .select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at")
+    .eq("item_type", "event")
+    .eq("completed", false)
+    .order("due_at", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (eventError) throw eventError;
+  const events = (eventRows || []).filter((item) => contestEventIsUpcoming(item));
+  const eventIds = events.map((item) => item.id);
+  if (!eventIds.length) return { events, attendance: [] };
+  const { data: attendanceRows, error: attendanceError } = await client.rpc("get_active_event_attendees", { p_event_ids: eventIds });
+  if (attendanceError) throw attendanceError;
+  return {
+    events,
+    attendance: (attendanceRows || []).map((row) => ({ ...row, profile: { id: row.athlete_id, display_name: row.display_name || "JKCREW rider", avatar: row.avatar || "" } })),
+  };
 }
 
 async function getCoachVenues() {
@@ -6285,15 +6336,183 @@ async function submitCrewPost(event) {
   await renderAthleteCrew();
 }
 
-function contestEventCardsHtml(events = [], runs = []) {
-  if (!events.length) return `<div class="contest-empty"><strong>No upcoming contests yet</strong><span>Add the event below, then build and save the run plan.</span></div>`;
+function contestEventAttendees(attendance = [], eventId = "") {
+  return attendance.filter((row) => row.event_id === eventId);
+}
+
+function contestEventFacesHtml(attendees = []) {
+  const visible = attendees.slice(0, 4);
+  const faces = visible.map((row) => {
+    const profile = row.profile || {};
+    const image = avatarUrl(profile);
+    return `<span class="contest-event-avatar ${image ? "image-avatar" : ""}">${image ? `<img src="${escapeHtml(image)}" alt="">` : escapeHtml(initials(profile.display_name))}</span>`;
+  }).join("");
+  return `<span class="contest-event-faces" aria-hidden="true">${faces}</span><span><strong>${attendees.length}</strong> ${attendees.length === 1 ? "rider" : "riders"} going</span>`;
+}
+
+function contestEventDataAttributes(item = {}) {
+  return `data-event-id="${escapeHtml(item.id)}" data-event-title="${escapeHtml(item.title)}" data-event-details="${escapeHtml(item.details || "")}" data-event-date="${escapeHtml(item.due_at || "")}"`;
+}
+
+function contestEventCardsHtml(events = [], runs = [], attendance = []) {
+  if (!events.length) return `<div class="contest-empty"><strong>No upcoming events yet</strong><span>Add the first event below. It will then be available to the whole crew.</span></div>`;
+  const athleteView = state.profile?.role === "athlete";
   return `<div class="contest-event-grid">${events.map((item) => {
+    const attendees = contestEventAttendees(attendance, item.id);
+    const going = attendees.some((row) => row.athlete_id === state.user?.id);
     const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
-    return `<article class="contest-event-card">
-    <div class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></div>
-    <div class="contest-event-copy"><div class="eyebrow">Upcoming contest${linkedRuns ? ` · ${linkedRuns} saved ${linkedRuns === 1 ? "run" : "runs"}` : ""}</div><h3>${escapeHtml(item.title)}</h3><p>${item.details ? escapeHtml(item.details) : "Park and event details can be added below."}</p><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></div>
-    <button class="primary-btn contest-build-button" type="button" data-build-event-run="${item.id}" data-event-id="${item.id}" data-event-title="${escapeHtml(item.title)}" data-event-details="${escapeHtml(item.details || "")}" data-event-date="${escapeHtml(item.due_at || "")}">${linkedRuns ? "ADD ANOTHER RUN" : "BUILD RUN PLAN"}</button>
-  </article>`; }).join("")}</div>`;
+    const searchText = normalizeContestEventTitle(`${item.title} ${item.details || ""}`);
+    return `<article class="contest-event-card ${going ? "is-going" : ""}" data-contest-event-card data-event-search="${escapeHtml(searchText)}">
+      <button class="contest-event-main" type="button" data-open-contest-event="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.title)} and see who is going">
+        <span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span>
+        <span class="contest-event-copy"><span class="eyebrow">${going ? "You're going" : "Upcoming event"}${linkedRuns ? ` · ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"}` : ""}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
+        <span class="contest-event-going">${contestEventFacesHtml(attendees)}</span>
+        <span class="contest-event-chevron" aria-hidden="true">›</span>
+      </button>
+      ${athleteView ? `<div class="contest-event-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ GOING" : "+ I'M GOING"}</button><button class="secondary-btn compact-btn contest-build-button" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>${linkedRuns ? "ADD PRIVATE RUN" : "BUILD PRIVATE RUN"}</button></div>` : ""}
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function sharedContestEventFormHtml(events = []) {
+  return `<form id="shared-contest-event-form" class="shared-contest-event-form">
+    <div class="field"><label for="shared-event-title">Event name</label><input id="shared-event-title" name="title" list="shared-event-titles" required maxlength="120" placeholder="C1 Gold Coast, Urban Session Brussels..."><datalist id="shared-event-titles">${events.map((item) => `<option value="${escapeHtml(item.title)}"></option>`).join("")}</datalist></div>
+    <div class="field"><label for="shared-event-venue">Location / details</label><input id="shared-event-venue" name="details" maxlength="180" placeholder="Gold Coast, Brussels, park name..."></div>
+    <div class="field"><label for="shared-event-start">Starts</label><input id="shared-event-start" name="dueAt" type="datetime-local" required></div>
+    <div class="field"><label for="shared-event-end">Ends</label><input id="shared-event-end" name="endAt" type="datetime-local"></div>
+    <button class="primary-btn" type="submit">ADD EVENT + MARK ME GOING</button>
+    <small>Search the shared events above first. If it already exists, just tap “I'm going” instead of making it again.</small>
+  </form>`;
+}
+
+function contestEventModalHtml(item = {}, attendees = [], runs = []) {
+  const going = attendees.some((row) => row.athlete_id === state.user?.id);
+  const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
+  return `<section class="contest-event-modal" role="dialog" aria-modal="true" aria-labelledby="contest-event-modal-title">
+    <header class="contest-event-modal-head"><div><div class="eyebrow">Upcoming event</div><h2 id="contest-event-modal-title">${escapeHtml(item.title)}</h2><p>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close event">×</button></header>
+    ${item.details ? `<div class="contest-event-location"><span aria-hidden="true">⌖</span><strong>${escapeHtml(item.details)}</strong></div>` : ""}
+    <div class="contest-attendee-section"><div class="panel-head"><div><div class="panel-title">Who's going</div><div class="panel-meta">${attendees.length} confirmed ${attendees.length === 1 ? "rider" : "riders"}</div></div></div>
+      <div class="contest-attendee-list">${attendees.length ? attendees.map((row) => `<div class="contest-attendee-row">${avatarHtml(row.profile || {}, "contest-attendee-avatar")}<div><strong>${escapeHtml(row.profile?.display_name || "JKCREW rider")}${row.athlete_id === state.user?.id ? " · You" : ""}</strong><small>Confirmed rider</small></div></div>`).join("") : `<div class="contest-empty"><strong>No riders confirmed yet</strong><span>Be the first to mark that you're going.</span></div>`}</div>
+    </div>
+    <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>Your run plan stays private</strong><p>Other riders can see that you're going, but they cannot see your route, tricks, notes or park photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}</p></div></div>
+    ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
+  </section>`;
+}
+
+function closeContestEventModal() {
+  const backdrop = document.querySelector("#contest-event-backdrop");
+  if (state.contestEventEscapeHandler) document.removeEventListener("keydown", state.contestEventEscapeHandler);
+  state.contestEventEscapeHandler = null;
+  document.documentElement.classList.remove("contest-event-open");
+  backdrop?.remove();
+}
+
+function openContestEventModal(item = {}, attendees = [], runs = []) {
+  closeContestEventModal();
+  const backdrop = document.createElement("div");
+  backdrop.id = "contest-event-backdrop";
+  backdrop.className = "contest-event-backdrop";
+  backdrop.innerHTML = contestEventModalHtml(item, attendees, runs);
+  document.body.append(backdrop);
+  document.documentElement.classList.add("contest-event-open");
+  const close = () => closeContestEventModal();
+  backdrop.querySelector("[data-close-contest-event]")?.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  state.contestEventEscapeHandler = (event) => { if (event.key === "Escape") close(); };
+  document.addEventListener("keydown", state.contestEventEscapeHandler);
+  backdrop.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
+  backdrop.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
+  backdrop.querySelector("[data-close-contest-event]")?.focus();
+}
+
+async function setContestAttendance(eventId, attending) {
+  if (state.profile?.role !== "athlete") throw new Error("Only rider accounts can join events.");
+  if (attending) {
+    const { error } = await client.from("event_attendees").insert({ event_id: eventId, athlete_id: state.user.id });
+    if (error && error.code !== "23505") throw error;
+    return;
+  }
+  const { error } = await client.from("event_attendees").delete().eq("event_id", eventId).eq("athlete_id", state.user.id);
+  if (error) throw error;
+}
+
+async function toggleContestAttendance(event) {
+  const button = event.currentTarget;
+  const attending = button.dataset.attending === "true";
+  const restore = setButtonBusy(button, attending ? "REMOVING..." : "ADDING...");
+  try {
+    await setContestAttendance(button.dataset.toggleContestAttendance, !attending);
+    closeContestEventModal();
+    notify(attending ? "Removed from the event." : "You're going! The crew can now see your name on the event.");
+    await renderContests();
+  } catch (error) {
+    restore();
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function saveSharedContestEvent(event) {
+  event.preventDefault();
+  if (state.profile?.role !== "athlete") return notify("Only rider accounts can add shared events.", "error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const title = String(form.get("title") || "").trim();
+  const details = String(form.get("details") || "").trim();
+  const dueValue = String(form.get("dueAt") || "");
+  const endValue = String(form.get("endAt") || "");
+  if (!title || !dueValue) return notify("Add the event name and start date.", "error");
+  const dueAt = new Date(dueValue);
+  const endAt = endValue ? new Date(endValue) : null;
+  if (Number.isNaN(dueAt.getTime()) || (endAt && Number.isNaN(endAt.getTime()))) return notify("Check the event dates.", "error");
+  if (endAt && endAt < dueAt) return notify("The event finish must be after it starts.", "error");
+  if ((endAt || new Date(dueAt.getTime() + (24 * 60 * 60 * 1000))) < new Date()) return notify("That event has already finished.", "error");
+  const button = formElement.querySelector("button[type='submit']");
+  const restore = setButtonBusy(button, "CHECKING EVENTS...");
+  try {
+    let createdNew = false;
+    let { events } = await getSharedUpcomingEventData();
+    let sharedEvent = events.find((item) => normalizeContestEventTitle(item.title) === normalizeContestEventTitle(title) && contestEventDay(item.due_at) === contestEventDay(dueAt));
+    if (!sharedEvent) {
+      const { data, error } = await client.from("dashboard_items").insert({
+        owner_id: state.user.id,
+        created_by: state.user.id,
+        item_type: "event",
+        title: title.slice(0, 120),
+        details: details.slice(0, 180),
+        due_at: dueAt.toISOString(),
+        end_at: endAt ? endAt.toISOString() : null,
+      }).select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at").single();
+      if (error?.code === "23505") {
+        ({ events } = await getSharedUpcomingEventData());
+        sharedEvent = events.find((item) => normalizeContestEventTitle(item.title) === normalizeContestEventTitle(title) && contestEventDay(item.due_at) === contestEventDay(dueAt));
+      } else if (error) throw error;
+      else {
+        sharedEvent = data;
+        createdNew = true;
+      }
+    }
+    if (!sharedEvent?.id) throw new Error("That event may already exist. Search the shared list and tap “I'm going”.");
+    await setContestAttendance(sharedEvent.id, true);
+    notify(createdNew ? "Event added for the crew and you're marked as going." : "That event already exists — you're now marked as going.");
+    await renderContests();
+  } catch (error) {
+    restore();
+    notify(messageFrom(error), "error");
+  }
+}
+
+function bindContestEventActions(events = [], attendance = [], runs = []) {
+  const eventById = new Map(events.map((item) => [item.id, item]));
+  document.querySelector("#contest-event-search")?.addEventListener("input", (event) => {
+    const search = normalizeContestEventTitle(event.currentTarget.value);
+    document.querySelectorAll("[data-contest-event-card]").forEach((card) => { card.hidden = Boolean(search) && !String(card.dataset.eventSearch || "").includes(search); });
+  });
+  document.querySelectorAll("[data-open-contest-event]").forEach((button) => button.addEventListener("click", () => {
+    const item = eventById.get(button.dataset.openContestEvent);
+    if (item) openContestEventModal(item, contestEventAttendees(attendance, item.id), runs);
+  }));
+  document.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
+  document.querySelector("#shared-contest-event-form")?.addEventListener("submit", saveSharedContestEvent);
 }
 
 async function openRunBuilder(event = null) {
@@ -6319,30 +6538,25 @@ async function closeRunBuilder() {
 }
 
 async function renderContests() {
-  const [items, runs] = await Promise.all([
-    getDashboardItems(state.user.id),
+  closeContestEventModal();
+  const [{ events, attendance }, runs] = await Promise.all([
+    getSharedUpcomingEventData(),
     getRunPlans(state.user.id),
   ]);
-  const events = items.filter((item) => item.item_type === "event");
-  const upcoming = events.filter((item) => !item.due_at || new Date(item.end_at || item.due_at) >= new Date());
-  const contestsBody = `${dashboardItemsHtml(events, true)}
-      <div class="settings-divider"></div>
-      ${dashboardItemForm(state.user.id)}`;
+  const activeRuns = runs.filter((run) => !run.archived_at);
+  const athleteView = state.profile?.role === "athlete";
   document.querySelector("#view").innerHTML = `
-    <div class="page-head contests-page-head"><div><div class="eyebrow">Contests</div><h1>Events & <span>runs</span></h1><p>Build your exact line on a park photo, label every trick, replay it from start to finish and save it for review.</p></div><button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ BUILD A RUN</button></div>
-    <section class="panel contest-command">
-      <div class="contest-command-icon" aria-hidden="true">↗</div>
-      <div><div class="eyebrow">Run Builder</div><h2>Map your contest run</h2><p>Upload the park, tap numbered points, drag them into place and add the trick for every ramp. Route colours change every five points.</p></div>
-      <button class="primary-btn" type="button" data-open-run-builder>OPEN RUN BUILDER</button>
+    <div class="page-head contests-page-head"><div><div class="eyebrow">Events & private planning</div><h1>Events & <span>runs</span></h1><p>See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders.</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
+    <section class="panel shared-events-panel">
+      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>Events are shared once for the whole crew. Tap one to see who's going.</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
+      ${contestEventCardsHtml(events, runs, attendance)}
     </section>
-    <section class="panel contest-events-panel"><div class="panel-head"><div><div class="panel-title">Upcoming events & contests</div><div class="panel-meta">${upcoming.length} upcoming · open an event to start its run</div></div></div>${contestEventCardsHtml(upcoming, runs)}</section>
     ${state.runBuilder ? runBuilderPanel([], { live: true, showRunList: false }) : ""}
-    <section class="panel contest-run-library"><div class="panel-head"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">Open, replay or keep refining plans with your coach</div></div>${runs.length ? `<span class="public-badge">${runs.filter((run) => !run.archived_at).length} active</span>` : ""}</div><div class="run-list">${runPlansHtml(runs)}</div></section>
-    ${closedPanelAccordion("Manage events", "Add dates, edit event details or mark contests complete", contestsBody, "contests-overview")}`;
-  bindDashboardItemActions(renderContests);
+    ${closedPanelAccordion("Your private run plans", `${activeRuns.length} active · hidden from other riders`, `<div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private planning</strong><p>Only your own saved runs load here. Event attendance never exposes your route or tricks.</p></div></div><div class="run-list">${runPlansHtml(runs)}</div>`, "contest-run-library")}
+    ${athleteView ? closedPanelAccordion("Add an event", "Can't find it above? Create it once for the whole crew", sharedContestEventFormHtml(events), "shared-event-create") : ""}`;
   document.querySelector("#open-run-builder")?.addEventListener("click", openRunBuilder);
-  document.querySelectorAll("[data-open-run-builder]").forEach((button) => button.addEventListener("click", openRunBuilder));
   document.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", openRunBuilder));
+  bindContestEventActions(events, attendance, runs);
   bindRunBuilderActions();
 }
 

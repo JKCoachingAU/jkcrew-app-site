@@ -12,7 +12,8 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.14.2";
+const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
+const version = "2.14.3";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -419,13 +420,37 @@ assert(functionBody("renderSessionViewer").includes("session-create-battle"), "C
 assert(functionBody("renderSessionViewer").includes("Active challenges in this group"), "Coach Session must show group challenges at the bottom");
 assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignment-attempt"), "Coach Session trick rows should remain one-tap without Attempt buttons");
 const contestsRenderer = functionBody("renderContests");
-assert(contestsRenderer.includes("+ BUILD A RUN"), "Athlete Contests must expose a prominent Run Builder action");
-assert(contestsRenderer.includes("OPEN RUN BUILDER"), "Athlete Contests must include a second visible Run Builder entry");
-assert(contestsRenderer.includes("contestEventCardsHtml(upcoming, runs)"), "Athlete Contests must show upcoming event run-plan actions and saved-run links");
+assert(contestsRenderer.includes("getSharedUpcomingEventData()"), "Events & Runs must load the shared upcoming-event catalogue");
+assert(contestsRenderer.includes("+ NEW PRIVATE RUN"), "Athlete Events & Runs must expose a clear private Run Builder action");
+assert(contestsRenderer.includes("contestEventCardsHtml(events, runs, attendance)"), "Events & Runs must render shared attendance and private saved-run links");
 assert(contestsRenderer.includes("runBuilderPanel([], { live: true, showRunList: false })"), "The live Run Builder must open inline without duplicating the saved-run library");
 assert(contestsRenderer.includes("runPlansHtml(runs)"), "Athlete Contests must retain every saved run plan");
 assert(!contestsRenderer.includes("runBuilderPanel(runs, { collapsed: true })"), "The released Run Builder must not remain buried in the old collapsed panel");
-assert(functionBody("contestEventCardsHtml").includes("BUILD RUN PLAN"), "Every upcoming contest must be able to launch its own run plan");
+assert(!contestsRenderer.includes("contest-command"), "Events & Runs must not restore the old oversized Run Builder card");
+assert(contestsRenderer.includes("Your private run plans"), "Saved run plans must sit in a clearly private section");
+const contestCardsBody = functionBody("contestEventCardsHtml");
+assert(contestCardsBody.includes("data-open-contest-event"), "Each event must open its attendee details");
+assert(contestCardsBody.includes("data-toggle-contest-attendance"), "Riders must be able to join an existing shared event");
+assert(contestCardsBody.includes("BUILD PRIVATE RUN"), "Each upcoming event must launch a private run plan");
+assert(contestCardsBody.includes("contestEventFacesHtml(attendees)"), "Event cards must show who is attending at a glance");
+const contestModalBody = functionBody("contestEventModalHtml");
+assert(contestModalBody.includes("Who's going"), "Opening an event must show the attendee list");
+assert(contestModalBody.includes("row.profile?.display_name"), "The attendee list must show rider names");
+assert(contestModalBody.includes("they cannot see your route, tricks, notes or park photo"), "The event modal must explain run-plan privacy");
+const sharedEventSaveBody = functionBody("saveSharedContestEvent");
+assert(sharedEventSaveBody.includes("normalizeContestEventTitle(item.title)"), "Creating an event must first reuse a matching shared event");
+assert(sharedEventSaveBody.includes("contestEventDay(item.due_at)"), "Shared event matching must include its start day");
+assert(sharedEventSaveBody.includes("setContestAttendance(sharedEvent.id, true)"), "The event creator must automatically be marked as attending");
+assert(functionBody("toggleContestAttendance").includes("setContestAttendance"), "Attendance controls must update the shared attendee table");
+assert(eventMigration.includes("create table if not exists public.event_attendees"), "The database must store shared event attendance separately");
+assert(eventMigration.includes("alter table public.event_attendees enable row level security"), "Shared attendance must have RLS enabled");
+assert(eventMigration.includes("athlete_id = (select auth.uid())"), "A rider must only change their own attendance");
+assert(eventMigration.includes("function public.get_active_event_attendees"), "Attendee names and avatars must use a narrow authenticated endpoint");
+assert(eventMigration.includes("revoke all on function public.get_active_event_attendees(uuid[]) from public, anon"), "Anonymous users must not access attendee identities");
+assert(functionBody("getSharedUpcomingEventData").includes('rpc("get_active_event_attendees"'), "The event page must load confirmed rider names through the secure attendee endpoint");
+assert(eventMigration.includes("dashboard_items_active_event_identity_idx"), "Duplicate active shared events must be prevented in the database");
+assert(eventMigration.includes("due_at + interval '1 day'"), "Single-day events must remain visible until their day has ended");
+assert(eventMigration.includes('drop policy if exists "Parents can view child run plans"'), "Run plans must remain private between the rider and linked coach");
 const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
@@ -444,7 +469,7 @@ assert.equal(runPointColourForTest(1), runPointColourForTest(5), "Run points 1â€
 assert.notEqual(runPointColourForTest(5), runPointColourForTest(6), "The route colour must change after point 5");
 assert.equal(runPointColourForTest(6), runPointColourForTest(10), "Run points 6â€“10 must share the next route colour");
 assert.notEqual(runPointColourForTest(10), runPointColourForTest(11), "The route colour must change again after point 10");
-for (const selector of [".contest-command", ".contest-event-card", ".contest-run-library", ".run-builder-live"]) {
+for (const selector of [".shared-events-panel", ".contest-event-card", ".contest-event-modal", ".contest-run-library", ".run-builder-live"]) {
   assert(css.includes(selector), `Contests release styling is missing ${selector}`);
 }
 
