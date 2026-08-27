@@ -209,6 +209,16 @@ assert(latestDailyMigration.includes("from public, anon"), "Anonymous users must
 assert(functionBody("sessionViewerVenueOptions").includes("venueIdentityKey"), "Coach location filters must canonicalize saved venue names");
 assert(functionBody("sessionViewerVenueTabs").includes("venueIdentityKey(option.value)"), "Coach location tabs must retain their canonical active location");
 
+const plannerLinesConstraintMigration = read("supabase/migrations/20260827071737_allow_lines_in_weekly_assignment_plans.sql");
+assert(
+  plannerLinesConstraintMigration.includes("'lines'"),
+  "Complete sheet saves must be able to archive the Lines category",
+);
+assert(
+  plannerLinesConstraintMigration.includes("weekly_assignment_plans_category_check"),
+  "The planner category constraint must be replaced explicitly",
+);
+
 const percentageContractMigration = read("supabase/migrations/202607190400_fix_percentage_and_session_viewer_contracts.sql");
 assert(percentageContractMigration.includes("returns jsonb"), "Percentage venue wrapper must match the canonical JSON result");
 assert(!percentageContractMigration.includes("returns table"), "Percentage venue wrapper must not declare the obsolete table result");
