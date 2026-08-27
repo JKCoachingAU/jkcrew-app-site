@@ -1275,7 +1275,7 @@ function whatsNewItems(role = "athlete") {
     ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
   ];
   return [
-    ["01", "A New Layout", "Home, Session, Challenges, Coaching, Board and Profile are easier to use."],
+    ["01", "A New Layout", "Home, Session, Challenges, Contests, Board and Profile are easier to use."],
     ["02", "Better Run Planner", "Build a route on a park photo, label tricks and replay the full line."],
     ["03", "Battles + Challenges", "Go 1v1, 2v2 or 3v3 and complete weekly targets for points."],
     ["04", "Smarter Sheets", "Cleaner sections, Lines and saved Daily lists for every location."],
