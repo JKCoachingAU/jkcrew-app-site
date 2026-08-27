@@ -14,8 +14,9 @@ const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
 const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
+const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.8";
+const version = "2.14.9";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -466,7 +467,7 @@ assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignmen
 const contestsRenderer = functionBody("renderContests");
 assert(contestsRenderer.includes("getSharedUpcomingEventData()"), "Events & Runs must load the shared upcoming-event catalogue");
 assert(contestsRenderer.includes("+ NEW PRIVATE RUN"), "Athlete Events & Runs must expose a clear private Run Builder action");
-assert(contestsRenderer.includes("contestEventCardsHtml(events, runs, attendance)"), "Events & Runs must render shared attendance and private saved-run links");
+assert(contestsRenderer.includes("contestEventCardsHtml(events, runs, attendance, roster)"), "Events & Runs must render shared attendance, coach controls and private saved-run links");
 assert(contestsRenderer.includes("runBuilderPanel([], { live: true, showRunList: false })"), "The live Run Builder must open inline without duplicating the saved-run library");
 assert(contestsRenderer.includes("runPlansHtml(runs)"), "Athlete Contests must retain every saved run plan");
 assert(!contestsRenderer.includes("runBuilderPanel(runs, { collapsed: true })"), "The released Run Builder must not remain buried in the old collapsed panel");
@@ -479,10 +480,19 @@ assert(contestCardsBody.includes("BUILD PRIVATE RUN"), "Each upcoming event must
 assert(contestCardsBody.includes("contestEventFacesHtml(attendees)"), "Event cards must show who is attending at a glance");
 assert(contestCardsBody.includes('draggable="true"'), "Coach event cards must support drag-to-merge");
 assert(contestCardsBody.includes("data-select-event-merge"), "Touch devices need a two-tap event merge fallback");
+assert(contestCardsBody.includes("data-toggle-coach-event-attendance"), "Coaches must be able to mark whether they are attending from the event card");
+assert(contestCardsBody.includes("EDIT RIDERS"), "Coach event cards must expose rider attendance editing");
 const contestModalBody = functionBody("contestEventModalHtml");
 assert(contestModalBody.includes("Who's going"), "Opening an event must show the attendee list");
 assert(contestModalBody.includes("row.profile?.display_name"), "The attendee list must show rider names");
 assert(contestModalBody.includes("they cannot see your route, tricks, notes or park photo"), "The event modal must explain run-plan privacy");
+assert(contestModalBody.includes("coachEventAttendanceEditorHtml"), "The coach event modal must render the shared attendance editor");
+assert(functionBody("saveCoachEventAttendance").includes("replaceCoachContestAttendance"), "Coach attendance saves must use the shared atomic attendance helper");
+assert(functionBody("replaceCoachContestAttendance").includes('rpc("coach_replace_event_attendance"'), "Coach attendance changes must use one atomic database operation");
+assert(coachAttendanceMigration.includes("security definer"), "Coach attendance updates must use a narrowly-authorized database operation");
+assert(coachAttendanceMigration.includes("public.coach_athletes"), "A coach must only manage riders linked to their crew");
+assert(coachAttendanceMigration.includes("private.event_attendance_audit"), "Coach event attendance edits need a private recovery audit");
+assert(coachAttendanceMigration.includes("revoke all on function public.coach_replace_event_attendance(uuid, uuid[]) from public, anon"), "Anonymous users must not call the coach attendance endpoint");
 const sharedEventSaveBody = functionBody("saveSharedContestEvent");
 assert(sharedEventSaveBody.includes("normalizeContestEventTitle(item.title)"), "Creating an event must first reuse a matching shared event");
 assert(sharedEventSaveBody.includes("contestEventDay(item.due_at)"), "Shared event matching must include its start day");
@@ -532,6 +542,10 @@ for (const playbackControl of ["data-run-play-toggle", "data-run-play-restart", 
   assert(functionBody("runPlaybackControlsHtml").includes(playbackControl), `Run playback is missing ${playbackControl}`);
 }
 assert(functionBody("runPlaybackControlsHtml").includes('max="${RUN_PLAYBACK_MAX_SECONDS}"'), "The playback duration control must enforce the 60-second maximum");
+assert(functionBody("runPlaybackControlsHtml").includes("data-run-duration-preset=\"${seconds}\""), "Playback must expose clear 15, 30, 45 and 60 second presets");
+assert(functionBody("runMapHtml").includes("data-run-point-label"), "Saved trick names must be attached to every playback point");
+assert(functionBody("runMapHtml").includes("data-run-playback-callout"), "Run playback must include a visible trick-name callout");
+assert(functionBody("paintRunPlayback").includes("activeMarker.dataset.runPointLabel"), "Playback must show the active point's saved trick name");
 assert(functionBody("toggleRunPlayback").includes("requestAnimationFrame"), "Run playback must animate continuously and support pause/resume");
 const formatPlaybackForTest = new Function(`const RUN_PLAYBACK_MAX_SECONDS = 60; ${functionBody("formatRunPlaybackTime")}; return formatRunPlaybackTime;`)();
 assert.equal(formatPlaybackForTest(60), "01:00", "The 60-second playback limit must display as 01:00");
@@ -543,6 +557,14 @@ assert.equal(runPointColourForTest(6), runPointColourForTest(10), "Run points 6â
 assert.notEqual(runPointColourForTest(10), runPointColourForTest(11), "The route colour must change again after point 10");
 for (const selector of [".shared-events-panel", ".contest-event-card", ".contest-event-modal", ".contest-run-library", ".run-builder-live", ".visual-run-builder", ".run-playback-controls"]) {
   assert(css.includes(selector), `Contests release styling is missing ${selector}`);
+}
+const coachCommandBody = functionBody("renderCoachCommand");
+assert(coachCommandBody.includes("getSharedUpcomingEventData()"), "Coach Command must load the same upcoming-event catalogue riders see");
+assert(coachCommandBody.includes('commandMetricCard("Upcoming", upcoming, "Events to manage", { view: "contests" })'), "The coach Upcoming metric must open the event manager");
+assert(functionBody("coachSharedEventsSummaryHtml").includes("Coach attending"), "Coach Command must show coach attendance state for shared events");
+assert(app.includes('["contests", "Events & Runs"]'), "Coach navigation must clearly expose Events & Runs");
+for (const selector of [".contest-event-coach-actions", ".coach-event-attendance-editor", ".coach-shared-events-summary", ".run-playback-callout", ".run-playback-presets"]) {
+  assert(css.includes(selector), `Coach events or playback styling is missing ${selector}`);
 }
 
 assert(app.includes('const RILEY_TEST_ACCOUNT_ID = "e230a5a6-68ad-4362-b410-b52f45f58e57"'), "The isolated Riley route must retain its immutable test account id");
