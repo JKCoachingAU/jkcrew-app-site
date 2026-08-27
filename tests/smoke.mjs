@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.16";
+const version = "2.14.17";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -561,13 +561,17 @@ const runBuilderBindings = functionBody("bindRunBuilderActions");
 for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
 }
-assert(runBuilderBindings.includes("exitRunBuilderFullscreen"), "The full-screen editor must provide an exit control");
+assert(!runBuilderMarkup.includes("fullscreenEditor"), "Run Builder must remain in the normal in-page layout");
+assert(!runBuilderMarkup.includes("exit-run-builder-fullscreen"), "Run Builder must not show a full-screen exit control");
+assert(!runBuilderBindings.includes("exitRunBuilderFullscreen"), "Run Builder must not bind removed full-screen controls");
 const addRunPointBody = functionBody("addRunBuilderPoint");
-assert(addRunPointBody.includes("const isFirstPoint = state.runBuilder.points.length === 0"), "The planner must identify the first route tap");
-assert(addRunPointBody.includes("if (isFirstPoint) enterRunBuilderFullscreen()"), "The first route tap must enter the full-screen editor");
-assert(functionBody("enterRunBuilderFullscreen").includes("requestFullscreen"), "The planner should request device full screen when the browser supports it");
-assert(functionBody("enterRunBuilderFullscreen").includes('lock?.("landscape")'), "Phone full screen should request landscape orientation when supported");
-assert(css.includes(".run-builder-fullscreen-editor"), "The planner needs a full-viewport fallback when browser full screen is unavailable");
+assert(addRunPointBody.includes("state.runBuilder.points.push"), "Tapping the park must still add a route point");
+assert(addRunPointBody.includes("await runBuilderRefreshView()"), "Adding a route point must refresh the in-page editor");
+assert(!addRunPointBody.includes("enterRunBuilderFullscreen"), "The first route tap must not enter full screen");
+assert(!app.includes("function enterRunBuilderFullscreen"), "Removed Run Builder full-screen entry logic must stay removed");
+assert(!app.includes("function leaveRunBuilderFullscreen"), "Removed Run Builder full-screen exit logic must stay removed");
+assert(!css.includes(".run-builder-fullscreen-editor"), "Removed full-screen planner layout must stay removed");
+assert(!css.includes("run-builder-fullscreen-open"), "The planner must not lock the page for full-screen mode");
 const optimizedRunPhotoBody = functionBody("runPhotoToDataUrl");
 assert(optimizedRunPhotoBody.includes("1800 / longestSide"), "Large run photos should be reduced to a screen-sized copy before saving");
 assert(optimizedRunPhotoBody.includes('toDataURL("image/webp", 0.84)'), "Run photos should use efficient WebP encoding when it reduces size");
