@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.13";
+const RELEASE_VERSION = "2.14.14";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -393,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.13" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.14" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -489,6 +489,35 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+async function runPhotoToDataUrl(file) {
+  const source = await fileToDataUrl(file);
+  if (!String(file?.type || "").startsWith("image/")) return source;
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const width = Number(image.naturalWidth || image.width || 0);
+      const height = Number(image.naturalHeight || image.height || 0);
+      const longestSide = Math.max(width, height);
+      if (!width || !height || (longestSide <= 1800 && file.size <= 1.5 * 1024 * 1024)) return resolve(source);
+      const scale = Math.min(1, 1800 / longestSide);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) return resolve(source);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      try {
+        const optimized = canvas.toDataURL("image/webp", 0.84);
+        resolve(optimized && optimized.length < source.length ? optimized : source);
+      } catch (_error) {
+        resolve(source);
+      }
+    };
+    image.onerror = () => resolve(source);
+    image.src = source;
   });
 }
 
@@ -2227,9 +2256,18 @@ async function getStudentPrivateData(athleteId) {
 }
 
 async function getRunPlans(athleteId) {
-  const { data, error } = await client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(12);
-  if (error) throw error;
-  return data || [];
+  const cacheKey = `run-plans:${athleteId}`;
+  const cached = cacheGet(cacheKey, 15000);
+  if (cached) return cached;
+  const existingRequest = state.inFlight.get(cacheKey);
+  if (existingRequest) return existingRequest;
+  const request = (async () => {
+    const { data, error } = await client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(12);
+    if (error) throw error;
+    return cacheSet(cacheKey, data || []);
+  })().finally(() => state.inFlight.delete(cacheKey));
+  state.inFlight.set(cacheKey, request);
+  return request;
 }
 
 async function getCoachContestRunPlans(eventIds = [], roster = []) {
@@ -8335,7 +8373,7 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   }).join("");
   const start = safePoints[0];
   const finish = safePoints.length > 1 ? safePoints[safePoints.length - 1] : null;
-  return `<div class="run-map-preview" data-run-map-preview><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}">${runRouteSvg(safePoints)}${markers}${start ? `<span class="run-endpoint-label start" style="left:${start.x}%;top:${start.y}%">START</span>` : ""}${finish ? `<span class="run-endpoint-label finish" style="left:${finish.x}%;top:${finish.y}%">FINISH</span>` : ""}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span>${safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout><b data-run-playback-number>1</b><span><small>TRICK 1</small><strong data-run-playback-label>${escapeHtml(safePoints[0].label || "Point 1")}</strong></span></span>` : ""}</div>`;
+  return `<div class="run-map-preview" data-run-map-preview><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`}>${runRouteSvg(safePoints)}${markers}${start ? `<span class="run-endpoint-label start" style="left:${start.x}%;top:${start.y}%">START</span>` : ""}${finish ? `<span class="run-endpoint-label finish" style="left:${finish.x}%;top:${finish.y}%">FINISH</span>` : ""}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span>${safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout><b data-run-playback-number>1</b><span><small>TRICK 1</small><strong data-run-playback-label>${escapeHtml(safePoints[0].label || "Point 1")}</strong></span></span>` : ""}</div>`;
 }
 
 function runPlaybackDefaultSeconds(points = []) {
@@ -10299,7 +10337,7 @@ async function setRunBuilderPhoto(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
   if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
-  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await fileToDataUrl(file), points: state.runBuilder?.points || [] };
+  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await runPhotoToDataUrl(file), points: state.runBuilder?.points || [] };
   await runBuilderRefreshView();
 }
 
@@ -10646,6 +10684,7 @@ async function archiveRunPlan(event) {
   const runId = event.currentTarget.dataset.archiveRun;
   const { error } = await client.from("run_plans").update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", runId).eq("coach_id", state.user.id);
   if (error) return notify(messageFrom(error), "error");
+  cacheClear("run-plans:");
   notify("Run archived. It is saved for later.");
   await runBuilderRefreshView();
 }
@@ -10678,6 +10717,7 @@ async function saveRunPlan(event) {
   const savedFor = state.runBuilder?.athleteName;
   await leaveRunBuilderFullscreen();
   state.runBuilder = null;
+  cacheClear("run-plans:");
   cacheClear("coach-command:");
   notify(savedFor ? `Private run saved for ${savedFor}.` : "Run plan saved.");
   await runBuilderRefreshView();

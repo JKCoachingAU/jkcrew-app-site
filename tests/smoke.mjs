@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.13";
+const version = "2.14.14";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -558,6 +558,16 @@ assert(addRunPointBody.includes("if (isFirstPoint) enterRunBuilderFullscreen()")
 assert(functionBody("enterRunBuilderFullscreen").includes("requestFullscreen"), "The planner should request device full screen when the browser supports it");
 assert(functionBody("enterRunBuilderFullscreen").includes('lock?.("landscape")'), "Phone full screen should request landscape orientation when supported");
 assert(css.includes(".run-builder-fullscreen-editor"), "The planner needs a full-viewport fallback when browser full screen is unavailable");
+const optimizedRunPhotoBody = functionBody("runPhotoToDataUrl");
+assert(optimizedRunPhotoBody.includes("1800 / longestSide"), "Large run photos should be reduced to a screen-sized copy before saving");
+assert(optimizedRunPhotoBody.includes('toDataURL("image/webp", 0.84)'), "Run photos should use efficient WebP encoding when it reduces size");
+assert(functionBody("setRunBuilderPhoto").includes("runPhotoToDataUrl(file)"), "The Run Builder must use the optimized photo pipeline");
+const getRunPlansBody = functionBody("getRunPlans");
+assert(getRunPlansBody.includes("cacheGet(cacheKey, 15000)"), "Run plans should be briefly cached during repeat renders");
+assert(getRunPlansBody.includes("state.inFlight.get(cacheKey)"), "Duplicate in-flight run-plan requests should be shared");
+const runMapMarkup = functionBody("runMapHtml");
+assert(runMapMarkup.includes('decoding="async"'), "Run-plan photos should decode away from the critical rendering path");
+assert(runMapMarkup.includes('loading="lazy"'), "Saved run-plan photos should load only when needed");
 const saveRunPlanBody = functionBody("saveRunPlan");
 assert(saveRunPlanBody.includes('venue: String(state.runBuilder?.venue || "").trim()'), "Hidden event venue must still save with the private run");
 assert(saveRunPlanBody.includes('state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training")'), "Hidden run type must still be derived and saved automatically");
