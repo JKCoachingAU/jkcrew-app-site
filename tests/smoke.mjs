@@ -12,7 +12,7 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.14.1";
+const version = "2.14.2";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -458,21 +458,49 @@ assert(functionBody("athletePrimaryView").includes('view === "coaching" ? "home"
 assert(app.includes("coaching: renderAthleteCoaching"), "All athlete accounts must be able to navigate to Coaching");
 const athleteCoachingBody = functionBody("renderAthleteCoaching");
 assert(athleteCoachingBody.includes('state.profile?.role !== "athlete"'), "Private Coaching must require an athlete account");
-assert(athleteCoachingBody.includes("getHelpRequests(state.user.id)"), "Athlete Coaching must load the signed-in rider's private history");
+assert(athleteCoachingBody.includes("getAthleteHelpRequests(state.user.id)"), "Athlete Coaching must load a lightweight private inbox for the signed-in rider");
+assert(!functionBody("getAthleteHelpRequests").includes("hydrateHelpRequestMediaUrls"), "The Coaching inbox must not sign or download every video before a rider opens one");
+assert(!functionBody("getAthleteHelpRequests").includes(".limit("), "The Coaching inbox must not silently hide older private reviews");
 assert(athleteCoachingBody.includes("rememberCoachingReplies(requests)"), "Opening Coaching must mark returned feedback seen on this device");
-assert(athleteCoachingBody.includes("helpUploadSection(requests)"), "Athlete Coaching must render the upload and feedback history");
+assert(athleteCoachingBody.includes("helpUploadSection(requests)"), "Athlete Coaching must render the focused upload composer");
+assert(athleteCoachingBody.includes("athleteHelpReviewInboxHtml(requests, unreadIds)"), "Athlete Coaching must render the compact private review inbox");
 assert(athleteCoachingBody.includes("bindHelpRequestForm()"), "Athlete Coaching must bind video uploads");
+assert(athleteCoachingBody.includes("bindAthleteCoachingInbox(requests)"), "Athlete Coaching must bind its filters and focused viewer");
 const helpUploadMarkup = functionBody("helpUploadSection");
 assert(helpUploadMarkup.includes("Private coaching"), "The rider upload must identify its private audience");
 assert(helpUploadMarkup.includes("Maximum 60 seconds and 50 MB"), "The rider upload must state its hosted limits");
+for (const id of ['id="help-video"', 'id="help-video-preview"', 'id="help-video-meta"', 'id="help-question"']) {
+  assert(helpUploadMarkup.includes(id), `The refined Coaching composer must preserve ${id}`);
+}
 assert(!helpUploadMarkup.includes("Private Riley"), "The live Coaching flow must not retain Riley-only wording");
 assert(!helpUploadMarkup.includes("video-analysis-steps"), "The compact Coaching page must not restore the removed explainer section");
+const athleteInboxMarkup = functionBody("athleteHelpReviewInboxHtml");
+assert(!athleteInboxMarkup.includes("<video"), "Collapsed Coaching history must not render or preload video players");
+assert(athleteInboxMarkup.includes('data-coaching-filter="waiting"'), "The Coaching inbox must filter waiting reviews");
+assert(athleteInboxMarkup.includes('data-coaching-filter="returned"'), "The Coaching inbox must filter returned feedback");
+assert(athleteInboxMarkup.includes("data-coaching-show-older"), "The Coaching inbox must keep older reviews available without an endless feed");
+const athleteReviewRowMarkup = functionBody("athleteHelpReviewRowHtml");
+assert(athleteReviewRowMarkup.includes('type="button"'), "Every Coaching history row must be a safe typed button");
+assert(athleteReviewRowMarkup.includes('aria-expanded="false"'), "Every Coaching history row must expose its viewer state");
+assert(athleteReviewRowMarkup.includes("escapeHtml(request.question"), "Coaching questions must be escaped in compact history rows");
+const athleteViewerMarkup = functionBody("athleteReviewViewerHtml");
+assert.equal((athleteViewerMarkup.match(/<video/g) || []).length, 1, "The focused Coaching viewer must contain no more than one video player");
+assert(athleteViewerMarkup.includes("Coach feedback"), "The focused viewer must prioritise returned coach video");
+assert(athleteViewerMarkup.includes("My clip"), "The focused viewer must retain the rider's original video");
+const openAthleteViewerBody = functionBody("openAthleteReviewViewer");
+assert(openAthleteViewerBody.includes("fetchHelpVideoMedia(request.id)"), "Opening a Coaching review must fetch only that request's private media");
+assert(openAthleteViewerBody.includes("data-athlete-review-media"), "The focused viewer must switch between coach feedback and the rider clip");
+const closeAthleteViewerBody = functionBody("closeAthleteReviewViewer");
+assert(closeAthleteViewerBody.includes("video.pause()"), "Closing a Coaching review must stop playback");
+assert(closeAthleteViewerBody.includes('video.removeAttribute("src")'), "Closing a Coaching review must detach private media");
+assert(closeAthleteViewerBody.includes("releaseVideoReviewMedia(requestId)"), "Closing a Coaching review must clear cached signed media");
+assert(functionBody("handleSession(").includes("closeAthleteReviewViewer()"), "Signing out or switching accounts must close any private Coaching review");
 const athleteHomeBody = functionBody("renderAthleteHome");
 assert(athleteHomeBody.includes("getHelpRequestSummaries(state.user.id)"), "Athlete Home must load lightweight Coaching reply status");
 assert(athleteHomeBody.includes("athleteRunBuilderCtaHtml()"), "Athlete Home must display the live Run Builder action");
 assert(athleteHomeBody.includes('navigate("contests")'), "The Home Run Builder action must open Contests");
 assert(athleteHomeBody.includes("athleteCoachingCtaHtml(coachingRequests)"), "Athlete Home must display the video-help action");
-assert(athleteHomeBody.indexOf("rememberCoachingReplies(coachingRequests)") < athleteHomeBody.indexOf('navigate("coaching")'), "Opening Coaching must record visible replies before navigation");
+assert(!athleteHomeBody.includes("rememberCoachingReplies(coachingRequests)"), "The Home notification badge must remain visible until the Coaching page actually opens");
 const coachingCtaMarkup = functionBody("athleteCoachingCtaHtml");
 assert(coachingCtaMarkup.includes("GET HELP — SEND VIDEO"), "Athlete Home must use the requested Coaching button label");
 assert(coachingCtaMarkup.includes("unreadCoachingReplyCount(requests)"), "The Home Coaching button must calculate unseen replies");
@@ -481,8 +509,13 @@ assert(functionBody("coachingReplySeenKey").includes("state.user?.id"), "Seen Co
 assert(functionBody("rememberCoachingReplies").includes("localStorage.setItem"), "Seen Coaching replies must persist on the rider's device");
 assert(functionBody("setupRealtimeSync").includes('"trick_help_requests"'), "Video request updates must arrive through realtime sync");
 assert(functionBody("scheduleRealtimeRefresh").includes('state.view === "coaching"'), "Realtime coach replies must refresh the open Coaching screen");
+assert(functionBody("scheduleRealtimeRefresh").includes('state.view === "videoReviews"'), "Realtime rider submissions must refresh the coach's open review inbox");
+assert(app.includes('["home", "board", "command", "videoReviews"]'), "An open coach app must follow video-review push notifications into the review studio");
 assert(css.includes(".athlete-coaching-cta"), "Athlete Home needs released Coaching-card styling");
 assert(css.includes(".coaching-reply-badge"), "Athlete Home needs visible unread-reply badge styling");
+for (const selector of [".coaching-composer-grid", ".coaching-review-row", ".coaching-review-status", ".coaching-viewer-backdrop", ".coaching-viewer-media"]) {
+  assert(css.includes(selector), `Refined Coaching styling is missing ${selector}`);
+}
 const runBuilderCtaMarkup = functionBody("athleteRunBuilderCtaHtml");
 assert(runBuilderCtaMarkup.includes("OPEN RUN BUILDER"), "Athlete Home must use an unmistakable Run Builder button label");
 assert(css.includes(".athlete-run-builder-cta"), "Athlete Home needs released Run Builder-card styling");
@@ -491,6 +524,7 @@ assert(submitHelpRequestBody.includes('state.profile?.role !== "athlete"'), "Vid
 assert(submitHelpRequestBody.includes("RIDER_VIDEO_MAX_BYTES"), "Rider video upload must enforce the hosted file limit");
 assert(submitHelpRequestBody.includes("RIDER_VIDEO_MAX_SECONDS"), "Rider video upload must enforce the clip duration limit");
 assert(submitHelpRequestBody.includes('state.view === "coaching"'), "Successful Coaching uploads must refresh the Coaching page");
+assert(submitHelpRequestBody.includes('button.textContent = "Send video to Coach JK"'), "Failed Coaching uploads must restore the refined send-button label");
 assert(!submitHelpRequestBody.includes("RILEY"), "All linked athletes must be able to submit private videos");
 assert(functionBody("uploadHelpVideoFile").includes("uploadHelpVideoResumable"), "Phone videos above 6MB must use resumable upload");
 assert(functionBody("loadTusClient").includes("TUS_CLIENT_INTEGRITY"), "The pinned resumable uploader must verify its CDN integrity");

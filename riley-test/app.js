@@ -26,7 +26,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.1";
+const RELEASE_VERSION = "2.14.2";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -388,7 +388,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.1" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.2" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1025,7 +1025,10 @@ async function handleSession(session) {
   clearInterval(state.timer);
   teardownRealtimeSync();
   const nextUserId = session?.user?.id || "";
-  if ((state.user?.id || "") !== nextUserId) resetVideoReviewPrivateState();
+  if ((state.user?.id || "") !== nextUserId) {
+    closeAthleteReviewViewer();
+    resetVideoReviewPrivateState();
+  }
   state.session = session;
   state.user = session?.user || null;
   state.profile = null;
@@ -1548,6 +1551,7 @@ async function navigate(view) {
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
   clearInterval(state.timer);
+  if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
   if (["session", "coaching"].includes(previousView) && view !== previousView) clearHelpVideoPreview();
   if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
   if (state.sessionViewerTimer) {
@@ -1794,6 +1798,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
     try {
       if (state.view === "session") await renderSession();
       else if (state.view === "coaching" && state.profile.role === "athlete") await renderAthleteCoaching();
+      else if (state.view === "videoReviews" && isCoachRole(state.profile.role)) await renderVideoReviews();
       else if (state.view === "sessionViewer") await refreshSessionViewerLight();
       else if (state.view === "board") await renderBoard();
       else if (state.view === "challenges") await renderChallenges();
@@ -2012,6 +2017,15 @@ async function getHelpRequests(athleteId) {
   const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
   if (error) throw error;
   return hydrateHelpRequestMediaUrls(data || []);
+}
+
+async function getAthleteHelpRequests(athleteId) {
+  const { data, error } = await client.from("trick_help_requests")
+    .select("id, athlete_id, coach_id, question, coach_comment, status, created_at, replied_at, video_storage_path, coach_video_storage_path, video_file_name, coach_video_file_name, video_mime_type, coach_video_mime_type, video_size_bytes, coach_video_size_bytes")
+    .eq("athlete_id", athleteId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
 }
 
 async function getHelpRequestSummaries(athleteId) {
@@ -3115,26 +3129,213 @@ function helpRequestsHtml(requests, mode = "athlete") {
   }).join("");
 }
 
+function athleteHelpHasReply(request = {}) {
+  return ["replied", "reviewed"].includes(request.status || "open")
+    || Boolean(request.coach_comment || request.coach_video_storage_path || request.coach_video_data_url || request.coach_video_url);
+}
+
+function athleteHelpStatusInfo(request = {}, unreadIds = new Set()) {
+  if (!athleteHelpHasReply(request)) return { key: "waiting", label: "With Coach JK", detail: "Waiting for feedback" };
+  if (unreadIds.has(request.id)) return { key: "new", label: "New feedback", detail: "Ready to watch" };
+  if ((request.status || "") === "reviewed") return { key: "reviewed", label: "Reviewed", detail: "Saved in your history" };
+  return { key: "ready", label: "Feedback ready", detail: "Coach JK has replied" };
+}
+
+function athleteHelpReviewRowHtml(request = {}, index = 0, unreadIds = new Set()) {
+  const status = athleteHelpStatusInfo(request, unreadIds);
+  const responseType = request.coach_video_storage_path
+    ? "Video feedback from Coach JK"
+    : request.coach_comment
+      ? "Written feedback from Coach JK"
+      : athleteHelpHasReply(request)
+        ? "Feedback from Coach JK"
+        : "Your private trick clip";
+  return `<button type="button" class="coaching-review-row status-${status.key} ${index >= 6 ? "is-older" : ""}" data-athlete-review-open="${escapeHtml(request.id)}" data-review-group="${athleteHelpHasReply(request) ? "returned" : "waiting"}" data-review-order="${index}" aria-expanded="false" aria-controls="athlete-review-viewer-${escapeHtml(request.id)}" ${index >= 6 ? "hidden" : ""}>
+    <span class="coaching-review-thumb" aria-hidden="true"><span>▶</span></span>
+    <span class="coaching-review-copy"><small>${dateLabel(request.created_at)} · PRIVATE REVIEW</small><strong>${escapeHtml(request.question || "Trick help request")}</strong><em>${escapeHtml(responseType)}</em></span>
+    <span class="coaching-review-status status-${status.key}"><b>${escapeHtml(status.label)}</b><small>${escapeHtml(status.detail)}</small></span>
+    <span class="coaching-review-arrow" aria-hidden="true">›</span>
+  </button>`;
+}
+
+function athleteHelpReviewInboxHtml(requests = [], unreadIds = new Set()) {
+  const waiting = requests.filter((request) => !athleteHelpHasReply(request)).length;
+  const returned = requests.length - waiting;
+  if (!requests.length) return `<section class="panel coaching-review-inbox">
+    <div class="coaching-inbox-head"><div><div class="eyebrow">Your private inbox</div><h2>My reviews</h2><p>Your sent clips and Coach JK's feedback will stay organised here.</p></div></div>
+    <div class="coaching-empty-state"><span aria-hidden="true">▶</span><strong>No reviews yet</strong><p>Choose a short clip above and send your first trick question.</p></div>
+  </section>`;
+  return `<section class="panel coaching-review-inbox" aria-labelledby="coaching-review-history-title">
+    <div class="coaching-inbox-head">
+      <div><div class="eyebrow">Your private inbox</div><h2 id="coaching-review-history-title">My reviews</h2><p>Open one review at a time. Videos only load when you choose them.</p></div>
+      <div class="coaching-inbox-counts" aria-label="Video review summary"><span><b>${waiting}</b> waiting</span><span><b>${returned}</b> returned</span><span><b>${requests.length}</b> total</span></div>
+    </div>
+    <div class="coaching-review-filters" role="group" aria-label="Filter video reviews">
+      <button class="coaching-filter active" type="button" data-coaching-filter="all" aria-pressed="true">All</button>
+      <button class="coaching-filter" type="button" data-coaching-filter="waiting" aria-pressed="false">Waiting <span>${waiting}</span></button>
+      <button class="coaching-filter" type="button" data-coaching-filter="returned" aria-pressed="false">Feedback <span>${returned}</span></button>
+    </div>
+    <div class="coaching-review-list">${requests.map((request, index) => athleteHelpReviewRowHtml(request, index, unreadIds)).join("")}</div>
+    ${requests.length > 6 ? `<button class="secondary-btn coaching-show-older" type="button" data-coaching-show-older>Show older reviews (${requests.length - 6})</button>` : ""}
+  </section>`;
+}
+
 function helpUploadSection(requests) {
-  const waiting = requests.filter((request) => !["replied", "reviewed"].includes(request.status || "open")).length;
-  const returned = requests.filter((request) => ["replied", "reviewed"].includes(request.status || "open")).length;
-  return `<section class="panel help-section video-analysis-hub" aria-labelledby="video-analysis-title">
-    <div class="video-analysis-head">
-      <div><div class="eyebrow">Private coaching</div><h2 id="video-analysis-title">Trick <span>Review</span></h2><p>Record or choose a short attempt and send it privately to Coach JK for feedback.</p></div>
-      <span class="video-analysis-beta">Coach reply</span>
+  return `<section class="panel help-section coaching-composer video-analysis-hub" aria-labelledby="video-analysis-title">
+    <div class="video-analysis-head coaching-composer-head">
+      <div class="coaching-composer-icon" aria-hidden="true">+</div>
+      <div><div class="eyebrow">Private coaching</div><h2 id="video-analysis-title">Send a new clip</h2><p>One short attempt. One clear question. Coach JK will send focused feedback back to this inbox.</p></div>
+      <span class="coaching-limit-pill">60 sec max</span>
     </div>
     <form id="help-request-form" class="help-form video-analysis-form" novalidate>
-      <div class="field"><label for="help-video">Record or choose video</label><input id="help-video" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" required><small>Maximum 60 seconds and 50 MB. Larger clips use resumable upload.</small></div>
-      <video id="help-video-preview" class="help-video video-analysis-preview" controls playsinline preload="metadata" hidden></video>
-      <div id="help-video-meta" class="video-analysis-file-meta" aria-live="polite">Choose a short riding clip to preview it here.</div>
-      <div class="field"><label for="help-question">What should Coach JK look at?</label><textarea id="help-question" name="question" required maxlength="500" placeholder="Example: My front wheel keeps dropping on this 540. Can you check my head and shoulder position?"></textarea></div>
-      <div class="video-analysis-privacy"><span aria-hidden="true">🔒</span><p><strong>Private coaching review.</strong> The clip and feedback are restricted to this rider, Coach JK and any linked parent viewer.</p></div>
-      <button class="primary-btn wide video-analysis-send" type="submit">Send privately to Coach JK</button>
+      <div class="coaching-composer-grid">
+        <div class="coaching-upload-column">
+          <div class="field coaching-video-picker"><label for="help-video">1. Choose or record your video</label><input id="help-video" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" required><small>Maximum 60 seconds and 50 MB. Larger clips use resumable upload.</small></div>
+          <video id="help-video-preview" class="help-video video-analysis-preview" controls playsinline preload="metadata" hidden></video>
+          <div id="help-video-meta" class="video-analysis-file-meta" aria-live="polite">Your selected clip will preview here.</div>
+        </div>
+        <div class="field coaching-question-column"><label for="help-question">2. What should Coach JK look at?</label><textarea id="help-question" name="question" required maxlength="500" placeholder="Example: My front wheel keeps dropping on this 540. Can you check my head and shoulder position?"></textarea><small>Tell Coach JK the one thing you want checked most.</small></div>
+      </div>
+      <div class="coaching-send-row">
+        <div class="video-analysis-privacy"><span aria-hidden="true">🔒</span><p>Private between you, Coach JK and your linked parent.</p></div>
+        <button class="primary-btn video-analysis-send" type="submit">Send video to Coach JK</button>
+      </div>
     </form>
-    <div class="settings-divider"></div>
-    <div class="panel-head video-analysis-history-head"><div><div class="panel-title">My video reviews</div><div class="panel-meta">${waiting} waiting · ${returned} feedback returned</div></div></div>
-    <div class="help-list">${helpRequestsHtml(requests)}</div>
   </section>`;
+}
+
+function athleteReviewViewerHtml(request = {}, media = {}) {
+  const riderVideoUrl = media.video_url || media.video_data_url || "";
+  const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
+  const hasReply = athleteHelpHasReply(request);
+  const initialKind = coachVideoUrl ? "coach" : "rider";
+  const initialUrl = initialKind === "coach" ? coachVideoUrl : riderVideoUrl;
+  const riderDownloadName = safeFileName(request.video_file_name || "jkcrew-trick-video");
+  const coachDownloadName = safeFileName(request.coach_video_file_name || "jkcrew-coach-reply");
+  const initialDownloadName = initialKind === "coach" ? coachDownloadName : riderDownloadName;
+  const status = athleteHelpStatusInfo(request);
+  return `<section class="coaching-viewer" id="athlete-review-viewer-${escapeHtml(request.id)}" role="dialog" aria-modal="true" aria-labelledby="coaching-viewer-title">
+    <header class="coaching-viewer-head"><div><div class="eyebrow">Private trick review</div><h2 id="coaching-viewer-title">${escapeHtml(request.question || "Trick help request")}</h2><p>${dateLabel(request.created_at)} · ${escapeHtml(status.label)}</p></div><button class="coaching-viewer-close" type="button" data-close-athlete-review aria-label="Close video review">×</button></header>
+    <div class="coaching-viewer-tabs" role="tablist" aria-label="Choose review video">
+      ${coachVideoUrl ? `<button class="${initialKind === "coach" ? "active" : ""}" type="button" role="tab" data-athlete-review-media="coach" aria-selected="${initialKind === "coach"}">Coach feedback</button>` : ""}
+      ${riderVideoUrl ? `<button class="${initialKind === "rider" ? "active" : ""}" type="button" role="tab" data-athlete-review-media="rider" aria-selected="${initialKind === "rider"}">My clip</button>` : ""}
+    </div>
+    <div class="coaching-viewer-media">
+      ${initialUrl ? `<video id="athlete-review-video" src="${escapeHtml(initialUrl)}" controls playsinline preload="metadata"></video>` : `<div class="coaching-viewer-no-video"><span>▶</span><strong>No video is available for this review.</strong></div>`}
+      ${initialUrl ? `<div class="coaching-viewer-media-actions"><span id="athlete-review-media-label">${initialKind === "coach" ? "Coach feedback video" : "Your original clip"}</span><div><a id="athlete-review-open-media" class="secondary-btn compact-btn" href="${escapeHtml(initialUrl)}" target="_blank" rel="noopener">Open video</a><a id="athlete-review-download-media" class="secondary-btn compact-btn" href="${escapeHtml(initialUrl)}" download="${escapeHtml(initialDownloadName)}">Download</a></div></div>` : ""}
+    </div>
+    <div class="coaching-viewer-feedback ${hasReply ? "has-reply" : "is-waiting"}">
+      <div class="coaching-feedback-mark" aria-hidden="true">${hasReply ? "JK" : "…"}</div>
+      <div><div class="eyebrow">${hasReply ? "Coach JK feedback" : "Review status"}</div><h3>${hasReply ? "Your next correction" : "Coach JK has your clip"}</h3>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : `<p>${hasReply ? "Coach JK returned a video response. Watch it above, then try the cue in your next session." : "Your private review is in the queue. You will be notified when feedback is ready."}</p>`}</div>
+    </div>
+  </section>`;
+}
+
+function closeAthleteReviewViewer() {
+  const backdrop = document.querySelector("#athlete-review-viewer-backdrop");
+  if (!backdrop) return;
+  const opener = backdrop._opener;
+  const video = backdrop.querySelector("video");
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  const requestId = backdrop.dataset.requestId;
+  if (requestId) releaseVideoReviewMedia(requestId);
+  if (backdrop._escapeHandler) document.removeEventListener("keydown", backdrop._escapeHandler);
+  document.documentElement.classList.remove("coaching-viewer-open");
+  document.querySelectorAll("[data-athlete-review-open]").forEach((button) => button.setAttribute("aria-expanded", "false"));
+  backdrop.remove();
+  opener?.focus?.();
+}
+
+async function openAthleteReviewViewer(request = {}, opener = null) {
+  closeAthleteReviewViewer();
+  const backdrop = document.createElement("div");
+  backdrop.id = "athlete-review-viewer-backdrop";
+  backdrop.className = "coaching-viewer-backdrop";
+  backdrop.dataset.requestId = request.id || "";
+  backdrop._opener = opener;
+  backdrop.innerHTML = `<section class="coaching-viewer coaching-viewer-loading" role="dialog" aria-modal="true" aria-label="Loading private trick review"><div class="coaching-viewer-spinner" aria-hidden="true"></div><strong>Loading your private review…</strong><button class="secondary-btn" type="button" data-close-athlete-review>Cancel</button></section>`;
+  document.body.append(backdrop);
+  document.documentElement.classList.add("coaching-viewer-open");
+  opener?.setAttribute("aria-expanded", "true");
+  const close = () => closeAthleteReviewViewer();
+  backdrop.querySelector("[data-close-athlete-review]")?.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  backdrop._escapeHandler = (event) => { if (event.key === "Escape") close(); };
+  document.addEventListener("keydown", backdrop._escapeHandler);
+  try {
+    const media = await fetchHelpVideoMedia(request.id);
+    if (!backdrop.isConnected) return releaseVideoReviewMedia(request.id);
+    backdrop.innerHTML = athleteReviewViewerHtml(request, media);
+    backdrop.querySelector("[data-close-athlete-review]")?.addEventListener("click", close);
+    const video = backdrop.querySelector("#athlete-review-video");
+    const mediaByKind = {
+      rider: { url: media.video_url || media.video_data_url || "", label: "Your original clip", download: safeFileName(request.video_file_name || "jkcrew-trick-video") },
+      coach: { url: media.coach_video_url || media.coach_video_data_url || "", label: "Coach feedback video", download: safeFileName(request.coach_video_file_name || "jkcrew-coach-reply") },
+    };
+    backdrop.querySelectorAll("[data-athlete-review-media]").forEach((button) => button.addEventListener("click", () => {
+      const kind = button.dataset.athleteReviewMedia;
+      const selected = mediaByKind[kind];
+      if (!video || !selected?.url || video.src === selected.url) return;
+      video.pause();
+      video.src = selected.url;
+      video.load();
+      backdrop.querySelectorAll("[data-athlete-review-media]").forEach((tab) => {
+        const active = tab === button;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      const label = backdrop.querySelector("#athlete-review-media-label");
+      const open = backdrop.querySelector("#athlete-review-open-media");
+      const download = backdrop.querySelector("#athlete-review-download-media");
+      if (label) label.textContent = selected.label;
+      if (open) open.href = selected.url;
+      if (download) { download.href = selected.url; download.download = selected.download; }
+    }));
+    backdrop.querySelector("[data-close-athlete-review]")?.focus();
+  } catch (error) {
+    if (!backdrop.isConnected) return;
+    backdrop.innerHTML = `<section class="coaching-viewer coaching-viewer-loading is-error" role="dialog" aria-modal="true" aria-label="Video review could not load"><strong>That review could not load.</strong><p>${escapeHtml(messageFrom(error))}</p><button class="secondary-btn" type="button" data-close-athlete-review>Close</button></section>`;
+    backdrop.querySelector("[data-close-athlete-review]")?.addEventListener("click", close);
+  }
+}
+
+function bindAthleteCoachingInbox(requests = []) {
+  const byId = new Map(requests.map((request) => [request.id, request]));
+  const rows = [...document.querySelectorAll("[data-athlete-review-open]")];
+  const filterButtons = [...document.querySelectorAll("[data-coaching-filter]")];
+  const olderButton = document.querySelector("[data-coaching-show-older]");
+  let filter = "all";
+  let showOlder = false;
+  const apply = () => {
+    let hiddenOlder = 0;
+    rows.forEach((row) => {
+      const matches = filter === "all" || row.dataset.reviewGroup === filter;
+      const older = Number(row.dataset.reviewOrder || 0) >= 6;
+      row.hidden = !matches || (older && !showOlder);
+      if (matches && older) hiddenOlder += 1;
+    });
+    if (olderButton) {
+      olderButton.hidden = hiddenOlder === 0;
+      olderButton.textContent = showOlder ? "Show newest reviews only" : `Show older reviews (${hiddenOlder})`;
+    }
+  };
+  filterButtons.forEach((button) => button.addEventListener("click", () => {
+    filter = button.dataset.coachingFilter || "all";
+    showOlder = filter !== "all";
+    filterButtons.forEach((entry) => {
+      const active = entry === button;
+      entry.classList.toggle("active", active);
+      entry.setAttribute("aria-pressed", String(active));
+    });
+    apply();
+  }));
+  olderButton?.addEventListener("click", () => { showOlder = !showOlder; apply(); });
+  rows.forEach((button) => button.addEventListener("click", () => openAthleteReviewViewer(byId.get(button.dataset.athleteReviewOpen), button)));
+  apply();
 }
 
 const trickRequestCategoryLabels = {
@@ -4763,13 +4964,17 @@ function athleteRunBuilderCtaHtml() {
 
 async function renderAthleteCoaching() {
   if (state.profile?.role !== "athlete") return navigate("home");
-  const requests = await getHelpRequests(state.user.id);
+  closeAthleteReviewViewer();
+  const requests = await getAthleteHelpRequests(state.user.id);
+  const seen = seenCoachingReplyIds();
+  const unreadIds = new Set(returnedHelpRequestIds(requests).filter((id) => !seen.has(id)));
   rememberCoachingReplies(requests);
   document.querySelector("#view").innerHTML = `
-    <div class="page-head coaching-page-head"><div><div class="eyebrow">Private coaching</div><h1>Get trick <span>help</span></h1><p>Send one short clip. Coach JK can reply with voice, on-screen drawings, video and written cues.</p></div><button class="secondary-btn" id="back-to-athlete-home" type="button">Back home</button></div>
-    ${helpUploadSection(requests)}`;
+    <div class="page-head coaching-page-head"><div><div class="eyebrow">Private coaching</div><h1>Get trick <span>help</span></h1><p>A clean private space for your clips, Coach JK's video breakdowns and the one cue to take into your next session.</p></div><button class="secondary-btn" id="back-to-athlete-home" type="button">Back home</button></div>
+    <div class="coaching-page-layout">${helpUploadSection(requests)}${athleteHelpReviewInboxHtml(requests, unreadIds)}</div>`;
   document.querySelector("#back-to-athlete-home")?.addEventListener("click", () => navigate("home"));
   bindHelpRequestForm();
+  bindAthleteCoachingInbox(requests);
 }
 
 async function renderAthleteHome() {
@@ -4831,7 +5036,6 @@ async function renderAthleteHome() {
     navigate("contests");
   });
   document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => {
-    rememberCoachingReplies(coachingRequests);
     navigate("coaching");
   });
   document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
@@ -9573,7 +9777,7 @@ async function submitHelpRequest(event) {
       if (cleanupError) console.warn("Could not clean up failed video request upload.", cleanupError);
     }
     button.disabled = false;
-    button.textContent = "Send privately to Coach JK";
+    button.textContent = "Send video to Coach JK";
     notify(messageFrom(error), "error");
   }
 }
@@ -11226,7 +11430,7 @@ window.addEventListener("load", async () => {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
-    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command"] : ["home", "coaching", "board", "challenges"];
+    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command", "videoReviews"] : ["home", "coaching", "board", "challenges"];
     const view = allowedViews.includes(event.data.view) ? event.data.view : (isCoachRole(state.profile.role) ? "command" : "home");
     navigate(view);
   });
