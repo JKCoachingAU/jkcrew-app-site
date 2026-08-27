@@ -4887,12 +4887,30 @@ html.contest-merge-open body { overflow: hidden; }
   font: 800 0.55rem var(--mono);
   text-align: center;
 }
+.viewer-list-tone-daily { --viewer-list-tone: var(--rider-aqua, #16dfcf); }
+.viewer-list-tone-one_bang { --viewer-list-tone: var(--rider-violet, #8a54ff); }
+.viewer-list-tone-dialled { --viewer-list-tone: var(--rider-blue, #3a9cff); }
+.viewer-list-tone-lines { --viewer-list-tone: var(--rider-coral, #ff6c55); }
+.viewer-list-tone-percentage { --viewer-list-tone: #b985ff; }
+.viewer-list-tone-foam_pit { --viewer-list-tone: #46c7ff; }
+.viewer-list-tone-bonus { --viewer-list-tone: var(--rider-gold, #f7c83e); }
 .viewer-list-tab.active {
-  border-color: rgba(32,227,195,0.65);
-  background: rgba(32,227,195,0.13);
-  color: var(--aqua);
+  border-color: color-mix(in srgb, var(--viewer-list-tone) 72%, var(--line));
+  background: color-mix(in srgb, var(--viewer-list-tone) 13%, transparent);
+  color: var(--viewer-list-tone);
 }
-.viewer-list-tab.active span { background: rgba(32,227,195,0.2); color: var(--aqua); }
+.viewer-list-tab.active span { background: color-mix(in srgb, var(--viewer-list-tone) 20%, transparent); color: var(--viewer-list-tone); }
+.viewer-inline-list .viewer-list-meta { color: color-mix(in srgb, var(--viewer-list-tone) 72%, var(--muted)); }
+.viewer-inline-list .viewer-trick-row.complete,
+.viewer-inline-list .percentage-card.complete { border-color: color-mix(in srgb, var(--viewer-list-tone) 58%, var(--line)); }
+.viewer-inline-list .viewer-trick-row .assignment-check,
+.viewer-inline-list .percentage-card .assignment-check { border-color: color-mix(in srgb, var(--viewer-list-tone) 42%, var(--line)); }
+.viewer-inline-list .viewer-trick-row.complete .assignment-check,
+.viewer-inline-list .percentage-card.complete .assignment-check {
+  background: color-mix(in srgb, var(--viewer-list-tone) 18%, transparent);
+  color: var(--viewer-list-tone);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--viewer-list-tone) 20%, transparent);
+}
 .viewer-list-meta {
   padding-top: 2px;
   line-height: 1.45;
@@ -6962,7 +6980,7 @@ html[data-theme="light"] .success-burst {
   box-shadow: inset 0 1px 0 rgba(247, 200, 62, 0.13);
 }
 .coach-shell .park-king-label span { color: var(--coach-gold); }
-.coach-shell .viewer-list-tab.active { border-color: var(--coach-aqua); color: var(--coach-aqua); background: rgba(22, 223, 207, 0.08); }
+.coach-shell .viewer-list-tab.active { border-color: color-mix(in srgb, var(--viewer-list-tone) 72%, var(--line)); color: var(--viewer-list-tone); background: color-mix(in srgb, var(--viewer-list-tone) 10%, transparent); }
 
 .coach-shell .bottom-nav .nav-btn.active .nav-icon {
   color: #041013;
@@ -6992,7 +7010,7 @@ html[data-theme="light"] .success-burst {
   }
   .coach-shell .command-start-button { min-height: 92px; }
   .coach-shell .command-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .coach-shell .command-metric-card:last-child { grid-column: 1 / -1; }
+  .coach-shell .command-metric-card:last-child { grid-column: auto; }
   .coach-shell .command-metric-card {
     --metric-ring-size: 64px;
     min-height: 114px;
@@ -8789,6 +8807,16 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   gap: 10px;
   margin: 0 0 14px;
 }
+.rider-profile-selector {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+  gap: 22px;
+  align-items: end;
+  margin-bottom: 16px;
+  border-color: rgba(58, 156, 255, .32);
+  background: linear-gradient(120deg, rgba(58, 156, 255, .09), rgba(146, 84, 255, .035));
+}
+.rider-profile-selector .field { margin: 0; }
 .student-profile-primary-actions button { min-height: 52px; }
 .next-week-list-btn { border-color: rgba(91, 151, 255, .48); color: #8eb9ff; }
 .student-profile-summary {
@@ -8812,6 +8840,7 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 .student-profile-page .danger-zone { margin-top: 24px; opacity: .76; }
 
 @media (max-width: 760px) {
+  .rider-profile-selector { grid-template-columns: 1fr; gap: 14px; }
   .student-profile-primary-actions { grid-template-columns: 1fr; }
   .student-profile-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .student-profile-head .actions { width: 100%; overflow-x: auto; flex-wrap: nowrap; }

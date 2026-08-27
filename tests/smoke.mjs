@@ -15,7 +15,7 @@ const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
 const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.7";
+const version = "2.14.8";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -239,7 +239,9 @@ const viewerTabs = app.match(/const sessionViewerListTabs = \[([\s\S]*?)\];/)?.[
 for (const tab of ["daily", "one_bang", "dialled", "lines", "percentage", "foam_pit", "bonus"]) {
   assert(viewerTabs.includes(`id: "${tab}"`), `Session Viewer is missing ${tab}`);
 }
+assert(viewerTabs.indexOf('id: "lines"') < viewerTabs.indexOf('id: "percentage"'), "Session Viewer must place Lines before Percentage Tricks");
 assert(!/goals|contest_run/.test(viewerTabs), "Session Viewer should not expose Goals or Contest Run tabs");
+assert(functionBody("sessionViewerPlanList").includes("viewer-list-tone-${tab.id}"), "Coach Session tabs must carry the rider category colours");
 
 assert(
   app.includes('const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";'),
@@ -428,6 +430,20 @@ assert(retiredVenueMigration.includes("lower(trim(venue.name)) in ('hotbox', 'de
 assert(functionBody("renderStudentProfile").includes("Edit current list"), "Coach rider profiles need a prominent current-list action");
 assert(functionBody("renderStudentProfile").includes("Schedule next week's list"), "Coach rider profiles need a prominent next-week planner action");
 assert(functionBody("renderStudentProfile").includes("compactStudentProfilePanels(view)"), "Coach rider profile tools should be collapsed into clean sections");
+assert(functionBody("renderStudentProfile").includes("riderProfileSelectorHtml"), "Rider Profiles must open through a rider dropdown");
+for (const removedProfileSection of ["XP history", "Point history", "Completion history", "Injury reports", "Waivers, forms & documents", "Private rider records", "parentUpdatePanel", "extraTricksSection"]) {
+  assert(!functionBody("renderStudentProfile").includes(removedProfileSection), `Rider Profiles must remove ${removedProfileSection}`);
+}
+const coachCommandRender = functionBody("renderCoachCommand");
+for (const commandMetric of ["Videos to Reply", "New Event Runs", "Active Battles"]) {
+  assert(coachCommandRender.includes(commandMetric), `Coach Command is missing ${commandMetric}`);
+}
+assert(functionBody("getCoachCommandData").includes('from("trick_help_requests")'), "Coach Command must count unanswered Coach Help videos");
+assert(functionBody("getCoachCommandData").includes('from("run_plans")'), "Coach Command must count event run plans");
+assert(functionBody("getCoachCommandData").includes('get_coach_rider_battles_v2'), "Coach Command must count live battles");
+const coachToolsRender = functionBody("renderCoachTools");
+assert(coachToolsRender.includes("Sheet Scheduler"), "Coach Tools must rename Planner to Sheet Scheduler");
+assert(!coachToolsRender.includes("command-section-heading"), "Coach Tools must remove the duplicate numbered shortcut section");
 const sessionViewerBindings = functionBody("bindSessionViewerActions");
 const sessionViewerGroupFilters = functionBody("sessionViewerGroupTabs");
 const sessionViewerVenueFilters = functionBody("sessionViewerVenueTabs");

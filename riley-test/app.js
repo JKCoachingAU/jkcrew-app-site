@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.7";
+const RELEASE_VERSION = "2.14.8";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -156,7 +156,7 @@ const coachNavGroups = [
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Live Battles"]] },
-  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Planner"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Run Planner"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Run Planner"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
@@ -393,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.7" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.8" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1253,7 +1253,10 @@ function renderShell() {
       </div>
       <nav class="bottom-nav">${bottomNavHtml}</nav>
   </div>`;
-  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.view === "student" && button.classList.contains("nav-sub-btn")) state.selectedAthleteId = "";
+    navigate(button.dataset.view);
+  }));
   document.querySelector("#parent-notification-bell")?.addEventListener("click", showParentNotificationDrawer);
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
 }
@@ -2164,7 +2167,7 @@ async function getCoachCommandData(roster = []) {
   const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
-  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals] = await Promise.all([
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows] = await Promise.all([
     client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
@@ -2179,8 +2182,11 @@ async function getCoachCommandData(roster = []) {
     client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
     ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
     client.from("rider_sheet_proposals").select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, created_at").eq("coach_id", state.user.id).eq("status", "pending").order("created_at", { ascending: true }),
+    ids.length ? client.from("trick_help_requests").select("id, athlete_id, coach_id, question, status, created_at, video_file_name, video_storage_path").eq("coach_id", state.user.id).in("athlete_id", ids).eq("status", "open").order("created_at", { ascending: true }).limit(60) : { data: [], error: null },
+    ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, contest_item_id, created_at, updated_at").in("athlete_id", ids).not("contest_item_id", "is", null).is("archived_at", null).order("created_at", { ascending: false }).limit(40) : { data: [], error: null },
+    client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
   ]);
-  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals].forEach((result) => { if (result.error) throw result.error; });
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows].forEach((result) => { if (result.error) throw result.error; });
   return cacheSet(cacheKey, {
     calendar: calendar.data || [],
     statuses: statusRows.data || [],
@@ -2196,6 +2202,9 @@ async function getCoachCommandData(roster = []) {
     dismissedTasks: dismissedTasks.data || [],
     trickRequests: trickRequests.data || [],
     sheetProposals: sheetProposals.data || [],
+    helpRequests: helpRequests.data || [],
+    eventRunPlans: eventRunPlans.data || [],
+    battles: Array.isArray(battleRows.data) ? battleRows.data : [],
   });
 }
 
@@ -2502,10 +2511,10 @@ const sessionViewerListTabs = [
   { id: "daily", label: "Daily Tricks" },
   { id: "one_bang", label: "One Bangs" },
   { id: "dialled", label: "Dialled" },
+  { id: "lines", label: "Lines" },
   { id: "percentage", label: "Percentage" },
   { id: "foam_pit", label: "Foam" },
   { id: "bonus", label: "Bonus Trick" },
-  { id: "lines", label: "Lines" },
 ];
 
 function profileGroupNames(profile = {}) {
@@ -3714,6 +3723,10 @@ function commandMetricCard(label, value, meta, action = {}) {
     attention: "coral",
     upcoming: "gold",
     modified: "blue",
+    "videos to reply": "coral",
+    "new event runs": "gold",
+    "active battles": "purple",
+    "list requests": "aqua",
   }[String(label || "").toLowerCase()] || "aqua";
   const attributes = action.view
     ? `data-view="${escapeHtml(action.view)}"`
@@ -6913,21 +6926,12 @@ function coachHubCard(view, title, meta, icon = "•") {
 async function renderCoachTools() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Training <span>toolbox</span></h1><p>Planner, reviews, Tricktionary, run work, feedback and weekly schedule tools in one cleaner hub.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Training <span>toolbox</span></h1><p>Sheet scheduling, reviews, Tricktionary and run planning in one clean hub.</p></div></div>
     <section class="coach-hub-grid">
-      ${coachHubCard("planner", "Planner", "Prepare next week's private trick lists", "▤")}
+      ${coachHubCard("planner", "Sheet Scheduler", "Prepare next week's private trick lists", "▤")}
       ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
       ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
       ${coachHubCard("contests", "Run Planner", "Events, contests and saved runs", "🏆")}
-    </section>
-    <section class="command-section-group">
-      <div class="command-section-heading"><span>01</span><div><strong>Weekly schedule tools</strong><small>Fast shortcuts for planning and feedback</small></div></div>
-      <div class="coach-tools-row">
-        <button class="coach-tool-card coach-tone-purple" type="button" data-view="planner"><strong>Next Week Plans</strong><small>Draft lists before Sunday reset</small></button>
-        <button class="coach-tool-card coach-tone-coral" type="button" data-view="videoReviews"><strong>Feedback Queue</strong><small>Open rider video reviews</small></button>
-        <button class="coach-tool-card coach-tone-aqua" type="button" data-view="sessionViewer"><strong>Live Coaching</strong><small>Tick tricks during sessions</small></button>
-        <button class="coach-tool-card coach-tone-blue" type="button" data-view="crew"><strong>Rider Programs</strong><small>Open student profiles</small></button>
-      </div>
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
 }
@@ -6993,6 +6997,14 @@ function coachListRequestsHtml(proposals = [], roster = []) {
   }).join("");
 }
 
+function coachEventRunPlansHtml(plans = [], roster = []) {
+  if (!plans.length) return `<div class="empty compact-empty">No event run plans have been submitted this week.</div>`;
+  return `<div class="notification-list">${plans.map((plan) => {
+    const athlete = roster.find((entry) => entry.id === plan.athlete_id);
+    return `<button class="notification-card" type="button" data-open-student="${escapeHtml(plan.athlete_id)}"><span>New event run</span><strong>${escapeHtml(athlete?.display_name || "Rider")} — ${escapeHtml(plan.title || "Untitled run")}</strong><small>${escapeHtml(plan.venue || "Event venue not added")} · ${dateLabel(plan.created_at)}</small></button>`;
+  }).join("")}</div>`;
+}
+
 async function reviewRiderSheetProposal(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -7030,11 +7042,15 @@ async function renderCoachCommand() {
   const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
   const pendingRequests = commandData.trickRequests?.length || 0;
   const listRequestCount = commandData.sheetProposals?.length || 0;
+  const videoReplyCount = commandData.helpRequests?.length || 0;
+  const recentEventRuns = (commandData.eventRunPlans || []).filter((run) => new Date(run.created_at) >= new Date(weekStartIso()));
+  const activeBattleCount = (commandData.battles || []).filter((battle) => battle.status === "accepted").length;
   const teamSections = [
     commandAccordionSection("list-requests-section", "List Requests", "Complete weekly lists waiting for your approval", coachListRequestsHtml(commandData.sheetProposals, roster)),
     commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
+    commandAccordionSection("event-runs-section", "New Event Run Plans", "Private rider runs created this week", coachEventRunPlansHtml(recentEventRuns, roster)),
     commandAccordionSection("upcoming-events-section", "Upcoming Events", "Grouped by event, date and venue", `${calendarItemsHtml(groupedCalendar, roster)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add coach calendar event</summary>${coachCalendarForm(roster)}</details>`),
-    commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Open a rider profile to generate or edit a parent update before sending.</div>`),
+    commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Parent accounts and links are managed under More → Parents.</div>`),
   ].join("");
   document.querySelector("#view").innerHTML = `
     <section class="command-page-hero">
@@ -7043,6 +7059,9 @@ async function renderCoachCommand() {
     </section>
     <section class="command-metrics" aria-label="Coach overview">
       ${commandMetricCard("Students", roster.length, "In your crew", { view: "crew" })}
+      ${commandMetricCard("Videos to Reply", videoReplyCount, "Coach Help queue", { view: "videoReviews" })}
+      ${commandMetricCard("New Event Runs", recentEventRuns.length, "Planned this week", { target: "event-runs-section" })}
+      ${commandMetricCard("Active Battles", activeBattleCount, "Live rider battles", { view: "battleViewer" })}
       ${commandMetricCard("Upcoming", upcoming, "Events", { target: "upcoming-events-section" })}
       ${commandMetricCard("List Requests", listRequestCount, "Student lists", { target: "list-requests-section" })}
     </section>
@@ -7274,9 +7293,9 @@ function sessionViewerPlanList(entry, activeGroupSession) {
   const activeList = activeSessionViewerList();
   const tabs = sessionViewerTabsForEntry(entry).map((tab) => {
     const count = sessionViewerListCount(entry, tab.id);
-    return `<button class="viewer-list-tab ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
+    return `<button class="viewer-list-tab viewer-list-tone-${tab.id} ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
   }).join("");
-  return `<div class="viewer-inline-list">
+  return `<div class="viewer-inline-list viewer-list-tone-${activeList}">
     <div class="viewer-list-tabs" role="tablist" aria-label="Rider trick lists">${tabs}</div>
     ${sessionViewerListContent(entry, activeGroupSession, activeList)}
   </div>`;
@@ -8586,7 +8605,7 @@ function plannerSummaryHtml(roster = [], plannedRows = [], targetWeekStart = nex
 
 async function renderPlanner() {
   if (!isCoachRole(state.profile?.role)) {
-    document.querySelector("#view").innerHTML = `<div class="empty">Planner is for coach/admin accounts only.</div>`;
+    document.querySelector("#view").innerHTML = `<div class="empty">Sheet Scheduler is for coach/admin accounts only.</div>`;
     return;
   }
   const targetWeekStart = nextWeekStartDate();
@@ -8595,7 +8614,7 @@ async function renderPlanner() {
     getCoachVenues(),
   ]);
   if (!roster.length) {
-    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Add students first, then you can schedule their next weekly plans.</p></div></div><div class="empty">No students linked yet.</div>`;
+    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Sheet Scheduler</div><h1>Next week <span>sheets</span></h1><p>Add students first, then you can schedule their next weekly sheets.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
 
@@ -8644,7 +8663,7 @@ async function renderPlanner() {
   });
   const draftAction = planIsScheduled ? "" : `<button class="secondary-btn wide" type="submit" data-plan-save-status="draft_next_week">Save Draft</button>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach planner</div><h1>Next week <span>planner</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Sheet Scheduler</div><h1>Next week <span>sheets</span></h1><p>Prepare private weekly trick lists now. They go live automatically on Sunday.</p></div></div>
     <section class="panel planner-hero">
       <div class="planner-hero-copy">
         <div class="panel-title">Plan for week starting ${escapeHtml(targetWeekStart)}</div>
@@ -9225,7 +9244,7 @@ async function deleteSelectedAthlete(athlete) {
 }
 
 function compactStudentProfilePanels(view) {
-  [...view.children].filter((element) => element.matches("section.panel") && !element.matches(".athlete-profile-hero, .student-profile-summary, .danger-zone")).forEach((panel) => {
+  [...view.children].filter((element) => element.matches("section.panel") && !element.matches(".athlete-profile-hero, .student-profile-summary, .danger-zone, .rider-profile-selector")).forEach((panel) => {
     const title = panel.querySelector(":scope > .panel-head .panel-title")?.textContent?.trim() || "Rider details";
     const meta = panel.querySelector(":scope > .panel-head .panel-meta")?.textContent?.trim() || "Open to view and manage";
     const details = document.createElement("details");
@@ -9244,15 +9263,34 @@ function compactStudentProfilePanels(view) {
   });
 }
 
+function riderProfileSelectorHtml(roster = [], selectedId = "") {
+  const options = roster.map((athlete) => `<option value="${escapeHtml(athlete.id)}" ${athlete.id === selectedId ? "selected" : ""}>${escapeHtml(athlete.display_name)}</option>`).join("");
+  return `<section class="panel rider-profile-selector"><div><div class="eyebrow">Rider profiles</div><div class="panel-title">Choose a rider</div><div class="panel-meta">Select one rider to open their current profile and training tools.</div></div><div class="field"><label for="rider-profile-select">Rider</label><select id="rider-profile-select"><option value="">Select a rider…</option>${options}</select></div></section>`;
+}
+
+function bindRiderProfileSelector() {
+  document.querySelector("#rider-profile-select")?.addEventListener("change", async (event) => {
+    state.selectedAthleteId = event.currentTarget.value;
+    await renderStudentProfile();
+  });
+}
+
 async function renderStudentProfile() {
   const roster = await getCoachRoster();
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Student profile</div><h1>No <span>students</span></h1><p>Add an athlete first, then you can set their weekly tricks.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
+  const view = document.querySelector("#view");
+  view.classList.add("student-profile-page");
+  if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) {
+    state.selectedAthleteId = "";
+    view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Riders</div><h1>Rider <span>profiles</span></h1><p>Choose a rider to view and manage their current profile.</p></div></div>${riderProfileSelectorHtml(roster)}`;
+    bindRiderProfileSelector();
+    return;
+  }
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, privateData, pointHistory, xpSummary, xpHistory, leaderboard] = await Promise.all([
+  const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, runPlans, leaderboard] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
     client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
@@ -9260,10 +9298,7 @@ async function renderStudentProfile() {
     getHelpRequests(athlete.id),
     getDashboardItems(athlete.id),
     getCoachVenues(),
-    getStudentPrivateData(athlete.id),
-    getPointHistory(athlete.id),
-    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
-    getXpHistory(athlete.id).catch(() => []),
+    getRunPlans(athlete.id),
     getLeaderboard(),
   ]);
   const { assignments, awards } = schedule;
@@ -9290,9 +9325,8 @@ async function renderStudentProfile() {
   const scoreXp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
   const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
   const assignedWeekly = assignments.filter((assignment) => assignment.category !== "daily").length;
-  const view = document.querySelector("#view");
-  view.classList.add("student-profile-page");
   view.innerHTML = `
+    ${riderProfileSelectorHtml(roster, athlete.id)}
     <div class="page-head student-profile-head"><div><div class="eyebrow">Rider overview</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>The important progress first. Open a section below only when you need to manage it.</p></div><div class="actions"><button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
@@ -9334,7 +9368,6 @@ async function renderStudentProfile() {
       </form>
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Current weekly tricks</div><div class="panel-meta">Week starting ${escapeHtml(weekLabel())}</div></div></div>${assignmentGroups(assignments)}</section>
-    ${extraTricksSection(athlete, false)}
     ${coachManualTricktionaryPanel(athlete)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Student Plan Builder</div><div class="panel-meta">Open the section you need · one trick or line per row · notes after a dash</div></div></div>
       <form id="assignment-form">${categoryEditor}<button class="primary-btn wide" type="submit">Save complete schedule</button></form>
@@ -9343,24 +9376,11 @@ async function renderStudentProfile() {
       <div class="parent-links">${linkedParentsHtml}</div>
       ${availableParents.length ? `<form id="link-parent-form" class="trick-form parent-link-form"><div class="field"><label for="parent-id">Available parent accounts</label><select id="parent-id" name="parentId">${parentOptions}</select></div><div class="field"><label for="parent-relationship">Relationship</label><input id="parent-relationship" name="relationship" placeholder="Mum, Dad, guardian..."></div><button class="primary-btn" type="submit">Link parent</button></form>` : `<div class="empty compact-empty">No unlinked parent accounts available. Parents can create one from the sign-up screen.</div>`}
     </section>
-    ${parentUpdatePanel(athlete, schedule, dashboardItems, privateData.attendance)}
-    <section class="panel coach-private-panel"><div class="panel-head"><div><div class="panel-title">Private rider records</div><div class="panel-meta">Coach/admin only · emergency contacts, medical notes, waivers and permissions</div></div></div>${privateRecordForm(privateData.record)}</section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Waivers, forms & documents</div><div class="panel-meta">Private coach-only file area</div></div></div>${documentsHtml(privateData.documents)}<div class="settings-divider"></div>${documentUploadForm()}</section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Injury reports</div><div class="panel-meta">Quick phone-friendly report saved to the rider file</div></div></div>${injuryReportsHtml(privateData.injuries)}<div class="settings-divider"></div>${injuryReportForm(athlete)}</section>
-    ${runBuilderPanel(privateData.runs)}
+    ${runBuilderPanel(runPlans)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & important tasks</div><div class="panel-meta">Visible on this athlete's Home page</div></div></div>
       ${dashboardItemsHtml(dashboardItems)}
       <div class="settings-divider"></div>
       ${dashboardItemForm(athlete.id)}
-    </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Completion history</div><div class="panel-meta">Daily Tricks: ${dailyDone}/7 this week · ${assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length} weekly tasks complete</div></div></div>
-      ${assignmentGroups(assignments)}
-    </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Point history</div><div class="panel-meta">Earned points, deductions, session bonuses and coach changes</div></div></div>
-      ${pointHistoryHtml(pointHistory)}
-    </section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">XP history</div><div class="panel-meta">Long-term progression log, levels, and badge unlocks</div></div></div>
-      ${xpHistoryHtml(xpHistory)}
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Trick help videos</div><div class="panel-meta">Open rider submissions and reply with written or video feedback</div></div></div>
       <div class="help-list">${helpRequestsHtml(helpRequests, "coach")}</div>
@@ -9369,6 +9389,7 @@ async function renderStudentProfile() {
       <button class="danger-btn wide" id="delete-student-account" type="button">Delete ${escapeHtml(athlete.display_name)}</button>
     </section>`;
   compactStudentProfilePanels(view);
+  bindRiderProfileSelector();
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
   document.querySelector("#edit-current-list")?.addEventListener("click", () => {
     const editor = document.querySelector('[data-profile-panel="student plan builder"]');
@@ -9398,11 +9419,6 @@ async function renderStudentProfile() {
   document.querySelector("#coach-manual-trick-form")?.addEventListener("submit", saveCoachManualTrick);
   document.querySelectorAll("[data-coach-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeCoachManualTrick));
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
-  document.querySelector("#private-record-form").addEventListener("submit", savePrivateRecord);
-  document.querySelector("#document-form").addEventListener("submit", saveAthleteDocument);
-  document.querySelector("#injury-form").addEventListener("submit", saveInjuryReport);
-  document.querySelector("#generate-parent-update").addEventListener("click", generateParentUpdate);
-  document.querySelector("#copy-parent-update").addEventListener("click", copyParentUpdate);
   bindRunBuilderActions();
   document.querySelectorAll("[data-unlink-parent]").forEach((button) => button.addEventListener("click", unlinkParentAccount));
   document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
