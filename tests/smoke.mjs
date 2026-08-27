@@ -12,7 +12,7 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
-const version = "2.14.0";
+const version = "2.14.1";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -33,7 +33,16 @@ assert(serviceWorker.includes("silent: false"), "Background push should request 
 
 const shellRenderer = functionBody("renderShell");
 assert(shellRenderer.includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
-assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-live-tools"'), "What's New needs the all-athlete live-tools campaign key");
+assert(app.includes(`const RELEASE_VERSION = "${version}"`), "The app bundle must share the release version used by the service worker");
+assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live"'), "What's New needs a fresh Run Builder campaign key");
+assert(serviceWorker.includes("await self.skipWaiting()"), "Service-worker installation must finish activation before the install event can end");
+assert(serviceWorker.includes("await Promise.all(windows.map"), "Service-worker activation must wait for every open app window to be refreshed");
+assert(serviceWorker.includes("await client.navigate(url.href)"), "Installed apps must navigate to the new version before activation completes");
+assert(serviceWorker.includes('event.data?.type === "JKCREW_ACTIVATE_RELEASE"'), "The app must be able to activate a waiting release immediately");
+assert(app.includes('navigator.serviceWorker.addEventListener("controllerchange"'), "An installed app must reload after its service-worker controller changes");
+assert(app.includes('window.addEventListener("pageshow"'), "Returning to an installed app must check for a new release");
+assert(app.includes('document.addEventListener("visibilitychange"'), "Resuming an installed app must check for a new release");
+assert.equal(manifest.start_url, `./?jkcrew-version=${version}`, "Installed launches must request the current release URL");
 assert(functionBody("mountWhatsNewPrompt").includes("rememberBattleIntro()"), "The all-update prompt should prevent a duplicate battle onboarding popup");
 assert(functionBody("mountWhatsNewPrompt").includes("mountPushSetupPrompt()"), "Notification setup should follow the What's New popup");
 assert(app.includes('const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1"'), "In-app notification sound needs a per-device preference");
@@ -460,6 +469,8 @@ assert(!helpUploadMarkup.includes("Private Riley"), "The live Coaching flow must
 assert(!helpUploadMarkup.includes("video-analysis-steps"), "The compact Coaching page must not restore the removed explainer section");
 const athleteHomeBody = functionBody("renderAthleteHome");
 assert(athleteHomeBody.includes("getHelpRequestSummaries(state.user.id)"), "Athlete Home must load lightweight Coaching reply status");
+assert(athleteHomeBody.includes("athleteRunBuilderCtaHtml()"), "Athlete Home must display the live Run Builder action");
+assert(athleteHomeBody.includes('navigate("contests")'), "The Home Run Builder action must open Contests");
 assert(athleteHomeBody.includes("athleteCoachingCtaHtml(coachingRequests)"), "Athlete Home must display the video-help action");
 assert(athleteHomeBody.indexOf("rememberCoachingReplies(coachingRequests)") < athleteHomeBody.indexOf('navigate("coaching")'), "Opening Coaching must record visible replies before navigation");
 const coachingCtaMarkup = functionBody("athleteCoachingCtaHtml");
@@ -472,6 +483,9 @@ assert(functionBody("setupRealtimeSync").includes('"trick_help_requests"'), "Vid
 assert(functionBody("scheduleRealtimeRefresh").includes('state.view === "coaching"'), "Realtime coach replies must refresh the open Coaching screen");
 assert(css.includes(".athlete-coaching-cta"), "Athlete Home needs released Coaching-card styling");
 assert(css.includes(".coaching-reply-badge"), "Athlete Home needs visible unread-reply badge styling");
+const runBuilderCtaMarkup = functionBody("athleteRunBuilderCtaHtml");
+assert(runBuilderCtaMarkup.includes("OPEN RUN BUILDER"), "Athlete Home must use an unmistakable Run Builder button label");
+assert(css.includes(".athlete-run-builder-cta"), "Athlete Home needs released Run Builder-card styling");
 const submitHelpRequestBody = functionBody("submitHelpRequest");
 assert(submitHelpRequestBody.includes('state.profile?.role !== "athlete"'), "Video Coaching uploads must require an athlete account");
 assert(submitHelpRequestBody.includes("RIDER_VIDEO_MAX_BYTES"), "Rider video upload must enforce the hosted file limit");

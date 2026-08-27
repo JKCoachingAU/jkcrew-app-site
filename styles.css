@@ -3001,6 +3001,30 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
   font: 900 0.68rem var(--mono);
 }
 
+.athlete-run-builder-cta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  border-color: rgba(247,209,84,0.4);
+  background: radial-gradient(circle at 100% 0, rgba(168,85,247,0.16), transparent 36%), linear-gradient(135deg, rgba(247,209,84,0.12), rgba(7,11,13,0.98));
+}
+.athlete-run-builder-cta h2 { margin: 3px 0 4px; font-size: clamp(1.35rem, 3vw, 2rem); }
+.athlete-run-builder-cta p { margin: 0; max-width: 690px; color: var(--muted); line-height: 1.45; }
+.run-builder-cta-icon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(247,209,84,0.5);
+  border-radius: 16px;
+  color: #160f01;
+  background: linear-gradient(135deg, #ffdd65, #f1ad26);
+  box-shadow: 0 0 28px rgba(247,209,84,0.14);
+  font: 900 1.35rem var(--display);
+}
+
 .contest-command {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -6780,8 +6804,10 @@ html[data-theme="light"] .rider-shell textarea {
 
 @media (max-width: 780px) {
   .athlete-coaching-cta,
+  .athlete-run-builder-cta,
   .contest-command { grid-template-columns: auto minmax(0, 1fr); }
   .athlete-coaching-cta .coaching-cta-button,
+  .athlete-run-builder-cta > .primary-btn,
   .contest-command > .primary-btn { grid-column: 1 / -1; width: 100%; }
   .contest-event-card { grid-template-columns: 56px minmax(0, 1fr); }
   .contest-event-date { width: 52px; height: 56px; }

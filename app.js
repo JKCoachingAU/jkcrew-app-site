@@ -26,7 +26,8 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const WHATS_NEW_RELEASE_ID = "2026-08-live-tools";
+const RELEASE_VERSION = "2.14.1";
+const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
   session: null,
@@ -387,7 +388,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.0" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.1" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -4752,6 +4753,14 @@ function athleteCoachingCtaHtml(requests = []) {
   </section>`;
 }
 
+function athleteRunBuilderCtaHtml() {
+  return `<section class="athlete-run-builder-cta panel">
+    <div class="run-builder-cta-icon" aria-hidden="true">↗</div>
+    <div><div class="eyebrow">Contests & run plans</div><h2>Build your next run</h2><p>Put a park photo on screen, map every ramp and trick, then save the route for Coach JK to review.</p></div>
+    <button id="open-home-run-builder" class="primary-btn" type="button">OPEN RUN BUILDER</button>
+  </section>`;
+}
+
 async function renderAthleteCoaching() {
   if (state.profile?.role !== "athlete") return navigate("home");
   const requests = await getHelpRequests(state.user.id);
@@ -4808,6 +4817,7 @@ async function renderAthleteHome() {
       </div>
       ${xpProgressHtml(xp)}
     </section>
+    ${athleteRunBuilderCtaHtml()}
     ${athleteCoachingCtaHtml(coachingRequests)}
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
     ${quoteSection()}
@@ -4816,6 +4826,10 @@ async function renderAthleteHome() {
     ${riderProposalForm(sheetProposals)}
     ${athleteTrickRequestSection(assignments, trickRequests)}`;
   bindGoalActions();
+  document.querySelector("#open-home-run-builder")?.addEventListener("click", () => {
+    state.runBuilder = { points: [], planType: "competition" };
+    navigate("contests");
+  });
   document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => {
     rememberCoachingReplies(coachingRequests);
     navigate("coaching");
@@ -11167,12 +11181,42 @@ window.addEventListener("appinstalled", () => {
   updateInstallButton();
   notify("JK Coaching installed. You can launch it from your apps.");
 });
+let serviceWorkerRefreshStarted = false;
+let activeServiceWorkerRegistration = null;
+async function refreshServiceWorkerRelease() {
+  if (!("serviceWorker" in navigator)) return;
+  const registration = activeServiceWorkerRegistration || await navigator.serviceWorker.getRegistration();
+  if (!registration) return;
+  activeServiceWorkerRegistration = registration;
+  await registration.update();
+  registration.waiting?.postMessage({ type: "JKCREW_ACTIVATE_RELEASE" });
+}
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (serviceWorkerRefreshStarted) return;
+    const refreshKey = `jkcrew-controller-refresh:${RELEASE_VERSION}`;
+    try {
+      if (sessionStorage.getItem(refreshKey) === "1") return;
+      sessionStorage.setItem(refreshKey, "1");
+    } catch (_) {}
+    serviceWorkerRefreshStarted = true;
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("jkcrew-version", RELEASE_VERSION);
+    window.location.replace(nextUrl.href);
+  });
+}
+window.addEventListener("pageshow", () => refreshServiceWorkerRelease().catch(() => {}));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshServiceWorkerRelease().catch(() => {});
+});
 window.addEventListener("load", async () => {
   updateInstallButton();
   if ("serviceWorker" in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js?v=2.14.0", { updateViaCache: "none" });
-      await registration.update();
+      const registration = await navigator.serviceWorker.register(`./sw.js?v=${RELEASE_VERSION}`, { updateViaCache: "none" });
+      activeServiceWorkerRegistration = registration;
+      await refreshServiceWorkerRelease();
+      window.setInterval(() => refreshServiceWorkerRelease().catch(() => {}), 5 * 60 * 1000);
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
     }
