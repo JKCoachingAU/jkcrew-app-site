@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.9";
+const RELEASE_VERSION = "2.14.10";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -393,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.9" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.10" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2232,6 +2232,20 @@ async function getRunPlans(athleteId) {
   return data || [];
 }
 
+async function getCoachContestRunPlans(eventIds = [], roster = []) {
+  const athleteIds = roster.map((athlete) => athlete.id).filter(Boolean);
+  if (!eventIds.length || !athleteIds.length) return [];
+  const { data, error } = await client.from("run_plans")
+    .select("*")
+    .eq("coach_id", state.user.id)
+    .in("athlete_id", athleteIds)
+    .in("contest_item_id", eventIds)
+    .order("updated_at", { ascending: false })
+    .limit(120);
+  if (error) throw error;
+  return data || [];
+}
+
 async function getCrewFeed() {
   const { data, error } = await client.rpc("get_crew_feed");
   if (error) throw error;
@@ -3724,9 +3738,9 @@ function commandMetricCard(label, value, meta, action = {}) {
     upcoming: "gold",
     modified: "blue",
     "videos to reply": "coral",
-    "new event runs": "gold",
+    "new event runs": "blue",
     "active battles": "purple",
-    "list requests": "aqua",
+    "list requests": "green",
   }[String(label || "").toLowerCase()] || "aqua";
   const attributes = action.view
     ? `data-view="${escapeHtml(action.view)}"`
@@ -6484,6 +6498,29 @@ function coachEventAttendanceEditorHtml(item = {}, attendees = [], roster = []) 
   </form>`;
 }
 
+function coachContestEventEditorHtml(item = {}) {
+  if (!isCoachRole(state.profile?.role)) return "";
+  return `<details class="coach-event-details-editor">
+    <summary><span><strong>EDIT EVENT DETAILS</strong><small>Correct the name, location or dates for every rider</small></span><i aria-hidden="true">+</i></summary>
+    <form data-coach-event-edit="${escapeHtml(item.id)}">
+      <div class="field coach-event-edit-title"><label for="coach-event-title-${escapeHtml(item.id)}">Event name</label><input id="coach-event-title-${escapeHtml(item.id)}" name="title" required minlength="3" maxlength="120" value="${escapeHtml(item.title || "")}"></div>
+      <div class="field coach-event-edit-details"><label for="coach-event-details-${escapeHtml(item.id)}">Location / details</label><input id="coach-event-details-${escapeHtml(item.id)}" name="details" maxlength="180" value="${escapeHtml(item.details || "")}" placeholder="Venue, city or event details"></div>
+      <div class="field"><label for="coach-event-start-${escapeHtml(item.id)}">Starts</label><input id="coach-event-start-${escapeHtml(item.id)}" name="dueAt" type="datetime-local" required value="${escapeHtml(contestDateTimeInputValue(item.due_at))}"></div>
+      <div class="field"><label for="coach-event-end-${escapeHtml(item.id)}">Ends</label><input id="coach-event-end-${escapeHtml(item.id)}" name="endAt" type="datetime-local" value="${escapeHtml(contestDateTimeInputValue(item.end_at))}"></div>
+      <button class="primary-btn" type="submit">SAVE EVENT DETAILS</button>
+    </form>
+  </details>`;
+}
+
+function coachEventAttendeeRunActionHtml(item = {}, attendee = {}, runs = [], roster = []) {
+  if (!isCoachRole(state.profile?.role) || attendee.athlete_id === state.user?.id || !roster.some((athlete) => athlete.id === attendee.athlete_id)) return "";
+  const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === attendee.athlete_id && !run.archived_at);
+  const riderName = attendee.profile?.display_name || "JKCREW rider";
+  return riderRuns.length
+    ? `<button class="secondary-btn compact-btn contest-rider-run-button" type="button" data-view-rider-event-runs="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}">VIEW RIDER'S RUN${riderRuns.length > 1 ? `S · ${riderRuns.length}` : ""}</button>`
+    : `<button class="secondary-btn compact-btn contest-rider-run-button create" type="button" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>CREATE RUN</button>`;
+}
+
 function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []) {
   const going = attendees.some((row) => row.athlete_id === state.user?.id);
   const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
@@ -6492,11 +6529,23 @@ function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []
     <header class="contest-event-modal-head"><div><div class="eyebrow">Upcoming event</div><h2 id="contest-event-modal-title">${escapeHtml(item.title)}</h2><p>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close event">×</button></header>
     ${item.details ? `<div class="contest-event-location"><span aria-hidden="true">⌖</span><strong>${escapeHtml(item.details)}</strong></div>` : ""}
     <div class="contest-attendee-section"><div class="panel-head"><div><div class="panel-title">Who's going</div><div class="panel-meta">${attendees.length} confirmed</div></div></div>
-      <div class="contest-attendee-list">${attendees.length ? attendees.map((row) => `<div class="contest-attendee-row">${avatarHtml(row.profile || {}, "contest-attendee-avatar")}<div><strong>${escapeHtml(row.profile?.display_name || "JKCREW member")}${row.athlete_id === state.user?.id ? " · You" : ""}</strong><small>${row.athlete_id === state.user?.id && coachView ? "Confirmed coach" : "Confirmed rider"}</small></div></div>`).join("") : `<div class="contest-empty"><strong>Nobody confirmed yet</strong><span>Attendance can be updated below.</span></div>`}</div>
+      <div class="contest-attendee-list">${attendees.length ? attendees.map((row) => `<div class="contest-attendee-row">${avatarHtml(row.profile || {}, "contest-attendee-avatar")}<div class="contest-attendee-copy"><strong>${escapeHtml(row.profile?.display_name || "JKCREW member")}${row.athlete_id === state.user?.id ? " · You" : ""}</strong><small>${row.athlete_id === state.user?.id && coachView ? "Confirmed coach" : "Confirmed rider"}</small></div>${coachEventAttendeeRunActionHtml(item, row, runs, roster)}</div>`).join("") : `<div class="contest-empty"><strong>Nobody confirmed yet</strong><span>Attendance can be updated below.</span></div>`}</div>
     </div>
+    ${coachView ? coachContestEventEditorHtml(item) : ""}
     ${coachView ? coachEventAttendanceEditorHtml(item, attendees, roster) : ""}
     <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : "Your run plan stays private"}</strong><p>${coachView ? "Each route, trick list, note and park photo is visible only to that rider and their linked coach." : `Other riders can see that you're going, but they cannot see your route, tricks, notes or park photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
     ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
+  </section>`;
+}
+
+function coachEventRunViewerHtml(runs = [], athleteName = "Rider", item = {}) {
+  const savedRuns = runs.filter((run) => !run.archived_at);
+  return `<section class="contest-event-modal coach-event-run-modal" role="dialog" aria-modal="true" aria-labelledby="coach-event-run-title">
+    <header class="contest-event-modal-head"><div><div class="eyebrow">Private rider ${savedRuns.length === 1 ? "run" : "runs"}</div><h2 id="coach-event-run-title">${escapeHtml(athleteName)} · ${escapeHtml(item.title || "Event plan")}</h2><p>${savedRuns.length} saved private ${savedRuns.length === 1 ? "run" : "runs"} for this event</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close rider run">×</button></header>
+    <div class="coach-event-run-viewer">
+      <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private to coach and rider</strong><p>This park photo, route, tricks and notes are not visible to other riders.</p></div></div>
+      ${savedRuns.map((run) => { const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
+    </div>
   </section>`;
 }
 
@@ -6522,8 +6571,32 @@ function openContestEventModal(item = {}, attendees = [], runs = [], roster = []
   state.contestEventEscapeHandler = (event) => { if (event.key === "Escape") close(); };
   document.addEventListener("keydown", state.contestEventEscapeHandler);
   backdrop.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
+  backdrop.querySelector("[data-coach-event-edit]")?.addEventListener("submit", saveCoachContestEventEdit);
   backdrop.querySelector("[data-coach-event-attendance]")?.addEventListener("submit", saveCoachEventAttendance);
   backdrop.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
+  backdrop.querySelectorAll("[data-create-rider-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
+  backdrop.querySelectorAll("[data-view-rider-event-runs]").forEach((button) => button.addEventListener("click", () => {
+    const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === button.dataset.viewRiderEventRuns && !run.archived_at);
+    if (riderRuns.length) openCoachEventRunModal(riderRuns, button.dataset.runAthleteName || "Rider", item);
+  }));
+  backdrop.querySelector("[data-close-contest-event]")?.focus();
+}
+
+function openCoachEventRunModal(runs = [], athleteName = "Rider", item = {}) {
+  stopRunPlayback();
+  closeContestEventModal();
+  const backdrop = document.createElement("div");
+  backdrop.id = "contest-event-backdrop";
+  backdrop.className = "contest-event-backdrop";
+  backdrop.innerHTML = coachEventRunViewerHtml(runs, athleteName, item);
+  document.body.append(backdrop);
+  document.documentElement.classList.add("contest-event-open");
+  const close = () => { stopRunPlayback(); closeContestEventModal(); };
+  backdrop.querySelector("[data-close-contest-event]")?.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  state.contestEventEscapeHandler = (event) => { if (event.key === "Escape") close(); };
+  document.addEventListener("keydown", state.contestEventEscapeHandler);
+  bindRunPlaybackControls();
   backdrop.querySelector("[data-close-contest-event]")?.focus();
 }
 
@@ -6649,6 +6722,37 @@ async function replaceCoachContestAttendance(eventId, attendeeIds = []) {
     p_attendee_ids: uniqueIds,
   });
   if (error) throw error;
+}
+
+async function saveCoachContestEventEdit(event) {
+  event.preventDefault();
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can edit events.", "error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const title = String(form.get("title") || "").trim();
+  const details = String(form.get("details") || "").trim();
+  const dueAt = new Date(String(form.get("dueAt") || ""));
+  const endValue = String(form.get("endAt") || "");
+  const endAt = endValue ? new Date(endValue) : null;
+  if (title.length < 3 || Number.isNaN(dueAt.getTime())) return notify("Add the event name and start date.", "error");
+  if (endAt && (Number.isNaN(endAt.getTime()) || endAt < dueAt)) return notify("The event finish must be after it starts.", "error");
+  const button = formElement.querySelector("button[type='submit']");
+  const restore = setButtonBusy(button, "SAVING...");
+  const { error } = await client.rpc("coach_update_contest_event", {
+    p_event_id: formElement.dataset.coachEventEdit,
+    p_title: title,
+    p_details: details,
+    p_due_at: dueAt.toISOString(),
+    p_end_at: endAt ? endAt.toISOString() : null,
+  });
+  if (error) {
+    restore();
+    return notify(messageFrom(error), "error");
+  }
+  closeContestEventModal();
+  cacheClear("coach-command:");
+  notify("Event details updated for coach and rider views.");
+  await renderContests();
 }
 
 async function refreshContestSurface() {
@@ -6815,6 +6919,9 @@ async function openRunBuilder(event = null) {
   const eventTitle = button?.dataset.eventTitle || "";
   const eventDetails = button?.dataset.eventDetails || "";
   const eventDate = button?.dataset.eventDate || "";
+  const athleteId = button?.dataset.createRiderEventRun || button?.dataset.runAthleteId || "";
+  const athleteName = button?.dataset.runAthleteName || "";
+  if (isCoachRole(state.profile?.role) && athleteId) state.selectedAthleteId = athleteId;
   state.runBuilder = {
     points: [],
     title: eventTitle ? `${eventTitle} · Run` : "",
@@ -6822,6 +6929,8 @@ async function openRunBuilder(event = null) {
     planType: eventTitle ? "competition" : "training",
     notes: eventTitle ? `Contest: ${eventTitle}${eventDate ? ` · ${dateLabel(eventDate)}` : ""}` : "",
     contestItemId: button?.dataset.eventId || null,
+    athleteId: athleteId || null,
+    athleteName,
   };
   await renderContests();
   document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -6837,16 +6946,18 @@ async function renderContests() {
   stopRunPlayback();
   closeContestEventModal();
   const coachView = isCoachRole(state.profile?.role);
-  const [{ events, attendance }, runs, roster] = await Promise.all([
+  const [{ events, attendance }, roster] = await Promise.all([
     getSharedUpcomingEventData(),
-    getRunPlans(state.user.id),
     coachView ? getCoachRoster() : Promise.resolve([]),
   ]);
+  const runs = coachView
+    ? await getCoachContestRunPlans(events.map((item) => item.id), roster)
+    : await getRunPlans(state.user.id);
   const activeRuns = runs.filter((run) => !run.archived_at);
   const athleteView = state.profile?.role === "athlete";
   document.querySelector("#view").innerHTML = `
     <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : "Events & private planning"}</div><h1>Events & <span>runs</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
-    <section class="panel shared-events-panel">
+    <section class="panel shared-events-panel athlete-event-palette">
       <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
       ${contestEventCardsHtml(events, runs, attendance, roster)}
     </section>
@@ -8309,7 +8420,7 @@ function runBuilderPanel(runs = [], options = {}) {
   if (options.collapsed) {
     return closedPanelAccordion("Contest Run Planner", "The same visual dot-and-curve planner used by riders", body, "run-builder-panel");
   }
-  return `<section class="panel run-builder-live" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">Build mode</div><div class="panel-title">Contest Run Planner</div><div class="panel-meta">Tap the park, bend the coloured route, finish on any number, then control the full playback up to 60 seconds</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
+  return `<section class="panel run-builder-live" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">Contest Run Planner</div><div class="panel-meta">Tap the park, bend the coloured route, finish on any number, then control the full playback up to 60 seconds</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
     ${body}
   </section>`;
 }
@@ -10516,7 +10627,8 @@ async function saveRunPlan(event) {
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
   const isCoach = isCoachRole(state.profile.role);
-  const athleteId = isCoach ? state.selectedAthleteId : state.user.id;
+  const athleteId = isCoach ? (state.runBuilder?.athleteId || state.selectedAthleteId) : state.user.id;
+  if (!athleteId) return notify("Choose the rider this run belongs to.", "error");
   const coachId = isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
   const payload = {
     coach_id: coachId,
@@ -10535,8 +10647,10 @@ async function saveRunPlan(event) {
     : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
   const { error } = await query;
   if (error) return notify(messageFrom(error), "error");
+  const savedFor = state.runBuilder?.athleteName;
   state.runBuilder = null;
-  notify("Run plan saved.");
+  cacheClear("coach-command:");
+  notify(savedFor ? `Private run saved for ${savedFor}.` : "Run plan saved.");
   await runBuilderRefreshView();
 }
 

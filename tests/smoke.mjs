@@ -15,8 +15,9 @@ const manifest = JSON.parse(manifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
 const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
+const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.9";
+const version = "2.14.10";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -473,6 +474,8 @@ assert(contestsRenderer.includes("runPlansHtml(runs)"), "Athlete Contests must r
 assert(!contestsRenderer.includes("runBuilderPanel(runs, { collapsed: true })"), "The released Run Builder must not remain buried in the old collapsed panel");
 assert(!contestsRenderer.includes("contest-command"), "Events & Runs must not restore the old oversized Run Builder card");
 assert(contestsRenderer.includes("Your private run plans"), "Saved run plans must sit in a clearly private section");
+assert(contestsRenderer.includes("athlete-event-palette"), "Coach Events must use the rider Events colour system");
+assert(contestsRenderer.includes("getCoachContestRunPlans"), "Coach Events must load linked riders' event runs through private run-plan RLS");
 const contestCardsBody = functionBody("contestEventCardsHtml");
 assert(contestCardsBody.includes("data-open-contest-event"), "Each event must open its attendee details");
 assert(contestCardsBody.includes("data-toggle-contest-attendance"), "Riders must be able to join an existing shared event");
@@ -487,12 +490,23 @@ assert(contestModalBody.includes("Who's going"), "Opening an event must show the
 assert(contestModalBody.includes("row.profile?.display_name"), "The attendee list must show rider names");
 assert(contestModalBody.includes("they cannot see your route, tricks, notes or park photo"), "The event modal must explain run-plan privacy");
 assert(contestModalBody.includes("coachEventAttendanceEditorHtml"), "The coach event modal must render the shared attendance editor");
+assert(contestModalBody.includes("coachContestEventEditorHtml"), "The coach event modal must allow corrections to the shared event details");
+assert(contestModalBody.includes("coachEventAttendeeRunActionHtml"), "Each linked rider attending an event must have a private run action");
+assert(functionBody("coachEventAttendeeRunActionHtml").includes("VIEW RIDER'S RUN"), "An existing rider run must show View Rider's Run");
+assert(functionBody("coachEventAttendeeRunActionHtml").includes("CREATE RUN"), "A rider without a plan must show Create Run");
+assert(functionBody("openCoachEventRunModal").includes("bindRunPlaybackControls"), "Coach event run viewing must include the saved playback controls");
+assert(functionBody("saveCoachContestEventEdit").includes('rpc("coach_update_contest_event"'), "Coach event edits must use the audited database endpoint");
 assert(functionBody("saveCoachEventAttendance").includes("replaceCoachContestAttendance"), "Coach attendance saves must use the shared atomic attendance helper");
 assert(functionBody("replaceCoachContestAttendance").includes('rpc("coach_replace_event_attendance"'), "Coach attendance changes must use one atomic database operation");
 assert(coachAttendanceMigration.includes("security definer"), "Coach attendance updates must use a narrowly-authorized database operation");
 assert(coachAttendanceMigration.includes("public.coach_athletes"), "A coach must only manage riders linked to their crew");
 assert(coachAttendanceMigration.includes("private.event_attendance_audit"), "Coach event attendance edits need a private recovery audit");
 assert(coachAttendanceMigration.includes("revoke all on function public.coach_replace_event_attendance(uuid, uuid[]) from public, anon"), "Anonymous users must not call the coach attendance endpoint");
+assert(coachEventEditMigration.includes("private.event_edit_audit"), "Coach event corrections need a private recovery audit");
+assert(coachEventEditMigration.includes("security invoker"), "The public event-edit endpoint must not itself bypass RLS");
+assert(coachEventEditMigration.includes("You can only edit events created by riders in your crew"), "A coach must only correct events belonging to their crew");
+assert(coachEventEditMigration.includes("link.athlete_id = run_plans.athlete_id"), "Coach run-plan writes must be restricted to linked riders");
+assert(coachEventEditMigration.includes("revoke all on function public.coach_update_contest_event"), "Anonymous users must not call the event-edit endpoint");
 const sharedEventSaveBody = functionBody("saveSharedContestEvent");
 assert(sharedEventSaveBody.includes("normalizeContestEventTitle(item.title)"), "Creating an event must first reuse a matching shared event");
 assert(sharedEventSaveBody.includes("contestEventDay(item.due_at)"), "Shared event matching must include its start day");
