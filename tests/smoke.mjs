@@ -109,13 +109,13 @@ for (const label of ["Command", "Session", "Riders", "Challenges", "Coach Tools"
 }
 
 const parentNavBody = app.match(/const parentNav = \[([\s\S]*?)\];/)?.[1] || "";
-assert.equal((parentNavBody.match(/\["/g) || []).length, 3, "Parent navigation must keep three items");
-for (const label of ["Home", "Tricktionary", "Profile"]) {
+assert.equal((parentNavBody.match(/\["/g) || []).length, 5, "Parent navigation must expose the five family views");
+for (const label of ["Home", "Week", "Coaching", "Calendar", "More"]) {
   assert(parentNavBody.includes(`"${label}"`), `Parent navigation is missing ${label}`);
 }
 assert(
-  css.includes(".parent-shell .bottom-nav {\n  grid-template-columns: repeat(3, minmax(0, 1fr));"),
-  "Parent bottom navigation must remain a three-column layout",
+  css.includes(".parent-shell .bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }"),
+  "Parent bottom navigation must use a five-column family layout",
 );
 for (const tone of ["aqua", "blue", "violet", "gold", "coral"]) {
   assert(css.includes(`--parent-${tone}:`), `Parent palette is missing ${tone}`);
@@ -123,8 +123,33 @@ for (const tone of ["aqua", "blue", "violet", "gold", "coral"]) {
 assert(css.includes(".parent-shell .parent-child-card"), "Parent linked-rider cards should use the parent visual system");
 assert(css.includes(".parent-shell .push-settings-card"), "Parent profile controls should use the parent visual system");
 assert(!css.includes(".parent-shell .parent-readonly { pointer-events: none; }"), "Read-only parent content must still allow accordion navigation");
-assert(functionBody("renderParentHome").includes("assignmentGroups(assignments, false)"), "Parent schedules must remain read-only");
+assert(functionBody("renderParentWeek").includes("assignmentGroups(assignments, false)"), "Parent weekly sheets must remain read-only");
 assert(!functionBody("renderParentTricktionary").includes("editable: true"), "Parent Tricktionary must remain read-only");
+assert(app.includes('parentAthleteId: ""'), "Parent screens must track the selected linked rider");
+assert(functionBody("rememberParentAthleteId").includes("localStorage.setItem(parentSelectionStorageKey(), athleteId)"), "The selected child must persist per parent account");
+assert(functionBody("getParentRiderContext").includes("storedParentAthleteId()"), "Every parent screen must restore the saved child selection");
+for (const screen of ["renderParentHome", "renderParentWeek", "renderParentCoaching", "renderParentCalendar", "renderParentMore"]) {
+  assert(functionBody(screen).includes("parentChildSwitcherHtml(context)"), `${screen} must include the shared child switcher`);
+}
+assert(functionBody("renderParentHome").includes("parentLatestCoachMessageHtml"), "Parent Home must prioritize the latest coach message");
+assert(functionBody("renderParentHome").includes("parentNextItemHtml"), "Parent Home must show the next scheduled item");
+assert(functionBody("renderParentHome").includes("parentLatestFeedbackHtml"), "Parent Home must surface the latest private feedback");
+assert(functionBody("renderParentHome").includes("parentRecentActivityHtml"), "Parent Home must keep recent progress scannable");
+const parentCoachingBody = functionBody("renderParentCoaching");
+assert(parentCoachingBody.includes("getMyCoachMessages(20)"), "Parent Coaching must load private coach messages");
+assert(parentCoachingBody.includes("getHelpRequests(context.selected.id)"), "Parent Coaching must load the selected rider's video feedback");
+assert(!parentCoachingBody.includes("getCrewFeed"), "Parent Coaching must not include the public crew feed");
+const parentCalendarBody = functionBody("renderParentCalendar");
+assert(parentCalendarBody.includes("getDashboardItems(context.selected.id)"), "Parent Calendar must retain rider events and tasks");
+assert(parentCalendarBody.includes('.from("training_sessions")'), "Parent Calendar must retain session history");
+const parentMoreBody = functionBody("renderParentMore");
+for (const source of ["getTricktionaryData", "getRunPlans", "getXpSummary", "getPushNotificationState"]) {
+  assert(parentMoreBody.includes(source), `Parent More must retain ${source}`);
+}
+assert(app.includes('id="parent-notification-bell"'), "Parent shell must include a notification bell");
+assert(functionBody("showParentNotificationDrawer").includes("getMyCoachMessages(10)"), "Parent notification drawer must use existing coach-message data");
+assert(functionBody("showParentNotificationDrawer").includes("getHelpRequests(context.selected.id)"), "Parent notification drawer must include returned video feedback");
+assert(functionBody("showParentNotificationDrawer").includes("getDashboardItems(context.selected.id)"), "Parent notification drawer must include calendar updates");
 
 const viewerTabs = app.match(/const sessionViewerListTabs = \[([\s\S]*?)\];/)?.[1] || "";
 for (const tab of ["daily", "one_bang", "dialled", "lines", "percentage", "foam_pit", "bonus"]) {

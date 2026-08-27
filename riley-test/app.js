@@ -39,6 +39,7 @@ const state = {
   trickStartedAt: Date.now(),
   timer: null,
   selectedAthleteId: null,
+  parentAthleteId: "",
   publicAthleteId: null,
   selectedVenue: "",
   sessionOpenDailyVenues: new Set(),
@@ -155,8 +156,10 @@ const coachNavGroups = [
 ];
 const parentNav = [
   ["home", "Home"],
-  ["tricktionary", "Tricktionary"],
-  ["profile", "Profile"],
+  ["parentWeek", "Week"],
+  ["parentCoaching", "Coaching"],
+  ["parentCalendar", "Calendar"],
+  ["parentMore", "More"],
 ];
 
 function coachPrimaryView(view = "") {
@@ -166,6 +169,11 @@ function coachPrimaryView(view = "") {
   if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
   if (["more", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
+}
+
+function parentPrimaryView(view = "") {
+  if (["profile", "tricktionary"].includes(view)) return "parentMore";
+  return view;
 }
 
 const escapeHtml = (value = "") => String(value)
@@ -1200,7 +1208,7 @@ function renderShell() {
   const role = state.profile.role;
   const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎" };
+  const navIcons = { home: "⌂", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
   const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
@@ -1222,13 +1230,17 @@ function renderShell() {
       <div class="main-wrap">
         <header class="topbar">
           <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.77" alt="">JKCREW live</div>
-          <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
+          <div class="topbar-actions">
+            ${role === "parent" ? `<button class="parent-notification-bell" id="parent-notification-bell" type="button" aria-label="Open parent notifications"><span aria-hidden="true">●</span><b>Updates</b><i aria-hidden="true"></i></button>` : ""}
+            <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
+          </div>
         </header>
         <main id="view" class="content"></main>
       </div>
       <nav class="bottom-nav">${bottomNavHtml}</nav>
   </div>`;
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelector("#parent-notification-bell")?.addEventListener("click", showParentNotificationDrawer);
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
 }
 
@@ -1551,16 +1563,24 @@ async function navigate(view) {
   state.view = view;
   const viewElement = document.querySelector("#view");
   if (viewElement) viewElement.dataset.view = view;
-  const activeView = isCoachRole(state.profile?.role) ? coachPrimaryView(view) : view;
+  const activeView = isCoachRole(state.profile?.role)
+    ? coachPrimaryView(view)
+    : state.profile?.role === "parent" ? parentPrimaryView(view) : view;
   document.querySelectorAll("[data-view]").forEach((button) => {
     const buttonView = button.dataset.view;
-    const buttonActiveView = isCoachRole(state.profile?.role) ? coachPrimaryView(buttonView) : buttonView;
+    const buttonActiveView = isCoachRole(state.profile?.role)
+      ? coachPrimaryView(buttonView)
+      : state.profile?.role === "parent" ? parentPrimaryView(buttonView) : buttonView;
     const isSubnav = button.classList.contains("nav-sub-btn");
     button.classList.toggle("active", buttonView === view || (!isSubnav && buttonActiveView === activeView));
   });
   setLoading();
   const renders = {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
+    parentWeek: renderParentWeek,
+    parentCoaching: renderParentCoaching,
+    parentCalendar: renderParentCalendar,
+    parentMore: renderParentMore,
     session: renderSession,
     challenges: renderChallenges,
     tricktionary: renderTricktionary,
@@ -1774,6 +1794,9 @@ function scheduleRealtimeRefresh(reason = "sync") {
       else if (state.view === "home") {
         if (state.profile.role === "parent") await renderParentHome();
         else if (state.profile.role === "athlete") await renderAthleteHome();
+      } else if (state.profile.role === "parent" && ["parentWeek", "parentCoaching", "parentCalendar", "parentMore"].includes(state.view)) {
+        const parentRender = { parentWeek: renderParentWeek, parentCoaching: renderParentCoaching, parentCalendar: renderParentCalendar, parentMore: renderParentMore }[state.view];
+        await parentRender();
       } else if (state.view === "crew" && isCoachRole(state.profile.role)) {
         await renderCrew();
       } else if (state.view === "student" && state.selectedAthleteId) await renderStudentProfile();
@@ -4533,24 +4556,24 @@ async function removeManualTrick(event) {
 }
 
 async function renderParentTricktionary() {
-  const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
-  if (error) throw error;
-  if (!links?.length) {
-    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your coach needs to link this account to a rider first.</p></div></div>`;
+  const context = await getParentRiderContext();
+  if (!context.selected) {
+    document.querySelector("#view").innerHTML = parentWaitingHtml();
     return;
   }
-  const sections = await Promise.all(links.map(async (link) => {
-    const data = await getTricktionaryData(link.athlete_id);
-    const entries = landedTricktionaryEntries(data);
-    return `<section class="panel parent-child-card">
-      <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
+  const data = await getTricktionaryData(context.selected.id);
+  const entries = landedTricktionaryEntries(data);
+  document.querySelector("#view").innerHTML = `
+    ${parentChildSwitcherHtml(context)}
+    ${parentPageHeadHtml("Rider library", "Tricktionary", "history", `${firstName(context.selected)}'s read-only landed tricks, attempts and Daily PB.`)}
+    <section class="panel parent-child-card">
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div><button class="secondary-btn compact-btn" type="button" data-parent-open-view="parentMore">Back to More</button></div>
       ${tricktionaryBoardHtml(entries, data.attempts)}
       <div class="settings-divider"></div>
       <div class="panel-title">Attempted this week</div>
       ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()))}
     </section>`;
-  }));
-  document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Tricktionary <span>history</span></h1><p>Read-only landed tricks, attempts, and Daily PBs for linked riders. Previous training sheets live in Profile.</p></div></div>${sections.join("")}`;
+  bindParentPageActions();
 }
 
 async function renderCoachTricktionary() {
@@ -4769,93 +4792,356 @@ function weeklyCompletionPercent(assignments, awards) {
   return weeklyItems.length ? Math.round((weeklyDone / weeklyItems.length) * 100) : 0;
 }
 
-async function renderParentHome() {
-  const [{ data: links, error }, coachMessages] = await Promise.all([
-    client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id),
-    getMyCoachMessages(3).catch((messageError) => {
-      console.warn("Coach messages unavailable", messageError);
-      return [];
-    }),
-  ]);
+function parentSelectionStorageKey() {
+  return `jkcrew-parent-selected-rider:${state.user?.id || "parent"}`;
+}
+
+function storedParentAthleteId() {
+  try { return localStorage.getItem(parentSelectionStorageKey()) || ""; } catch (_) { return ""; }
+}
+
+function rememberParentAthleteId(athleteId = "") {
+  state.parentAthleteId = athleteId;
+  state.selectedAthleteId = athleteId || null;
+  try { localStorage.setItem(parentSelectionStorageKey(), athleteId); } catch (_) {}
+}
+
+async function getParentRiderContext() {
+  const { data: links, error } = await client.from("parent_athletes")
+    .select("athlete_id, relationship")
+    .eq("parent_id", state.user.id);
   if (error) throw error;
-  const ids = (links || []).map((link) => link.athlete_id);
-  if (!ids.length) {
-    document.querySelector("#view").innerHTML = `
-      ${coachMessagesHtml(coachMessages)}
-      <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Waiting to be <span>linked</span></h1><p>Your parent account is ready, but it is not connected to a rider yet.</p></div></div>
-      <section class="panel parent-waiting-card">
-        ${avatarHtml(state.profile, "profile-avatar")}
-        <div>
-          <div class="panel-title">Your account is waiting to be linked to your child's rider profile.</div>
-          <p class="subcopy">Once your coach links your account, you'll be able to view your child's progress, goals, training plan, points, badges, and session history.</p>
-        </div>
-      </section>`;
+  const ids = [...new Set((links || []).map((link) => link.athlete_id).filter(Boolean))];
+  if (!ids.length) return { links: [], athletes: [], selected: null, relationship: "" };
+  const { data: athletes, error: athleteError } = await client.from("profiles")
+    .select(PROFILE_SELECT)
+    .in("id", ids)
+    .order("display_name");
+  if (athleteError) throw athleteError;
+  const preferredId = state.parentAthleteId || storedParentAthleteId();
+  const selected = (athletes || []).find((athlete) => athlete.id === preferredId) || athletes?.[0] || null;
+  if (selected) rememberParentAthleteId(selected.id);
+  const link = (links || []).find((row) => row.athlete_id === selected?.id);
+  return { links: links || [], athletes: athletes || [], selected, relationship: link?.relationship || "" };
+}
+
+function parentWaitingHtml() {
+  return `<div class="page-head parent-page-head"><div><div class="eyebrow">JKCREW family</div><h1>Waiting to be <span>linked</span></h1><p>Your parent account is ready. Coach JK needs to link it to a rider before progress appears here.</p></div></div>
+    <section class="panel parent-waiting-card">
+      ${avatarHtml(state.profile, "profile-avatar")}
+      <div><div class="panel-title">Your family dashboard is ready</div><p class="subcopy">Once linked, you will see the current week, private coaching feedback, events, XP and training history without being able to change the rider's sheet.</p></div>
+    </section>`;
+}
+
+function parentChildSwitcherHtml(context = {}) {
+  const { athletes = [], selected, relationship = "" } = context;
+  if (!selected) return "";
+  const options = athletes.map((athlete) => `<option value="${escapeHtml(athlete.id)}" ${athlete.id === selected.id ? "selected" : ""}>${escapeHtml(athlete.display_name)}</option>`).join("");
+  return `<section class="parent-child-switcher" aria-label="Selected linked rider">
+    <div class="parent-child-identity">${avatarHtml(selected, "student-chip-avatar")}<div><small>Viewing${relationship ? ` · ${escapeHtml(relationship)}` : ""}</small><strong>${escapeHtml(selected.display_name)}</strong></div></div>
+    ${athletes.length > 1 ? `<label for="parent-athlete-select"><span>Switch rider</span><select id="parent-athlete-select">${options}</select></label>` : `<span class="parent-readonly-chip">Read only</span>`}
+  </section>`;
+}
+
+function parentPageHeadHtml(eyebrow, title, accent, copy) {
+  return `<div class="page-head parent-page-head"><div><div class="eyebrow">${escapeHtml(eyebrow)}</div><h1>${escapeHtml(title)} <span>${escapeHtml(accent)}</span></h1><p>${escapeHtml(copy)}</p></div></div>`;
+}
+
+function renderCurrentParentView() {
+  const renders = {
+    home: renderParentHome,
+    parentWeek: renderParentWeek,
+    parentCoaching: renderParentCoaching,
+    parentCalendar: renderParentCalendar,
+    parentMore: renderParentMore,
+    tricktionary: renderParentTricktionary,
+    profile: renderProfile,
+  };
+  return (renders[state.view] || renderParentHome)();
+}
+
+function bindParentPageActions() {
+  bindDailyVenueAccordions();
+  bindSessionAssignmentAccordions();
+  document.querySelector("#parent-athlete-select")?.addEventListener("change", async (event) => {
+    rememberParentAthleteId(event.currentTarget.value);
+    cacheClear("schedule:");
+    await renderCurrentParentView();
+  });
+  document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
+  document.querySelectorAll("[data-parent-open-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.parentOpenView)));
+  document.querySelectorAll("[data-play-run]").forEach((button) => button.addEventListener("click", () => playRunPreview(button.closest(".run-card")?.querySelector(".run-map-preview"))));
+}
+
+function parentLatestCoachMessageHtml(messages = []) {
+  const message = messages[0];
+  if (!message) return `<div class="parent-empty-note"><strong>No new coach message</strong><span>Updates from Coach JK will appear here.</span></div>`;
+  return `<article class="parent-coach-update" data-coach-message-card="${escapeHtml(message.id)}">
+    <div class="parent-card-kicker"><span>Coach JK</span><small>${dateLabel(message.sent_at)}</small></div>
+    <p>${escapeHtml(message.message)}</p>
+    <button class="parent-text-action" type="button" data-parent-open-view="parentCoaching">Open Coaching</button>
+  </article>`;
+}
+
+function parentNextItemHtml(items = []) {
+  const now = Date.now();
+  const upcoming = items
+    .filter((item) => !item.completed)
+    .slice()
+    .sort((a, b) => (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER));
+  const item = upcoming.find((entry) => !entry.due_at || new Date(entry.end_at || entry.due_at).getTime() >= now) || upcoming[0];
+  if (!item) return `<div class="parent-empty-note"><strong>Nothing due</strong><span>No upcoming event or task has been added yet.</span></div>`;
+  return `<article class="parent-next-item"><span>${escapeHtml(item.item_type || "Update")}</span><strong>${escapeHtml(item.title)}</strong><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small><button class="parent-text-action" type="button" data-parent-open-view="parentCalendar">Open Calendar</button></article>`;
+}
+
+function parentLatestFeedbackHtml(requests = []) {
+  const feedback = requests.find((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+  if (!feedback) return `<div class="parent-empty-note"><strong>No returned video feedback yet</strong><span>Coach replies will stay private to your family and coach.</span></div>`;
+  return `<article class="parent-feedback-preview"><div class="parent-card-kicker"><span>Video feedback returned</span><small>${dateLabel(feedback.replied_at || feedback.created_at)}</small></div><strong>${escapeHtml(feedback.question || "Trick review")}</strong>${feedback.coach_comment ? `<p>${escapeHtml(feedback.coach_comment)}</p>` : `<p>Coach JK returned a private video reply.</p>`}<button class="parent-text-action" type="button" data-parent-open-view="parentCoaching">Watch feedback</button></article>`;
+}
+
+function parentRecentActivityHtml(assignments = [], assignmentAttempts = [], awards = [], sessions = []) {
+  const assignmentById = new Map(assignments.map((assignment) => [assignment.id, assignment]));
+  const rows = [
+    ...assignmentAttempts.slice(0, 4).map((attempt) => ({
+      at: attempt.attempted_at,
+      tone: "blue",
+      label: assignmentById.get(attempt.assignment_id)?.trick_name || "Trick attempted",
+      meta: "Training attempt",
+    })),
+    ...awards.slice(0, 4).map((award) => ({
+      at: award.created_at,
+      tone: "aqua",
+      label: assignmentById.get(award.assignment_id)?.trick_name || "Sheet progress",
+      meta: `${Number(award.points || 0)} point${Number(award.points || 0) === 1 ? "" : "s"} earned`,
+    })),
+    ...sessions.slice(0, 3).map((session) => ({
+      at: session.started_at,
+      tone: "gold",
+      label: "Training session",
+      meta: session.ended_at ? `${Number(session.total_points || 0)} points recorded` : "Session in progress",
+    })),
+  ].filter((row) => row.at).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 5);
+  if (!rows.length) return `<div class="parent-empty-note"><strong>No recent activity</strong><span>Completed tricks and sessions will appear here.</span></div>`;
+  return `<div class="parent-activity-list">${rows.map((row) => `<div class="parent-activity-row"><i class="tone-${row.tone}" aria-hidden="true"></i><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.meta)} · ${dateLabel(row.at)}</small></div></div>`).join("")}</div>`;
+}
+
+async function renderParentHome() {
+  const [context, coachMessages] = await Promise.all([
+    getParentRiderContext(),
+    getMyCoachMessages(5).catch((error) => { console.warn("Coach messages unavailable", error); return []; }),
+  ]);
+  if (!context.selected) {
+    document.querySelector("#view").innerHTML = `${coachMessagesHtml(coachMessages)}${parentWaitingHtml()}`;
+    bindParentPageActions();
     return;
   }
-  const { data: athletes, error: athleteError } = await client.from("profiles").select(PROFILE_SELECT).in("id", ids).order("display_name");
-  if (athleteError) throw athleteError;
-  const leaderboard = await getLeaderboard();
-  const linkByAthlete = new Map((links || []).map((link) => [link.athlete_id, link]));
-  const cards = await Promise.all((athletes || []).map(async (athlete) => {
-    const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, runs, xpSummary] = await Promise.all([
-      getWeeklyAssignments(athlete.id),
-      getHelpRequests(athlete.id),
-      getDashboardItems(athlete.id),
-      client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5).then((result) => {
-        if (result.error) throw result.error;
-        return result.data || [];
-      }),
-      getRunPlans(athlete.id),
-      getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
-    ]);
-    const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
-    const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
-    const percent = weeklyCompletionPercent(assignments, awards);
-    const weeklyItems = completionAssignments(assignments);
-    const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
-    const xp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
-    const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
-    const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
-    const relationship = linkByAthlete.get(athlete.id)?.relationship;
-    return `<section class="panel parent-child-card">
-      <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view${relationship ? ` · ${escapeHtml(relationship)}` : ""}</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</p></div></div>
-      <div class="scoreboard-stats">
-        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
-        ${statCard("Weekly completion", `${percent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
-        ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked weekly items")}
-      </div>
-      ${xpProgressHtml(xp, true)}
-      <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${percent}% of this week's BMX program.</div>
-      <div class="settings-divider"></div>
-      <div class="panel-title">Attempted this week</div>
-      ${weeklyAttemptsHtml(assignmentAttempts || [])}
-      ${goalsReadonlyHtml(athlete)}
-      <div class="settings-divider"></div>
-      <div class="panel-title">Badges & achievements</div>
-      <div class="public-badges">${badgeStripHtml(athlete.badges)}</div>
-      ${levelBadgesAccordionHtml(xp)}
-      <div class="settings-divider"></div>
-      <div class="panel-title">Training plan</div>
-      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
-      <div class="settings-divider"></div>
-      <div class="panel-title">Events & tasks</div>
-      ${dashboardItemsHtml(dashboardItems, false)}
-      <div class="settings-divider"></div>
-      <div class="panel-title">Session progress</div>
-      ${sessionRows}
-      <div class="settings-divider"></div>
-      <div class="panel-title">Run plans</div>
-      ${runPlansHtml(runs)}
-      <div class="settings-divider"></div>
-      <div class="panel-title">Coach feedback</div>
-      <div class="help-list">${helpRequestsHtml(visibleFeedback, "parent")}</div>
-    </section>`;
-  }));
+  const athlete = context.selected;
+  const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, leaderboard, xpSummary] = await Promise.all([
+    getWeeklyAssignments(athlete.id),
+    getHelpRequests(athlete.id),
+    getDashboardItems(athlete.id),
+    client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(8).then((result) => {
+      if (result.error) throw result.error;
+      return result.data || [];
+    }),
+    getLeaderboard(),
+    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
+  ]);
+  const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
+  const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
+  const weeklyItems = completionAssignments(assignments);
+  const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
+  const percent = weeklyCompletionPercent(assignments, awards);
+  const xp = normalizeXpSummary(xpSummary, athlete);
   document.querySelector("#view").innerHTML = `
-    ${coachMessagesHtml(coachMessages)}
-    <div class="page-head"><div><div class="eyebrow">Parent viewer</div><h1>Linked <span>riders</span></h1><p>Read-only progress for the riders your coach has linked to this parent account.</p></div></div>
-    ${cards.join("")}`;
+    ${parentChildSwitcherHtml(context)}
+    ${parentPageHeadHtml("JKCREW family", "Family", "dashboard", `A calm, read-only view of ${firstName(athlete)}'s week and private coaching updates.`)}
+    <section class="panel parent-home-hero">
+      <div class="parent-home-identity">${avatarHtml(athlete, "score-avatar")}<div><span>This week</span><h2>${escapeHtml(firstName(athlete))}</h2><p>${percent}% of tracked weekly items complete.</p></div></div>
+      <div class="parent-home-metrics">
+        <div><small>Weekly score</small><strong>${Number(weeklyRow?.weekly_points || 0)}<b> pts</b></strong><span>${rank ? `Crew rank #${rank}` : "Week in progress"}</span></div>
+        <div><small>Current level</small><strong>${xp.level}<b> L</b></strong><span>${xp.xp_needed} XP to Level ${xp.next_level}</span></div>
+        <div><small>Current sheet</small><strong>${completedWeekly}/${weeklyItems.length}</strong><span>${percent}% complete</span></div>
+      </div>
+      <div class="parent-progress-track" aria-label="${percent}% of weekly items complete"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
+    </section>
+    <div class="parent-home-grid">
+      <section class="panel parent-summary-card parent-coach-card"><div class="parent-section-head"><div><span>Coach update</span><h2>Latest message</h2></div><button type="button" data-parent-open-view="parentCoaching">View all</button></div>${parentLatestCoachMessageHtml(coachMessages)}</section>
+      <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Coming up</span><h2>Next item</h2></div><button type="button" data-parent-open-view="parentCalendar">Calendar</button></div>${parentNextItemHtml(dashboardItems)}</section>
+      <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Private coaching</span><h2>Latest feedback</h2></div><button type="button" data-parent-open-view="parentCoaching">Coaching</button></div>${parentLatestFeedbackHtml(helpRequests)}</section>
+      <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Recent</span><h2>Activity</h2></div><button type="button" data-parent-open-view="parentWeek">Open week</button></div>${parentRecentActivityHtml(assignments, assignmentAttempts, awards, sessions)}</section>
+    </div>`;
+  bindParentPageActions();
+}
+
+function parentCategorySummaryHtml(assignments = []) {
+  const categories = ["daily", "one_bang", "dialled", "lines", "percentage", "foam_pit", "bonus"];
+  return `<div class="parent-week-summary">${categories.map((category) => {
+    const info = categoryDisplayInfo(category);
+    const rows = assignments.filter((assignment) => assignment.category === category || (category === "foam_pit" && assignment.category === "foam"));
+    return `<div data-parent-category="${category}"><small>${escapeHtml(info.label)}</small><strong>${rows.filter(isAssignmentComplete).length}/${rows.length}</strong></div>`;
+  }).join("")}</div>`;
+}
+
+async function renderParentWeek() {
+  const context = await getParentRiderContext();
+  if (!context.selected) {
+    document.querySelector("#view").innerHTML = parentWaitingHtml();
+    return;
+  }
+  const athlete = context.selected;
+  const { assignments, awards } = await getWeeklyAssignments(athlete.id);
+  const percent = weeklyCompletionPercent(assignments, awards);
+  const venues = dailyVenues(assignments.filter((assignment) => assignment.category === "daily"));
+  document.querySelector("#view").innerHTML = `
+    ${parentChildSwitcherHtml(context)}
+    ${parentPageHeadHtml("Current training", "This", "week", `${firstName(athlete)}'s live sheet, grouped by location and category. Parent access is read only.`)}
+    <section class="panel parent-week-overview">
+      <div><span>Weekly progress</span><strong>${percent}%</strong><small>${venues.length ? `${venues.length} Daily location${venues.length === 1 ? "" : "s"}: ${venues.map(venueLabel).join(", ")}` : "No Daily location saved yet"}</small></div>
+      <div class="parent-progress-track"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
+      ${parentCategorySummaryHtml(assignments)}
+    </section>
+    <section class="panel parent-week-sheet">
+      <div class="parent-section-head"><div><span>Read only</span><h2>Current sheet</h2></div><b>Updates live</b></div>
+      <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
+    </section>`;
+  bindParentPageActions();
+}
+
+function parentCoachMessageListHtml(messages = []) {
+  if (!messages.length) return `<div class="parent-empty-note"><strong>No coach messages yet</strong><span>Private updates sent to your family will stay here.</span></div>`;
+  return `<div class="parent-coach-message-list">${messages.map((message) => `<article><div class="parent-card-kicker"><span>${escapeHtml(message.sender_name || "Coach JK")}</span><small>${dateLabel(message.sent_at)}</small></div><p>${escapeHtml(message.message)}</p></article>`).join("")}</div>`;
+}
+
+async function renderParentCoaching() {
+  const context = await getParentRiderContext();
+  if (!context.selected) {
+    document.querySelector("#view").innerHTML = parentWaitingHtml();
+    return;
+  }
+  const [messages, helpRequests] = await Promise.all([
+    getMyCoachMessages(20).catch((error) => { console.warn("Coach messages unavailable", error); return []; }),
+    getHelpRequests(context.selected.id),
+  ]);
+  const returned = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+  const waiting = helpRequests.length - returned.length;
+  document.querySelector("#view").innerHTML = `
+    ${parentChildSwitcherHtml(context)}
+    ${parentPageHeadHtml("Private coaching", "Coach", "updates", `Messages and video feedback for ${firstName(context.selected)}. Nothing from the public crew feed appears here.`)}
+    <section class="panel parent-privacy-strip"><span aria-hidden="true">●</span><div><strong>Private family view</strong><small>Visible only to the linked parent, rider and Coach JK.</small></div></section>
+    <div class="parent-coaching-grid">
+      <section class="panel parent-coaching-panel"><div class="parent-section-head"><div><span>Messages</span><h2>Coach JK</h2></div><b>${messages.length}</b></div>${parentCoachMessageListHtml(messages)}</section>
+      <section class="panel parent-coaching-panel"><div class="parent-section-head"><div><span>Video analysis</span><h2>Trick feedback</h2></div><b>${returned.length} returned · ${waiting} waiting</b></div><div class="help-list parent-help-list">${helpRequestsHtml(helpRequests, "parent")}</div></section>
+    </div>`;
+  bindParentPageActions();
+}
+
+function parentAgendaItemHtml(item = {}) {
+  const when = item.due_at || item.created_at;
+  return `<article class="parent-agenda-item ${item.completed ? "complete" : ""}"><div class="parent-agenda-date"><strong>${when ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(when)) : "--"}</strong><span>${when ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(when)) : "TBC"}</span></div><div><span>${escapeHtml(item.item_type || "Item")}${item.completed ? " · complete" : ""}</span><strong>${escapeHtml(item.title || "Upcoming item")}</strong><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div></article>`;
+}
+
+async function renderParentCalendar() {
+  const context = await getParentRiderContext();
+  if (!context.selected) {
+    document.querySelector("#view").innerHTML = parentWaitingHtml();
+    return;
+  }
+  const [items, sessions] = await Promise.all([
+    getDashboardItems(context.selected.id),
+    client.from("training_sessions").select("*").eq("athlete_id", context.selected.id).order("started_at", { ascending: false }).limit(12).then((result) => {
+      if (result.error) throw result.error;
+      return result.data || [];
+    }),
+  ]);
+  const upcoming = items.filter((item) => !item.completed && (!item.end_at || new Date(item.end_at) >= new Date()));
+  const pastItems = items.filter((item) => item.completed || (item.end_at && new Date(item.end_at) < new Date())).slice(0, 6);
+  document.querySelector("#view").innerHTML = `
+    ${parentChildSwitcherHtml(context)}
+    ${parentPageHeadHtml("Family schedule", "Calendar", "agenda", `Events, tasks and recent sessions for ${firstName(context.selected)} in one simple timeline.`)}
+    <section class="panel parent-calendar-panel"><div class="parent-section-head"><div><span>Upcoming</span><h2>Next on the agenda</h2></div><b>${upcoming.length}</b></div><div class="parent-agenda-list">${upcoming.length ? upcoming.map(parentAgendaItemHtml).join("") : `<div class="parent-empty-note"><strong>No upcoming items</strong><span>New events and tasks from Coach JK will appear here.</span></div>`}</div></section>
+    <section class="panel parent-calendar-panel"><div class="parent-section-head"><div><span>Training</span><h2>Recent sessions</h2></div><b>${sessions.length}</b></div><div class="parent-session-agenda">${sessions.length ? sessions.map((session) => `<article><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Finished ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span>${Number(session.total_points || 0)} pts</span></article>`).join("") : `<div class="parent-empty-note"><strong>No sessions recorded</strong><span>Completed training sessions will appear here.</span></div>`}</div></section>
+    ${pastItems.length ? `<details class="panel parent-calendar-history"><summary><span><strong>Completed events & tasks</strong><small>${pastItems.length} recent item${pastItems.length === 1 ? "" : "s"}</small></span><b>Open</b></summary><div class="parent-agenda-list">${pastItems.map(parentAgendaItemHtml).join("")}</div></details>` : ""}`;
+  bindParentPageActions();
+}
+
+async function renderParentMore() {
+  const context = await getParentRiderContext();
+  if (!context.selected) {
+    document.querySelector("#view").innerHTML = parentWaitingHtml();
+    return;
+  }
+  const athlete = context.selected;
+  const [tricktionary, runs, xpSummary, pushState] = await Promise.all([
+    getTricktionaryData(athlete.id),
+    getRunPlans(athlete.id),
+    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
+    getPushNotificationState().catch(() => ({ supported: supportsPushNotifications(), enabled: false, permission: supportsPushNotifications() ? Notification.permission : "unsupported" })),
+  ]);
+  const entries = landedTricktionaryEntries(tricktionary);
+  const xp = normalizeXpSummary(xpSummary, athlete);
+  document.querySelector("#view").innerHTML = `
+    ${parentChildSwitcherHtml(context)}
+    ${parentPageHeadHtml("Family account", "More", "tools", `Progress history, run plans, safety information and settings for ${firstName(athlete)}.`)}
+    <div class="parent-more-grid">
+      <section class="panel parent-more-card parent-more-progress"><div class="parent-more-icon">XP</div><div><span>Progress</span><h2>Level ${xp.level} & badges</h2><p>${xp.xp_total} lifetime XP · ${xp.xp_needed} XP to Level ${xp.next_level}</p></div>${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
+      <section class="panel parent-more-card"><div class="parent-more-icon">+</div><div><span>Rider library</span><h2>Tricktionary</h2><p>${entries.length} landed trick${entries.length === 1 ? "" : "s"} · Daily PB ${formatPbTime(athlete.daily_pb_seconds)}</p></div><button class="secondary-btn" type="button" data-parent-open-view="tricktionary">Open Tricktionary</button></section>
+      <section class="panel parent-more-card"><div class="parent-more-icon">H</div><div><span>Read-only records</span><h2>Training history</h2><p>Previous weekly sheets, attempts and completed tricks.</p></div>${previousTrainingSheetsHtml(tricktionary)}</section>
+      <section class="panel parent-more-card"><div class="parent-more-icon">R</div><div><span>Competition prep</span><h2>Run plans</h2><p>${runs.filter((run) => !run.archived_at).length} active plan${runs.filter((run) => !run.archived_at).length === 1 ? "" : "s"} saved for rider and coach review.</p></div><details class="parent-more-details"><summary>View run plans</summary><div class="run-list">${runPlansHtml(runs)}</div></details></section>
+      <section class="panel parent-more-card parent-safety-card"><div class="parent-more-icon">!</div><div><span>Safety & contact</span><h2>Need help?</h2><p>For a training concern, contact Coach JK through your usual coaching channel. For an emergency, call local emergency services first.</p></div></section>
+      <section class="panel parent-more-card"><div class="parent-more-icon">●</div><div><span>Notifications & account</span><h2>${pushState.enabled ? "Notifications are on" : "Check notification setup"}</h2><p>${pushState.enabled ? "This device can receive enabled JKCREW updates." : "Open account settings to enable notifications and manage your details."}</p></div><button class="primary-btn" type="button" data-parent-open-view="profile">Open account settings</button></section>
+    </div>`;
+  bindParentPageActions();
+}
+
+function parentNotificationSeenKey(athleteId = "") {
+  return `jkcrew-parent-notifications-seen:${state.user?.id || "parent"}:${athleteId || "all"}`;
+}
+
+async function showParentNotificationDrawer() {
+  if (state.profile?.role !== "parent") return;
+  document.querySelector("#parent-notification-drawer")?.remove();
+  const backdrop = document.createElement("div");
+  backdrop.id = "parent-notification-drawer";
+  backdrop.className = "parent-notification-backdrop";
+  backdrop.innerHTML = `<aside class="parent-notification-drawer" role="dialog" aria-modal="true" aria-label="Parent notifications"><div class="parent-notification-head"><div><span>JKCREW family</span><h2>Updates</h2></div><button type="button" data-close-parent-notifications aria-label="Close notifications">×</button></div><div class="parent-notification-loading">Loading private updates...</div></aside>`;
+  document.body.append(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector("[data-close-parent-notifications]")?.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  try {
+    const context = await getParentRiderContext();
+    if (!context.selected) {
+      backdrop.querySelector(".parent-notification-loading").innerHTML = `<div class="parent-empty-note"><strong>No linked rider yet</strong><span>Updates will appear after Coach JK links your account.</span></div>`;
+      return;
+    }
+    const [messages, helpRequests, dashboardItems] = await Promise.all([
+      getMyCoachMessages(10).catch(() => []),
+      getHelpRequests(context.selected.id),
+      getDashboardItems(context.selected.id),
+    ]);
+    const feedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+    const items = [
+      ...messages.map((message) => ({ at: message.sent_at, type: "Coach message", title: message.message, view: "parentCoaching" })),
+      ...feedback.map((request) => ({ at: request.replied_at || request.created_at, type: "Video feedback", title: request.question || "Coach feedback returned", view: "parentCoaching" })),
+      ...dashboardItems.filter((item) => !item.completed).map((item) => ({ at: item.created_at || item.due_at, type: item.item_type || "Calendar", title: item.title, view: "parentCalendar" })),
+    ].filter((item) => item.at).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 16);
+    let seenAt = 0;
+    try { seenAt = Number(localStorage.getItem(parentNotificationSeenKey(context.selected.id)) || 0); } catch (_) {}
+    const unread = items.filter((item) => new Date(item.at).getTime() > seenAt).length;
+    backdrop.querySelector(".parent-notification-loading").outerHTML = `<div class="parent-notification-body"><div class="parent-notification-summary"><strong>${unread} new</strong><span>${escapeHtml(firstName(context.selected))}'s private family updates</span></div>${items.length ? items.map((item) => `<button type="button" data-parent-notification-view="${item.view}"><span>${escapeHtml(item.type)}</span><strong>${escapeHtml(item.title)}</strong><small>${dateLabel(item.at)}</small></button>`).join("") : `<div class="parent-empty-note"><strong>You're up to date</strong><span>New coach messages, feedback and calendar items will appear here.</span></div>`}</div>`;
+    try { localStorage.setItem(parentNotificationSeenKey(context.selected.id), String(Date.now())); } catch (_) {}
+    document.querySelector("#parent-notification-bell i")?.classList.add("seen");
+    backdrop.querySelectorAll("[data-parent-notification-view]").forEach((button) => button.addEventListener("click", async () => {
+      const view = button.dataset.parentNotificationView;
+      close();
+      await navigate(view);
+    }));
+  } catch (error) {
+    const loading = backdrop.querySelector(".parent-notification-loading");
+    if (loading) loading.innerHTML = `<div class="parent-empty-note"><strong>Updates could not load</strong><span>${escapeHtml(messageFrom(error))}</span></div>`;
+  }
 }
 
 function goalsReadonlyHtml(profile = {}) {
