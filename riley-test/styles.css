@@ -3630,6 +3630,87 @@ html.coaching-viewer-open body { overflow: hidden; }
 .contest-empty strong { color: var(--text); }
 .run-builder-live { scroll-margin-top: 20px; border-color: rgba(32,227,195,0.44) !important; box-shadow: 0 24px 80px rgba(0,0,0,0.28); }
 .run-builder-live .run-map { border-color: rgba(32,227,195,0.3); }
+html.run-builder-fullscreen-open,
+html.run-builder-fullscreen-open body { overflow: hidden !important; overscroll-behavior: none; }
+.run-builder-fullscreen-editor {
+  position: fixed !important;
+  z-index: 10000;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: radial-gradient(circle at 54% 0, rgba(58,156,255,0.12), transparent 38%), #030708 !important;
+  box-shadow: none !important;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.run-builder-fullscreen-editor > .panel-head { min-height: 48px; margin: 0 0 8px; padding: 0 2px; flex-direction: row; align-items: center; }
+.run-builder-fullscreen-editor > .panel-head .panel-meta { max-width: 760px; }
+.run-builder-fullscreen-editor .run-builder-form {
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.run-builder-fullscreen-editor .run-builder-details,
+.run-builder-fullscreen-editor .visual-run-builder { grid-column: 1 / -1; }
+.run-builder-fullscreen-editor .run-builder-details .field { margin: 0; }
+.run-builder-fullscreen-editor .run-builder-details input { min-height: 40px; }
+.run-builder-fullscreen-editor .visual-run-builder {
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) clamp(245px, 25vw, 340px);
+  align-items: stretch;
+  gap: 8px;
+}
+.run-builder-fullscreen-editor .run-map-stage { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+.run-builder-fullscreen-editor .run-map-stage .run-map { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; background: #020506; }
+.run-builder-fullscreen-editor .run-map-preview { width: 100%; height: 100%; display: grid; place-items: center; }
+.run-builder-fullscreen-editor .run-map-preview img { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+.run-builder-fullscreen-editor .run-builder-sidebar { min-height: 0; height: 100%; overflow-y: auto; align-content: start; padding: 12px; }
+.run-builder-fullscreen-editor .run-builder-form > .field { min-width: 0; margin: 0; }
+.run-builder-fullscreen-editor .run-builder-form > .field textarea { min-height: 44px; max-height: 64px; resize: vertical; }
+.run-builder-fullscreen-editor .run-builder-form > .actions { min-width: max-content; margin: 0; justify-content: flex-end; align-self: end; }
+.run-builder-fullscreen-editor .run-builder-form > .actions button { min-height: 44px; }
+
+@media (max-height: 700px), (max-width: 900px) {
+  .run-builder-fullscreen-editor { padding: 6px !important; }
+  .run-builder-fullscreen-editor > .panel-head { min-height: 38px; margin-bottom: 5px; }
+  .run-builder-fullscreen-editor > .panel-head .panel-title { font-size: 1rem; }
+  .run-builder-fullscreen-editor > .panel-head .panel-meta { display: none; }
+  .run-builder-fullscreen-editor .run-builder-form { gap: 5px; }
+  .run-builder-fullscreen-editor .run-builder-details input { min-height: 34px; padding-block: 6px; }
+  .run-builder-fullscreen-editor .visual-run-builder { grid-template-columns: minmax(0, 1fr) clamp(205px, 30vw, 280px); gap: 5px; }
+  .run-builder-fullscreen-editor .run-builder-sidebar { gap: 7px; padding: 8px; }
+  .run-builder-fullscreen-editor .run-sidebar-section { gap: 6px; }
+  .run-builder-fullscreen-editor .run-sidebar-section > .secondary-btn,
+  .run-builder-fullscreen-editor .run-sidebar-section > .danger-btn,
+  .run-builder-fullscreen-editor .run-sidebar-section > .primary-btn,
+  .run-builder-fullscreen-editor .run-photo-button { min-height: 34px; padding: 6px 8px; }
+  .run-builder-fullscreen-editor .run-selected-head strong { font-size: 1.35rem; }
+  .run-builder-fullscreen-editor .run-map-status { padding: 6px 9px; }
+  .run-builder-fullscreen-editor .run-colour-key { display: none; }
+  .run-builder-fullscreen-editor .run-playback-controls { gap: 5px; padding: 6px 8px; }
+  .run-builder-fullscreen-editor .run-playback-controls button { min-height: 32px; }
+  .run-builder-fullscreen-editor .run-playback-presets { display: none; }
+  .run-builder-fullscreen-editor .run-builder-form > .field textarea { min-height: 36px; max-height: 42px; }
+  .run-builder-fullscreen-editor .run-builder-form > .actions button { min-height: 38px; padding: 7px 10px; }
+}
+
+@media (max-width: 680px) and (orientation: portrait) {
+  .run-builder-fullscreen-editor { overflow-y: auto; display: block; }
+  .run-builder-fullscreen-editor .run-builder-form { display: grid; grid-template-columns: 1fr; grid-template-rows: auto; }
+  .run-builder-fullscreen-editor .visual-run-builder { min-height: 72dvh; grid-template-columns: 1fr; }
+  .run-builder-fullscreen-editor .run-map-stage { min-height: 55dvh; }
+  .run-builder-fullscreen-editor .run-builder-sidebar { height: auto; max-height: none; }
+  .run-builder-fullscreen-editor .run-builder-form > .field,
+  .run-builder-fullscreen-editor .run-builder-form > .actions { grid-column: 1; }
+}
 
 .shared-events-panel {
   margin-bottom: 14px;

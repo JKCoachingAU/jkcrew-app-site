@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.12";
+const RELEASE_VERSION = "2.14.13";
 const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -393,7 +393,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.12" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.13" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -6938,6 +6938,7 @@ async function openRunBuilder(event = null) {
 
 async function closeRunBuilder() {
   stopRunPlayback();
+  await leaveRunBuilderFullscreen();
   state.runBuilder = null;
   await renderContests();
 }
@@ -8413,7 +8414,7 @@ function runBuilderPanel(runs = [], options = {}) {
   if (options.collapsed) {
     return closedPanelAccordion("Contest Run Planner", "The same visual dot-and-curve planner used by riders", body, "run-builder-panel");
   }
-  return `<section class="panel run-builder-live" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">Contest Run Planner</div><div class="panel-meta">Tap the park, bend the coloured route, finish on any number, then control the full playback up to 60 seconds</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
+  return `<section class="panel run-builder-live ${builder.fullscreenEditor ? "run-builder-fullscreen-editor" : ""}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">Contest Run Planner</div><div class="panel-meta">Tap the park, bend the coloured route, finish on any number, then control the full playback up to 60 seconds</div></div>${builder.fullscreenEditor ? `<button class="secondary-btn compact-btn" id="exit-run-builder-fullscreen" type="button">Exit full screen</button>` : options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
     ${body}
   </section>`;
 }
@@ -10256,6 +10257,7 @@ async function copyParentUpdate() {
 }
 
 function bindRunBuilderActions() {
+  document.documentElement.classList.toggle("run-builder-fullscreen-open", Boolean(state.runBuilder?.fullscreenEditor));
   document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
   document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
   document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
@@ -10263,6 +10265,7 @@ function bindRunBuilderActions() {
   document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
   document.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
   document.querySelector("#close-run-builder-top")?.addEventListener("click", closeRunBuilder);
+  document.querySelector("#exit-run-builder-fullscreen")?.addEventListener("click", exitRunBuilderFullscreen);
   document.querySelector("#finish-run-builder")?.addEventListener("click", playFinishedRunBuilder);
   document.querySelector("#delete-selected-run-point")?.addEventListener("click", deleteSelectedRunPoint);
   document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
@@ -10288,6 +10291,7 @@ function currentRunFormState() {
     points: state.runBuilder?.points || [],
     imageDataUrl: state.runBuilder?.imageDataUrl || "",
     selectedPointIndex: state.runBuilder?.selectedPointIndex ?? -1,
+    fullscreenEditor: Boolean(state.runBuilder?.fullscreenEditor),
   };
 }
 
@@ -10307,10 +10311,50 @@ async function addRunBuilderPoint(event) {
   const x = Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10;
   const y = Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10;
   state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points || [] };
+  const isFirstPoint = state.runBuilder.points.length === 0;
   const pointNumber = state.runBuilder.points.length + 1;
   state.runBuilder.points.push({ x, y, label: pointNumber === 1 ? "Start" : `Trick ${pointNumber}`, note: "", bend: 0 });
   state.runBuilder.selectedPointIndex = state.runBuilder.points.length - 1;
+  if (isFirstPoint) enterRunBuilderFullscreen();
   await runBuilderRefreshView();
+}
+
+function enterRunBuilderFullscreen() {
+  if (!state.runBuilder) return;
+  state.runBuilder.fullscreenEditor = true;
+  document.documentElement.classList.add("run-builder-fullscreen-open");
+  const page = document.documentElement;
+  try {
+    const fullscreenRequest = page.requestFullscreen?.({ navigationUI: "hide" }) || page.webkitRequestFullscreen?.();
+    Promise.resolve(fullscreenRequest).then(() => {
+      if (window.matchMedia("(max-width: 900px) and (orientation: portrait)").matches) {
+        return screen.orientation?.lock?.("landscape");
+      }
+      return null;
+    }).catch(() => {});
+  } catch (_error) {
+    // The fixed full-viewport editor remains available when device fullscreen is blocked.
+  }
+}
+
+async function leaveRunBuilderFullscreen() {
+  document.documentElement.classList.remove("run-builder-fullscreen-open");
+  try { screen.orientation?.unlock?.(); } catch (_error) { /* Device does not expose orientation controls. */ }
+  const activeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+  if (activeFullscreen === document.documentElement) {
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch (_error) { /* The fixed editor has already closed. */ }
+  }
+}
+
+async function exitRunBuilderFullscreen() {
+  if (!state.runBuilder) return;
+  state.runBuilder = { ...currentRunFormState(), fullscreenEditor: false };
+  await leaveRunBuilderFullscreen();
+  await runBuilderRefreshView();
+  document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function updateRunBuilderMapDom() {
@@ -10632,6 +10676,7 @@ async function saveRunPlan(event) {
   const { error } = await query;
   if (error) return notify(messageFrom(error), "error");
   const savedFor = state.runBuilder?.athleteName;
+  await leaveRunBuilderFullscreen();
   state.runBuilder = null;
   cacheClear("coach-command:");
   notify(savedFor ? `Private run saved for ${savedFor}.` : "Run plan saved.");

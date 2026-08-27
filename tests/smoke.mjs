@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.12";
+const version = "2.14.13";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -551,6 +551,13 @@ const runBuilderBindings = functionBody("bindRunBuilderActions");
 for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
 }
+assert(runBuilderBindings.includes("exitRunBuilderFullscreen"), "The full-screen editor must provide an exit control");
+const addRunPointBody = functionBody("addRunBuilderPoint");
+assert(addRunPointBody.includes("const isFirstPoint = state.runBuilder.points.length === 0"), "The planner must identify the first route tap");
+assert(addRunPointBody.includes("if (isFirstPoint) enterRunBuilderFullscreen()"), "The first route tap must enter the full-screen editor");
+assert(functionBody("enterRunBuilderFullscreen").includes("requestFullscreen"), "The planner should request device full screen when the browser supports it");
+assert(functionBody("enterRunBuilderFullscreen").includes('lock?.("landscape")'), "Phone full screen should request landscape orientation when supported");
+assert(css.includes(".run-builder-fullscreen-editor"), "The planner needs a full-viewport fallback when browser full screen is unavailable");
 const saveRunPlanBody = functionBody("saveRunPlan");
 assert(saveRunPlanBody.includes('venue: String(state.runBuilder?.venue || "").trim()'), "Hidden event venue must still save with the private run");
 assert(saveRunPlanBody.includes('state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training")'), "Hidden run type must still be derived and saved automatically");
