@@ -17,7 +17,7 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.11";
+const version = "2.14.12";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -543,6 +543,7 @@ for (const control of ['id="run-photo"', 'id="run-map"', "data-selected-run-labe
 for (const removedControl of ['id="run-venue"', 'id="run-type"', 'id="use-demo-run-park"']) {
   assert(!runBuilderMarkup.includes(removedControl), `Run Builder should not show ${removedControl}`);
 }
+assert(!runBuilderMarkup.includes("selected-run-note"), "Run Builder should not show a per-dot Run note field");
 assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
 assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
