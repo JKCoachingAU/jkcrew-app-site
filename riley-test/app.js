@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.18";
+const RELEASE_VERSION = "2.14.19";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -352,17 +352,29 @@ function localLevelBadge(level = 1) {
   return { key: `level-${safeLevel}`, type: "level", level: safeLevel, label: `Level ${safeLevel} Badge`, tone: tones };
 }
 function riderXpSummary(row = {}) {
-  const summary = normalizeXpSummary({ xp_total: Math.max(0, Number(row.xp_total || 0)) }, row);
+  const summary = normalizeXpSummary({
+    xp_total: Math.max(0, Number(row.xp_total || 0)),
+    level: Number(row.xp_level ?? row.level ?? 0) || undefined,
+    current_badge: row.level_badge || undefined,
+  }, row);
   return {
     ...summary,
     progress_note: "Badges, levels and Prestige follow original XP. Leaderboard points do not change badge progress.",
   };
 }
 function normalizeXpSummary(summary = {}, profile = {}) {
-  const xp = Number(summary.xp_total ?? profile.xp_total ?? 0);
-  const prestige_rank = Math.floor(Math.max(0, xp) / PRESTIGE_XP_CYCLE);
-  const cycle_xp = Math.max(0, xp) % PRESTIGE_XP_CYCLE;
-  const level = localLevelFromXp(cycle_xp);
+  const xp = Math.max(0, Number(summary.xp_total ?? profile.xp_total ?? 0));
+  const badges = Array.isArray(summary.badges) ? summary.badges : [];
+  const highestEarnedBadgeLevel = badges.reduce((highest, badge) => {
+    if (badge?.unlocked === false) return highest;
+    return Math.max(highest, Number(badge?.level || 0));
+  }, 0);
+  const suppliedLevel = Math.max(0, Number(summary.level ?? profile.level ?? 0));
+  const persistedPrestige = Math.max(0, Number(summary.prestige_rank ?? profile.prestige_rank ?? 0));
+  const hasEarnedLevelFifty = badges.some((badge) => Number(badge?.level || 0) === XP_LEVEL_CAP && badge?.unlocked !== false);
+  const prestige_rank = persistedPrestige || (hasEarnedLevelFifty ? Math.floor(xp / PRESTIGE_XP_CYCLE) : 0);
+  const cycle_xp = prestige_rank > 0 ? xp % PRESTIGE_XP_CYCLE : xp;
+  const level = Math.min(XP_LEVEL_CAP, Math.max(1, suppliedLevel, highestEarnedBadgeLevel, localLevelFromXp(cycle_xp)));
   const current = rawXpRequiredForLevel(level);
   const nextLevel = Math.min(XP_LEVEL_CAP, level + 1);
   const next = level >= XP_LEVEL_CAP ? PRESTIGE_XP_CYCLE : rawXpRequiredForLevel(nextLevel);
@@ -382,8 +394,8 @@ function normalizeXpSummary(summary = {}, profile = {}) {
     xp_into_level: into,
     xp_needed: Math.max(0, next - cycle_xp),
     progress_percent: Math.min(100, Math.round((into / span) * 100)),
-    current_badge: { ...localLevelBadge(level), prestige_rank },
-    badges: prestige_rank === 0 && Array.isArray(summary.badges) ? summary.badges : [],
+    current_badge: { ...(Number(summary.current_badge?.level || 0) === level ? summary.current_badge : localLevelBadge(level)), prestige_rank },
+    badges,
     unit_label: "XP",
   };
 }
@@ -396,7 +408,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.18" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.19" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2149,9 +2161,26 @@ async function getPointHistory(athleteId) {
 }
 
 async function getXpSummary(athleteId) {
-  const { data, error } = await client.rpc("get_xp_summary", { p_athlete_id: athleteId });
-  if (error) throw error;
-  return normalizeXpSummary(data || {});
+  const [summaryResult, earnedResult] = await Promise.all([
+    client.rpc("get_xp_summary", { p_athlete_id: athleteId }),
+    client.from("athlete_badges").select("badge_key,badge_type,level,label,icon,tone,description,earned_at").eq("athlete_id", athleteId),
+  ]);
+  if (summaryResult.error) throw summaryResult.error;
+  if (earnedResult.error) console.warn("Persisted badge ledger could not load", earnedResult.error);
+  const persistedLevelBadges = (earnedResult.data || []).filter((badge) => badge.badge_type === "level" && Number(badge.level || 0) > 0);
+  const earnedLevels = new Set(persistedLevelBadges.map((badge) => Number(badge.level)));
+  const highestPersistedLevel = persistedLevelBadges.reduce((highest, badge) => Math.max(highest, Number(badge.level || 0)), 0);
+  const generatedBadges = Array.isArray(summaryResult.data?.badges) ? summaryResult.data.badges : [];
+  const badges = generatedBadges.map((badge) => ({
+    ...badge,
+    unlocked: Boolean(badge.unlocked || earnedLevels.has(Number(badge.level || 0))),
+  }));
+  return normalizeXpSummary({
+    ...(summaryResult.data || {}),
+    level: Math.max(Number(summaryResult.data?.level || 0), highestPersistedLevel),
+    badges,
+    persisted_level_badges: persistedLevelBadges,
+  });
 }
 
 async function getXpHistory(athleteId) {

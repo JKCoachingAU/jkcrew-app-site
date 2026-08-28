@@ -18,7 +18,7 @@ const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
-const version = "2.14.18";
+const version = "2.14.19";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -91,6 +91,37 @@ for (let level = 1; level <= 45; level += 1) {
   assert(existsSync(join(root, badge)), `Level badge is missing: ${badge}`);
 }
 assert(functionBody("levelBadgeImageUrl").includes("safeLevel > 45"), "Levels without supplied artwork need a safe text fallback");
+assert(functionBody("getXpSummary").includes('.from("athlete_badges")'), "Badge loading must verify the permanent earned-badge ledger");
+assert(functionBody("getXpSummary").includes("highestPersistedLevel"), "A saved badge level must not be replaced by a lower calculated level");
+const normalizeXpSummaryForTest = new Function(`
+  const XP_LEVEL_CAP = 50;
+  const PRESTIGE_LEVEL = 51;
+  ${functionBody("rawXpRequiredForLevel")}
+  ${functionBody("localXpRequiredForLevel")}
+  ${functionBody("localLevelFromXp")}
+  ${functionBody("localLevelBadge")}
+  ${functionBody("normalizeXpSummary")}
+  return normalizeXpSummary;
+`)();
+const savedBadgeGrid = Array.from({ length: 50 }, (_item, index) => ({ level: index + 1, unlocked: index < 14 }));
+const preservedBadgeSummary = normalizeXpSummaryForTest({ xp_total: 5030, level: 14, badges: savedBadgeGrid });
+assert.equal(preservedBadgeSummary.level, 14, "A previously saved rider level must survive client-side normalization");
+assert.equal(preservedBadgeSummary.badges, savedBadgeGrid, "The server badge grid must survive client-side normalization intact");
+assert.equal(
+  normalizeXpSummaryForTest({ xp_total: 0, level: 1, badges: [{ level: 7, unlocked: true }] }).level,
+  7,
+  "An earned badge ledger row must protect the rider from a visual badge reset",
+);
+assert.equal(
+  normalizeXpSummaryForTest({ xp_total: 120425, level: 50, badges: [] }).prestige_rank,
+  0,
+  "Prestige must not reset the badge run until the Level 50 badge has actually been earned",
+);
+assert.equal(
+  normalizeXpSummaryForTest({ xp_total: 120425, level: 50, badges: [{ level: 50, unlocked: true }] }).prestige_rank,
+  1,
+  "An earned Level 50 badge may begin the Prestige badge run",
+);
 
 assert(app.includes("sessionOpenAssignmentSections: new Set()"), "Rider Session must track open trick-list sections");
 const assignmentGroupsBody = functionBody("assignmentGroups");
