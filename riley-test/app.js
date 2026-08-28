@@ -27,8 +27,8 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.17";
-const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live";
+const RELEASE_VERSION = "2.14.18";
+const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
   session: null,
@@ -104,6 +104,8 @@ const state = {
   commandParkKingRows: [],
   commandParkKingVenues: [],
   helpVideoPreviewUrl: "",
+  notificationUnread: [],
+  syncStatusTimer: null,
 };
 
 window.addEventListener("beforeunload", (event) => {
@@ -394,7 +396,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.17" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.18" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -825,6 +827,26 @@ function notify(message, type = "ok") {
   notify.timeout = setTimeout(() => { toast.className = "toast"; }, 3600);
 }
 
+function showUndoToast(message, undoAction) {
+  clearTimeout(notify.timeout);
+  toast.className = "toast show undo-toast";
+  toast.innerHTML = `<span>${escapeHtml(message)}</span><button type="button">Undo</button>`;
+  playNotificationSound("update");
+  let active = true;
+  toast.querySelector("button")?.addEventListener("click", async () => {
+    if (!active) return;
+    active = false;
+    toast.className = "toast";
+    toast.textContent = "";
+    await undoAction();
+  });
+  notify.timeout = setTimeout(() => {
+    active = false;
+    toast.className = "toast";
+    toast.textContent = "";
+  }, 6500);
+}
+
 function celebrate(message) {
   notify(message);
   const existing = document.querySelector(".success-burst");
@@ -875,10 +897,37 @@ function showLevelUpModal(summary) {
   });
 }
 
+function showAchievementCelebration({ kind = "achievement", eyebrow = "Achievement unlocked", title = "Massive work!", message = "", actionLabel = "Keep riding" } = {}) {
+  document.querySelector("#achievement-celebration")?.remove();
+  const backdrop = document.createElement("div");
+  backdrop.id = "achievement-celebration";
+  backdrop.className = `achievement-celebration ${kind}`;
+  const icon = kind === "prestige" ? "P" : kind === "king" ? "♛" : kind === "battle" ? "VS" : "★";
+  backdrop.innerHTML = `<section role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><div class="achievement-rays" aria-hidden="true"></div><span class="achievement-icon">${icon}</span><div class="eyebrow">${escapeHtml(eyebrow)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(message)}</p><button class="primary-btn" type="button" data-close-achievement>${escapeHtml(actionLabel)}</button></section>`;
+  document.body.appendChild(backdrop);
+  playNotificationSound("badge");
+  const close = () => backdrop.remove();
+  backdrop.querySelector("[data-close-achievement]")?.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  setTimeout(() => backdrop.querySelector("[data-close-achievement]")?.focus(), 50);
+}
+
+function showPrestigeCelebration(summary) {
+  const xp = normalizeXpSummary(summary);
+  showAchievementCelebration({
+    kind: "prestige",
+    eyebrow: "Prestige rank earned",
+    title: `Prestige ${xp.prestige_rank}`,
+    message: `You earned all 50 XP badges and ranked up. Your new Prestige mark is permanent and your badge run begins again at Level ${xp.level}.`,
+    actionLabel: "Start the next run",
+  });
+}
+
 async function refreshOwnXpAfterAction({ announceXp = false, trickName = "" } = {}) {
   if (state.profile?.role !== "athlete" || !state.user?.id) return null;
   const beforeLevel = Number(state.profile.level || 1);
   const beforeXp = Number(state.profile.xp_total || 0);
+  const beforePrestige = normalizeXpSummary({ xp_total: beforeXp }).prestige_rank;
   try {
     const summary = await getXpSummary(state.user.id);
     state.profile = { ...state.profile, level: summary.level, xp_total: summary.xp_total };
@@ -890,7 +939,8 @@ async function refreshOwnXpAfterAction({ announceXp = false, trickName = "" } = 
         message: trickName ? `${trickName} ticked off` : "Trick ticked off",
       });
     }
-    if (summary.level > beforeLevel) setTimeout(() => showLevelUpModal(summary), announceXp && xpGained > 0 ? 420 : 0);
+    if (summary.prestige_rank > beforePrestige) setTimeout(() => showPrestigeCelebration(summary), announceXp && xpGained > 0 ? 500 : 0);
+    else if (summary.level > beforeLevel) setTimeout(() => showLevelUpModal(summary), announceXp && xpGained > 0 ? 420 : 0);
     return summary;
   } catch (error) {
     console.warn("XP refresh failed", error);
@@ -1248,16 +1298,27 @@ async function handleAuth(event, mode) {
   }
 }
 
+function navNotificationBadge(view) {
+  const count = state.notificationUnread.filter((item) => notificationPrimaryView(item.view) === view).length;
+  return count ? `<i class="nav-unread-badge" aria-label="${count} unread notification${count === 1 ? "" : "s"}">${count > 9 ? "9+" : count}</i>` : "";
+}
+
+function notificationPrimaryView(view = "home") {
+  if (isCoachRole(state.profile?.role)) return coachPrimaryView(view);
+  if (state.profile?.role === "parent") return parentPrimaryView(view);
+  return athletePrimaryView(view);
+}
+
 function renderShell() {
   const role = state.profile.role;
   const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
   const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
-  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span></button>`).join("");
+  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span>${navNotificationBadge(id)}</button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
         <details class="sidebar-nav-group">
-          <summary class="nav-btn group-nav-btn" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span></summary>
+          <summary class="nav-btn group-nav-btn" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span>${navNotificationBadge(group.id)}</summary>
           <div class="sidebar-subnav">
             ${group.links.map(([id, label]) => `<button class="nav-sub-btn" type="button" data-view="${id}">${escapeHtml(label)}</button>`).join("")}
           </div>
@@ -1275,7 +1336,8 @@ function renderShell() {
         <header class="topbar">
           <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.77" alt="">JKCREW live</div>
           <div class="topbar-actions">
-            ${role === "parent" ? `<button class="parent-notification-bell" id="parent-notification-bell" type="button" aria-label="Open parent notifications"><span aria-hidden="true">●</span><b>Updates</b><i aria-hidden="true"></i></button>` : ""}
+            <span class="sync-status" id="sync-status" aria-live="polite"><i></i><b>${navigator.onLine ? "Saved" : "Offline"}</b></span>
+            <button class="parent-notification-bell notification-centre-bell" id="notification-centre-bell" type="button" aria-label="Open notifications"><span aria-hidden="true">●</span><b>Updates</b><i aria-hidden="true"></i></button>
             <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
           </div>
         </header>
@@ -1287,8 +1349,99 @@ function renderShell() {
     if (button.dataset.view === "student" && button.classList.contains("nav-sub-btn")) state.selectedAthleteId = "";
     navigate(button.dataset.view);
   }));
-  document.querySelector("#parent-notification-bell")?.addEventListener("click", showParentNotificationDrawer);
+  document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
+  refreshNotificationCentre({ renderNav: false });
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
+}
+
+function setSyncStatus(status = "saved") {
+  const element = document.querySelector("#sync-status");
+  if (!element) return;
+  clearTimeout(state.syncStatusTimer);
+  const effective = navigator.onLine ? status : "offline";
+  element.className = `sync-status ${effective}`;
+  const labels = { syncing: "Syncing", saved: "Saved", offline: "Offline", error: "Not saved" };
+  element.querySelector("b").textContent = labels[effective] || "Saved";
+  if (effective === "syncing") state.syncStatusTimer = setTimeout(() => setSyncStatus("saved"), 5000);
+}
+
+async function getAppNotifications(limit = 50) {
+  if (!state.user?.id) return [];
+  const { data, error } = await client.from("app_notifications")
+    .select("id,notification_type,title,body,view,payload,created_at,read_at")
+    .eq("recipient_id", state.user.id)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+async function refreshNotificationCentre({ renderNav = true } = {}) {
+  try {
+    const items = await getAppNotifications();
+    state.notificationUnread = items.filter((item) => !item.read_at);
+    const count = state.notificationUnread.length;
+    const bell = document.querySelector("#notification-centre-bell");
+    if (bell) {
+      bell.classList.toggle("has-unread", count > 0);
+      bell.querySelector("b").textContent = count ? `${count > 99 ? "99+" : count} new` : "Updates";
+    }
+    document.querySelectorAll(".nav-unread-badge").forEach((badge) => badge.remove());
+    document.querySelectorAll(".nav-btn[data-view]").forEach((button) => {
+      const badge = navNotificationBadge(button.dataset.view);
+      if (badge) button.insertAdjacentHTML("beforeend", badge);
+    });
+    return items;
+  } catch (error) {
+    console.warn("Notification centre could not load", error);
+    return [];
+  }
+}
+
+async function markNotificationRead(id) {
+  const { error } = await client.from("app_notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("recipient_id", state.user.id);
+  if (error) throw error;
+}
+
+async function markAllNotificationsRead() {
+  const { error } = await client.from("app_notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("recipient_id", state.user.id)
+    .is("read_at", null);
+  if (error) throw error;
+  state.notificationUnread = [];
+  await refreshNotificationCentre();
+}
+
+async function showNotificationDrawer() {
+  document.querySelector("#notification-centre-drawer")?.remove();
+  const backdrop = document.createElement("div");
+  backdrop.id = "notification-centre-drawer";
+  backdrop.className = "parent-notification-backdrop notification-centre-backdrop";
+  backdrop.innerHTML = `<aside class="parent-notification-drawer notification-centre-drawer" role="dialog" aria-modal="true" aria-label="Notifications"><header><div><div class="eyebrow">JKCREW updates</div><h2>Notifications</h2></div><button type="button" data-close-notifications aria-label="Close notifications">×</button></header><div class="parent-notification-loading">Loading your updates...</div></aside>`;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector("[data-close-notifications]")?.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  try {
+    const items = await getAppNotifications();
+    const unread = items.filter((item) => !item.read_at).length;
+    backdrop.querySelector(".parent-notification-loading").outerHTML = `<div class="notification-centre-actions"><span>${unread ? `${unread} unread` : "You're up to date"}</span>${unread ? `<button class="secondary-btn compact-btn" type="button" data-read-all>Mark all read</button>` : ""}</div><div class="parent-notification-body notification-centre-list">${items.length ? items.map((item) => `<button type="button" class="${item.read_at ? "" : "unread"}" data-app-notification="${item.id}" data-notification-view="${escapeHtml(item.view || "home")}"><span>${escapeHtml(String(item.notification_type || "update").replaceAll("_", " "))}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || "")}</small><time>${dateLabel(item.created_at)}</time></button>`).join("") : `<div class="parent-empty-note"><strong>No notifications yet</strong><span>Battle, coaching, sheet, event and achievement updates will appear here.</span></div>`}</div>`;
+    backdrop.querySelector("[data-read-all]")?.addEventListener("click", async () => { close(); await markAllNotificationsRead(); });
+    backdrop.querySelectorAll("[data-app-notification]").forEach((button) => button.addEventListener("click", async () => {
+      const view = button.dataset.notificationView || "home";
+      await markNotificationRead(button.dataset.appNotification).catch(() => {});
+      close();
+      await navigate(view);
+      await refreshNotificationCentre();
+    }));
+  } catch (error) {
+    backdrop.querySelector(".parent-notification-loading").innerHTML = `<div class="parent-empty-note"><strong>Updates could not load</strong><span>${escapeHtml(messageFrom(error))}</span></div>`;
+  }
 }
 
 function whatsNewDismissKey() {
@@ -1306,28 +1459,28 @@ function whatsNewAlreadyShown() {
 
 function whatsNewItems(role = "athlete") {
   if (role === "parent") return [
-    ["01", "New Parent View", "A calmer Home with the most important progress first."],
+    ["01", "Notification Centre", "Private family updates now stay together under the bell."],
     ["02", "Weekly Progress", "See the current sheet, Daily locations and completion at a glance."],
     ["03", "Coaching Inbox", "Coach messages and approved feedback now live in one private place."],
     ["04", "Family Calendar", "Sessions, events and tasks are easier to follow."],
     ["05", "Progress History", "XP, badges, Tricktionary and previous weeks stay one tap away."],
-    ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
+    ["06", "Alerts + Sound", "Unread badges, quiet hours and a test button make alerts easier to control."],
   ];
   if (isCoachRole(role)) return [
-    ["01", "New Coach HQ", "Cleaner Command, Session, Riders, Challenges, Tools and More hubs."],
+    ["01", "Coach Notification Centre", "Video, run, battle, sheet and challenge actions now stay under the bell."],
     ["02", "Faster Sessions", "Choose the group and location, then manage several riders together."],
     ["03", "Battles + Challenges", "Create 1v1, 2v2 or 3v3 match-ups and weekly crew targets."],
     ["04", "Run + List Planning", "Review run plans, list requests and next-week sheets in one flow."],
     ["05", "Clearer Rider Profiles", "Current lists, XP, history and key actions are easier to find."],
-    ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
+    ["06", "Live Status", "Unread tab badges and Saved/Syncing status make every action clearer."],
   ];
   return [
-    ["01", "Run Builder Is Live", "Open Contests, choose an event and build the full route directly on a park photo."],
+    ["01", "Your Notification Centre", "Battle, coaching, sheet and event updates now stay together under the bell."],
     ["02", "Private Trick Reviews", "Tap GET HELP on Home to send a short clip and receive Coach JK's video feedback."],
     ["03", "Battles + Challenges", "Go 1v1, 2v2 or 3v3 and complete weekly targets for points."],
     ["04", "Smarter Sheets", "Cleaner sections, Lines and saved Daily lists for every location."],
-    ["05", "Level 50 + Prestige", "Keep earning lifetime XP after Level 50 and rank up again."],
-    ["06", "Alerts + Sound", "New in-app notifications include the JKCREW chime on this device."],
+    ["05", "Bigger Earned Moments", "Weekly challenge wins, park crowns and Prestige now get a proper celebration."],
+    ["06", "Alerts + Sound", "Unread tab badges, quiet hours and a test button make alerts easy to control."],
   ];
 }
 
@@ -1761,7 +1914,8 @@ async function setupRealtimeSync() {
     cacheClear("park-king:");
     cacheClear("park-kings:");
     if (state.profile?.role === "athlete" && event.display_name && event.venue_name) {
-      notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
+      if (event.athlete_id === state.user.id) showAchievementCelebration({ kind: "king", eyebrow: "New park champion", title: `King of ${event.venue_name}`, message: `You took the crown with ${Number(event.points || 0)} park points.`, actionLabel: "Wear the crown" });
+      else notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
     }
     if (state.view === "session" && !isContestPrepProfile(state.profile)) refreshParkKingCard("session-park-king", state.selectedVenue, true);
     if (state.view === "sessionViewer" && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
@@ -1772,6 +1926,14 @@ async function setupRealtimeSync() {
   });
   channel.on("postgres_changes", { event: "*", schema: "public", table: "event_attendees" }, () => {
     scheduleRealtimeRefresh("event-attendance");
+  });
+  channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "app_notifications", filter: `recipient_id=eq.${state.user.id}` }, (payload) => {
+    const item = payload.new || {};
+    refreshNotificationCentre();
+    if (item.title) {
+      notify(item.title);
+      if (item.payload?.celebration === "weekly_challenge") showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: "+5 leaderboard points", message: item.body || "Challenge complete. Massive work!" });
+    }
   });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
@@ -1786,6 +1948,9 @@ async function setupRealtimeSync() {
   });
   state.realtimeChannel = channel;
 }
+
+window.addEventListener("online", () => setSyncStatus("saved"));
+window.addEventListener("offline", () => setSyncStatus("offline"));
 
 function realtimeRow(payload = {}) {
   return payload.new || payload.old || {};
@@ -4893,6 +5058,7 @@ async function renderChallenges() {
   document.querySelectorAll("[data-battle-response]").forEach((button) => button.addEventListener("click", respondWeeklyRiderBattle));
   document.querySelectorAll("[data-forfeit-battle]").forEach((button) => button.addEventListener("click", forfeitWeeklyRiderBattle));
   document.querySelector("#open-battle-rules")?.addEventListener("click", showBattleRulesModal);
+  if (weeklyChallenge?.new_award) setTimeout(() => showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: "+5 leaderboard points", message: `${weeklyChallenge.title || "Challenge"} complete. The points are on your weekly score.`, actionLabel: "Keep pushing" }), 250);
 }
 
 function riderBattleSelectionSize(currentSize = 1, teammateCount = 0, opponentCount = 0) {
@@ -4961,7 +5127,8 @@ async function respondWeeklyRiderBattle(event) {
   const { data, error } = await client.rpc("respond_rider_battle", { p_battle_id: button.dataset.battleId, p_response: button.dataset.battleResponse });
   restoreButton();
   if (error) return notify(messageFrom(error), "error");
-  notify(button.dataset.battleResponse === "accepted" ? (data === "accepted" ? "Everyone accepted. The battle is live!" : "Accepted. Waiting for the other riders.") : "Battle declined.");
+  if (button.dataset.battleResponse === "accepted" && data === "accepted") showAchievementCelebration({ kind: "battle", eyebrow: "Everyone accepted", title: "Battle live!", message: "The timer starts now. Every sheet point counts.", actionLabel: "Start scoring" });
+  else notify(button.dataset.battleResponse === "accepted" ? "Accepted. Waiting for the other riders." : "Battle declined.");
   await renderChallenges();
 }
 
@@ -5958,6 +6125,7 @@ async function recordAssignmentAction(event) {
   const trickName = row?.querySelector("strong")?.textContent?.trim() || "Trick";
   const wasComplete = row?.classList.contains("complete");
   const tickingComplete = button.dataset.assignmentAction === "landed";
+  setSyncStatus("syncing");
   button.disabled = true;
   row?.classList.toggle("complete", !wasComplete);
   button.classList.toggle("complete", !wasComplete);
@@ -5973,6 +6141,7 @@ async function recordAssignmentAction(event) {
     p_venue: state.selectedVenue || "",
   });
   if (error) {
+    setSyncStatus("error");
     clearPendingAssignmentProgress(button.dataset.assignmentId);
     button.disabled = false;
     row?.classList.toggle("complete", Boolean(wasComplete));
@@ -5981,6 +6150,7 @@ async function recordAssignmentAction(event) {
     return notify(messageFrom(error), "error");
   }
   const result = Array.isArray(data) ? data[0] : data;
+  setSyncStatus("saved");
   cacheClear(`schedule:${state.user.id}:`);
   cacheClear("leaderboard");
   cacheClear("park-king:");
@@ -7237,7 +7407,7 @@ async function renderCoachMore() {
     <section class="coach-hub-grid">
       ${coachHubCard("adminRecords", "Admin & Records", "Attendance, payments, injuries and rider records", "▦")}
       ${coachHubCard("parents", "Parents", "Linked parent viewer accounts", "P")}
-      ${coachHubCard("board", "Board", "Full leaderboard and crew chat", "#")}
+      ${coachHubCard("board", "Board", "Full weekly and all-time leaderboard", "#")}
       ${coachHubCard("profile", "Profile", "Account settings, theme and password", "●")}
       ${coachHubCard("command", "Command", "Back to the coach dashboard", "◇")}
     </section>`;
@@ -10709,10 +10879,17 @@ async function editRunPlan(event) {
 
 async function archiveRunPlan(event) {
   const runId = event.currentTarget.dataset.archiveRun;
-  const { error } = await client.from("run_plans").update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", runId).eq("coach_id", state.user.id);
+  const archivedAt = new Date().toISOString();
+  const { error } = await client.from("run_plans").update({ archived_at: archivedAt, updated_at: archivedAt }).eq("id", runId).eq("coach_id", state.user.id);
   if (error) return notify(messageFrom(error), "error");
   cacheClear("run-plans:");
-  notify("Run archived. It is saved for later.");
+  showUndoToast("Run archived.", async () => {
+    const { error: restoreError } = await client.from("run_plans").update({ archived_at: null, updated_at: new Date().toISOString() }).eq("id", runId).eq("coach_id", state.user.id);
+    if (restoreError) return notify(messageFrom(restoreError), "error");
+    cacheClear("run-plans:");
+    notify("Run restored.");
+    await runBuilderRefreshView();
+  });
   await runBuilderRefreshView();
 }
 
@@ -10736,11 +10913,13 @@ async function saveRunPlan(event) {
     contest_item_id: state.runBuilder.contestItemId || null,
     updated_at: new Date().toISOString(),
   };
+  setSyncStatus("syncing");
   const query = state.runBuilder.id
     ? client.from("run_plans").update(payload).eq("id", state.runBuilder.id)
     : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
   const { error } = await query;
-  if (error) return notify(messageFrom(error), "error");
+  if (error) { setSyncStatus("error"); return notify(messageFrom(error), "error"); }
+  setSyncStatus("saved");
   const savedFor = state.runBuilder?.athleteName;
   state.runBuilder = null;
   cacheClear("run-plans:");
@@ -11999,19 +12178,27 @@ function urlBase64ToUint8Array(value = "") {
 async function getPushNotificationState() {
   const defaults = {
     leaderboard_overtaken: true,
-    crew_chat: true,
     parent_weekly_summary: true,
     coach_messages: true,
     daily_hype: true,
     trick_completed: true,
     list_requests: true,
+    battle_updates: true,
+    challenge_updates: true,
+    event_updates: true,
+    sheet_updates: true,
+    coaching_updates: true,
+    achievement_updates: true,
+    quiet_hours_enabled: false,
+    quiet_hours_start: "20:00:00",
+    quiet_hours_end: "08:00:00",
   };
   if (!state.user?.id || !supportsPushNotifications()) {
     return { supported: false, enabled: false, permission: "unsupported", preferences: defaults };
   }
 
   const { data: preferences, error } = await client.from("push_preferences")
-    .select("leaderboard_overtaken, crew_chat, parent_weekly_summary, coach_messages, daily_hype, trick_completed, list_requests")
+    .select("leaderboard_overtaken,parent_weekly_summary,coach_messages,daily_hype,trick_completed,list_requests,battle_updates,challenge_updates,event_updates,sheet_updates,coaching_updates,achievement_updates,quiet_hours_enabled,quiet_hours_start,quiet_hours_end")
     .eq("user_id", state.user.id)
     .maybeSingle();
   if (error) throw error;
@@ -12048,16 +12235,23 @@ function pushNotificationSettingsHtml(pushState) {
       </div>
       <div class="push-preference-list">
         <label><input type="checkbox" id="notification-sound-toggle" ${notificationSoundEnabled() ? "checked" : ""}> Play the JKCREW sound for in-app notification pop-ups</label>
+        <label><input type="checkbox" data-push-preference="battle_updates" ${preference.battle_updates ? "checked" : ""}> Battle requests, starts and results</label>
+        <label><input type="checkbox" data-push-preference="challenge_updates" ${preference.challenge_updates ? "checked" : ""}> Weekly challenge updates</label>
+        <label><input type="checkbox" data-push-preference="event_updates" ${preference.event_updates ? "checked" : ""}> Event changes, runs and reminders</label>
+        <label><input type="checkbox" data-push-preference="sheet_updates" ${preference.sheet_updates ? "checked" : ""}> Sheet and list updates</label>
+        <label><input type="checkbox" data-push-preference="coaching_updates" ${preference.coaching_updates ? "checked" : ""}> Private video coaching updates</label>
+        <label><input type="checkbox" data-push-preference="achievement_updates" ${preference.achievement_updates ? "checked" : ""}> Badges, Prestige and achievements</label>
         ${role === "athlete" ? `
           <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
-          <label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label>
           <label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my coach</label>
           <label><input type="checkbox" data-push-preference="daily_hype" ${preference.daily_hype ? "checked" : ""}> 9am daily coach hype message</label>
           <label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> My list request is approved</label>
         ` : ""}
-        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="crew_chat" ${preference.crew_chat ? "checked" : ""}> New Crew Chat messages</label><label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label><label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>` : ""}
+        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label><label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>` : ""}
         ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label><label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my child's coach</label>` : ""}
       </div>
+      <div class="quiet-hours-settings"><label><input type="checkbox" data-push-preference="quiet_hours_enabled" ${preference.quiet_hours_enabled ? "checked" : ""}> Quiet hours for background push</label><div><label>From <input type="time" id="quiet-hours-start" value="${escapeHtml(String(preference.quiet_hours_start || "20:00").slice(0, 5))}"></label><label>Until <input type="time" id="quiet-hours-end" value="${escapeHtml(String(preference.quiet_hours_end || "08:00").slice(0, 5))}"></label></div></div>
+      <button class="secondary-btn compact-btn notification-test-button" type="button" id="send-test-notification">Send a test notification</button>
       <p>Notifications are set separately on each phone, tablet, or computer. In-app sounds work after you interact with the app; background push alerts use the device's own sound, mute and Focus settings. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
     </section>`;
 }
@@ -12070,12 +12264,20 @@ function currentPushPreferences() {
   return {
     user_id: state.user.id,
     leaderboard_overtaken: checkboxValue("leaderboard_overtaken"),
-    crew_chat: checkboxValue("crew_chat"),
     parent_weekly_summary: checkboxValue("parent_weekly_summary"),
     coach_messages: checkboxValue("coach_messages"),
     daily_hype: checkboxValue("daily_hype"),
     trick_completed: checkboxValue("trick_completed"),
     list_requests: checkboxValue("list_requests"),
+    battle_updates: checkboxValue("battle_updates"),
+    challenge_updates: checkboxValue("challenge_updates"),
+    event_updates: checkboxValue("event_updates"),
+    sheet_updates: checkboxValue("sheet_updates"),
+    coaching_updates: checkboxValue("coaching_updates"),
+    achievement_updates: checkboxValue("achievement_updates"),
+    quiet_hours_enabled: checkboxValue("quiet_hours_enabled", false),
+    quiet_hours_start: document.querySelector("#quiet-hours-start")?.value || "20:00",
+    quiet_hours_end: document.querySelector("#quiet-hours-end")?.value || "08:00",
     updated_at: new Date().toISOString(),
   };
 }
@@ -12085,6 +12287,15 @@ async function savePushPreferences({ quiet = false } = {}) {
     .upsert(currentPushPreferences(), { onConflict: "user_id" });
   if (error) throw error;
   if (!quiet) notify("Notification preferences saved.");
+}
+
+async function sendTestNotification(event) {
+  const restoreButton = setButtonBusy(event.currentTarget, "Sending...");
+  const { error } = await client.rpc("send_my_test_notification");
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify("Test sent. Check the notification bell and your enabled devices.");
+  await refreshNotificationCentre();
 }
 
 async function enablePushNotifications(button) {
@@ -12182,7 +12393,7 @@ async function renderProfile() {
       supported: supportsPushNotifications(),
       enabled: false,
       permission: supportsPushNotifications() ? Notification.permission : "unsupported",
-      preferences: { leaderboard_overtaken: true, crew_chat: true, parent_weekly_summary: true, coach_messages: true, daily_hype: true, trick_completed: true, list_requests: true },
+      preferences: { leaderboard_overtaken: true, parent_weekly_summary: true, coach_messages: true, daily_hype: true, trick_completed: true, list_requests: true, battle_updates: true, challenge_updates: true, event_updates: true, sheet_updates: true, coaching_updates: true, achievement_updates: true, quiet_hours_enabled: false, quiet_hours_start: "20:00", quiet_hours_end: "08:00" },
     };
   });
   try {
@@ -12286,7 +12497,11 @@ async function renderProfile() {
   document.querySelector("#profile-theme")?.addEventListener("change", (event) => applyTheme(event.target.value));
   document.querySelector("#toggle-push-notifications")?.addEventListener("click", togglePushNotifications);
   document.querySelector("#notification-sound-toggle")?.addEventListener("change", updateNotificationSoundPreference);
+  document.querySelector("#send-test-notification")?.addEventListener("click", sendTestNotification);
   document.querySelectorAll("[data-push-preference]").forEach((input) => input.addEventListener("change", () => {
+    savePushPreferences().catch((error) => notify(messageFrom(error), "error"));
+  }));
+  document.querySelectorAll("#quiet-hours-start, #quiet-hours-end").forEach((input) => input.addEventListener("change", () => {
     savePushPreferences().catch((error) => notify(messageFrom(error), "error"));
   }));
   document.querySelector("#profile-form").addEventListener("submit", updateProfile);

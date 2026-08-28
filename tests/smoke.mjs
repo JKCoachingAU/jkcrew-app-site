@@ -17,7 +17,8 @@ const mergeEventMigration = read("supabase/migrations/20260827213000_merge_share
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
-const version = "2.14.17";
+const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
+const version = "2.14.18";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -39,7 +40,7 @@ assert(serviceWorker.includes("silent: false"), "Background push should request 
 const shellRenderer = functionBody("renderShell");
 assert(shellRenderer.includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
 assert(app.includes(`const RELEASE_VERSION = "${version}"`), "The app bundle must share the release version used by the service worker");
-assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-run-builder-live"'), "What's New needs a fresh Run Builder campaign key");
+assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre"'), "What's New needs a fresh notification-centre campaign key");
 assert(serviceWorker.includes("await self.skipWaiting()"), "Service-worker installation must finish activation before the install event can end");
 assert(serviceWorker.includes("await Promise.all(windows.map"), "Service-worker activation must wait for every open app window to be refreshed");
 assert(serviceWorker.includes("await client.navigate(url.href)"), "Installed apps must navigate to the new version before activation completes");
@@ -55,6 +56,18 @@ assert(functionBody("notify").includes("playNotificationSound"), "General in-app
 assert(functionBody("showProgressPopup").includes("playNotificationSound"), "XP, badge and score popups should request the JKCREW chime");
 assert(functionBody("playNotificationSound").includes('document.visibilityState !== "visible"'), "In-app sound must stay silent while the app is hidden");
 assert(functionBody("pushNotificationSettingsHtml").includes("notification-sound-toggle"), "Every role needs an in-app notification sound control");
+assert(functionBody("renderShell").includes("notification-centre-bell"), "Every role needs the shared notification-centre bell");
+assert(functionBody("setupRealtimeSync").includes('table: "app_notifications"'), "New notifications must update unread badges in realtime");
+assert(functionBody("refreshOwnXpAfterAction").includes("showPrestigeCelebration"), "Crossing the XP cycle must show the Prestige celebration");
+assert(functionBody("archiveRunPlan").includes("showUndoToast"), "Archiving a private run needs a recoverable Undo action");
+assert(!functionBody("pushNotificationSettingsHtml").includes("Crew Chat"), "Removed Crew Chat must not remain in notification settings");
+assert(notificationMigration.includes("create table if not exists public.app_notifications"), "The persistent notification inbox table must be migrated");
+assert(notificationMigration.includes("alter table public.app_notifications enable row level security"), "Notification history must have RLS enabled");
+assert(notificationMigration.includes("grant update (read_at, archived_at)"), "Recipients may only update notification read/archive fields");
+assert(notificationMigration.includes("send_my_test_notification"), "Profile settings need a secure notification pipeline test");
+assert(notificationMigration.includes("weekly_challenge_complete_notification"), "Weekly challenge completion must create an alert");
+assert(notificationMigration.includes("rider_battle_status_notification"), "Battle starts and declines must create alerts");
+assert(notificationMigration.includes("event_run_saved_notification"), "New private event runs must alert the coach");
 
 const localAssetReferences = [...html.matchAll(/(?:src|href)="(?!https?:)([^"#]+)"/g)]
   .map((match) => match[1].split("?")[0])
@@ -235,7 +248,7 @@ const parentMoreBody = functionBody("renderParentMore");
 for (const source of ["getTricktionaryData", "getRunPlans", "getXpSummary", "getPushNotificationState"]) {
   assert(parentMoreBody.includes(source), `Parent More must retain ${source}`);
 }
-assert(app.includes('id="parent-notification-bell"'), "Parent shell must include a notification bell");
+assert(app.includes('id="notification-centre-bell"'), "Every shell, including Parent, must include the shared notification bell");
 assert(functionBody("showParentNotificationDrawer").includes("getMyCoachMessages(10)"), "Parent notification drawer must use existing coach-message data");
 assert(functionBody("showParentNotificationDrawer").includes("getHelpRequests(context.selected.id)"), "Parent notification drawer must include returned video feedback");
 assert(functionBody("showParentNotificationDrawer").includes("getDashboardItems(context.selected.id)"), "Parent notification drawer must include calendar updates");
