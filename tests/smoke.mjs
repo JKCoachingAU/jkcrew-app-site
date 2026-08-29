@@ -19,7 +19,8 @@ const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_e
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
 const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
-const version = "2.14.20";
+const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
+const version = "2.14.21";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -411,6 +412,11 @@ assert.deepEqual(
 assert.equal(battleIdentity({ athlete_id: "riley", display_name: "Riley Chen", avatar: {} }, {}).display_name, "Riley Chen", "Riders without a photo must keep their real name");
 assert(functionBody("battleTeamHtml").includes("battleParticipantFirstName(participant)"), "Battle teams must render first names instead of generic labels");
 assert(functionBody("battleTeamHtml").includes('avatarHtml(participant, "avatar")'), "Battle teams must render each participant's profile picture or initials fallback");
+assert(functionBody("battleTeamHtml").includes("participant.battle_points ?? participant.weekly_points"), "Rider battle cards must use battle-window points instead of reset weekly points");
+assert(functionBody("coachBattleTeamHtml").includes("participant.battle_points ?? participant.weekly_points"), "Coach battle cards must use battle-window points instead of reset weekly points");
+assert(battleScoreMigration.includes("private.jkcrew_rider_battle_points"), "Battle scoring must use a private battle-window points helper");
+assert(battleScoreMigration.includes("'battle_points', private.jkcrew_rider_battle_points"), "Battle RPCs must expose battle-window points to the app");
+assert(battleScoreMigration.includes("sum(private.jkcrew_rider_battle_points"), "Battle settlement must decide winners from the full battle window");
 assert(functionBody("weeklyBattleCardHtml").includes("battleParticipantFirstName(rivals[0])"), "Head-to-head copy must name the opposing rider");
 assert(functionBody("renderChallenges").includes("hydrateRiderBattleIdentities(rawBattles, leaderboard)"), "Challenge cards must hydrate any missing participant identity safely");
 const battleSelectionSizer = new Function(`${functionBody("riderBattleSelectionSize")}; return riderBattleSelectionSize;`)();
