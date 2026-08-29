@@ -3478,6 +3478,9 @@ html.coaching-viewer-open body { overflow: hidden; }
   position: relative;
   width: 100%;
   line-height: 0;
+  contain: layout paint;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .run-map-preview img {
   width: 100%;
@@ -3521,6 +3524,10 @@ html.coaching-viewer-open body { overflow: hidden; }
 .run-marker:hover, .run-marker.play-active { opacity: 1; transform: translate(-50%, -50%) scale(1.18); }
 .run-marker.is-selected { border-color: #fff; opacity: 1; box-shadow: 0 0 0 4px color-mix(in srgb, var(--run-color, var(--aqua)) 36%, transparent), 0 9px 28px rgba(0,0,0,0.45); transform: translate(-50%, -50%) scale(1.14); }
 .run-marker.play-done { box-shadow: 0 0 0 4px rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.38); }
+.run-map.is-dragging .run-line-overlay path,
+.run-map.is-dragging .run-marker { transition: none; }
+.run-map.is-dragging .run-line-overlay path { filter: none; }
+.run-marker.is-dragging { cursor: grabbing; will-change: left, top; }
 .run-line-overlay path.play-active { stroke-width: 1.45; opacity: 1; }
 .run-line-overlay path.play-done { opacity: 0.72; }
 .run-endpoint-label {
@@ -3650,6 +3657,7 @@ html.coaching-viewer-open body { overflow: hidden; }
 .run-bend-control > div { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; gap: 9px; }
 .run-bend-control input { width: 100%; accent-color: var(--aqua); }
 .run-bend-control output { display: grid; min-height: 34px; place-items: center; border-radius: 10px; color: var(--yellow); background: rgba(247,209,84,0.08); }
+.run-bend-control-mobile { display: none; }
 .run-playback-controls {
   display: grid;
   grid-template-columns: auto 42px minmax(140px, 1fr) auto;
@@ -9258,4 +9266,65 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   .session-group-battles-body { padding: 13px; }
   .session-group-battles-actions { align-items: stretch; flex-direction: column; }
   .session-group-battles-actions button { width: 100%; }
+}
+
+/* Run-builder touch tuning: keep the route visible and controls reachable on phones. */
+@media (pointer: coarse) {
+  .run-marker { backdrop-filter: none; }
+  .run-map.is-dragging { touch-action: none; }
+}
+
+@media (max-width: 520px) {
+  .visual-run-builder { gap: 10px; }
+  .run-map-stage { overflow: visible; }
+  .run-map-stage .run-map { min-height: 230px; overflow: hidden; }
+  .run-map-preview { overflow: hidden; }
+  .run-marker {
+    width: 34px;
+    height: 34px;
+    font-size: 0.72rem;
+    box-shadow: 0 5px 16px rgba(0,0,0,0.4);
+  }
+  .run-builder-sidebar { order: 0; }
+  .run-bend-control-sidebar { display: none; }
+  .run-bend-control-mobile {
+    position: sticky;
+    z-index: 8;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    display: grid;
+    gap: 8px;
+    margin: 0 8px 8px;
+    padding: 12px 14px;
+    border: 1px solid rgba(32,227,195,0.42);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(7,17,21,0.97), rgba(10,12,22,0.97));
+    box-shadow: 0 14px 34px rgba(0,0,0,0.48), 0 0 0 3px rgba(32,227,195,0.06);
+  }
+  .run-bend-control-mobile > span { color: var(--aqua); font-size: 0.68rem; }
+  .run-bend-control-mobile > div { grid-template-columns: minmax(0, 1fr) 48px; gap: 10px; }
+  .run-bend-control-mobile input[type="range"] {
+    height: 36px;
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    touch-action: none;
+  }
+  .run-bend-control-mobile input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #8e56ff, var(--aqua));
+  }
+  .run-bend-control-mobile input[type="range"]::-webkit-slider-thumb {
+    width: 30px;
+    height: 30px;
+    margin-top: -11px;
+    border: 3px solid #071015;
+    border-radius: 50%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.46);
+  }
+  .run-bend-control-mobile output { min-height: 40px; font-size: 0.72rem; }
 }

@@ -19,7 +19,7 @@ const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_e
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
 const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
-const version = "2.14.19";
+const version = "2.14.20";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -637,6 +637,12 @@ assert(saveRunPlanBody.includes('venue: String(state.runBuilder?.venue || "").tr
 assert(saveRunPlanBody.includes('state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training")'), "Hidden run type must still be derived and saved automatically");
 assert(!functionBody("addRunBuilderPoint").includes("window.prompt"), "Adding a run point must use the compact selected-dot editor, not a blocking prompt");
 assert(functionBody("runPathBetween").includes("point.bend"), "Each route segment must support a rider-controlled curve");
+assert(runBuilderMarkup.includes("run-bend-control-mobile"), "iPhone Run Builder must place a reachable bend control beside the map");
+assert(runBuilderMarkup.includes("run-bend-control-sidebar"), "iPad and desktop Run Builder must keep the existing sidebar bend control");
+assert(functionBody("dragRunPoint").includes("requestAnimationFrame"), "Run Builder dot dragging must be frame-synchronised for smooth touch movement");
+assert(functionBody("updateRunBuilderMapDom").includes('setAttribute("d"'), "Dragging a dot must redraw only the affected route segments");
+assert(functionBody("selectRunPoint").includes("runPointDragClickBlockUntil"), "Releasing a dragged dot must not trigger a second full editor render");
+assert(css.includes(".run-bend-control-mobile input[type=\"range\"]::-webkit-slider-thumb"), "iPhone bend control needs a large touch-friendly slider thumb");
 const runPathForTest = new Function(`${functionBody("runPathBetween")}; return runPathBetween;`)();
 assert.notEqual(runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 0 }), runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 60 }), "Changing a dot's bend must change the saved route curve");
 assert(app.includes("const RUN_PLAYBACK_MAX_SECONDS = 60"), "Run playback must be capped at 60 seconds");
