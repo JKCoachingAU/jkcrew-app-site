@@ -18,6 +18,7 @@ const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_
 const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_edit_events_private_event_runs.sql");
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
+const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
 const version = "2.14.19";
 
 function functionBody(name) {
@@ -68,6 +69,11 @@ assert(notificationMigration.includes("send_my_test_notification"), "Profile set
 assert(notificationMigration.includes("weekly_challenge_complete_notification"), "Weekly challenge completion must create an alert");
 assert(notificationMigration.includes("rider_battle_status_notification"), "Battle starts and declines must create alerts");
 assert(notificationMigration.includes("event_run_saved_notification"), "New private event runs must alert the coach");
+assert(dailyListNotificationMigration.includes("and progress.progress_date is distinct from new.progress_date"), "Daily alerts must wait until every trick in the location list is complete");
+assert(dailyListNotificationMigration.includes("if not v_daily_list_complete then"), "Individual Daily ticks must exit without notifying the coach");
+assert(dailyListNotificationMigration.includes("'daily_list_completed'"), "The final Daily tick must create one list-completion notification");
+assert(dailyListNotificationMigration.includes("'trick_completed'"), "Non-Daily trick completion notifications must remain enabled");
+assert(dailyListNotificationMigration.includes("daily-list-completed:"), "Daily completion notifications need a rider, venue and date dedupe key");
 
 const localAssetReferences = [...html.matchAll(/(?:src|href)="(?!https?:)([^"#]+)"/g)]
   .map((match) => match[1].split("?")[0])
