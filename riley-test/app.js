@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.21";
+const RELEASE_VERSION = "2.14.22";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -414,7 +414,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.21" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.22" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -5406,7 +5406,7 @@ async function renderAthleteHome() {
   const leaderboardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
   const weeklyPoints = Number(leaderboardRow?.weekly_points || 0);
   const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
-  const xp = riderXpSummary({ ...state.profile, ...(leaderboardRow || {}), weekly_points: weeklyPoints });
+  const xp = riderXpSummary({ ...(leaderboardRow || {}), ...state.profile, weekly_points: weeklyPoints });
   const battleHistory = riderBattles.filter((battle) => battle.status === "completed");
   const battleRecord = riderBattleRecord(battleHistory);
   if (activeSession) {
@@ -6631,7 +6631,7 @@ async function renderPublicAthleteProfile() {
     return;
   }
   const xpRow = leaderboard.find((row) => row.athlete_id === state.publicAthleteId) || {};
-  const scoreXp = riderXpSummary({ ...profile, ...xpRow });
+  const scoreXp = riderXpSummary({ ...xpRow, ...profile });
   const badges = earnedBadges(profile.badges);
   const hasWeeklyPoints = Number(profile.weekly_points || 0) > 0;
   const badgeHtml = [
@@ -9438,7 +9438,7 @@ function coachPreviewPageHtml(context) {
 
 function coachStudentPreviewHtml({ athlete, assignments, awards, events, sessions, rank, weeklyRow, leaderboard }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
-  const xp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
+  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
@@ -9497,7 +9497,7 @@ function coachPreviewBoardHtml({ leaderboard }) {
 }
 
 function coachStudentPreviewProfileHtml({ athlete, weeklyRow }) {
-  const xp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
+  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">athlete · Level ${xp.level}</div><p class="subcopy" style="margin-top:12px">${countryBadge(athlete)} ${escapeHtml(athlete.country_name || "Country not set")}</p></section>
     <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
@@ -9509,7 +9509,7 @@ function coachStudentPreviewProfileHtml({ athlete, weeklyRow }) {
 function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
-  const xp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
+  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
@@ -9545,7 +9545,7 @@ function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttemp
 }
 
 function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = [], weeklyRow, weeklyPercent, completedWeekly, weeklyItems, rank }) {
-  const xp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
+  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
@@ -9567,7 +9567,7 @@ function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = 
 }
 
 function coachParentPreviewProfileHtml({ athlete, dashboardItems, sessions, runs, visibleFeedback, weeklyRow }) {
-  const xp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
+  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   return `<div class="phone-preview-content">
     <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">read-only linked rider</div></section>
@@ -9826,7 +9826,7 @@ async function renderStudentProfile() {
   const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete });
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
-  const scoreXp = riderXpSummary({ ...athlete, ...(weeklyRow || {}) });
+  const scoreXp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
   const assignedWeekly = assignments.filter((assignment) => assignment.category !== "daily").length;
   view.innerHTML = `

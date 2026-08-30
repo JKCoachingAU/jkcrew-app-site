@@ -20,7 +20,8 @@ const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenle
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
 const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
 const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
-const version = "2.14.21";
+const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
+const version = "2.14.22";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -100,6 +101,8 @@ for (let level = 1; level <= 45; level += 1) {
 assert(functionBody("levelBadgeImageUrl").includes("safeLevel > 45"), "Levels without supplied artwork need a safe text fallback");
 assert(functionBody("getXpSummary").includes('.from("athlete_badges")'), "Badge loading must verify the permanent earned-badge ledger");
 assert(functionBody("getXpSummary").includes("highestPersistedLevel"), "A saved badge level must not be replaced by a lower calculated level");
+assert(lifetimeXpBadgeMigration.includes("public.level_for_xp(coalesce(profile.xp_total, 0))"), "Leaderboard badge levels must come from lifetime XP");
+assert(functionBody("renderAthleteHome").includes("{ ...(leaderboardRow || {}), ...state.profile, weekly_points: weeklyPoints }"), "Athlete Home must not let score rows override permanent XP profile levels");
 const normalizeXpSummaryForTest = new Function(`
   const XP_LEVEL_CAP = 50;
   const PRESTIGE_LEVEL = 51;
