@@ -24,7 +24,9 @@ const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_b
 const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
 const eventCourseMigration = read("supabase/migrations/20260830114500_shared_event_course_photos.sql");
 const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index_event_course_photo_updater.sql");
-const version = "2.14.24";
+const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
+const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
+const version = "2.14.25";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -63,6 +65,20 @@ assert(functionBody("showProgressPopup").includes("playNotificationSound"), "XP,
 assert(functionBody("playNotificationSound").includes('document.visibilityState !== "visible"'), "In-app sound must stay silent while the app is hidden");
 assert(functionBody("pushNotificationSettingsHtml").includes("notification-sound-toggle"), "Every role needs an in-app notification sound control");
 assert(functionBody("renderShell").includes("notification-centre-bell"), "Every role needs the shared notification-centre bell");
+assert(app.includes('["contests", "Contests"]'), "The parent navigation must include the Contests tab");
+assert(functionBody("renderCurrentParentView").includes("contests: renderContests"), "Parent view switching must support Contests");
+assert(functionBody("renderParentHome").includes('data-parent-open-view="contests"'), "Parent Home needs a direct Upcoming Events button");
+assert(functionBody("renderParentHome").includes("parentEngagementAlertHtml"), "Parent Home needs a persistent inactivity/progress check-in card");
+assert(functionBody("parentNextItemHtml").includes('toLowerCase() !== "event"'), "Parent Home training agenda must not duplicate the Contests event list");
+assert(functionBody("renderParentCalendar").includes('toLowerCase() !== "event"'), "Parent Calendar must exclude competition events");
+assert(functionBody("renderParentCalendar").includes('"Training", "schedule"'), "Parent Calendar should be presented as a training schedule");
+assert(functionBody("recordMyAppOpen").includes('rpc("record_my_app_open")'), "The app must record a throttled signed-in activity timestamp");
+assert(parentEngagementMigration.includes("last_app_opened_at"), "Parent engagement alerts need a dedicated app-open timestamp");
+assert(parentEngagementMigration.includes("queue_parent_engagement_alerts"), "Parent inactivity and low-progress alerts need a scheduled queue function");
+assert(parentEngagementMigration.includes("parent-engagement:"), "Parent engagement alerts must be deduplicated per parent, rider and week");
+assert(parentEngagementMigration.includes("'sheet'"), "Parent engagement pushes must respect the existing sheet notification preference");
+assert(parentEventCourseMigration.includes("parent_athletes"), "Parent course access must require a linked rider relationship");
+assert(!parentEventCourseMigration.includes("from public.run_plans"), "Parent course access must never query private run plans");
 assert(functionBody("setupRealtimeSync").includes('table: "app_notifications"'), "New notifications must update unread badges in realtime");
 assert(functionBody("refreshOwnXpAfterAction").includes("showPrestigeCelebration"), "Crossing the XP cycle must show the Prestige celebration");
 assert(functionBody("archiveRunPlan").includes("showUndoToast"), "Archiving a private run needs a recoverable Undo action");
@@ -255,13 +271,13 @@ for (const label of ["Command", "Session", "Riders", "Challenges", "Coach Tools"
 }
 
 const parentNavBody = app.match(/const parentNav = \[([\s\S]*?)\];/)?.[1] || "";
-assert.equal((parentNavBody.match(/\["/g) || []).length, 5, "Parent navigation must expose the five family views");
-for (const label of ["Home", "Week", "Coaching", "Calendar", "More"]) {
+assert.equal((parentNavBody.match(/\["/g) || []).length, 6, "Parent navigation must expose the six family views");
+for (const label of ["Home", "Week", "Coaching", "Contests", "Calendar", "More"]) {
   assert(parentNavBody.includes(`"${label}"`), `Parent navigation is missing ${label}`);
 }
 assert(
-  css.includes(".parent-shell .bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }"),
-  "Parent bottom navigation must use a five-column family layout",
+  css.includes(".parent-shell .bottom-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }"),
+  "Parent bottom navigation must use a six-column family layout",
 );
 for (const tone of ["aqua", "blue", "violet", "gold", "coral"]) {
   assert(css.includes(`--parent-${tone}:`), `Parent palette is missing ${tone}`);
@@ -550,7 +566,7 @@ assert(!functionBody("sessionViewerListContent").includes("data-viewer-assignmen
 const contestsRenderer = functionBody("renderContests");
 assert(contestsRenderer.includes("getSharedUpcomingEventData()"), "Events & Runs must load the shared upcoming-event catalogue");
 assert(contestsRenderer.includes("+ NEW PRIVATE RUN"), "Athlete Events & Runs must expose a clear private Run Builder action");
-assert(contestsRenderer.includes("contestEventCardsHtml(events, runs, attendance, roster)"), "Events & Runs must render shared attendance, coach controls and private saved-run links");
+assert(contestsRenderer.includes("contestEventCardsHtml(events, runs, attendance, roster, viewOptions)"), "Events & Runs must render shared attendance, role-appropriate controls and private saved-run links");
 assert(contestsRenderer.includes("runBuilderPanel([], { live: true, showRunList: false })"), "The live Run Builder must open inline without duplicating the saved-run library");
 assert(contestsRenderer.includes("runPlansHtml(runs)"), "Athlete Contests must retain every saved run plan");
 assert(!contestsRenderer.includes("runBuilderPanel(runs, { collapsed: true })"), "The released Run Builder must not remain buried in the old collapsed panel");
@@ -567,14 +583,18 @@ assert(contestCardsBody.includes('draggable="true"'), "Coach event cards must su
 assert(contestCardsBody.includes("data-select-event-merge"), "Touch devices need a two-tap event merge fallback");
 assert(contestCardsBody.includes("data-toggle-coach-event-attendance"), "Coaches must be able to mark whether they are attending from the event card");
 assert(contestCardsBody.includes("EDIT RIDERS"), "Coach event cards must expose rider attendance editing");
+assert(contestCardsBody.includes("viewerAthleteId"), "Parent event cards must calculate attendance for the selected child");
+assert(contestCardsBody.includes("parentView"), "The shared event cards must support the read-only parent presentation");
 const contestModalBody = functionBody("contestEventModalHtml");
 assert(contestModalBody.includes("Who's going"), "Opening an event must show the attendee list");
 assert(contestModalBody.includes("row.profile?.display_name"), "The attendee list must show rider names");
-assert(contestModalBody.includes("contestEventCourseHtml(item)"), "Opening an event must show its shared course-photo control");
+assert(contestModalBody.includes("contestEventCourseHtml(item, viewOptions)"), "Opening an event must show its shared course-photo control");
 assert(contestModalBody.includes("Other riders cannot see your route, tricks, notes or private run photo"), "The event modal must explain run-plan privacy");
 assert(contestModalBody.includes("coachEventAttendanceEditorHtml"), "The coach event modal must render the shared attendance editor");
 assert(contestModalBody.includes("coachContestEventEditorHtml"), "The coach event modal must allow corrections to the shared event details");
 assert(contestModalBody.includes("coachEventAttendeeRunActionHtml"), "Each linked rider attending an event must have a private run action");
+assert(contestModalBody.includes('" · Your child"'), "Parent event details must identify their selected child");
+assert(contestModalBody.includes("Rider routes, numbered dots, trick notes and private run photos are never shown"), "The parent event modal must preserve private run-plan boundaries");
 assert(functionBody("coachEventAttendeeRunActionHtml").includes("VIEW RIDER'S RUN"), "An existing rider run must show View Rider's Run");
 assert(functionBody("coachEventAttendeeRunActionHtml").includes("CREATE RUN"), "A rider without a plan must show Create Run");
 assert(functionBody("openCoachEventRunModal").includes("bindRunPlaybackControls"), "Coach event run viewing must include the saved playback controls");
@@ -638,6 +658,15 @@ assert(eventCourseMigration.includes("Only coaches can merge events"), "Course-p
 assert(eventCourseMigration.includes("source_course_photo"), "Event merges must audit the source course image");
 assert(eventCourseMigration.includes("insert into public.event_course_photos"), "Event merges must preserve a course image on the surviving event");
 assert(eventCourseIndexMigration.includes("event_course_photos_updated_by_idx"), "Shared course photos need an index for their uploader relationship");
+assert(parentEventCourseMigration.includes("profile.role = 'parent'"), "Linked parent accounts must receive shared course-photo read access");
+assert(parentEventCourseMigration.includes("link.parent_id = (select auth.uid())"), "Course-photo access must require a real parent-rider link");
+assert(!parentEventCourseMigration.includes("for insert"), "Parents must not receive course-photo insert access");
+assert(!parentEventCourseMigration.includes("for update"), "Parents must not receive course-photo update access");
+assert(!parentEventCourseMigration.includes("public.run_plans"), "Parent course-photo access must remain separate from private run plans");
+const parentContestsBody = functionBody("renderContests");
+assert(parentContestsBody.includes("getParentRiderContext()"), "Parent Contests must respect the selected linked child");
+assert(parentContestsBody.includes("Family event view · Read only"), "Parent Contests must clearly present read-only access");
+assert(parentContestsBody.includes("Private rider run plans are not displayed"), "Parent Contests must not load private run plans");
 const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");

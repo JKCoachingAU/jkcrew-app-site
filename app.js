@@ -27,9 +27,9 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.24";
+const RELEASE_VERSION = "2.14.25";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
-const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
+const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
   session: null,
   user: null,
@@ -172,6 +172,7 @@ const parentNav = [
   ["home", "Home"],
   ["parentWeek", "Week"],
   ["parentCoaching", "Coaching"],
+  ["contests", "Contests"],
   ["parentCalendar", "Calendar"],
   ["parentMore", "More"],
 ];
@@ -414,7 +415,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.24" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.25" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1073,6 +1074,19 @@ function clearLocalAuthSession() {
   }
 }
 
+function recordMyAppOpen() {
+  if (!state.user?.id) return;
+  const storageKey = `jkcrew-app-open:${state.user.id}`;
+  try {
+    const lastRecorded = Number(localStorage.getItem(storageKey) || 0);
+    if (Date.now() - lastRecorded < 30 * 60 * 1000) return;
+    localStorage.setItem(storageKey, String(Date.now()));
+  } catch (_) {}
+  client.rpc("record_my_app_open").then(({ error }) => {
+    if (error) console.warn("App activity check-in unavailable", error);
+  }).catch((error) => console.warn("App activity check-in unavailable", error));
+}
+
 async function init() {
   renderAuth("login", "Checking JKCREW connection...");
   let session = null;
@@ -1170,9 +1184,10 @@ async function handleSession(session) {
     data = recovered;
   }
   state.profile = data;
+  recordMyAppOpen();
   applyTheme(data.app_theme);
   const pushView = new URL(window.location.href).searchParams.get("push");
-  const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "command", "videoReviews"]);
+  const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
   state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
   if (pushView) {
     const cleanUrl = new URL(window.location.href);
@@ -1480,9 +1495,9 @@ function whatsNewItems(role = "athlete") {
     ["01", "Notification Centre", "Private family updates now stay together under the bell."],
     ["02", "Weekly Progress", "See the current sheet, Daily locations and completion at a glance."],
     ["03", "Coaching Inbox", "Coach messages and approved feedback now live in one private place."],
-    ["04", "Family Calendar", "Sessions, events and tasks are easier to follow."],
-    ["05", "Progress History", "XP, badges, Tricktionary and previous weeks stay one tap away."],
-    ["06", "Alerts + Sound", "Unread badges, quiet hours and a test button make alerts easier to control."],
+    ["04", "Upcoming Events", "See the same event list as your child, including attendees and shared course photos."],
+    ["05", "Training Schedule", "Lesson times, venue changes and recent sessions stay separate from competition events."],
+    ["06", "Gentle Check-ins", "Get a private alert when app activity stops or weekly progress may need encouragement."],
   ];
   if (isCoachRole(role)) return [
     ["01", "Coach Notification Centre", "Video, run, battle, sheet and challenge actions now stay under the bell."],
@@ -5594,6 +5609,7 @@ function renderCurrentParentView() {
     home: renderParentHome,
     parentWeek: renderParentWeek,
     parentCoaching: renderParentCoaching,
+    contests: renderContests,
     parentCalendar: renderParentCalendar,
     parentMore: renderParentMore,
     tricktionary: renderParentTricktionary,
@@ -5628,7 +5644,7 @@ function parentLatestCoachMessageHtml(messages = []) {
 function parentNextItemHtml(items = []) {
   const now = Date.now();
   const upcoming = items
-    .filter((item) => !item.completed)
+    .filter((item) => !item.completed && String(item.item_type || "").toLowerCase() !== "event")
     .slice()
     .sort((a, b) => (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER));
   const item = upcoming.find((entry) => !entry.due_at || new Date(entry.end_at || entry.due_at).getTime() >= now) || upcoming[0];
@@ -5672,6 +5688,33 @@ function parentRecentActivityHtml(assignments = [], assignmentAttempts = [], awa
   return `<div class="parent-activity-list">${rows.map((row) => `<div class="parent-activity-row"><i class="tone-${row.tone}" aria-hidden="true"></i><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.meta)} · ${dateLabel(row.at)}</small></div></div>`).join("")}</div>`;
 }
 
+function parentEngagementAlertHtml({ athlete = {}, assignmentAttempts = [], awards = [], sessions = [], completed = 0, total = 0, percent = 0 } = {}) {
+  const activityTimes = [
+    athlete.last_app_opened_at,
+    ...assignmentAttempts.map((row) => row.attempted_at),
+    ...awards.map((row) => row.created_at),
+    ...sessions.flatMap((row) => [row.ended_at, row.started_at]),
+  ].map((value) => value ? new Date(value).getTime() : 0).filter(Number.isFinite);
+  const fallback = athlete.created_at ? new Date(athlete.created_at).getTime() : Date.now();
+  const latestActivity = Math.max(fallback, ...activityTimes, 0);
+  const inactiveDays = Math.max(0, Math.floor((Date.now() - latestActivity) / (24 * 60 * 60 * 1000)));
+  const remaining = Math.max(0, Number(total || 0) - Number(completed || 0));
+  const localDay = new Date().getDay();
+  const inactive = inactiveDays >= 4;
+  const behind = [4, 5, 6].includes(localDay) && total > 0 && percent < 35 && remaining > 0;
+  if (!inactive && !behind) return "";
+  const name = firstName(athlete);
+  const title = inactive ? `${name} has been inactive for ${inactiveDays} days` : `${name} may need a little encouragement`;
+  const message = behind
+    ? `${remaining} item${remaining === 1 ? " remains" : "s remain"} on this week's sheet. A gentle check-in may help ${name} get moving again.`
+    : `There has not been any recent JKCREW activity. A gentle check-in may help ${name} get moving again.`;
+  return `<section class="parent-engagement-alert" role="status">
+    <span class="parent-engagement-alert-icon" aria-hidden="true">!</span>
+    <div><span>Gentle check-in</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(message)}</p><small>Last activity · ${dateLabel(new Date(latestActivity).toISOString())}</small></div>
+    <button type="button" data-parent-open-view="parentWeek">View this week</button>
+  </section>`;
+}
+
 async function renderParentHome() {
   const [context, coachMessages] = await Promise.all([
     getParentRiderContext(),
@@ -5712,6 +5755,12 @@ async function renderParentHome() {
       </div>
       <div class="parent-progress-track" aria-label="${percent}% of weekly items complete"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
     </section>
+    ${parentEngagementAlertHtml({ athlete, assignmentAttempts, awards, sessions, completed: completedWeekly, total: weeklyItems.length, percent })}
+    <button class="parent-events-home-cta" type="button" data-parent-open-view="contests">
+      <span class="parent-events-home-icon" aria-hidden="true">🏆</span>
+      <span><small>JKCREW CALENDAR</small><strong>UPCOMING EVENTS</strong><b>See events, who's going and shared course photos</b></span>
+      <i aria-hidden="true">→</i>
+    </button>
     <div class="parent-home-grid">
       <section class="panel parent-summary-card parent-coach-card"><div class="parent-section-head"><div><span>Coach update</span><h2>Latest message</h2></div><button type="button" data-parent-open-view="parentCoaching">View all</button></div>${parentLatestCoachMessageHtml(coachMessages)}</section>
       <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Coming up</span><h2>Next item</h2></div><button type="button" data-parent-open-view="parentCalendar">Calendar</button></div>${parentNextItemHtml(dashboardItems)}</section>
@@ -5801,14 +5850,15 @@ async function renderParentCalendar() {
       return result.data || [];
     }),
   ]);
-  const upcoming = items.filter((item) => !item.completed && (!item.end_at || new Date(item.end_at) >= new Date()));
-  const pastItems = items.filter((item) => item.completed || (item.end_at && new Date(item.end_at) < new Date())).slice(0, 6);
+  const trainingItems = items.filter((item) => String(item.item_type || "").toLowerCase() !== "event");
+  const upcoming = trainingItems.filter((item) => !item.completed && (!item.end_at || new Date(item.end_at) >= new Date()));
+  const pastItems = trainingItems.filter((item) => item.completed || (item.end_at && new Date(item.end_at) < new Date())).slice(0, 6);
   document.querySelector("#view").innerHTML = `
     ${parentChildSwitcherHtml(context)}
-    ${parentPageHeadHtml("Family schedule", "Calendar", "agenda", `Events, tasks and recent sessions for ${firstName(context.selected)} in one simple timeline.`)}
-    <section class="panel parent-calendar-panel"><div class="parent-section-head"><div><span>Upcoming</span><h2>Next on the agenda</h2></div><b>${upcoming.length}</b></div><div class="parent-agenda-list">${upcoming.length ? upcoming.map(parentAgendaItemHtml).join("") : `<div class="parent-empty-note"><strong>No upcoming items</strong><span>New events and tasks from Coach JK will appear here.</span></div>`}</div></section>
+    ${parentPageHeadHtml("Coaching timetable", "Training", "schedule", `Upcoming coaching sessions, lesson times and venue updates for ${firstName(context.selected)}. Competition dates stay under Contests.`)}
+    <section class="panel parent-calendar-panel"><div class="parent-section-head"><div><span>Upcoming training</span><h2>Next coaching sessions</h2></div><b>${upcoming.length}</b></div><div class="parent-agenda-list">${upcoming.length ? upcoming.map(parentAgendaItemHtml).join("") : `<div class="parent-empty-note"><strong>No coaching sessions scheduled</strong><span>New lesson times, venue changes and training tasks from Coach JK will appear here.</span></div>`}</div></section>
     <section class="panel parent-calendar-panel"><div class="parent-section-head"><div><span>Training</span><h2>Recent sessions</h2></div><b>${sessions.length}</b></div><div class="parent-session-agenda">${sessions.length ? sessions.map((session) => `<article><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Finished ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span>${Number(session.total_points || 0)} pts</span></article>`).join("") : `<div class="parent-empty-note"><strong>No sessions recorded</strong><span>Completed training sessions will appear here.</span></div>`}</div></section>
-    ${pastItems.length ? `<details class="panel parent-calendar-history"><summary><span><strong>Completed events & tasks</strong><small>${pastItems.length} recent item${pastItems.length === 1 ? "" : "s"}</small></span><b>Open</b></summary><div class="parent-agenda-list">${pastItems.map(parentAgendaItemHtml).join("")}</div></details>` : ""}`;
+    ${pastItems.length ? `<details class="panel parent-calendar-history"><summary><span><strong>Completed training items</strong><small>${pastItems.length} recent item${pastItems.length === 1 ? "" : "s"}</small></span><b>Open</b></summary><div class="parent-agenda-list">${pastItems.map(parentAgendaItemHtml).join("")}</div></details>` : ""}`;
   bindParentPageActions();
 }
 
@@ -6759,20 +6809,23 @@ function contestDateTimeInputValue(value = "") {
   return local.toISOString().slice(0, 16);
 }
 
-function contestEventCardsHtml(events = [], runs = [], attendance = [], roster = []) {
+function contestEventCardsHtml(events = [], runs = [], attendance = [], roster = [], viewOptions = {}) {
   if (!events.length) return `<div class="contest-empty"><strong>No upcoming events yet</strong><span>Add the first event below. It will then be available to the whole crew.</span></div>`;
-  const athleteView = state.profile?.role === "athlete";
-  const coachView = isCoachRole(state.profile?.role);
+  const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
+  const athleteView = state.profile?.role === "athlete" && !parentView;
+  const coachView = isCoachRole(state.profile?.role) && !parentView;
+  const viewerAthleteId = viewOptions.viewerAthleteId || state.user?.id;
+  const viewerFirstName = viewOptions.viewerName ? firstName({ display_name: viewOptions.viewerName }) : "Your child";
   return `<div class="contest-event-grid">${events.map((item) => {
     const attendees = contestEventAttendees(attendance, item.id);
-    const going = attendees.some((row) => row.athlete_id === state.user?.id);
+    const going = attendees.some((row) => row.athlete_id === viewerAthleteId);
     const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
     const searchText = normalizeContestEventTitle(`${item.title} ${item.details || ""}`);
     const mergeSelected = state.contestMergeSourceId === item.id;
     return `<article class="contest-event-card ${going ? "is-going" : ""} ${coachView ? "coach-merge-event" : ""} ${mergeSelected ? "merge-source-selected" : ""}" data-contest-event-card data-contest-event-id="${escapeHtml(item.id)}" data-event-search="${escapeHtml(searchText)}" ${coachView ? 'draggable="true"' : ""}>
       <button class="contest-event-main" type="button" data-open-contest-event="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.title)} and see who is going">
         <span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span>
-        <span class="contest-event-copy"><span class="eyebrow">${going ? "You're going" : "Upcoming event"}${linkedRuns ? ` · ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"}` : ""}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
+        <span class="contest-event-copy"><span class="eyebrow">${going ? (parentView ? `${escapeHtml(viewerFirstName)} is going` : "You're going") : "Upcoming event"}${linkedRuns ? ` · ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"}` : ""}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
         <span class="contest-event-going">${contestEventFacesHtml(attendees)}</span>
         <span class="contest-event-chevron" aria-hidden="true">›</span>
       </button>
@@ -6830,8 +6883,9 @@ function coachEventAttendeeRunActionHtml(item = {}, attendee = {}, runs = [], ro
     : `<button class="secondary-btn compact-btn contest-rider-run-button create" type="button" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>CREATE RUN</button>`;
 }
 
-function contestEventCourseHtml(item = {}) {
-  const coachView = isCoachRole(state.profile?.role);
+function contestEventCourseHtml(item = {}, viewOptions = {}) {
+  const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
+  const coachView = isCoachRole(state.profile?.role) && !parentView;
   if (item.course_photo_available) {
     return `<section class="contest-event-course-card has-course"><div class="contest-course-icon" aria-hidden="true">⌖</div><div><div class="eyebrow">Event course</div><strong>COURSE PHOTO READY</strong><small>Open the clean park photo without anyone's private route or tricks.</small></div><button class="primary-btn compact-btn" type="button" data-view-event-course="${escapeHtml(item.id)}">VIEW COURSE</button></section>`;
   }
@@ -6841,20 +6895,22 @@ function contestEventCourseHtml(item = {}) {
   return `<section class="contest-event-course-card unavailable"><div class="contest-course-icon" aria-hidden="true">⌖</div><div><div class="eyebrow">Event course</div><strong>COURSE PHOTO COMING SOON</strong><small>Your coach has not added the park image yet.</small></div></section>`;
 }
 
-function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []) {
-  const going = attendees.some((row) => row.athlete_id === state.user?.id);
+function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = [], viewOptions = {}) {
+  const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
+  const viewerAthleteId = viewOptions.viewerAthleteId || state.user?.id;
+  const going = attendees.some((row) => row.athlete_id === viewerAthleteId);
   const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
-  const coachView = isCoachRole(state.profile?.role);
+  const coachView = isCoachRole(state.profile?.role) && !parentView;
   return `<section class="contest-event-modal" role="dialog" aria-modal="true" aria-labelledby="contest-event-modal-title">
     <header class="contest-event-modal-head"><div><div class="eyebrow">Upcoming event</div><h2 id="contest-event-modal-title">${escapeHtml(item.title)}</h2><p>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close event">×</button></header>
     ${item.details ? `<div class="contest-event-location"><span aria-hidden="true">⌖</span><strong>${escapeHtml(item.details)}</strong></div>` : ""}
-    ${contestEventCourseHtml(item)}
+    ${contestEventCourseHtml(item, viewOptions)}
     <div class="contest-attendee-section"><div class="panel-head"><div><div class="panel-title">Who's going</div><div class="panel-meta">${attendees.length} confirmed</div></div></div>
-      <div class="contest-attendee-list">${attendees.length ? attendees.map((row) => `<div class="contest-attendee-row">${avatarHtml(row.profile || {}, "contest-attendee-avatar")}<div class="contest-attendee-copy"><strong>${escapeHtml(row.profile?.display_name || "JKCREW member")}${row.athlete_id === state.user?.id ? " · You" : ""}</strong><small>${row.athlete_id === state.user?.id && coachView ? "Confirmed coach" : "Confirmed rider"}</small></div>${coachEventAttendeeRunActionHtml(item, row, runs, roster)}</div>`).join("") : `<div class="contest-empty"><strong>Nobody confirmed yet</strong><span>Attendance can be updated below.</span></div>`}</div>
+      <div class="contest-attendee-list">${attendees.length ? attendees.map((row) => `<div class="contest-attendee-row">${avatarHtml(row.profile || {}, "contest-attendee-avatar")}<div class="contest-attendee-copy"><strong>${escapeHtml(row.profile?.display_name || "JKCREW member")}${row.athlete_id === viewerAthleteId ? (parentView ? " · Your child" : " · You") : ""}</strong><small>${row.athlete_id === viewerAthleteId && coachView ? "Confirmed coach" : "Confirmed rider"}</small></div>${parentView ? "" : coachEventAttendeeRunActionHtml(item, row, runs, roster)}</div>`).join("") : `<div class="contest-empty"><strong>Nobody confirmed yet</strong><span>Attendance can be updated below.</span></div>`}</div>
     </div>
     ${coachView ? coachContestEventEditorHtml(item) : ""}
     ${coachView ? coachEventAttendanceEditorHtml(item, attendees, roster) : ""}
-    <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : "Your run plan stays private"}</strong><p>${coachView ? "The shared course photo is separate. Each rider's route, trick list, notes and private run photo remain visible only to that rider and their linked coach." : `The shared course photo never includes another rider's plan. Other riders cannot see your route, tricks, notes or private run photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
+    <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : parentView ? "Private run plans stay protected" : "Your run plan stays private"}</strong><p>${coachView ? "The shared course photo is separate. Each rider's route, trick list, notes and private run photo remain visible only to that rider and their linked coach." : parentView ? "You can view the shared event and clean course photo. Rider routes, numbered dots, trick notes and private run photos are never shown on this parent page." : `The shared course photo never includes another rider's plan. Other riders cannot see your route, tricks, notes or private run photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
     ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
   </section>`;
 }
@@ -6886,8 +6942,9 @@ function closeEventCourseViewer() {
   if (!document.querySelector("#contest-event-backdrop")) document.documentElement.classList.remove("contest-event-open");
 }
 
-function eventCourseViewerHtml(item = {}, photo = {}) {
-  const coachView = isCoachRole(state.profile?.role);
+function eventCourseViewerHtml(item = {}, photo = {}, viewOptions = {}) {
+  const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
+  const coachView = isCoachRole(state.profile?.role) && !parentView;
   return `<section class="contest-event-modal event-course-viewer" role="dialog" aria-modal="true" aria-labelledby="event-course-viewer-title">
     <header class="contest-event-modal-head"><div><div class="eyebrow">Shared event course</div><h2 id="event-course-viewer-title">${escapeHtml(item.title || "Course photo")}</h2><p>${escapeHtml(item.details || "Park overview")}</p></div><button class="contest-event-modal-close" type="button" data-close-event-course aria-label="Close course photo">×</button></header>
     <figure class="event-course-photo"><img src="${escapeHtml(photo.image_data_url || "")}" alt="Course layout for ${escapeHtml(item.title || "this event")}"></figure>
@@ -6923,7 +6980,7 @@ async function saveEventCoursePhoto(item = {}, file = null) {
   }
 }
 
-async function openEventCourseViewer(item = {}, suppliedPhoto = null) {
+async function openEventCourseViewer(item = {}, suppliedPhoto = null, viewOptions = {}) {
   try {
     const photo = suppliedPhoto || await getEventCoursePhoto(item.id);
     if (!photo?.image_data_url) return notify("No course photo has been added yet.", "error");
@@ -6932,7 +6989,7 @@ async function openEventCourseViewer(item = {}, suppliedPhoto = null) {
     const backdrop = document.createElement("div");
     backdrop.id = "event-course-backdrop";
     backdrop.className = "contest-event-backdrop event-course-backdrop";
-    backdrop.innerHTML = eventCourseViewerHtml(item, photo);
+    backdrop.innerHTML = eventCourseViewerHtml(item, photo, viewOptions);
     document.body.append(backdrop);
     document.documentElement.classList.add("contest-event-open");
     const close = () => closeEventCourseViewer();
@@ -6947,12 +7004,12 @@ async function openEventCourseViewer(item = {}, suppliedPhoto = null) {
   }
 }
 
-function openContestEventModal(item = {}, attendees = [], runs = [], roster = []) {
+function openContestEventModal(item = {}, attendees = [], runs = [], roster = [], viewOptions = {}) {
   closeContestEventModal();
   const backdrop = document.createElement("div");
   backdrop.id = "contest-event-backdrop";
   backdrop.className = "contest-event-backdrop";
-  backdrop.innerHTML = contestEventModalHtml(item, attendees, runs, roster);
+  backdrop.innerHTML = contestEventModalHtml(item, attendees, runs, roster, viewOptions);
   document.body.append(backdrop);
   document.documentElement.classList.add("contest-event-open");
   const close = () => closeContestEventModal();
@@ -6965,7 +7022,7 @@ function openContestEventModal(item = {}, attendees = [], runs = [], roster = []
   backdrop.querySelector("[data-coach-event-attendance]")?.addEventListener("submit", saveCoachEventAttendance);
   backdrop.querySelector("[data-view-event-course]")?.addEventListener("click", (event) => {
     const restore = setButtonBusy(event.currentTarget, "LOADING...");
-    openEventCourseViewer(item).finally(restore);
+    openEventCourseViewer(item, null, viewOptions).finally(restore);
   });
   backdrop.querySelector("[data-event-course-photo-input]")?.addEventListener("change", (event) => saveEventCoursePhoto(item, event.currentTarget.files?.[0]));
   backdrop.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
@@ -7293,7 +7350,7 @@ function bindCoachContestMergeActions(events = [], attendance = []) {
   }));
 }
 
-function bindContestEventActions(events = [], attendance = [], runs = [], roster = []) {
+function bindContestEventActions(events = [], attendance = [], runs = [], roster = [], viewOptions = {}) {
   const eventById = new Map(events.map((item) => [item.id, item]));
   document.querySelector("#contest-event-search")?.addEventListener("input", (event) => {
     const search = normalizeContestEventTitle(event.currentTarget.value);
@@ -7301,7 +7358,7 @@ function bindContestEventActions(events = [], attendance = [], runs = [], roster
   });
   document.querySelectorAll("[data-open-contest-event]").forEach((button) => button.addEventListener("click", () => {
     const item = eventById.get(button.dataset.openContestEvent);
-    if (item) openContestEventModal(item, contestEventAttendees(attendance, item.id), runs, roster);
+    if (item) openContestEventModal(item, contestEventAttendees(attendance, item.id), runs, roster, viewOptions);
   }));
   document.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
   document.querySelectorAll("[data-toggle-coach-event-attendance]").forEach((button) => button.addEventListener("click", (event) => toggleCoachContestAttendance(event, attendance, roster)));
@@ -7341,28 +7398,38 @@ async function renderContests() {
   stopRunPlayback();
   closeContestEventModal();
   const coachView = isCoachRole(state.profile?.role);
+  const parentView = state.profile?.role === "parent";
+  const parentContext = parentView ? await getParentRiderContext() : null;
+  if (parentView && !parentContext?.selected) {
+    document.querySelector("#view").innerHTML = parentWaitingHtml();
+    return;
+  }
+  const viewedAthlete = parentContext?.selected || null;
+  const viewOptions = parentView ? { parentView: true, viewerAthleteId: viewedAthlete.id, viewerName: viewedAthlete.display_name } : {};
   const [{ events, attendance }, roster] = await Promise.all([
     getSharedUpcomingEventData(),
     coachView ? getCoachRoster() : Promise.resolve([]),
   ]);
   const runs = coachView
     ? await getCoachContestRunPlans(events.map((item) => item.id), roster)
-    : await getRunPlans(state.user.id);
+    : state.profile?.role === "athlete" ? await getRunPlans(state.user.id) : [];
   const activeRuns = runs.filter((run) => !run.archived_at);
   const athleteView = state.profile?.role === "athlete";
   document.querySelector("#view").innerHTML = `
-    <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : "Events & private planning"}</div><h1>Events & <span>runs</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
+    ${parentView ? parentChildSwitcherHtml(parentContext) : ""}
+    <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : parentView ? "Family event view · Read only" : "Events & private planning"}</div><h1>${parentView ? "Upcoming" : "Events &"} <span>${parentView ? "events" : "runs"}</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : parentView ? `The same event list ${escapeHtml(firstName(viewedAthlete))} sees. Open an event to view who is going and the shared course photo.` : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
     <section class="panel shared-events-panel athlete-event-palette">
-      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
-      ${contestEventCardsHtml(events, runs, attendance, roster)}
+      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : parentView ? `Read-only event access for ${escapeHtml(firstName(viewedAthlete))}. Private rider run plans are not displayed.` : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
+      ${contestEventCardsHtml(events, runs, attendance, roster, viewOptions)}
     </section>
     ${state.runBuilder ? runBuilderPanel([], { live: true, showRunList: false }) : ""}
     ${athleteView ? closedPanelAccordion("Your private run plans", `${activeRuns.length} active · hidden from other riders`, `<div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private planning</strong><p>Only your own saved runs load here. Event attendance never exposes your route or tricks.</p></div></div><div class="run-list">${runPlansHtml(runs)}</div>`, "contest-run-library") : ""}
     ${athleteView ? closedPanelAccordion("Add an event", "Can't find it above? Create it once for the whole crew", sharedContestEventFormHtml(events), "shared-event-create") : ""}`;
   document.querySelector("#open-run-builder")?.addEventListener("click", openRunBuilder);
   document.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", openRunBuilder));
-  bindContestEventActions(events, attendance, runs, roster);
+  bindContestEventActions(events, attendance, runs, roster, viewOptions);
   bindRunBuilderActions();
+  if (parentView) bindParentPageActions();
 }
 
 function coachBattleTeamHtml(battle, teamNumber) {
