@@ -21,7 +21,8 @@ const notificationMigration = read("supabase/migrations/20260828090000_finish_no
 const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
 const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
 const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
-const version = "2.14.22";
+const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
+const version = "2.14.23";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -471,6 +472,16 @@ assert.equal(sendBattleButton.textContent, "Send 3v3 battle request", "The ready
 const riderBattleRequest = functionBody("requestWeeklyRiderBattle");
 assert(riderBattleRequest.includes("p_team_one: [state.user.id, ...teammateIds]"), "Rider battle requests must send the complete home team array");
 assert(riderBattleRequest.includes("p_team_two: opponentIds"), "Rider battle requests must send every selected opponent");
+assert(riderBattleRequest.includes('rpc("request_rider_battle_v2"'), "Riders must use the battle RPC that accepts a chosen point value");
+assert(riderBattleRequest.includes("p_reward_points: rewardPoints"), "Rider battle requests must send the chosen point value");
+assert(functionBody("showCoachBattleBuilder").includes('name="rewardPoints"'), "The coach battle builder must include a point selector");
+assert(functionBody("showCoachBattleBuilder").includes('rpc("request_rider_battle_v2"'), "Coach-created battles must use the variable-point RPC");
+assert(functionBody("weeklyBattleCardHtml").includes("battle.reward_points || 5"), "Rider battle cards must show the stored point value with a legacy fallback");
+assert(functionBody("coachBattleCardHtml").includes("battle.reward_points || 5"), "Coach battle cards must show the stored point value with a legacy fallback");
+assert(battlePointsMigration.includes("reward_points between 1 and 20"), "The database must restrict battle stakes to 1–20 points");
+assert(battlePointsMigration.includes("p_reward_points integer default 5"), "Older clients must keep the five-point battle default");
+assert(battlePointsMigration.includes("coalesce(p_reward_points, 0) not between 1 and 20"), "The battle RPC must validate point values server-side");
+assert(battlePointsMigration.includes("reward_points, created_by"), "The chosen battle value must be persisted on the battle record");
 assert(battleMigration.includes("cardinality(p_team_two) <> v_size"), "The database must enforce equal battle teams");
 assert(battleMigration.includes("count(distinct chosen.rider_id)"), "The database must prevent duplicate riders across teams");
 assert(battleMigration.includes("unnest(p_team_one)"), "The database must save every home-team rider");

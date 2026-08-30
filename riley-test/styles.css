@@ -5889,6 +5889,9 @@ html.contest-merge-open body { overflow: hidden; }
 .challenge-progress-copy strong { color: var(--yellow); text-transform: uppercase; }
 .battle-request-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; margin-bottom: 14px; }
 .battle-request-form .field { margin: 0; }
+.battle-request-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.battle-request-settings .field { margin: 0; }
+.battle-request-settings small { display: block; margin-top: 5px; color: var(--muted); font: 700 .64rem var(--mono); }
 .battle-rider-picker { grid-template-columns: 1fr; margin-top: 10px; }
 .battle-rider-list { display: grid; gap: 7px; max-height: 340px; overflow-y: auto; padding-right: 3px; }
 .battle-rider-option { display: grid; grid-template-columns: 22px 42px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); cursor: pointer; }
@@ -9252,7 +9255,7 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 .session-battle-stats strong { display: block; margin-top: 4px; color: var(--aqua); font: 900 1.45rem var(--display); }
 .session-group-battles-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 @media (max-width: 720px) {
-  .battle-team-picker, .coach-challenge-fields { grid-template-columns: 1fr; }
+  .battle-team-picker, .coach-challenge-fields, .battle-request-settings { grid-template-columns: 1fr; }
   .battle-team-picker .battle-rider-list { max-height: 250px; }
   .coach-battle-team-builder { grid-template-columns: 1fr; }
   .coach-builder-vs { text-align: center; }

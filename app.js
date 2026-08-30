@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.22";
+const RELEASE_VERSION = "2.14.23";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -414,7 +414,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.22" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.23" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1561,12 +1561,12 @@ function battleRulesMarkup({ welcome = false } = {}) {
   return `<div class="battle-intro-icon" aria-hidden="true">VS</div>
     <div class="eyebrow">${welcome ? "New in JKCREW" : "Battle rules"}</div>
     <h2>${welcome ? "Your crew. Your rival. Your week." : "How rider battles work"}</h2>
-    <p>${welcome ? "Challenge the crew in 1v1, 2v2 or 3v3 battles and turn every landed trick into a race up the leaderboard." : "Build two equal teams, choose the battle length and let your training-sheet points decide the winner."}</p>
+    <p>${welcome ? "Challenge the crew in 1v1, 2v2 or 3v3 battles and turn every landed trick into a race up the leaderboard." : "Build two equal teams, choose the battle length and point value, then let your training-sheet points decide the winner."}</p>
     <div class="battle-intro-steps">
       <div><b>1</b><span><strong>Choose 1v1, 2v2 or 3v3</strong><small>Pick equal teams from the rider list.</small></span></div>
-      <div><b>2</b><span><strong>Everyone accepts</strong><small>The 1–7 day timer begins only when every rider taps ✓.</small></span></div>
-      <div><b>3</b><span><strong>Stack sheet points</strong><small>The team with the highest combined score wins.</small></span></div>
-      <div><b>+5</b><span><strong>Share the win</strong><small>Five leaderboard points are split across the winning team.</small></span></div>
+      <div><b>2</b><span><strong>Choose 1–20 points</strong><small>Set how many leaderboard points the battle is worth.</small></span></div>
+      <div><b>3</b><span><strong>Everyone accepts</strong><small>The 1–7 day timer begins only when every rider taps ✓.</small></span></div>
+      <div><b>★</b><span><strong>Stack points and win</strong><small>The chosen points are split as evenly as possible across the winning team.</small></span></div>
     </div>`;
 }
 
@@ -5015,8 +5015,9 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
   const pendingActions = battle.status === "pending" && mine?.response === "pending"
     ? `<div class="battle-actions compact-battle-actions"><button class="battle-response-btn accept" type="button" data-battle-response="accepted" data-battle-id="${battle.id}" aria-label="Accept battle" title="Accept battle">✓</button><button class="battle-response-btn decline" type="button" data-battle-response="declined" data-battle-id="${battle.id}" aria-label="Decline battle" title="Decline battle">×</button></div>`
     : "";
+  const rewardPoints = Math.min(20, Math.max(1, Number(battle.reward_points || 5)));
   const forfeitAction = battle.status === "accepted"
-    ? `<button class="battle-forfeit-btn" type="button" data-forfeit-battle="${battle.id}">Forfeit battle</button>`
+    ? `<button class="battle-forfeit-btn" type="button" data-forfeit-battle="${battle.id}" data-reward-points="${rewardPoints}">Forfeit battle</button>`
     : "";
   const durationCopy = `${Number(battle.duration_days || 7)} day${Number(battle.duration_days || 7) === 1 ? "" : "s"}`;
   const statusCopy = battle.status === "pending"
@@ -5025,9 +5026,9 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
       : battle.status === "completed" ? (mine?.is_winner === true ? `Your team won · ${mine.points_delta > 0 ? `+${mine.points_delta}` : "points added"}` : mine?.is_winner === false ? "The other team won" : "Battle finished level")
         : "Challenge declined";
   return `<article class="battle-card ${battle.status}">
-    <div class="battle-format-chip">${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)}</div>
+    <div class="battle-format-chip">${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} · ${rewardPoints} pts</div>
     <div class="battle-riders battle-team-versus">${battleTeamHtml(participants, myTeam, myTeam)}<b>VS</b>${battleTeamHtml(participants, myTeam === 1 ? 2 : 1, myTeam)}</div>
-    ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(battleParticipantFirstName(rivals[0]))}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>5 points split across the winning team</strong></div>`}
+    ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(battleParticipantFirstName(rivals[0]))}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses · ${rewardPoints} pts to win</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>${rewardPoints} points split across the winning team</strong></div>`}
     <div class="battle-status"><span class="status-chip">${escapeHtml(battle.status)}</span><small>${escapeHtml(statusCopy)}</small></div>
     ${pendingActions}
     ${forfeitAction}
@@ -5067,13 +5068,13 @@ async function renderChallenges() {
       ${weeklyChallenge ? `<div class="challenge-progress-copy"><strong>${challengeProgress >= challengeTarget ? "Challenge complete · +5 pts" : `${challengeTarget - challengeProgress} to go`}</strong><span>${challengePercent}%</span></div>` : ""}
     </section>
     <section class="panel">
-      <div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">5 points transfer from loser to winner · maximum 3 active battles</div></div><span class="pill">${activeBattleCount}/3 active</span></div>
+      <div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">Choose 1–20 points · maximum 3 active battles</div></div><span class="pill">${activeBattleCount}/3 active</span></div>
       <div class="battle-record" aria-label="Battle record"><span><strong>${battleWins}</strong> wins</span><span><strong>${battleLosses}</strong> losses</span></div>
       <button class="primary-btn wide battle-challenge-cta" type="button" id="toggle-battle-rider-list" ${availableRiders.length && !battleLimitReached ? "" : "disabled"}>${battleLimitReached ? "3 battle limit reached" : availableRiders.length ? "⚡ Challenge another rider" : "No riders available right now"}</button>
       <form id="battle-request-form" class="battle-request-form battle-rider-picker hidden">
         <div class="field battle-format-field"><label for="rider-battle-size">Battle format</label><select id="rider-battle-size" name="battleSize"><option value="1">1v1</option><option value="2">2v2</option><option value="3">3v3</option></select><small>Selecting more riders automatically increases the battle format.</small></div>
         <div class="battle-team-picker"><div><strong>Your teammates</strong><small id="teammate-count-help">Choose up to 2 teammates</small><div class="battle-rider-list">${availableRiders.map((row) => `<label class="battle-rider-option"><input type="checkbox" name="teammateIds" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${Number(row.weekly_points || 0)} pts this week</small></span></label>`).join("")}</div></div><div><strong>Opposing team</strong><small id="opponent-count-help">Choose up to 3 riders</small><div class="battle-rider-list">${availableRiders.map((row) => { const record = riderHeadToHeadRecord(battleHistory, row.athlete_id); return `<label class="battle-rider-option"><input type="checkbox" name="opponentIds" value="${row.athlete_id}">${avatarHtml(row, "avatar")}<span><strong>${escapeHtml(row.display_name)}</strong><small>${record.wins} wins · ${record.losses} losses against</small></span><b>${Number(row.weekly_points || 0)} pts</b></label>`; }).join("")}</div></div></div>
-        <div class="field battle-duration-field"><label for="battle-duration">Challenge length</label><select id="battle-duration" name="durationDays">${Array.from({ length: 7 }, (_, index) => `<option value="${index + 1}" ${index === 6 ? "selected" : ""}>${index + 1} day${index ? "s" : ""}</option>`).join("")}</select></div>
+        <div class="battle-request-settings"><div class="field battle-duration-field"><label for="battle-duration">Challenge length</label><select id="battle-duration" name="durationDays">${Array.from({ length: 7 }, (_, index) => `<option value="${index + 1}" ${index === 6 ? "selected" : ""}>${index + 1} day${index ? "s" : ""}</option>`).join("")}</select></div><div class="field battle-points-field"><label for="battle-reward-points">Battle points</label><input id="battle-reward-points" name="rewardPoints" type="number" inputmode="numeric" min="1" max="20" step="1" value="5" required><small>1–20 leaderboard points</small></div></div>
         <button class="primary-btn wide" id="send-rider-battle" type="submit">Choose 1 opponent</button>
       </form>
       <div class="battle-list">${battles.length ? battles.map((battle) => weeklyBattleCardHtml(battle, pointsByRider, battleHistory)).join("") : `<div class="empty compact-empty">No battles this week yet. Pick a rider above to start one.</div>`}</div>
@@ -5145,14 +5146,16 @@ async function requestWeeklyRiderBattle(event) {
   const teammateIds = form.getAll("teammateIds").map(String);
   const opponentIds = form.getAll("opponentIds").map(String);
   const durationDays = Number(form.get("durationDays") || 7);
+  const rewardPoints = Number(form.get("rewardPoints") || 5);
   if (teammateIds.length !== battleSize - 1 || opponentIds.length !== battleSize) return notify(`Choose ${battleSize - 1} teammate${battleSize - 1 === 1 ? "" : "s"} and ${battleSize} opponent${battleSize === 1 ? "" : "s"}.`, "error");
   if (teammateIds.some((id) => opponentIds.includes(id))) return notify("A rider cannot be on both teams.", "error");
+  if (!Number.isInteger(rewardPoints) || rewardPoints < 1 || rewardPoints > 20) return notify("Choose a battle value from 1 to 20 points.", "error");
   const button = event.currentTarget.querySelector("button[type='submit']");
   const restoreButton = setButtonBusy(button, "Sending...");
-  const { error } = await client.rpc("request_rider_battle", { p_team_one: [state.user.id, ...teammateIds], p_team_two: opponentIds, p_duration_days: durationDays });
+  const { error } = await client.rpc("request_rider_battle_v2", { p_team_one: [state.user.id, ...teammateIds], p_team_two: opponentIds, p_duration_days: durationDays, p_reward_points: rewardPoints });
   restoreButton();
   if (error) return notify(messageFrom(error), "error");
-  notify("Battle request sent. It starts when everyone accepts.");
+  notify(`${rewardPoints}-point battle request sent. It starts when everyone accepts.`);
   await renderChallenges();
 }
 
@@ -5169,7 +5172,8 @@ async function respondWeeklyRiderBattle(event) {
 
 async function forfeitWeeklyRiderBattle(event) {
   const button = event.currentTarget;
-  if (!window.confirm("Forfeit this battle? The other team will win and the 5 battle points will be split using the normal battle rules.")) return;
+  const rewardPoints = Math.min(20, Math.max(1, Number(button.dataset.rewardPoints || 5)));
+  if (!window.confirm(`Forfeit this battle? The other team will win and the ${rewardPoints} battle points will be split using the normal battle rules.`)) return;
   const restoreButton = setButtonBusy(button, "Forfeiting...");
   const { error } = await client.rpc("forfeit_rider_battle", { p_battle_id: button.dataset.forfeitBattle });
   restoreButton();
@@ -7268,6 +7272,7 @@ function coachBattleTeamHtml(battle, teamNumber) {
 
 function coachBattleCardHtml(battle) {
   const duration = Number(battle.duration_days || 7);
+  const rewardPoints = Math.min(20, Math.max(1, Number(battle.reward_points || 5)));
   const statusLabel = battle.status === "accepted" ? "Live" : battle.status === "pending" ? "Waiting" : battle.status === "completed" ? "Complete" : battle.status;
   const timing = battle.status === "accepted" && battle.ends_at
     ? `Ends ${dateLabel(battle.ends_at)}`
@@ -7275,13 +7280,13 @@ function coachBattleCardHtml(battle) {
       : `${duration} day battle`;
   const winners = (battle.participants || []).filter((participant) => participant.is_winner).map((participant) => participant.display_name).join(" + ");
   return `<article class="coach-battle-view-card ${escapeHtml(battle.status)}">
-    <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><b>${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)}</b><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
+    <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><b>${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} · ${rewardPoints} pts</b><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
     <div class="coach-battle-riders">
       ${coachBattleTeamHtml(battle, 1)}
       <span>VS</span>
       ${coachBattleTeamHtml(battle, 2)}
     </div>
-    ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · 5 points split across the team</div>` : ""}
+    ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · ${rewardPoints} points split across the team</div>` : ""}
     <div class="coach-battle-card-actions"><button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
   </article>`;
 }
@@ -7358,7 +7363,7 @@ function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) 
   const backdrop = document.createElement("div");
   backdrop.id = "coach-battle-builder-modal";
   backdrop.className = "battle-intro-backdrop";
-  backdrop.innerHTML = `<section class="battle-intro-card coach-battle-builder-card" role="dialog" aria-modal="true" aria-label="Create rider battle"><div class="eyebrow">Coach battle builder</div><h2>Create a crew battle</h2><p>Every rider will receive an invite. The timer starts only after all selected riders accept.</p><form id="coach-battle-builder-form"><div class="field"><label for="coach-battle-size">Format</label><select id="coach-battle-size" name="battleSize"><option value="1">1v1</option><option value="2">2v2</option><option value="3">3v3</option></select></div><div class="coach-battle-team-builder"><fieldset><legend>Team 1</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "One", slot)).join("")}</fieldset><div class="coach-builder-vs">VS</div><fieldset><legend>Team 2</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "Two", slot)).join("")}</fieldset></div><div class="field"><label for="coach-battle-duration">Battle length</label><select id="coach-battle-duration" name="durationDays">${Array.from({length:7},(_,index)=>`<option value="${index+1}" ${index===6?"selected":""}>${index+1} day${index ? "s" : ""}</option>`).join("")}</select></div><div class="battle-intro-actions"><button class="primary-btn" type="submit">Send battle invites</button><button class="secondary-btn" type="button" data-close-coach-builder>Cancel</button></div></form></section>`;
+  backdrop.innerHTML = `<section class="battle-intro-card coach-battle-builder-card" role="dialog" aria-modal="true" aria-label="Create rider battle"><div class="eyebrow">Coach battle builder</div><h2>Create a crew battle</h2><p>Every rider will receive an invite. The timer starts only after all selected riders accept.</p><form id="coach-battle-builder-form"><div class="field"><label for="coach-battle-size">Format</label><select id="coach-battle-size" name="battleSize"><option value="1">1v1</option><option value="2">2v2</option><option value="3">3v3</option></select></div><div class="coach-battle-team-builder"><fieldset><legend>Team 1</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "One", slot)).join("")}</fieldset><div class="coach-builder-vs">VS</div><fieldset><legend>Team 2</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "Two", slot)).join("")}</fieldset></div><div class="battle-request-settings"><div class="field"><label for="coach-battle-duration">Battle length</label><select id="coach-battle-duration" name="durationDays">${Array.from({length:7},(_,index)=>`<option value="${index+1}" ${index===6?"selected":""}>${index+1} day${index ? "s" : ""}</option>`).join("")}</select></div><div class="field"><label for="coach-battle-reward-points">Battle points</label><input id="coach-battle-reward-points" name="rewardPoints" type="number" inputmode="numeric" min="1" max="20" step="1" value="5" required><small>Split across the winning team</small></div></div><div class="battle-intro-actions"><button class="primary-btn" type="submit">Send battle invites</button><button class="secondary-btn" type="button" data-close-coach-builder>Cancel</button></div></form></section>`;
   document.body.append(backdrop);
   const updateSlots = () => {
     const size = Number(backdrop.querySelector("#coach-battle-size")?.value || 1);
@@ -7373,15 +7378,17 @@ function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) 
     const size = Number(form.get("battleSize") || 1);
     const teamOne = form.getAll("teamOneRider").map(String).filter(Boolean);
     const teamTwo = form.getAll("teamTwoRider").map(String).filter(Boolean);
+    const rewardPoints = Number(form.get("rewardPoints") || 5);
     const all = [...teamOne, ...teamTwo];
     if (teamOne.length !== size || teamTwo.length !== size) return notify(`Choose ${size} rider${size === 1 ? "" : "s"} on each team.`, "error");
     if (new Set(all).size !== all.length) return notify("Each rider can only appear once.", "error");
+    if (!Number.isInteger(rewardPoints) || rewardPoints < 1 || rewardPoints > 20) return notify("Choose a battle value from 1 to 20 points.", "error");
     const button = event.currentTarget.querySelector("button[type='submit']");
     const restore = setButtonBusy(button, "Sending...");
-    const { error } = await client.rpc("request_rider_battle", { p_team_one: teamOne, p_team_two: teamTwo, p_duration_days: Number(form.get("durationDays") || 7) });
+    const { error } = await client.rpc("request_rider_battle_v2", { p_team_one: teamOne, p_team_two: teamTwo, p_duration_days: Number(form.get("durationDays") || 7), p_reward_points: rewardPoints });
     restore();
     if (error) return notify(messageFrom(error), "error");
-    backdrop.remove(); notify(`${size}v${size} invites sent. The battle starts when everyone accepts.`); await refresh();
+    backdrop.remove(); notify(`${size}v${size} ${rewardPoints}-point battle invites sent. The battle starts when everyone accepts.`); await refresh();
   });
   updateSlots();
 }
