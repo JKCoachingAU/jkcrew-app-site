@@ -4034,6 +4034,63 @@ html.contest-merge-open body { overflow: hidden; }
 }
 .contest-event-location { display: flex; gap: 9px; padding: 13px 18px; border-bottom: 1px solid var(--line); color: var(--text); }
 .contest-event-location span { color: var(--yellow); }
+.contest-event-course-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 18px 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(58,156,255,0.3);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(58,156,255,0.08), rgba(32,227,195,0.035));
+}
+.contest-event-course-card.has-course {
+  border-color: rgba(32,227,195,0.4);
+  background: linear-gradient(145deg, rgba(32,227,195,0.09), rgba(58,156,255,0.035));
+}
+.contest-event-course-card.unavailable { opacity: 0.78; }
+.contest-course-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(58,156,255,0.34);
+  border-radius: 13px;
+  color: var(--aqua);
+  background: rgba(1,8,12,0.42);
+  font: 900 1.2rem var(--display);
+}
+.contest-event-course-card > div:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.contest-event-course-card .eyebrow { color: var(--blue); }
+.contest-event-course-card strong { font: 900 0.95rem var(--display); text-transform: uppercase; }
+.contest-event-course-card small { color: var(--muted); line-height: 1.35; }
+.contest-event-course-card .compact-btn { min-height: 40px; white-space: nowrap; }
+.contest-course-upload { display: grid; place-items: center; cursor: pointer; text-align: center; }
+.event-course-backdrop { z-index: 1450; }
+.event-course-viewer { width: min(940px, 100%); }
+.event-course-photo {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 18px;
+  background: #020608;
+}
+.event-course-photo img {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+  border: 1px solid rgba(32,227,195,0.22);
+  border-radius: 14px;
+  background: #000;
+}
+.event-course-viewer-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 0 18px 18px;
+}
 .contest-merge-modal { width: min(720px, 100%); }
 .contest-merge-route {
   display: grid;
@@ -7933,6 +7990,8 @@ html[data-theme="light"] .contest-event-modal {
 html[data-theme="light"] .contest-event-avatar { border-color: #fbf9f3; }
 html[data-theme="light"] .contest-event-actions { background: rgba(36, 50, 55, 0.025); }
 html[data-theme="light"] .contest-attendee-row { background: rgba(255, 255, 255, 0.52); }
+html[data-theme="light"] .contest-event-course-card { background: rgba(255, 255, 255, 0.52); }
+html[data-theme="light"] .contest-course-icon { background: rgba(255, 255, 255, 0.64); }
 html[data-theme="light"] .contest-private-note p { color: var(--muted); }
 html[data-theme="light"] .rider-shell .field,
 html[data-theme="light"] .rider-shell input,
@@ -8017,6 +8076,12 @@ html[data-theme="light"] .rider-shell textarea {
   }
   .contest-event-modal-head { padding: 16px 14px 12px; }
   .contest-event-location { padding-inline: 14px; }
+  .contest-event-course-card { grid-template-columns: 40px minmax(0, 1fr); margin: 14px 14px 0; }
+  .contest-event-course-card > button,
+  .contest-event-course-card > label { grid-column: 1 / -1; width: 100%; }
+  .event-course-photo { padding: 10px; }
+  .event-course-photo img { max-height: 67dvh; }
+  .event-course-viewer-actions { grid-template-columns: 1fr; padding: 0 14px 14px; }
   .contest-attendee-section { padding: 14px 14px 0; }
   .contest-event-modal .contest-private-note { margin: 14px; }
   .coach-event-attendance-editor { margin: 14px 14px 0; padding: 12px; }

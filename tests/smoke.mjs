@@ -22,7 +22,9 @@ const dailyListNotificationMigration = read("supabase/migrations/20260829090000_
 const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
 const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
 const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
-const version = "2.14.23";
+const eventCourseMigration = read("supabase/migrations/20260830114500_shared_event_course_photos.sql");
+const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index_event_course_photo_updater.sql");
+const version = "2.14.24";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -568,7 +570,8 @@ assert(contestCardsBody.includes("EDIT RIDERS"), "Coach event cards must expose 
 const contestModalBody = functionBody("contestEventModalHtml");
 assert(contestModalBody.includes("Who's going"), "Opening an event must show the attendee list");
 assert(contestModalBody.includes("row.profile?.display_name"), "The attendee list must show rider names");
-assert(contestModalBody.includes("they cannot see your route, tricks, notes or park photo"), "The event modal must explain run-plan privacy");
+assert(contestModalBody.includes("contestEventCourseHtml(item)"), "Opening an event must show its shared course-photo control");
+assert(contestModalBody.includes("Other riders cannot see your route, tricks, notes or private run photo"), "The event modal must explain run-plan privacy");
 assert(contestModalBody.includes("coachEventAttendanceEditorHtml"), "The coach event modal must render the shared attendance editor");
 assert(contestModalBody.includes("coachContestEventEditorHtml"), "The coach event modal must allow corrections to the shared event details");
 assert(contestModalBody.includes("coachEventAttendeeRunActionHtml"), "Each linked rider attending an event must have a private run action");
@@ -612,6 +615,29 @@ assert(functionBody("getSharedUpcomingEventData").includes('rpc("get_active_even
 assert(eventMigration.includes("dashboard_items_active_event_identity_idx"), "Duplicate active shared events must be prevented in the database");
 assert(eventMigration.includes("due_at + interval '1 day'"), "Single-day events must remain visible until their day has ended");
 assert(eventMigration.includes('drop policy if exists "Parents can view child run plans"'), "Run plans must remain private between the rider and linked coach");
+const sharedEventDataBody = functionBody("getSharedUpcomingEventData");
+assert(sharedEventDataBody.includes('.from("event_course_photos").select("event_id")'), "Event lists must load only course-photo availability, not the full image");
+assert(!sharedEventDataBody.includes("image_data_url"), "Course images must remain lazy-loaded until View Course is pressed");
+assert(functionBody("getEventCoursePhoto").includes('.select("event_id,image_data_url,updated_at")'), "View Course must load the selected event photo on demand");
+const eventCourseCardBody = functionBody("contestEventCourseHtml");
+assert(eventCourseCardBody.includes("VIEW COURSE"), "Events with a park image must expose View Course");
+assert(eventCourseCardBody.includes("ADD COURSE PHOTO"), "Coaches must be able to add a missing course image");
+assert(eventCourseCardBody.includes("if (coachView)"), "Only coach roles may receive the add-course control");
+const eventCourseViewerBody = functionBody("eventCourseViewerHtml");
+assert(eventCourseViewerBody.includes("COURSE PHOTO ONLY"), "The course viewer must clearly state its limited shared content");
+assert(!eventCourseViewerBody.includes("runMapHtml"), "The shared course viewer must never render a rider route");
+assert(!eventCourseViewerBody.includes("runPlaybackControlsHtml"), "The shared course viewer must never render private run playback");
+const saveEventCourseBody = functionBody("saveEventCoursePhoto");
+assert(saveEventCourseBody.includes("isCoachRole(state.profile?.role)"), "The client must reject rider course-photo writes");
+assert(saveEventCourseBody.includes('.from("event_course_photos").upsert'), "Coach course-photo saves must target the shared event-photo table");
+assert(eventCourseMigration.includes("create table if not exists public.event_course_photos"), "Shared course images need their own table outside run plans");
+assert(eventCourseMigration.includes("alter table public.event_course_photos enable row level security"), "Shared course images must enforce RLS");
+assert(eventCourseMigration.includes("grant select, insert, update, delete on public.event_course_photos to authenticated"), "Authenticated users need explicit course-photo table grants");
+assert(eventCourseMigration.includes("profile.role in ('athlete', 'coach', 'admin')"), "Only signed-in riders and coaches may view event courses");
+assert(eventCourseMigration.includes("Only coaches can merge events"), "Course-photo merge handling must retain coach-only event merging");
+assert(eventCourseMigration.includes("source_course_photo"), "Event merges must audit the source course image");
+assert(eventCourseMigration.includes("insert into public.event_course_photos"), "Event merges must preserve a course image on the surviving event");
+assert(eventCourseIndexMigration.includes("event_course_photos_updated_by_idx"), "Shared course photos need an index for their uploader relationship");
 const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");

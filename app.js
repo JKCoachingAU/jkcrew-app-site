@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.23";
+const RELEASE_VERSION = "2.14.24";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -414,7 +414,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.23" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.24" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2404,15 +2404,30 @@ async function getSharedUpcomingEventData() {
     .order("due_at", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
   if (eventError) throw eventError;
-  const events = (eventRows || []).filter((item) => contestEventIsUpcoming(item));
-  const eventIds = events.map((item) => item.id);
-  if (!eventIds.length) return { events, attendance: [] };
-  const { data: attendanceRows, error: attendanceError } = await client.rpc("get_active_event_attendees", { p_event_ids: eventIds });
+  const activeEvents = (eventRows || []).filter((item) => contestEventIsUpcoming(item));
+  const eventIds = activeEvents.map((item) => item.id);
+  if (!eventIds.length) return { events: activeEvents, attendance: [] };
+  const [{ data: attendanceRows, error: attendanceError }, { data: courseRows, error: courseError }] = await Promise.all([
+    client.rpc("get_active_event_attendees", { p_event_ids: eventIds }),
+    client.from("event_course_photos").select("event_id").in("event_id", eventIds),
+  ]);
   if (attendanceError) throw attendanceError;
+  if (courseError) throw courseError;
+  const eventsWithCourses = new Set((courseRows || []).map((row) => row.event_id));
   return {
-    events,
+    events: activeEvents.map((item) => ({ ...item, course_photo_available: eventsWithCourses.has(item.id) })),
     attendance: (attendanceRows || []).map((row) => ({ ...row, profile: { id: row.athlete_id, display_name: row.display_name || "JKCREW rider", avatar: row.avatar || "" } })),
   };
+}
+
+async function getEventCoursePhoto(eventId = "") {
+  if (!eventId) return null;
+  const { data, error } = await client.from("event_course_photos")
+    .select("event_id,image_data_url,updated_at")
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
 }
 
 async function getCoachVenues() {
@@ -6815,6 +6830,17 @@ function coachEventAttendeeRunActionHtml(item = {}, attendee = {}, runs = [], ro
     : `<button class="secondary-btn compact-btn contest-rider-run-button create" type="button" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>CREATE RUN</button>`;
 }
 
+function contestEventCourseHtml(item = {}) {
+  const coachView = isCoachRole(state.profile?.role);
+  if (item.course_photo_available) {
+    return `<section class="contest-event-course-card has-course"><div class="contest-course-icon" aria-hidden="true">⌖</div><div><div class="eyebrow">Event course</div><strong>COURSE PHOTO READY</strong><small>Open the clean park photo without anyone's private route or tricks.</small></div><button class="primary-btn compact-btn" type="button" data-view-event-course="${escapeHtml(item.id)}">VIEW COURSE</button></section>`;
+  }
+  if (coachView) {
+    return `<section class="contest-event-course-card"><div class="contest-course-icon" aria-hidden="true">＋</div><div><div class="eyebrow">Event course</div><strong>NO COURSE PHOTO YET</strong><small>Add one shared park image for riders and coaches to view.</small></div><label class="primary-btn compact-btn contest-course-upload" for="event-course-photo-${escapeHtml(item.id)}">ADD COURSE PHOTO<input id="event-course-photo-${escapeHtml(item.id)}" type="file" accept="image/*" data-event-course-photo-input="${escapeHtml(item.id)}" hidden></label></section>`;
+  }
+  return `<section class="contest-event-course-card unavailable"><div class="contest-course-icon" aria-hidden="true">⌖</div><div><div class="eyebrow">Event course</div><strong>COURSE PHOTO COMING SOON</strong><small>Your coach has not added the park image yet.</small></div></section>`;
+}
+
 function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []) {
   const going = attendees.some((row) => row.athlete_id === state.user?.id);
   const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
@@ -6822,12 +6848,13 @@ function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []
   return `<section class="contest-event-modal" role="dialog" aria-modal="true" aria-labelledby="contest-event-modal-title">
     <header class="contest-event-modal-head"><div><div class="eyebrow">Upcoming event</div><h2 id="contest-event-modal-title">${escapeHtml(item.title)}</h2><p>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close event">×</button></header>
     ${item.details ? `<div class="contest-event-location"><span aria-hidden="true">⌖</span><strong>${escapeHtml(item.details)}</strong></div>` : ""}
+    ${contestEventCourseHtml(item)}
     <div class="contest-attendee-section"><div class="panel-head"><div><div class="panel-title">Who's going</div><div class="panel-meta">${attendees.length} confirmed</div></div></div>
       <div class="contest-attendee-list">${attendees.length ? attendees.map((row) => `<div class="contest-attendee-row">${avatarHtml(row.profile || {}, "contest-attendee-avatar")}<div class="contest-attendee-copy"><strong>${escapeHtml(row.profile?.display_name || "JKCREW member")}${row.athlete_id === state.user?.id ? " · You" : ""}</strong><small>${row.athlete_id === state.user?.id && coachView ? "Confirmed coach" : "Confirmed rider"}</small></div>${coachEventAttendeeRunActionHtml(item, row, runs, roster)}</div>`).join("") : `<div class="contest-empty"><strong>Nobody confirmed yet</strong><span>Attendance can be updated below.</span></div>`}</div>
     </div>
     ${coachView ? coachContestEventEditorHtml(item) : ""}
     ${coachView ? coachEventAttendanceEditorHtml(item, attendees, roster) : ""}
-    <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : "Your run plan stays private"}</strong><p>${coachView ? "Each route, trick list, note and park photo is visible only to that rider and their linked coach." : `Other riders can see that you're going, but they cannot see your route, tricks, notes or park photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
+    <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : "Your run plan stays private"}</strong><p>${coachView ? "The shared course photo is separate. Each rider's route, trick list, notes and private run photo remain visible only to that rider and their linked coach." : `The shared course photo never includes another rider's plan. Other riders cannot see your route, tricks, notes or private run photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
     ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
   </section>`;
 }
@@ -6851,6 +6878,75 @@ function closeContestEventModal() {
   backdrop?.remove();
 }
 
+function closeEventCourseViewer() {
+  const backdrop = document.querySelector("#event-course-backdrop");
+  if (state.eventCourseEscapeHandler) document.removeEventListener("keydown", state.eventCourseEscapeHandler);
+  state.eventCourseEscapeHandler = null;
+  backdrop?.remove();
+  if (!document.querySelector("#contest-event-backdrop")) document.documentElement.classList.remove("contest-event-open");
+}
+
+function eventCourseViewerHtml(item = {}, photo = {}) {
+  const coachView = isCoachRole(state.profile?.role);
+  return `<section class="contest-event-modal event-course-viewer" role="dialog" aria-modal="true" aria-labelledby="event-course-viewer-title">
+    <header class="contest-event-modal-head"><div><div class="eyebrow">Shared event course</div><h2 id="event-course-viewer-title">${escapeHtml(item.title || "Course photo")}</h2><p>${escapeHtml(item.details || "Park overview")}</p></div><button class="contest-event-modal-close" type="button" data-close-event-course aria-label="Close course photo">×</button></header>
+    <figure class="event-course-photo"><img src="${escapeHtml(photo.image_data_url || "")}" alt="Course layout for ${escapeHtml(item.title || "this event")}"></figure>
+    <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>COURSE PHOTO ONLY</strong><p>No rider routes, numbered dots, tricks or run-plan notes are included here. Private plans remain visible only to that rider and their linked coach.</p></div></div>
+    <div class="event-course-viewer-actions"><button class="secondary-btn" type="button" data-close-event-course>BACK TO EVENTS</button>${coachView ? `<label class="primary-btn contest-course-upload" for="replace-event-course-${escapeHtml(item.id)}">CHANGE COURSE PHOTO<input id="replace-event-course-${escapeHtml(item.id)}" type="file" accept="image/*" data-event-course-photo-input="${escapeHtml(item.id)}" hidden></label>` : ""}</div>
+  </section>`;
+}
+
+async function saveEventCoursePhoto(item = {}, file = null) {
+  if (!isCoachRole(state.profile?.role)) return notify("Only coaches can add the shared course photo.", "error");
+  if (!item.id || !file) return;
+  if (!String(file.type || "").startsWith("image/")) return notify("Choose an image of the course.", "error");
+  if (file.size > 20 * 1024 * 1024) return notify("That photo is too large. Choose an image under 20 MB.", "error");
+  notify("Preparing the course photo...");
+  try {
+    const imageDataUrl = await runPhotoToDataUrl(file);
+    if (!String(imageDataUrl || "").startsWith("data:image/")) throw new Error("That file could not be read as an image.");
+    if (imageDataUrl.length > 8000000) throw new Error("The optimized course photo is still too large. Choose a smaller image.");
+    const { error } = await client.from("event_course_photos").upsert({
+      event_id: item.id,
+      image_data_url: imageDataUrl,
+      updated_by: state.user.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "event_id" });
+    if (error) throw error;
+    closeContestEventModal();
+    closeEventCourseViewer();
+    notify("Course photo saved. Riders can now view the clean park image.");
+    await renderContests();
+    openEventCourseViewer({ ...item, course_photo_available: true }, { event_id: item.id, image_data_url: imageDataUrl });
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  }
+}
+
+async function openEventCourseViewer(item = {}, suppliedPhoto = null) {
+  try {
+    const photo = suppliedPhoto || await getEventCoursePhoto(item.id);
+    if (!photo?.image_data_url) return notify("No course photo has been added yet.", "error");
+    closeContestEventModal();
+    closeEventCourseViewer();
+    const backdrop = document.createElement("div");
+    backdrop.id = "event-course-backdrop";
+    backdrop.className = "contest-event-backdrop event-course-backdrop";
+    backdrop.innerHTML = eventCourseViewerHtml(item, photo);
+    document.body.append(backdrop);
+    document.documentElement.classList.add("contest-event-open");
+    const close = () => closeEventCourseViewer();
+    backdrop.querySelectorAll("[data-close-event-course]").forEach((button) => button.addEventListener("click", close));
+    backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+    state.eventCourseEscapeHandler = (event) => { if (event.key === "Escape") close(); };
+    document.addEventListener("keydown", state.eventCourseEscapeHandler);
+    backdrop.querySelector("[data-event-course-photo-input]")?.addEventListener("change", (event) => saveEventCoursePhoto(item, event.currentTarget.files?.[0]));
+    backdrop.querySelector("[data-close-event-course]")?.focus();
+  } catch (error) {
+    notify(messageFrom(error), "error");
+  }
+}
+
 function openContestEventModal(item = {}, attendees = [], runs = [], roster = []) {
   closeContestEventModal();
   const backdrop = document.createElement("div");
@@ -6867,6 +6963,11 @@ function openContestEventModal(item = {}, attendees = [], runs = [], roster = []
   backdrop.querySelectorAll("[data-toggle-contest-attendance]").forEach((button) => button.addEventListener("click", toggleContestAttendance));
   backdrop.querySelector("[data-coach-event-edit]")?.addEventListener("submit", saveCoachContestEventEdit);
   backdrop.querySelector("[data-coach-event-attendance]")?.addEventListener("submit", saveCoachEventAttendance);
+  backdrop.querySelector("[data-view-event-course]")?.addEventListener("click", (event) => {
+    const restore = setButtonBusy(event.currentTarget, "LOADING...");
+    openEventCourseViewer(item).finally(restore);
+  });
+  backdrop.querySelector("[data-event-course-photo-input]")?.addEventListener("change", (event) => saveEventCoursePhoto(item, event.currentTarget.files?.[0]));
   backdrop.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
   backdrop.querySelectorAll("[data-create-rider-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
   backdrop.querySelectorAll("[data-view-rider-event-runs]").forEach((button) => button.addEventListener("click", () => {
