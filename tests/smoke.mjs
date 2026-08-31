@@ -26,7 +26,8 @@ const eventCourseMigration = read("supabase/migrations/20260830114500_shared_eve
 const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index_event_course_photo_updater.sql");
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
-const version = "2.14.25";
+const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
+const version = "2.14.26";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -77,6 +78,10 @@ assert(parentEngagementMigration.includes("last_app_opened_at"), "Parent engagem
 assert(parentEngagementMigration.includes("queue_parent_engagement_alerts"), "Parent inactivity and low-progress alerts need a scheduled queue function");
 assert(parentEngagementMigration.includes("parent-engagement:"), "Parent engagement alerts must be deduplicated per parent, rider and week");
 assert(parentEngagementMigration.includes("'sheet'"), "Parent engagement pushes must respect the existing sheet notification preference");
+assert(app.includes('rpc(isLine ? "record_line_action_at_venue"'), "Rider and coach Line actions must preserve the selected venue");
+assert(parkKingLiveScoreMigration.includes("'percentage', 'lines', 'bonus'"), "Park King scores must include Lines");
+assert(!parkKingLiveScoreMigration.includes("session.ended_at is not null"), "Park King must update while a training session is live");
+assert(parkKingLiveScoreMigration.includes("jkcrew_country_timezone"), "Detached Daily completion recovery must use the rider's local date");
 assert(parentEventCourseMigration.includes("parent_athletes"), "Parent course access must require a linked rider relationship");
 assert(!parentEventCourseMigration.includes("from public.run_plans"), "Parent course access must never query private run plans");
 assert(functionBody("setupRealtimeSync").includes('table: "app_notifications"'), "New notifications must update unread badges in realtime");
