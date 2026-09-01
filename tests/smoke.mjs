@@ -28,7 +28,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.27";
+const version = "2.14.28";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -515,6 +515,10 @@ assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-cha
 assert(functionBody("weeklyBattleCardHtml").includes("data-forfeit-battle"), "Live rider battles need a forfeit action");
 assert(functionBody("forfeitWeeklyRiderBattle").includes('rpc("forfeit_rider_battle"'), "Rider forfeits must use the protected database RPC");
 assert(functionBody("coachBattleCardHtml").includes("data-delete-coach-battle"), "Every coach battle card needs a delete action");
+assert(functionBody("coachBattleCardHtml").includes('<details class="coach-battle-view-card'), "Each coach battle must render as a dropdown");
+assert(functionBody("coachBattleCardHtml").includes('class="coach-battle-card-summary"'), "Closed battle rows must show a compact summary");
+assert(!functionBody("coachBattleCardHtml").includes('<details open'), "Coach battle dropdowns must be closed by default");
+assert(functionBody("coachBattleCardHtml").includes("teamOneScore") && functionBody("coachBattleCardHtml").includes("teamTwoScore"), "Closed battle rows must show the current score");
 assert(functionBody("deleteCoachBattle").includes('rpc("delete_rider_battle"'), "Coach battle deletion must use the protected database RPC");
 assert(functionBody("respondCoachRiderBattle").includes('rpc("coach_respond_rider_battle"'), "Coaches need a protected accept-on-behalf action");
 assert(functionBody("setCoachBattleArchived").includes('rpc("set_rider_battle_archived"'), "Coaches need a protected battle archive action");

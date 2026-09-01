@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.27";
+const RELEASE_VERSION = "2.14.28";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -415,7 +415,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.27" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.28" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7450,20 +7450,34 @@ function coachBattleCardHtml(battle) {
     ? `Ends ${dateLabel(battle.ends_at)}`
     : battle.status === "pending" ? `Requested ${dateLabel(battle.created_at)}`
       : `${duration} day battle`;
+  const teamOne = participants.filter((participant) => participant.team_number === 1);
+  const teamTwo = participants.filter((participant) => participant.team_number === 2);
+  const teamOneNames = teamOne.map((participant) => participant.display_name).join(" + ") || "Team 1";
+  const teamTwoNames = teamTwo.map((participant) => participant.display_name).join(" + ") || "Team 2";
+  const teamOneScore = teamOne.reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
+  const teamTwoScore = teamTwo.reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
   const winners = participants.filter((participant) => participant.is_winner).map((participant) => participant.display_name).join(" + ");
   const coachAcceptActions = battle.status === "pending" && pendingRiders.length ? `<div class="coach-battle-pending-actions"><div><strong>Waiting for rider approval</strong><small>Accept for a rider who cannot access the app.</small></div><div>${pendingRiders.map((participant) => `<button class="secondary-btn compact-btn" type="button" data-coach-accept-battle="${battle.id}" data-coach-accept-athlete="${participant.athlete_id}">✓ Accept for ${escapeHtml(battleParticipantFirstName(participant))}</button>`).join("")}</div></div>` : "";
   const archiveAction = ["completed", "declined"].includes(battle.status) ? `<button class="secondary-btn compact-btn" type="button" data-archive-coach-battle="${battle.id}" data-battle-archived="${archived}">${archived ? "Restore battle" : "Archive battle"}</button>` : "";
-  return `<article class="coach-battle-view-card ${escapeHtml(battle.status)}">
-    <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><b>${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} · ${rewardPoints} pts</b><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
-    <div class="coach-battle-riders">
-      ${coachBattleTeamHtml(battle, 1)}
-      <span>VS</span>
-      ${coachBattleTeamHtml(battle, 2)}
+  return `<details class="coach-battle-view-card ${escapeHtml(battle.status)}">
+    <summary class="coach-battle-card-summary">
+      <span class="status-chip">${escapeHtml(statusLabel)}</span>
+      <span class="coach-battle-summary-matchup"><strong>${escapeHtml(teamOneNames)} <b>VS</b> ${escapeHtml(teamTwoNames)}</strong><small>${teamOneScore}–${teamTwoScore} pts · ${escapeHtml(timing)}</small></span>
+      <span class="coach-battle-summary-format">${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} · ${rewardPoints} pts</span>
+      <span class="accordion-caret" aria-hidden="true">⌄</span>
+    </summary>
+    <div class="coach-battle-card-body">
+      <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><b>${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} · ${rewardPoints} pts</b><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
+      <div class="coach-battle-riders">
+        ${coachBattleTeamHtml(battle, 1)}
+        <span>VS</span>
+        ${coachBattleTeamHtml(battle, 2)}
+      </div>
+      ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · ${rewardPoints} points split across the team</div>` : ""}
+      ${coachAcceptActions}
+      <div class="coach-battle-card-actions">${archiveAction}<button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
     </div>
-    ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · ${rewardPoints} points split across the team</div>` : ""}
-    ${coachAcceptActions}
-    <div class="coach-battle-card-actions">${archiveAction}<button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
-  </article>`;
+  </details>`;
 }
 
 function sessionGroupBattlesHtml(battles = [], groupLabel = "") {
