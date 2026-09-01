@@ -9261,7 +9261,17 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   letter-spacing: .07em;
 }
 .battle-forfeit-btn:hover { border-color: #ff6b5c; background: rgba(255, 107, 92, .13); }
-.coach-battle-card-actions { display: flex; justify-content: flex-end; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.coach-battle-card-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.coach-battle-pending-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px; border: 1px solid rgba(247, 209, 84, .28); border-radius: 12px; background: rgba(247, 209, 84, .055); }
+.coach-battle-pending-actions strong, .coach-battle-pending-actions small { display: block; }
+.coach-battle-pending-actions strong { color: var(--gold); }
+.coach-battle-pending-actions small { margin-top: 3px; color: var(--muted); }
+.coach-battle-pending-actions > div:last-child { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.coach-battle-archive > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; list-style: none; }
+.coach-battle-archive > summary::-webkit-details-marker { display: none; }
+.coach-battle-archive > summary span:first-child strong, .coach-battle-archive > summary span:first-child small { display: block; }
+.coach-battle-archive > summary span:first-child small { margin-top: 3px; color: var(--muted); }
+.coach-battle-archive[open] > summary { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 
 .student-profile-primary-actions {
   display: grid;
@@ -9320,6 +9330,9 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   .coach-battle-riders { grid-template-columns: 1fr; }
   .coach-battle-riders > span { text-align: center; }
   .coach-battle-view-head { align-items: flex-start; flex-direction: column; }
+  .coach-battle-pending-actions { align-items: stretch; flex-direction: column; }
+  .coach-battle-pending-actions > div:last-child { justify-content: stretch; }
+  .coach-battle-pending-actions button { width: 100%; }
 }
 
 /* 2.13 all-user battle and coach-session release */

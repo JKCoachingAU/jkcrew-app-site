@@ -22,12 +22,13 @@ const dailyListNotificationMigration = read("supabase/migrations/20260829090000_
 const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
 const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
 const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
+const coachBattleControlMigration = read("supabase/migrations/20260901220603_coach_battle_responses_and_archives.sql");
 const eventCourseMigration = read("supabase/migrations/20260830114500_shared_event_course_photos.sql");
 const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index_event_course_photo_updater.sql");
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.26";
+const version = "2.14.27";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -515,6 +516,13 @@ assert(functionBody("weeklyBattleCardHtml").includes("data-forfeit-battle"), "Li
 assert(functionBody("forfeitWeeklyRiderBattle").includes('rpc("forfeit_rider_battle"'), "Rider forfeits must use the protected database RPC");
 assert(functionBody("coachBattleCardHtml").includes("data-delete-coach-battle"), "Every coach battle card needs a delete action");
 assert(functionBody("deleteCoachBattle").includes('rpc("delete_rider_battle"'), "Coach battle deletion must use the protected database RPC");
+assert(functionBody("respondCoachRiderBattle").includes('rpc("coach_respond_rider_battle"'), "Coaches need a protected accept-on-behalf action");
+assert(functionBody("setCoachBattleArchived").includes('rpc("set_rider_battle_archived"'), "Coaches need a protected battle archive action");
+assert(functionBody("renderCoachBattleViewer").includes("coachArchivedBattleSection(archived)"), "Archived battles need a separate coach section");
+assert(coachBattleControlMigration.includes("You can only respond for riders in your crew"), "Coach responses must be limited to linked riders");
+assert(coachBattleControlMigration.includes("Only finished battles can be archived"), "Live and pending battles must not be archived");
+assert(coachBattleControlMigration.includes("archived_at"), "Battle archives must preserve finished records instead of deleting them");
+assert(!coachBattleControlMigration.includes("delete from public.leaderboard_point_adjustments"), "Archiving must never reverse battle points");
 const battleControlMigration = read("supabase/migrations/20260827053000_daily_cleanup_and_battle_controls.sql");
 assert(battleControlMigration.includes("private.retired_daily_assignment_backups"), "Removed duplicate Daily assignments need a private recovery archive");
 assert(battleControlMigration.includes("lower(trim(assignment.venue)) in ('hotbox', 'default daily list')"), "Daily cleanup must target only the two exact duplicate location names");

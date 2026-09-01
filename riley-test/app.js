@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.26";
+const RELEASE_VERSION = "2.14.27";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -415,7 +415,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.26" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.27" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7442,12 +7442,17 @@ function coachBattleTeamHtml(battle, teamNumber) {
 function coachBattleCardHtml(battle) {
   const duration = Number(battle.duration_days || 7);
   const rewardPoints = Math.min(20, Math.max(1, Number(battle.reward_points || 5)));
+  const participants = battle.participants || [];
+  const pendingRiders = participants.filter((participant) => participant.response === "pending" && participant.coach_can_respond);
+  const archived = Boolean(battle.archived_at);
   const statusLabel = battle.status === "accepted" ? "Live" : battle.status === "pending" ? "Waiting" : battle.status === "completed" ? "Complete" : battle.status;
   const timing = battle.status === "accepted" && battle.ends_at
     ? `Ends ${dateLabel(battle.ends_at)}`
     : battle.status === "pending" ? `Requested ${dateLabel(battle.created_at)}`
       : `${duration} day battle`;
-  const winners = (battle.participants || []).filter((participant) => participant.is_winner).map((participant) => participant.display_name).join(" + ");
+  const winners = participants.filter((participant) => participant.is_winner).map((participant) => participant.display_name).join(" + ");
+  const coachAcceptActions = battle.status === "pending" && pendingRiders.length ? `<div class="coach-battle-pending-actions"><div><strong>Waiting for rider approval</strong><small>Accept for a rider who cannot access the app.</small></div><div>${pendingRiders.map((participant) => `<button class="secondary-btn compact-btn" type="button" data-coach-accept-battle="${battle.id}" data-coach-accept-athlete="${participant.athlete_id}">✓ Accept for ${escapeHtml(battleParticipantFirstName(participant))}</button>`).join("")}</div></div>` : "";
+  const archiveAction = ["completed", "declined"].includes(battle.status) ? `<button class="secondary-btn compact-btn" type="button" data-archive-coach-battle="${battle.id}" data-battle-archived="${archived}">${archived ? "Restore battle" : "Archive battle"}</button>` : "";
   return `<article class="coach-battle-view-card ${escapeHtml(battle.status)}">
     <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><b>${Number(battle.battle_size || 1)}v${Number(battle.battle_size || 1)} · ${rewardPoints} pts</b><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
     <div class="coach-battle-riders">
@@ -7456,7 +7461,8 @@ function coachBattleCardHtml(battle) {
       ${coachBattleTeamHtml(battle, 2)}
     </div>
     ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · ${rewardPoints} points split across the team</div>` : ""}
-    <div class="coach-battle-card-actions"><button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
+    ${coachAcceptActions}
+    <div class="coach-battle-card-actions">${archiveAction}<button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
   </article>`;
 }
 
@@ -7488,6 +7494,10 @@ function coachBattleSection(title, meta, battles) {
   return `<section class="panel coach-battle-view-section"><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill">${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
 }
 
+function coachArchivedBattleSection(battles = []) {
+  return `<details class="panel coach-battle-view-section coach-battle-archive"><summary><span><strong>Archived battles</strong><small>Finished results kept safely out of the main view</small></span><span class="pill">${battles.length}</span></summary><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">No archived battles yet.</div>`}</div></details>`;
+}
+
 async function renderCoachBattleViewer() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   const [{ data: battles, error }, roster] = await Promise.all([
@@ -7496,20 +7506,56 @@ async function renderCoachBattleViewer() {
   ]);
   if (error) throw error;
   const rows = Array.isArray(battles) ? battles : [];
-  const live = rows.filter((battle) => battle.status === "accepted");
-  const pending = rows.filter((battle) => battle.status === "pending");
-  const completed = rows.filter((battle) => battle.status === "completed").slice(0, 20);
+  const current = rows.filter((battle) => !battle.archived_at);
+  const archived = rows.filter((battle) => battle.archived_at);
+  const live = current.filter((battle) => battle.status === "accepted");
+  const pending = current.filter((battle) => battle.status === "pending");
+  const finished = current.filter((battle) => ["completed", "declined"].includes(battle.status)).slice(0, 20);
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach oversight</div><h1>Live <span>Challenges</span></h1><p>View every battle, build 1v1 or team match-ups, and set the crew's weekly challenge.</p></div><button class="secondary-btn" type="button" id="refresh-coach-battles">Refresh</button></div>
+    <div class="page-head"><div><div class="eyebrow">Coach oversight</div><h1>Live <span>Challenges</span></h1><p>View every battle, accept for riders without a phone, archive old results, and build new match-ups.</p></div><button class="secondary-btn" type="button" id="refresh-coach-battles">Refresh</button></div>
     <section class="coach-battle-create-actions"><button class="primary-btn" type="button" id="coach-create-battle">⚡ Create Rider Battle</button><button class="secondary-btn" type="button" id="coach-create-weekly-challenge">＋ Make Weekly Challenge</button></section>
-    <section class="stats-grid coach-battle-stats"><article class="stat-card"><div class="stat-label">Live now</div><div class="stat-value">${live.length}</div><div class="stat-foot">Accepted battles</div></article><article class="stat-card"><div class="stat-label">Waiting</div><div class="stat-value">${pending.length}</div><div class="stat-foot">Pending requests</div></article><article class="stat-card"><div class="stat-label">Completed</div><div class="stat-value">${completed.length}</div><div class="stat-foot">Recent results</div></article></section>
+    <section class="stats-grid coach-battle-stats"><article class="stat-card"><div class="stat-label">Live now</div><div class="stat-value">${live.length}</div><div class="stat-foot">Accepted battles</div></article><article class="stat-card"><div class="stat-label">Waiting</div><div class="stat-value">${pending.length}</div><div class="stat-foot">Coach can accept</div></article><article class="stat-card"><div class="stat-label">Finished</div><div class="stat-value">${finished.length}</div><div class="stat-foot">Ready to archive</div></article><article class="stat-card"><div class="stat-label">Archived</div><div class="stat-value">${archived.length}</div><div class="stat-foot">Saved results</div></article></section>
     ${coachBattleSection("Live battles", "Current team scores and finish times", live)}
-    ${coachBattleSection("Pending requests", "Every selected rider must accept before the clock starts", pending)}
-    ${coachBattleSection("Recent results", "Completed battles and split point transfers", completed)}`;
+    ${coachBattleSection("Pending requests", "Accept for riders who cannot use the app", pending)}
+    ${coachBattleSection("Finished battles", "Results and point transfers stay recorded when archived", finished)}
+    ${coachArchivedBattleSection(archived)}`;
   document.querySelector("#refresh-coach-battles")?.addEventListener("click", renderCoachBattleViewer);
   document.querySelector("#coach-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(roster, renderCoachBattleViewer));
   document.querySelector("#coach-create-weekly-challenge")?.addEventListener("click", () => showWeeklyChallengeBuilder(renderCoachBattleViewer));
+  bindCoachBattleControls();
+}
+
+function refreshCoachBattleSurface() {
+  return state.view === "sessionViewer" ? renderSessionViewer() : renderCoachBattleViewer();
+}
+
+function bindCoachBattleControls() {
+  document.querySelectorAll("[data-coach-accept-battle]").forEach((button) => button.addEventListener("click", respondCoachRiderBattle));
+  document.querySelectorAll("[data-archive-coach-battle]").forEach((button) => button.addEventListener("click", setCoachBattleArchived));
   document.querySelectorAll("[data-delete-coach-battle]").forEach((button) => button.addEventListener("click", deleteCoachBattle));
+}
+
+async function respondCoachRiderBattle(event) {
+  const button = event.currentTarget;
+  const riderName = button.textContent.replace(/^✓\s*Accept for\s*/i, "").trim() || "rider";
+  const restoreButton = setButtonBusy(button, "Accepting...");
+  const { data, error } = await client.rpc("coach_respond_rider_battle", { p_battle_id: button.dataset.coachAcceptBattle, p_athlete_id: button.dataset.coachAcceptAthlete, p_response: "accepted" });
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify(data === "accepted" ? `${riderName} accepted. Everyone is ready and the battle is now live.` : `${riderName} accepted. Waiting for the remaining riders.`);
+  await refreshCoachBattleSurface();
+}
+
+async function setCoachBattleArchived(event) {
+  const button = event.currentTarget;
+  const archived = button.dataset.battleArchived === "true";
+  if (!archived && !window.confirm("Archive this finished battle? Its result, points and win/loss record will stay saved.")) return;
+  const restoreButton = setButtonBusy(button, archived ? "Restoring..." : "Archiving...");
+  const { error } = await client.rpc("set_rider_battle_archived", { p_battle_id: button.dataset.archiveCoachBattle, p_archived: !archived });
+  restoreButton();
+  if (error) return notify(messageFrom(error), "error");
+  notify(archived ? "Battle restored to finished results." : "Battle archived. Its result and points are still saved.");
+  await refreshCoachBattleSurface();
 }
 
 async function deleteCoachBattle(event) {
@@ -7520,7 +7566,7 @@ async function deleteCoachBattle(event) {
   restoreButton();
   if (error) return notify(messageFrom(error), "error");
   notify("Battle deleted.");
-  await renderCoachBattleViewer();
+  await refreshCoachBattleSurface();
 }
 
 function coachBattleRiderSelect(roster, team, slot) {
@@ -7910,6 +7956,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     ${sessionGroupBattlesHtml(groupBattles, coachGroupLabel(state.sessionViewerGroup))}`;
   bindSessionViewerActions();
   document.querySelector("#session-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(groupRoster, () => renderSessionViewer()));
+  bindCoachBattleControls();
   updateGroupSessionTimerDom();
   state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
   if (!contestPrepViewer && requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
