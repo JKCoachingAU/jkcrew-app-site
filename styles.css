@@ -273,6 +273,31 @@ button[aria-busy="true"] {
   text-transform: uppercase;
 }
 .auth-tab.active { background: var(--aqua); color: #001d18; }
+.auth-text-btn {
+  border: 0;
+  padding: 5px 0;
+  background: transparent;
+  color: var(--aqua);
+  font: 700 0.68rem var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.auth-text-btn:hover { color: var(--text); }
+.auth-forgot-link { display: block; margin: -3px 0 15px auto; }
+.auth-back-link { display: block; margin: 13px auto 0; }
+.auth-success-mark {
+  width: 74px;
+  height: 74px;
+  margin: 26px auto 10px;
+  border: 1px solid rgba(24, 215, 198, 0.5);
+  border-radius: 50%;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  display: grid;
+  place-items: center;
+  font: 900 2.25rem var(--display);
+  box-shadow: 0 0 32px rgba(24, 215, 198, 0.12);
+}
 .field { display: grid; gap: 7px; margin-bottom: 14px; }
 .field label { color: #a7afab; font: 600 0.62rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .field input, .field select, .field textarea {

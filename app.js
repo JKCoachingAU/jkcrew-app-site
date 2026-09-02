@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.28";
+const RELEASE_VERSION = "2.14.29";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -415,7 +415,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.28" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.29" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1089,16 +1089,18 @@ function recordMyAppOpen() {
 
 async function init() {
   renderAuth("login", "Checking JKCREW connection...");
-  let session = null;
-  try {
-    const result = await retryNetworkRequest(() => client.auth.getSession(), "Sign in check", { attempts: 3, timeoutMs: 15000 });
-    session = result.data?.session || null;
-  } catch (error) {
-    renderAuth("login", messageFrom(error));
-    return;
-  }
-  await handleSessionOnce(session);
-  client.auth.onAuthStateChange((_event, nextSession) => {
+  let passwordRecoveryEventReceived = false;
+  client.auth.onAuthStateChange((event, nextSession) => {
+    if (event === "PASSWORD_RECOVERY") {
+      passwordRecoveryEventReceived = true;
+      setTimeout(() => {
+        state.session = nextSession || null;
+        state.user = nextSession?.user || null;
+        renderPasswordRecovery();
+      }, 0);
+      return;
+    }
+    if (event === "INITIAL_SESSION") return;
     if (nextSession?.user?.id === state.user?.id && nextSession) return;
     // Leave the auth callback immediately; profile queries inside this callback can
     // block Supabase's auth lock and make a successful sign-in appear frozen.
@@ -1109,6 +1111,26 @@ async function init() {
       });
     }, 0);
   });
+  let session = null;
+  try {
+    const result = await retryNetworkRequest(() => client.auth.getSession(), "Sign in check", { attempts: 3, timeoutMs: 15000 });
+    session = result.data?.session || null;
+  } catch (error) {
+    renderAuth("login", messageFrom(error));
+    return;
+  }
+  if (passwordRecoveryEventReceived || (session && isPasswordRecoveryUrl())) {
+    state.session = session;
+    state.user = session?.user || null;
+    renderPasswordRecovery();
+    return;
+  }
+  if (!session && isPasswordRecoveryUrl()) {
+    cleanPasswordRecoveryUrl();
+    renderForgotPassword("This reset link has expired or has already been used. Request a new link below.");
+    return;
+  }
+  await handleSessionOnce(session);
 }
 
 function handleSessionOnce(session) {
@@ -1199,10 +1221,8 @@ async function handleSession(session) {
   navigate(state.view);
 }
 
-function renderAuth(mode = "login", message = "") {
-  app.innerHTML = `
-    <div class="auth-page">
-      <section class="auth-hero">
+function authHeroMarkup() {
+  return `<section class="auth-hero">
         <div class="auth-logo-stack">
           <div class="auth-logo-lockup wordmark-lockup"><img src="icons/jkcoaching-wordmark.png?v=2.11.77" alt="JKCoaching logo"></div>
         </div>
@@ -1212,8 +1232,14 @@ function renderAuth(mode = "login", message = "") {
           <p>Weekly trick plans, attempt tracking, private progress history, and coach feedback built for serious BMX progression.</p>
         </div>
         <div class="feature-strip"><span>Weekly plans</span><span>Private progress</span><span>Coach feedback</span><span>Future focused</span></div>
-      </section>
-  <section class="auth-panel">
+      </section>`;
+}
+
+function renderAuth(mode = "login", message = "") {
+  app.innerHTML = `
+    <div class="auth-page">
+      ${authHeroMarkup()}
+      <section class="auth-panel">
         <div class="auth-card">
           <div class="eyebrow">Welcome to JKCREW</div>
           <h2>${mode === "login" ? "Sign in" : "Join the crew"}</h2>
@@ -1239,6 +1265,7 @@ function renderAuth(mode = "login", message = "") {
               <label for="password">Password</label>
               <input id="password" name="password" type="password" required minlength="8" autocomplete="${mode === "login" ? "current-password" : "new-password"}" placeholder="At least 8 characters">
             </div>
+            ${mode === "login" ? `<button class="auth-text-btn auth-forgot-link" type="button" id="forgot-password">Forgot password?</button>` : ""}
             <button class="primary-btn wide" type="submit">${mode === "login" ? "Enter JKCREW" : "Create my account"}</button>
             <div class="auth-message ${/backend|connection|timed out|responding|unable to sign in|did not finish/i.test(message) ? "auth-warning" : ""}">${escapeHtml(message)}</div>
           </form>
@@ -1247,6 +1274,134 @@ function renderAuth(mode = "login", message = "") {
     </div>`;
   document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => renderAuth(button.dataset.authMode)));
   document.querySelector("#auth-form").addEventListener("submit", (event) => handleAuth(event, mode));
+  document.querySelector("#forgot-password")?.addEventListener("click", () => renderForgotPassword("", document.querySelector("#email")?.value || ""));
+}
+
+function isPasswordRecoveryUrl() {
+  const url = new URL(window.location.href);
+  return url.searchParams.get("password-recovery") === "1" || /(?:^|[&#])type=recovery(?:&|$)/.test(window.location.hash);
+}
+
+function cleanPasswordRecoveryUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("password-recovery");
+  url.searchParams.delete("code");
+  url.hash = "";
+  window.history.replaceState({}, "", url.href);
+}
+
+function renderForgotPassword(message = "", email = "") {
+  app.innerHTML = `
+    <div class="auth-page">
+      ${authHeroMarkup()}
+      <section class="auth-panel">
+        <div class="auth-card">
+          <div class="eyebrow">Account recovery</div>
+          <h2>Reset password</h2>
+          <p class="subcopy">Enter the email used for this JKCREW account. We’ll email a secure reset link.</p>
+          <form id="forgot-password-form">
+            <div class="field">
+              <label for="recovery-email">Account email</label>
+              <input id="recovery-email" name="email" type="email" required autocomplete="email" value="${escapeHtml(email)}" placeholder="you@example.com">
+            </div>
+            <button class="primary-btn wide" type="submit">Send reset link</button>
+            <button class="auth-text-btn auth-back-link" type="button" id="back-to-sign-in">Back to sign in</button>
+            <div class="auth-message">${escapeHtml(message)}</div>
+          </form>
+        </div>
+      </section>
+    </div>`;
+  document.querySelector("#forgot-password-form")?.addEventListener("submit", requestPasswordReset);
+  document.querySelector("#back-to-sign-in")?.addEventListener("click", () => renderAuth("login"));
+}
+
+async function requestPasswordReset(event) {
+  event.preventDefault();
+  const email = String(new FormData(event.currentTarget).get("email") || "").trim();
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  button.textContent = "Sending...";
+  const redirectUrl = new URL(window.location.href);
+  redirectUrl.search = "";
+  redirectUrl.hash = "";
+  redirectUrl.searchParams.set("password-recovery", "1");
+  try {
+    const { error } = await retryNetworkRequest(
+      () => client.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl.href }),
+      "Password reset",
+      { attempts: 2, timeoutMs: 15000 }
+    );
+    if (error) {
+      renderForgotPassword(messageFrom(error, "The reset email could not be sent. Please try again."), email);
+      return;
+    }
+    renderForgotPassword("Check your email for a secure JKCREW password reset link. You can close this page after it arrives.", email);
+  } catch (error) {
+    renderForgotPassword(messageFrom(error, "The reset email could not be sent. Please try again."), email);
+  }
+}
+
+function renderPasswordRecovery(message = "", complete = false) {
+  app.innerHTML = `
+    <div class="auth-page">
+      ${authHeroMarkup()}
+      <section class="auth-panel">
+        <div class="auth-card">
+          <div class="eyebrow">Secure account recovery</div>
+          <h2>${complete ? "Password updated" : "Choose a new password"}</h2>
+          <p class="subcopy">${complete ? "Your new password is ready. Opening JKCREW now…" : "Use at least 8 characters. Enter it twice so we know it’s correct."}</p>
+          ${complete ? `<div class="auth-success-mark" aria-hidden="true">✓</div>` : `
+          <form id="password-recovery-form">
+            <div class="field">
+              <label for="new-password">New password</label>
+              <input id="new-password" name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+            </div>
+            <div class="field">
+              <label for="confirm-password">Confirm new password</label>
+              <input id="confirm-password" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter it again">
+            </div>
+            <button class="primary-btn wide" type="submit">Save new password</button>
+          </form>`}
+          <div class="auth-message">${escapeHtml(message)}</div>
+        </div>
+      </section>
+    </div>`;
+  document.querySelector("#password-recovery-form")?.addEventListener("submit", updateRecoveredPassword);
+}
+
+async function updateRecoveredPassword(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const password = String(form.get("password") || "");
+  const confirmPassword = String(form.get("confirmPassword") || "");
+  if (password.length < 8) {
+    renderPasswordRecovery("Your new password must be at least 8 characters.");
+    return;
+  }
+  if (password !== confirmPassword) {
+    renderPasswordRecovery("Those passwords do not match. Please enter them again.");
+    return;
+  }
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  button.textContent = "Saving...";
+  try {
+    const { data, error } = await retryNetworkRequest(
+      () => client.auth.updateUser({ password }),
+      "Password update",
+      { attempts: 2, timeoutMs: 15000 }
+    );
+    if (error) {
+      renderPasswordRecovery(messageFrom(error, "Your password could not be updated. Please request a new reset link and try again."));
+      return;
+    }
+    state.user = data?.user || state.user;
+    cleanPasswordRecoveryUrl();
+    renderPasswordRecovery("Password updated successfully.", true);
+    window.setTimeout(() => handleSessionOnce(state.session), 900);
+  } catch (error) {
+    renderPasswordRecovery(messageFrom(error, "Your password could not be updated. Please request a new reset link and try again."));
+  }
 }
 
 async function handleAuth(event, mode) {

@@ -28,7 +28,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.28";
+const version = "2.14.29";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -50,6 +50,12 @@ assert(serviceWorker.includes("silent: false"), "Background push should request 
 const shellRenderer = functionBody("renderShell");
 assert(shellRenderer.includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
 assert(app.includes(`const RELEASE_VERSION = "${version}"`), "The app bundle must share the release version used by the service worker");
+assert(functionBody("renderAuth").includes('id="forgot-password"'), "The sign-in screen needs a visible Forgot password entry point");
+assert(functionBody("requestPasswordReset").includes("resetPasswordForEmail"), "Password recovery must send a Supabase reset email");
+assert(functionBody("requestPasswordReset").includes("redirectTo: redirectUrl.href"), "Password recovery must return the rider to JKCREW");
+assert(functionBody("init").includes('event === "PASSWORD_RECOVERY"'), "The app must detect Supabase password-recovery sessions");
+assert(functionBody("updateRecoveredPassword").includes("client.auth.updateUser({ password })"), "The recovery screen must securely save the new Supabase password");
+assert(functionBody("updateRecoveredPassword").includes("password !== confirmPassword"), "The recovery screen must verify both password entries match");
 assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre"'), "What's New needs a fresh notification-centre campaign key");
 assert(serviceWorker.includes("await self.skipWaiting()"), "Service-worker installation must finish activation before the install event can end");
 assert(serviceWorker.includes("await Promise.all(windows.map"), "Service-worker activation must wait for every open app window to be refreshed");
