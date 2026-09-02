@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.33";
+const RELEASE_VERSION = "2.14.34";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.33" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.34" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -498,9 +498,16 @@ const randomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivati
 const defaultVenues = ["Pizzey", "Beenleigh", "Elanora", "Nerang", "RampFest", "Other / Custom Venue"];
 const venueKey = (venue = "") => String(venue || "").trim();
 const rawVenueIdentityKey = (venue = "") => venueKey(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-const venueAliases = Object.freeze({ beenleighskatepark: "beenleigh" });
+const venueAliases = Object.freeze({
+  beenleighskatepark: "beenleigh",
+  hotbox: "hotboxausnationaltrainingfacility",
+});
+const canonicalVenueLabels = Object.freeze({
+  beenleigh: "Beenleigh",
+  hotboxausnationaltrainingfacility: "HOTBOX - Aus National Training Facility",
+});
 const venueIdentityKey = (venue = "") => venueAliases[rawVenueIdentityKey(venue)] || rawVenueIdentityKey(venue);
-const venueLabel = (venue = "") => venueIdentityKey(venue) === "beenleigh" ? "Beenleigh" : venueKey(venue) || "Default Daily List";
+const venueLabel = (venue = "") => canonicalVenueLabels[venueIdentityKey(venue)] || venueKey(venue) || "Default Daily List";
 
 function avatarHtml(profile = {}, className = "") {
   const image = avatarUrl(profile);
@@ -5602,6 +5609,21 @@ async function renderCoachTricktionary() {
   bindTricktionaryBoard({ athleteId: athlete.id, refresh: renderCoachTricktionary });
 }
 
+function riderProposalItemFromLine(category, line = "") {
+  const [name, ...notes] = String(line).split(" - ");
+  return {
+    category,
+    trick_name: name.trim().slice(0, 120),
+    notes: notes.join(" - ").trim().slice(0, 500),
+  };
+}
+
+function riderProposalItemInputValue(item = {}) {
+  const name = String(item.trick_name || "").trim();
+  const notes = String(item.notes || "").trim();
+  return notes ? `${name} - ${notes}` : name;
+}
+
 function riderProposalForm(proposals = []) {
   const pending = proposals.filter((proposal) => proposal.status === "pending");
   const athleteWeekStart = weekStartDateForCountry(state.profile?.country_code || "AU");
@@ -5668,7 +5690,7 @@ async function submitRiderSheetProposal(event) {
   }
   const { data: links, error: linkError } = await client.from("coach_athletes").select("coach_id").eq("athlete_id", state.user.id).limit(1);
   if (linkError || !links?.length) return notify("Your account is not linked to a coach yet.", "error");
-  const items = Object.keys(riderProposalRequirements).flatMap((category) => categoryLines[category].map((line) => { const [name, ...notes] = line.split(" - "); return { category, trick_name: name.trim().slice(0, 120), notes: notes.join(" - ").trim().slice(0, 500) }; }));
+  const items = Object.keys(riderProposalRequirements).flatMap((category) => categoryLines[category].map((line) => riderProposalItemFromLine(category, line)));
   const button = formElement.querySelector("button[type='submit']");
   const restoreButton = setButtonBusy(button, "Sending...");
   const { error } = await client.from("rider_sheet_proposals").insert({ athlete_id: state.user.id, coach_id: links[0].coach_id, week_start: weekStartDateForCountry(state.profile?.country_code || "AU"), title: String(form.get("title") || "").trim().slice(0, 100) || "My weekly lists", venue: venue.slice(0, 80), rider_note: String(form.get("note") || "").trim().slice(0, 500), items });
@@ -8025,17 +8047,134 @@ async function renderCoachAdminRecords() {
   }));
 }
 
+function coachProposalEditorFields(proposal = {}) {
+  const items = Array.isArray(proposal.items) ? proposal.items : [];
+  return Object.entries(riderProposalRequirements).map(([category, requiredCount]) => {
+    const info = categoryInfo[category];
+    const categoryItems = items.filter((item) => item.category === category).slice(0, requiredCount);
+    const numberedRows = Array.from({ length: requiredCount }, (_, index) => {
+      const inputId = `coach-proposal-${proposal.id}-${category}-${index + 1}`;
+      const value = riderProposalItemInputValue(categoryItems[index]);
+      const placeholder = category === "lines" ? "Enter a complete 3–4 trick run" : `Enter ${info.label.toLowerCase().replace(/s$/, "")} ${index + 1}`;
+      return `<label class="proposal-numbered-row"><span>${index + 1}.</span><input id="${escapeHtml(inputId)}" name="proposalItems.${category}" value="${escapeHtml(value)}" maxlength="620" autocomplete="off" placeholder="${escapeHtml(placeholder)}"></label>`;
+    }).join("");
+    return `<div class="proposal-category-field" data-coach-proposal-category="${category}"><div class="proposal-category-head"><label for="coach-proposal-${escapeHtml(proposal.id)}-${category}-1">${escapeHtml(info.label)}</label><span class="proposal-count complete" data-coach-proposal-count="${category}">${categoryItems.length}/${requiredCount}</span><small>${escapeHtml(info.description)}</small></div><div class="proposal-numbered-list">${numberedRows}</div>${category === "lines" ? `<small>Keep each complete 3–4 trick run together in one numbered row.</small>` : ""}</div>`;
+  }).join("");
+}
+
 function coachListRequestsHtml(proposals = [], roster = []) {
   if (!proposals.length) return `<div class="empty compact-empty">No student list requests are waiting.</div>`;
   return proposals.map((proposal) => {
     const athlete = roster.find((entry) => entry.id === proposal.athlete_id);
     const items = Array.isArray(proposal.items) ? proposal.items : [];
+    const proposalVenue = venueLabel(proposal.venue);
     const rows = items.map((item) => {
       const presentation = assignmentPresentation(item);
       return `<li><span>${escapeHtml(categoryInfo[item.category]?.label || item.category || "Trick")}</span><strong>${escapeHtml(presentation.title)}</strong>${presentation.notes ? `<small>${escapeHtml(presentation.notes)}</small>` : ""}</li>`;
     }).join("");
-    return `<article class="proposal-review-card"><div class="proposal-review-head"><span>Waiting for approval</span><h3>${escapeHtml(athlete?.display_name || "Rider")} · ${escapeHtml(proposal.title)}</h3><small>${escapeHtml(proposal.venue || "No location added")} · ${dateLabel(proposal.created_at)}</small></div>${proposal.rider_note ? `<p>${escapeHtml(proposal.rider_note)}</p>` : ""}<ul class="proposal-item-list">${rows}</ul><form data-proposal-review="${proposal.id}"><div class="field"><label>Optional reply</label><input name="coachNote" maxlength="500" placeholder="Looks good, or explain what to change"></div><div class="proposal-review-actions"><button class="primary-btn" type="submit" data-proposal-decision="accepted">Accept all lists</button><button class="danger-btn" type="submit" data-proposal-decision="declined">Decline</button></div></form></article>`;
+    const titleId = `coach-proposal-title-${proposal.id}`;
+    const venueId = `coach-proposal-venue-${proposal.id}`;
+    return `<article class="proposal-review-card">
+      <div class="proposal-review-head">
+        <div class="proposal-review-heading"><span>Waiting for approval</span><h3>${escapeHtml(athlete?.display_name || "Rider")} · ${escapeHtml(proposal.title)}</h3><small>${escapeHtml(proposalVenue)} · ${dateLabel(proposal.created_at)} · ${items.length} tricks</small></div>
+        <button class="primary-btn compact-btn proposal-edit-trigger" type="button" data-proposal-edit>Edit list &amp; approve</button>
+      </div>
+      ${proposal.rider_note ? `<p>${escapeHtml(proposal.rider_note)}</p>` : ""}
+      <ul class="proposal-item-list" data-proposal-summary>${rows}</ul>
+      <form data-proposal-review="${proposal.id}" novalidate>
+        <section class="coach-proposal-editor" data-proposal-editor hidden>
+          <div class="proposal-edit-callout"><strong>Coach edit mode</strong><span>Correct anything below, then save and approve in one step. The rider does not need to resend it.</span></div>
+          <div class="two-col-form">
+            <div class="field"><label for="${escapeHtml(titleId)}">Request name</label><input id="${escapeHtml(titleId)}" name="proposalTitle" value="${escapeHtml(proposal.title || "My weekly lists")}" maxlength="100"></div>
+            <div class="field" data-coach-proposal-venue-field><label for="${escapeHtml(venueId)}">Daily location</label><input id="${escapeHtml(venueId)}" name="proposalVenue" value="${escapeHtml(proposalVenue)}" maxlength="80" placeholder="Where these 10 Dailys apply"></div>
+          </div>
+          <div class="proposal-requirements">Required: 10 Dailys · 5 One Bangs · 5 Dialled · 3 Percentage · 3 Lines · 1 Bonus</div>
+          <div class="proposal-sheet-grid">${coachProposalEditorFields(proposal)}</div>
+        </section>
+        <details class="proposal-note-details"><summary>Add a note (optional)</summary><div class="field"><label for="coach-proposal-note-${proposal.id}">Message to rider</label><input id="coach-proposal-note-${proposal.id}" name="coachNote" maxlength="500" placeholder="Add a short note with the approval or decline"></div></details>
+        <div class="proposal-review-actions" data-proposal-standard-actions><button class="secondary-btn" type="submit" data-proposal-decision="accepted">Approve as sent</button><button class="danger-btn" type="submit" data-proposal-decision="declined">Decline</button></div>
+        <div class="proposal-review-actions proposal-edit-actions" data-proposal-edit-actions hidden><button class="primary-btn" type="submit" data-proposal-decision="accepted" data-proposal-edited="true">Save changes &amp; approve</button><button class="secondary-btn" type="button" data-proposal-edit-cancel>Cancel</button></div>
+      </form>
+    </article>`;
   }).join("");
+}
+
+function updateCoachProposalCounts(formElement) {
+  const data = new FormData(formElement);
+  const venueInput = formElement.querySelector('[name="proposalVenue"]');
+  if (venueInput?.value.trim()) {
+    venueInput.removeAttribute("aria-invalid");
+    formElement.querySelector("[data-coach-proposal-venue-field]")?.classList.remove("proposal-invalid");
+  }
+  formElement.querySelectorAll('.proposal-numbered-row input[aria-invalid="true"]').forEach((input) => {
+    if (input.value.trim()) input.removeAttribute("aria-invalid");
+  });
+  Object.entries(riderProposalRequirements).forEach(([category, requiredCount]) => {
+    const count = data.getAll(`proposalItems.${category}`).map((line) => String(line).trim()).filter(Boolean).length;
+    const counter = formElement.querySelector(`[data-coach-proposal-count="${category}"]`);
+    if (counter) {
+      counter.textContent = `${count}/${requiredCount}`;
+      counter.classList.toggle("complete", count === requiredCount);
+    }
+    const categoryField = formElement.querySelector(`[data-coach-proposal-category="${category}"]`);
+    if (categoryField?.classList.contains("proposal-invalid") && count === requiredCount) categoryField.classList.remove("proposal-invalid");
+  });
+}
+
+function setCoachProposalEditMode(event) {
+  const card = event.currentTarget.closest(".proposal-review-card");
+  const form = card?.querySelector("[data-proposal-review]");
+  const editor = form?.querySelector("[data-proposal-editor]");
+  if (!card || !form || !editor) return;
+  const editing = event.currentTarget.hasAttribute("data-proposal-edit");
+  card.classList.toggle("is-editing", editing);
+  card.querySelector("[data-proposal-summary]").hidden = editing;
+  card.querySelector("[data-proposal-edit]").hidden = editing;
+  form.querySelector("[data-proposal-standard-actions]").hidden = editing;
+  form.querySelector("[data-proposal-edit-actions]").hidden = !editing;
+  editor.hidden = !editing;
+  if (editing) {
+    updateCoachProposalCounts(form);
+    editor.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => editor.querySelector('[name="proposalTitle"]')?.focus({ preventScroll: true }), 350);
+  } else {
+    editor.querySelectorAll("input").forEach((input) => { input.value = input.defaultValue; });
+    editor.querySelectorAll(".proposal-invalid").forEach((element) => element.classList.remove("proposal-invalid"));
+    editor.querySelectorAll('[aria-invalid="true"]').forEach((element) => element.removeAttribute("aria-invalid"));
+    updateCoachProposalCounts(form);
+    card.querySelector(".proposal-review-head")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function editedCoachProposalPayload(formElement) {
+  const form = new FormData(formElement);
+  formElement.querySelectorAll(".proposal-invalid").forEach((element) => element.classList.remove("proposal-invalid"));
+  formElement.querySelectorAll('[aria-invalid="true"]').forEach((element) => element.removeAttribute("aria-invalid"));
+  const venueInput = formElement.querySelector('[name="proposalVenue"]');
+  const venue = String(form.get("proposalVenue") || "").trim();
+  if (!venue) {
+    formElement.querySelector("[data-coach-proposal-venue-field]")?.classList.add("proposal-invalid");
+    venueInput?.setAttribute("aria-invalid", "true");
+    focusRiderProposalProblem(venueInput);
+    notify("Add the skate park or location for the 10 Dailys.", "error");
+    return null;
+  }
+  const categoryLines = Object.fromEntries(Object.keys(riderProposalRequirements).map((category) => [category, form.getAll(`proposalItems.${category}`).map((line) => String(line).trim()).filter(Boolean)]));
+  const wrongCounts = Object.entries(riderProposalRequirements).filter(([category, count]) => categoryLines[category].length !== count);
+  if (wrongCounts.length) {
+    wrongCounts.forEach(([category]) => formElement.querySelector(`[data-coach-proposal-category="${category}"]`)?.classList.add("proposal-invalid"));
+    const [firstCategory] = wrongCounts[0];
+    const firstMissing = [...formElement.querySelectorAll(`[name="proposalItems.${firstCategory}"]`)].find((input) => !input.value.trim());
+    firstMissing?.setAttribute("aria-invalid", "true");
+    focusRiderProposalProblem(firstMissing || formElement.querySelector(`[data-coach-proposal-category="${firstCategory}"]`));
+    notify(`Finish the exact lists first. ${wrongCounts.map(([category, count]) => `${categoryInfo[category].label}: ${categoryLines[category].length}/${count}`).join(" · ")}`, "error");
+    return null;
+  }
+  return {
+    title: String(form.get("proposalTitle") || "").trim().slice(0, 100) || "My weekly lists",
+    venue: venue.slice(0, 80),
+    items: Object.keys(riderProposalRequirements).flatMap((category) => categoryLines[category].map((line) => riderProposalItemFromLine(category, line))),
+  };
 }
 
 function coachEventRunPlansHtml(plans = [], roster = []) {
@@ -8061,12 +8200,31 @@ async function reviewRiderSheetProposal(event) {
   const button = event.submitter;
   const decision = button?.dataset.proposalDecision;
   if (!decision) return;
-  const restoreButton = setButtonBusy(button, decision === "accepted" ? "Accepting..." : "Declining...");
-  const { data, error } = await client.rpc("review_rider_sheet_proposal", { p_proposal_id: form.dataset.proposalReview, p_decision: decision, p_coach_note: String(new FormData(form).get("coachNote") || "").trim() });
+  const approving = decision === "accepted";
+  const edited = approving && button?.dataset.proposalEdited === "true";
+  const approvalPayload = approving ? editedCoachProposalPayload(form) : null;
+  if (approving && !approvalPayload) return;
+  const coachNote = String(new FormData(form).get("coachNote") || "").trim().slice(0, 500);
+  const restoreButton = setButtonBusy(button, edited ? "Saving & approving..." : decision === "accepted" ? "Accepting..." : "Declining...");
+  const request = approving
+    ? client.rpc("review_edited_rider_sheet_proposal", {
+      p_proposal_id: form.dataset.proposalReview,
+      p_title: approvalPayload.title,
+      p_venue: approvalPayload.venue,
+      p_items: approvalPayload.items,
+      p_coach_note: coachNote,
+    })
+    : client.rpc("review_rider_sheet_proposal", {
+      p_proposal_id: form.dataset.proposalReview,
+      p_decision: decision,
+      p_coach_note: coachNote,
+    });
+  const { data, error } = await request;
   if (error) { restoreButton(); return notify(messageFrom(error), "error"); }
   const result = Array.isArray(data) ? data[0] : data;
   clearCoachCaches({ command: true, sessionViewer: true, leaderboard: true });
-  notify(decision === "accepted" ? `Lists accepted · ${result?.assignments_added || 0} items added.` : "Request declined and the rider can see your reply.");
+  const savedCount = Number(result?.assignments_updated ?? result?.assignments_added ?? 0);
+  notify(approving ? `${edited ? "Changes saved and lists accepted" : "Lists accepted"} · ${savedCount} items saved.` : "Request declined and the rider can see your reply.");
   await renderCoachCommand();
 }
 
@@ -8145,6 +8303,8 @@ async function renderCoachCommand() {
   document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
   document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
   document.querySelectorAll("[data-proposal-review]").forEach((form) => form.addEventListener("submit", reviewRiderSheetProposal));
+  document.querySelectorAll("[data-proposal-edit], [data-proposal-edit-cancel]").forEach((button) => button.addEventListener("click", setCoachProposalEditMode));
+  document.querySelectorAll('[data-proposal-editor] input[name^="proposalItems."]').forEach((input) => input.addEventListener("input", (event) => updateCoachProposalCounts(event.currentTarget.closest("[data-proposal-review]"))));
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
   document.querySelectorAll("#view [data-public-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.publicAthleteId = button.dataset.publicAthlete;

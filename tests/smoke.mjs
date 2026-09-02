@@ -23,12 +23,15 @@ const battleScoreMigration = read("supabase/migrations/20260830090000_persist_ba
 const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
 const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
 const coachBattleControlMigration = read("supabase/migrations/20260901220603_coach_battle_responses_and_archives.sql");
+const coachEditedProposalMigration = read("supabase/migrations/20260902233712_coach_edit_and_approve_rider_sheet_proposals.sql");
+const coachReplaceProposalMigration = read("supabase/migrations/20260903001700_replace_lists_on_rider_sheet_approval.sql");
+const coachProposalBackupMigration = read("supabase/migrations/20260903003000_backup_progress_before_list_request_replacement.sql");
 const eventCourseMigration = read("supabase/migrations/20260830114500_shared_event_course_photos.sql");
 const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index_event_course_photo_updater.sql");
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.33";
+const version = "2.14.34";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -275,6 +278,62 @@ const viewerListBody = functionBody("sessionViewerListContent");
 assert(viewerListBody.includes("assignmentPresentation(assignment)"), "Coach Session Viewer must show a complete Line sequence");
 assert(viewerListBody.includes("escapeHtml(presentation.title)"), "Coach Line sequences must be escaped before rendering");
 assert(functionBody("coachListRequestsHtml").includes("assignmentPresentation(item)"), "List Requests must show each Line as one run");
+assert(functionBody("coachListRequestsHtml").includes("data-proposal-edit"), "Every pending List Request needs a visible coach edit action");
+assert(functionBody("coachListRequestsHtml").includes("Save changes &amp; approve"), "The coach must be able to approve a corrected sheet in one step");
+assert(functionBody("coachProposalEditorFields").includes("Array.from({ length: requiredCount },"), "Coach sheet editing must keep fixed numbered rows for every required trick");
+assert(functionBody("editedCoachProposalPayload").includes("wrongCounts"), "Coach-edited sheets must enforce every exact category count before approval");
+assert(functionBody("editedCoachProposalPayload").includes("focusRiderProposalProblem"), "An incomplete coach edit must move to the first missing trick");
+assert(functionBody("reviewRiderSheetProposal").includes('rpc("review_edited_rider_sheet_proposal"'), "Edited List Requests must use the atomic coach-only approval RPC");
+assert(functionBody("renderCoachCommand").includes("[data-proposal-edit-cancel]"), "Coach List Request edit controls must be interactive");
+assert(functionBody("setCoachProposalEditMode").includes("input.defaultValue"), "Cancelling a coach List Request edit must discard unsaved field changes");
+const proposalItemFromLineForTest = new Function(`${functionBody("riderProposalItemFromLine")}; return riderProposalItemFromLine;`)();
+const proposalItemInputValueForTest = new Function(`${functionBody("riderProposalItemInputValue")}; return riderProposalItemInputValue;`)();
+const editableLineForTest = proposalItemFromLineForTest("lines", "Manual - Barspin - 180");
+assert.deepEqual(editableLineForTest, { category: "lines", trick_name: "Manual", notes: "Barspin - 180" }, "Coach edits must preserve a complete Line in the existing data shape");
+assert.equal(proposalItemInputValueForTest(editableLineForTest), "Manual - Barspin - 180", "Opening and saving a Line editor must round-trip every trick");
+class FakeProposalFormData {
+  constructor(form) { this.values = form.values; }
+  get(name) { return this.getAll(name)[0] || ""; }
+  getAll(name) { return this.values[name] || []; }
+}
+const proposalRequirementsForTest = { daily: 10, one_bang: 5, dialled: 5, percentage: 3, lines: 3, bonus: 1 };
+const proposalFormValuesForTest = { proposalTitle: ["Coach corrected lists"], proposalVenue: ["Loganland"] };
+Object.entries(proposalRequirementsForTest).forEach(([category, count]) => {
+  proposalFormValuesForTest[`proposalItems.${category}`] = Array.from({ length: count }, (_, index) => category === "lines" ? `Start ${index + 1} - Middle - Finish` : `${category} trick ${index + 1}`);
+});
+const editedCoachProposalPayloadForTest = new Function(
+  "FormData", "riderProposalRequirements", "categoryInfo", "riderProposalItemFromLine", "focusRiderProposalProblem", "notify",
+  `${functionBody("editedCoachProposalPayload")}; return editedCoachProposalPayload;`,
+)(FakeProposalFormData, proposalRequirementsForTest, {}, proposalItemFromLineForTest, () => {}, () => {});
+const editedPayloadForTest = editedCoachProposalPayloadForTest({
+  values: proposalFormValuesForTest,
+  querySelectorAll: () => [],
+  querySelector: (selector) => selector === '[name="proposalVenue"]' ? { value: "Loganland", removeAttribute: () => {} } : null,
+});
+assert.equal(editedPayloadForTest.items.length, 27, "A valid coach correction must submit the complete 27-item weekly sheet");
+assert.equal(editedPayloadForTest.items.filter((item) => item.category === "lines").length, 3, "A coach correction must retain exactly three Lines");
+assert(coachEditedProposalMigration.includes("security definer"), "Edited sheet approval must use a protected server-side transaction");
+assert(coachEditedProposalMigration.includes("for update"), "Edited sheet approval must lock the pending request against duplicate review");
+assert(coachEditedProposalMigration.includes("rider_sheet_items_are_complete(p_items)"), "The database must revalidate the exact 27-item sheet after coach edits");
+assert(coachEditedProposalMigration.includes("return public.review_rider_sheet_proposal("), "Edited approval must reuse the established assignment and notification path");
+assert(coachEditedProposalMigration.includes("from public, anon"), "Anonymous users must never execute coach-edited approval");
+assert(coachReplaceProposalMigration.includes("save_weekly_assignment_list("), "Approving a complete request must replace each applicable list instead of appending extra tricks");
+assert(coachReplaceProposalMigration.includes("'daily', 'one_bang', 'dialled', 'percentage', 'lines', 'bonus'"), "List-request approval must replace all six rider-requested categories");
+assert(coachReplaceProposalMigration.includes("Auto backup before rider-request approval"), "Replacing a requested list must keep an archived copy of the prior list");
+assert(coachReplaceProposalMigration.includes("HOTBOX - Aus National Training Facility"), "List-request approval must not recreate the retired Hotbox duplicate venue");
+assert(coachReplaceProposalMigration.includes("assignments_updated"), "The coach UI must receive the number of assignments saved by replacement approval");
+assert(functionBody("reviewRiderSheetProposal").includes("const approving = decision === \"accepted\""), "Approve-as-sent and edited approval must share the safe replacement path");
+assert(functionBody("reviewRiderSheetProposal").includes("result?.assignments_updated"), "Approval feedback must report replaced assignments rather than a misleading zero added");
+assert(coachProposalBackupMigration.includes("private.rider_sheet_replacement_backups"), "Replaced List Request data needs a private recovery snapshot");
+assert(coachProposalBackupMigration.includes("public.assignment_progress"), "List replacement must back up current completion rows");
+assert(coachProposalBackupMigration.includes("public.assignment_attempts"), "List replacement must back up current attempt rows");
+assert(coachProposalBackupMigration.includes("public.percentage_attempts"), "List replacement must back up current Percentage attempts");
+assert(coachProposalBackupMigration.includes("public.assignment_point_awards"), "List replacement must back up point-award links");
+assert(coachProposalBackupMigration.includes("public.xp_ledger"), "List replacement must back up XP-ledger links");
+assert(coachProposalBackupMigration.includes("incoming.item->>'notes'"), "Changed Line steps must not inherit the old Line's completion state");
+assert(coachProposalBackupMigration.includes("The corrected lists could not be saved at their exact required counts."), "List-request approval must verify exact active counts before acceptance");
+assert(coachProposalBackupMigration.includes("Mark accepted last"), "The rider must only be notified after every replacement save succeeds");
+assert(coachProposalBackupMigration.includes("Older cached coach clients"), "Legacy approve-as-sent calls must use the safe replacement path during rollout");
 assert(functionBody("previousTrainingSheetsHtml").includes("assignmentPresentation(assignment)"), "Sheet history must show each Line as one run");
 assert(functionBody("parentRecentActivityHtml").includes("assignmentPresentation(assignment).title"), "Parent activity must use the full Line label");
 assert(functionBody("plannerCompletedStrip").includes("assignmentPresentation(assignment).title"), "Planner completion chips must use the full Line label");
@@ -283,9 +342,10 @@ assert(css.includes(".viewer-trick-row.viewer-attempt-row {\n  grid-template-col
 assert(functionBody("getWeeklyAssignments").includes('rpc("get_effective_weekly_assignments"'), "Rider schedules must load each location's latest saved Daily list");
 const venueKeyForTest = (venue = "") => String(venue || "").trim();
 const rawVenueIdentityKeyForTest = (venue = "") => venueKeyForTest(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-const venueAliasesForTest = Object.freeze({ beenleighskatepark: "beenleigh" });
+const venueAliasesForTest = Object.freeze({ beenleighskatepark: "beenleigh", hotbox: "hotboxausnationaltrainingfacility" });
+const canonicalVenueLabelsForTest = Object.freeze({ beenleigh: "Beenleigh", hotboxausnationaltrainingfacility: "HOTBOX - Aus National Training Facility" });
 const venueIdentityKeyForTest = (venue = "") => venueAliasesForTest[rawVenueIdentityKeyForTest(venue)] || rawVenueIdentityKeyForTest(venue);
-const venueLabelForTest = (venue = "") => venueIdentityKeyForTest(venue) === "beenleigh" ? "Beenleigh" : venueKeyForTest(venue) || "Default Daily List";
+const venueLabelForTest = (venue = "") => canonicalVenueLabelsForTest[venueIdentityKeyForTest(venue)] || venueKeyForTest(venue) || "Default Daily List";
 const dailyVenuesForTest = new Function("venueKey", "venueIdentityKey", "venueLabel", `${functionBody("dailyVenues")}; return dailyVenues;`)(venueKeyForTest, venueIdentityKeyForTest, venueLabelForTest);
 assert.deepEqual(
   dailyVenuesForTest([
@@ -294,8 +354,8 @@ assert.deepEqual(
     { category: "daily", venue: "Beenleigh Skate Park" },
     { category: "one_bang", venue: "Ignored" },
   ]),
-  ["HOTBOX", "Beenleigh"],
-  "Location selectors must merge the duplicate Beenleigh names under the requested label",
+  ["HOTBOX - Aus National Training Facility", "Beenleigh"],
+  "Location selectors must merge the duplicate Hotbox and Beenleigh names under their requested labels",
 );
 const assignmentsForVenueForTest = new Function("venueIdentityKey", "rawVenueIdentityKey", `${functionBody("newestDailyListForVenue")}\n${functionBody("assignmentsForVenue")}; return assignmentsForVenue;`)(venueIdentityKeyForTest, rawVenueIdentityKeyForTest);
 assert.equal(
