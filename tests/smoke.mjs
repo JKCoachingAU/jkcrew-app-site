@@ -28,7 +28,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.31";
+const version = "2.14.32";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -48,7 +48,7 @@ assert(serviceWorker.includes(`const RELEASE_VERSION = "${version}"`), "service 
 assert(serviceWorker.includes("silent: false"), "Background push should request the device's normal notification sound");
 
 const shellRenderer = functionBody("renderShell");
-assert(shellRenderer.includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
+assert(functionBody("mountStartupPrompts").includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
 assert(app.includes(`const RELEASE_VERSION = "${version}"`), "The app bundle must share the release version used by the service worker");
 assert(functionBody("renderAuth").includes('id="forgot-password"'), "The sign-in screen needs a visible Forgot password entry point");
 assert(functionBody("requestPasswordReset").includes("resetPasswordForEmail"), "Password recovery must send a Supabase reset email");
@@ -62,9 +62,41 @@ const sessionHandlerStart = app.indexOf("async function handleSession(session)")
 const sessionHandler = app.slice(sessionHandlerStart, app.indexOf("\nfunction authHeroMarkup", sessionHandlerStart));
 assert(sessionHandler.indexOf("renderShell()") < sessionHandler.indexOf("setupRealtimeSync()"), "Realtime setup must never block a successful login from opening the app shell");
 assert(sessionHandler.includes('void setupRealtimeSync().catch'), "A realtime connection failure must stay non-blocking after login");
+assert(sessionHandler.includes('beginScreenLoading(loadingScreenCopy("account"), 240)'), "A slow profile load must show the branded JKCREW loading reassurance");
+assert(sessionHandler.includes("cancelScreenLoading();"), "Signing in or out must invalidate an older screen loader");
+assert(functionBody("renderAuth").includes("cancelScreenLoading();"), "The sign-in form must never be covered by a stale loading popup");
+assert(functionBody("renderBootRecovery").includes("cancelScreenLoading();"), "The boot recovery controls must never be covered by a stale loading popup");
 const authHandler = functionBody("handleAuth");
 assert(authHandler.includes("client.auth.signInWithPassword({ email, password })"), "Login must use Supabase password auth");
 assert(!authHandler.includes("retryNetworkRequest(\n        () => client.auth.signInWithPassword") && !authHandler.includes("retryNetworkRequest(\n      () => client.auth.signInWithPassword"), "Password grants must not be automatically repeated after an uncertain timeout");
+assert(app.includes("loadingOverlayToken: 0"), "Overlapping screen loads need a token so an older request cannot hide a newer loader");
+assert(functionBody("loadingScreenCopy").includes('contests: ["Loading events & runs"'), "The loading popup should describe the screen being prepared");
+const loadingStart = functionBody("beginScreenLoading");
+assert(loadingStart.includes("delayMs = 320"), "The branded loading popup must be delayed so fast screens do not flash");
+assert(loadingStart.includes("app.inert = true"), "Loading screens must block taps and keyboard actions on controls underneath");
+assert(loadingStart.includes('id = "screen-loading-overlay"'), "Slow screens need the shared branded loading popup");
+assert(loadingStart.includes("Keep JKCREW open · almost there"), "The loader must reassure users not to exit the app");
+assert(loadingStart.includes("taking a little longer"), "Very slow connections need a clear second-stage reassurance");
+assert(loadingStart.includes('aria-atomic", "true'), "The slow-loading reassurance should be announced as one accessible status update");
+assert(!loadingStart.includes('aria-label", copy.title'), "The loading popup text must remain available to assistive technology");
+assert(functionBody("finishScreenLoading").includes("token !== state.loadingOverlayToken"), "An older screen response must not remove the current loading popup");
+assert(functionBody("finishScreenLoading").includes("app.inert = false"), "The current screen must become interactive again after loading");
+const cancelLoading = functionBody("cancelScreenLoading");
+assert(cancelLoading.includes("state.loadingOverlayToken += 1"), "Cancelling a loader must invalidate every older async completion");
+assert(cancelLoading.includes('querySelector("#screen-loading-overlay")?.remove()'), "Cancelling a loader must uncover auth and recovery screens immediately");
+assert(cancelLoading.includes("app.inert = false"), "Cancelling a loader must restore the login or recovery controls");
+assert(functionBody("setLoading").includes("return beginScreenLoading(copy)"), "Every normal screen navigation must use the branded loader");
+assert(functionBody("setLoading").includes('class="loading" aria-hidden="true"'), "Only the delayed popup should announce loading status");
+const navigationLoading = functionBody("navigate");
+assert(navigationLoading.includes("const loadingToken = setLoading()"), "Navigation must retain its own loading token");
+assert(navigationLoading.includes("finishScreenLoading(loadingToken)"), "Navigation must always dismiss its own loading popup");
+assert(navigationLoading.includes("loadingToken !== state.loadingOverlayToken || state.view !== view"), "An older failed request must never replace a newer screen");
+assert(navigationLoading.includes("mountStartupPrompts()"), "Update and notification prompts should wait until the first screen is ready");
+assert(!functionBody("renderShell").includes("mountWhatsNewPrompt()"), "The app shell must not put an onboarding dialog underneath its own loader");
+const athleteHome = functionBody("renderAthleteHome");
+assert(athleteHome.includes("void secondaryDataPromise.then"), "Optional athlete-home details must hydrate without holding the full-screen loader open");
+assert(css.includes(".screen-loading-overlay"), "The JKCREW loading popup needs its branded overlay styling");
+assert(css.includes(".screen-loading-track"), "The loading popup needs the coloured JKCREW progress route");
 assert(functionBody("updateRecoveredPassword").includes("client.auth.updateUser({ password })"), "The recovery screen must securely save the new Supabase password");
 assert(functionBody("updateRecoveredPassword").includes("password !== confirmPassword"), "The recovery screen must verify both password entries match");
 assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre"'), "What's New needs a fresh notification-centre campaign key");

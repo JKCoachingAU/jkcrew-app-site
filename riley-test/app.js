@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.31";
+const RELEASE_VERSION = "2.14.32";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -112,6 +112,10 @@ const state = {
   helpVideoPreviewUrl: "",
   notificationUnread: [],
   syncStatusTimer: null,
+  loadingOverlayTimer: null,
+  loadingOverlaySlowTimer: null,
+  loadingOverlayToken: 0,
+  startupPromptsPending: false,
 };
 
 window.addEventListener("beforeunload", (event) => {
@@ -415,7 +419,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.31" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.32" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1005,12 +1009,95 @@ async function installApp() {
   window.alert("To install JK Coaching: open your browser menu and choose Install JK Coaching or Add to Home Screen.");
 }
 
-function setLoading(label = "Loading") {
+function loadingScreenCopy(view = state.view) {
+  const screens = {
+    account: ["Opening JKCREW", "Signing you in and loading your profile."],
+    home: ["Loading your dashboard", "Syncing your latest tricks, points and crew updates."],
+    command: ["Loading Coach HQ", "Bringing your riders and priority actions together."],
+    session: ["Loading your trick sheet", "Getting today’s lists and progress ready."],
+    sessionViewer: ["Loading group session", "Bringing in the selected riders and live trick lists."],
+    challenges: ["Loading challenges", "Checking live battles, requests and weekly scores."],
+    battleViewer: ["Loading battles", "Checking every live battle and rider score."],
+    contests: ["Loading events & runs", "Getting the latest events, courses and private run plans."],
+    coaching: ["Loading Coaching", "Preparing your private videos and coach feedback."],
+    videoReviews: ["Loading video reviews", "Preparing the private coaching queue."],
+    board: ["Loading leaderboard", "Updating weekly scores, rankings and rider records."],
+    student: ["Loading rider profile", "Bringing the rider’s current progress together."],
+    profile: ["Loading your profile", "Getting your badges, settings and saved progress."],
+  };
+  const [title, detail] = screens[view] || ["Loading JKCREW", "Syncing the latest information for this screen."];
+  return { title, detail };
+}
+
+function beginScreenLoading(copy = loadingScreenCopy(), delayMs = 320) {
+  const token = state.loadingOverlayToken + 1;
+  state.loadingOverlayToken = token;
+  app.inert = true;
+  if (state.loadingOverlayTimer) window.clearTimeout(state.loadingOverlayTimer);
+  if (state.loadingOverlaySlowTimer) window.clearTimeout(state.loadingOverlaySlowTimer);
+  state.loadingOverlayTimer = null;
+  state.loadingOverlaySlowTimer = null;
+  document.querySelector("#screen-loading-overlay")?.remove();
+  state.loadingOverlayTimer = window.setTimeout(() => {
+    if (token !== state.loadingOverlayToken) return;
+    const overlay = document.createElement("div");
+    overlay.id = "screen-loading-overlay";
+    overlay.className = "screen-loading-overlay";
+    overlay.dataset.loadingToken = String(token);
+    overlay.setAttribute("role", "status");
+    overlay.setAttribute("aria-live", "polite");
+    overlay.setAttribute("aria-atomic", "true");
+    overlay.innerHTML = `<section class="screen-loading-card">
+      <div class="screen-loading-brand"><span class="screen-loading-logo"><img src="icons/jkc-logo.png?v=2.11.77" alt=""></span><strong>JKCREW <b>LIVE</b></strong></div>
+      <div class="screen-loading-kicker">Still working</div>
+      <h2>${escapeHtml(copy.title)}</h2>
+      <p data-screen-loading-detail>${escapeHtml(copy.detail)}</p>
+      <div class="screen-loading-track" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <small><span aria-hidden="true"></span> Keep JKCREW open · almost there</small>
+    </section>`;
+    document.body.append(overlay);
+    state.loadingOverlayTimer = null;
+    state.loadingOverlaySlowTimer = window.setTimeout(() => {
+      if (token !== state.loadingOverlayToken) return;
+      const detail = overlay.querySelector("[data-screen-loading-detail]");
+      if (detail) detail.textContent = "The connection is taking a little longer, but your information is safe.";
+    }, 4500);
+  }, Math.max(0, Number(delayMs) || 0));
+  return token;
+}
+
+function finishScreenLoading(token) {
+  if (token !== state.loadingOverlayToken) return false;
+  if (state.loadingOverlayTimer) window.clearTimeout(state.loadingOverlayTimer);
+  if (state.loadingOverlaySlowTimer) window.clearTimeout(state.loadingOverlaySlowTimer);
+  state.loadingOverlayTimer = null;
+  state.loadingOverlaySlowTimer = null;
+  document.querySelector(`#screen-loading-overlay[data-loading-token="${token}"]`)?.remove();
+  app.inert = false;
+  return true;
+}
+
+function cancelScreenLoading() {
+  state.loadingOverlayToken += 1;
+  if (state.loadingOverlayTimer) window.clearTimeout(state.loadingOverlayTimer);
+  if (state.loadingOverlaySlowTimer) window.clearTimeout(state.loadingOverlaySlowTimer);
+  state.loadingOverlayTimer = null;
+  state.loadingOverlaySlowTimer = null;
+  document.querySelector("#screen-loading-overlay")?.remove();
+  document.querySelector("#view")?.removeAttribute("aria-busy");
+  app.inert = false;
+}
+
+function setLoading(label = "") {
   const view = document.querySelector("#view");
+  const copy = label
+    ? { title: label, detail: "Syncing the latest JKCREW information for this screen." }
+    : loadingScreenCopy();
   if (view) {
     view.setAttribute("aria-busy", "true");
-    view.innerHTML = `<div class="loading" role="status">${escapeHtml(label)}...</div>`;
+    view.innerHTML = `<div class="loading" aria-hidden="true"><span></span>${escapeHtml(copy.title)}...</div>`;
   }
+  return beginScreenLoading(copy);
 }
 
 function withTimeout(promise, label = "Request", ms = 6000) {
@@ -1161,6 +1248,7 @@ function handleSessionOnce(session) {
 }
 
 function renderBootRecovery(message = "The app could not finish loading.") {
+  cancelScreenLoading();
   app.innerHTML = `
     <div class="boot-screen boot-recovery">
       <div class="brand-mark boot-logo-mark"><img src="icons/jkc-logo.png?v=2.11.77" alt="JK Coaching logo"></div>
@@ -1179,6 +1267,7 @@ function renderBootRecovery(message = "The app could not finish loading.") {
 }
 
 async function handleSession(session) {
+  cancelScreenLoading();
   clearInterval(state.timer);
   teardownRealtimeSync();
   const nextUserId = session?.user?.id || "";
@@ -1203,35 +1292,41 @@ async function handleSession(session) {
     window.location.replace(testUrl.href);
     return;
   }
-  let { data, error } = await retryNetworkRequest(
-    () => client.from("profiles").select(PROFILE_SELECT).eq("id", state.user.id).maybeSingle(),
-    "Profile load",
-    { attempts: 3, timeoutMs: 15000 }
-  );
-  if (error || !data) {
-    const { data: recovered, error: recoveryError } = await withTimeout(
-      client.rpc("ensure_current_profile"),
-      "Profile recovery",
-      12000
+  const accountLoadingToken = beginScreenLoading(loadingScreenCopy("account"), 240);
+  try {
+    let { data, error } = await retryNetworkRequest(
+      () => client.from("profiles").select(PROFILE_SELECT).eq("id", state.user.id).maybeSingle(),
+      "Profile load",
+      { attempts: 3, timeoutMs: 15000 }
     );
-    if (recoveryError || !recovered) {
-      renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
-      notify(messageFrom(recoveryError || error || "Profile failed to load."), "error");
-      return;
+    if (error || !data) {
+      const { data: recovered, error: recoveryError } = await withTimeout(
+        client.rpc("ensure_current_profile"),
+        "Profile recovery",
+        12000
+      );
+      if (recoveryError || !recovered) {
+        renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
+        notify(messageFrom(recoveryError || error || "Profile failed to load."), "error");
+        return;
+      }
+      data = recovered;
     }
-    data = recovered;
+    state.profile = data;
+    recordMyAppOpen();
+    applyTheme(data.app_theme);
+    const pushView = new URL(window.location.href).searchParams.get("push");
+    const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
+    state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
+    if (pushView) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("push");
+      window.history.replaceState({}, "", cleanUrl.href);
+    }
+  } finally {
+    finishScreenLoading(accountLoadingToken);
   }
-  state.profile = data;
-  recordMyAppOpen();
-  applyTheme(data.app_theme);
-  const pushView = new URL(window.location.href).searchParams.get("push");
-  const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
-  state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
-  if (pushView) {
-    const cleanUrl = new URL(window.location.href);
-    cleanUrl.searchParams.delete("push");
-    window.history.replaceState({}, "", cleanUrl.href);
-  }
+  state.startupPromptsPending = true;
   renderShell();
   void navigate(state.view);
   // Realtime is an enhancement, not a gate to opening the app. On a slow
@@ -1257,6 +1352,7 @@ function authHeroMarkup() {
 }
 
 function renderAuth(mode = "login", message = "") {
+  cancelScreenLoading();
   app.innerHTML = `
     <div class="auth-page">
       ${authHeroMarkup()}
@@ -1312,6 +1408,7 @@ function cleanPasswordRecoveryUrl() {
 }
 
 function renderForgotPassword(message = "", email = "") {
+  cancelScreenLoading();
   app.innerHTML = `
     <div class="auth-page">
       ${authHeroMarkup()}
@@ -1363,6 +1460,7 @@ async function requestPasswordReset(event) {
 }
 
 function renderPasswordRecovery(message = "", complete = false) {
+  cancelScreenLoading();
   app.innerHTML = `
     <div class="auth-page">
       ${authHeroMarkup()}
@@ -1563,6 +1661,9 @@ function renderShell() {
   }));
   document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
   refreshNotificationCentre({ renderNav: false });
+}
+
+function mountStartupPrompts() {
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
 }
 
@@ -1995,7 +2096,7 @@ async function navigate(view) {
     const isSubnav = button.classList.contains("nav-sub-btn");
     button.classList.toggle("active", buttonView === view || (!isSubnav && buttonActiveView === activeView));
   });
-  setLoading();
+  const loadingToken = setLoading();
   const renders = {
     home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
     coaching: renderAthleteCoaching,
@@ -2025,10 +2126,13 @@ async function navigate(view) {
     notes: renderNotes,
     profile: renderProfile,
   };
+  let navigationCompleted = false;
   try {
     if (!renders[view]) throw new Error("That screen is not available.");
     await renders[view]();
+    navigationCompleted = loadingToken === state.loadingOverlayToken && state.view === view;
   } catch (error) {
+    if (loadingToken !== state.loadingOverlayToken || state.view !== view) return;
     const fallbackView = isCoachRole(state.profile?.role) ? "command" : "home";
     const viewElement = document.querySelector("#view");
     if (viewElement) {
@@ -2046,7 +2150,11 @@ async function navigate(view) {
     }
     notify(messageFrom(error), "error");
   } finally {
-    document.querySelector("#view")?.removeAttribute("aria-busy");
+    if (finishScreenLoading(loadingToken)) document.querySelector("#view")?.removeAttribute("aria-busy");
+  }
+  if (navigationCompleted && state.startupPromptsPending) {
+    state.startupPromptsPending = false;
+    mountStartupPrompts();
   }
 }
 
@@ -5673,22 +5781,23 @@ async function renderAthleteHome() {
       return [];
     }),
   ]);
-  const [schedule, trickRequests, sheetProposals, coachMessages, coachingRequests] = await secondaryDataPromise;
-  if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
-  const { assignments = [], awards = [] } = schedule;
-  document.querySelector("#athlete-home-coach-messages").innerHTML = coachMessagesHtml(coachMessages);
-  document.querySelector("#athlete-home-coaching").innerHTML = athleteCoachingCtaHtml(coachingRequests);
-  document.querySelector("#athlete-home-week").innerHTML = weekSummaryHtml(assignments, awards);
-  document.querySelector("#athlete-home-proposals").innerHTML = riderProposalForm(sheetProposals);
-  document.querySelector("#athlete-home-trick-requests").innerHTML = athleteTrickRequestSection(assignments, trickRequests);
-  document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => navigate("coaching"));
-  document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
-  document.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => document.querySelector("#rider-proposal-builder")?.classList.toggle("hidden"));
-  const riderProposalFormElement = document.querySelector("#rider-proposal-form");
-  riderProposalFormElement?.addEventListener("submit", submitRiderSheetProposal);
-  riderProposalFormElement?.addEventListener("input", () => updateRiderProposalCounts(riderProposalFormElement));
-  if (riderProposalFormElement) updateRiderProposalCounts(riderProposalFormElement);
-  document.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
+  void secondaryDataPromise.then(([schedule, trickRequests, sheetProposals, coachMessages, coachingRequests]) => {
+    if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
+    const { assignments = [], awards = [] } = schedule;
+    document.querySelector("#athlete-home-coach-messages").innerHTML = coachMessagesHtml(coachMessages);
+    document.querySelector("#athlete-home-coaching").innerHTML = athleteCoachingCtaHtml(coachingRequests);
+    document.querySelector("#athlete-home-week").innerHTML = weekSummaryHtml(assignments, awards);
+    document.querySelector("#athlete-home-proposals").innerHTML = riderProposalForm(sheetProposals);
+    document.querySelector("#athlete-home-trick-requests").innerHTML = athleteTrickRequestSection(assignments, trickRequests);
+    document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => navigate("coaching"));
+    document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
+    document.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => document.querySelector("#rider-proposal-builder")?.classList.toggle("hidden"));
+    const riderProposalFormElement = document.querySelector("#rider-proposal-form");
+    riderProposalFormElement?.addEventListener("submit", submitRiderSheetProposal);
+    riderProposalFormElement?.addEventListener("input", () => updateRiderProposalCounts(riderProposalFormElement));
+    if (riderProposalFormElement) updateRiderProposalCounts(riderProposalFormElement);
+    document.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
+  }).catch((error) => console.warn("Home details could not finish loading", error));
 }
 
 function statCard(label, value, unit, foot, className = "") {
