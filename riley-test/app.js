@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.38";
+const RELEASE_VERSION = "2.14.39";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.38" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.39" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -4699,6 +4699,12 @@ const TRICKTIONARY_STANDARD_SUBCATEGORIES = [
   { id: "flips", label: "Flips" },
   { id: "other", label: "Other Tricks" },
 ];
+const TRICKTIONARY_BOX_SUBCATEGORIES = [
+  { id: "spins", label: "Spins" },
+  { id: "flips", label: "Flips" },
+  { id: "transfers", label: "Transfers" },
+  { id: "other", label: "Other Tricks" },
+];
 const TRICKTIONARY_AIR_SUBCATEGORIES = [
   { id: "flips", label: "Flips" },
   { id: "spins", label: "Spins" },
@@ -4768,7 +4774,11 @@ function resolveTricktionaryAlias(key = "", aliases = {}) {
 function tricktionarySubcategory(entry = {}, category = "new") {
   const title = String(entry.title || entry.trick_name || "").toLowerCase();
   const saved = String(entry.tricktionarySubcategory || entry.subcategoryOverride || "").toLowerCase();
-  const allowed = category === "air" ? ["flips", "spins", "alleyoop", "other"] : ["flips", "spins", "other"];
+  const allowed = category === "air"
+    ? ["flips", "spins", "alleyoop", "other"]
+    : category === "box"
+      ? ["flips", "spins", "transfers", "other"]
+      : ["flips", "spins", "other"];
   if (allowed.includes(saved)) return saved;
   if (category === "air") {
     if (/\b(?:alley|ali)[\s-]?oop\b/.test(title)) return "alleyoop";
@@ -4777,6 +4787,7 @@ function tricktionarySubcategory(entry = {}, category = "new") {
     return "other";
   }
   if (["box", "spine", "hip"].includes(category)) {
+    if (category === "box" && /\b(?:alley|ali)[\s-]?oop\b/.test(title)) return "transfers";
     if (["box", "spine"].includes(category) && (/\btruck(?:[\s-]*driver)?\b/.test(title) || /\btruckdriver\b/.test(title))) return "spins";
     if (/flip/.test(title)) return "flips";
     if (/(^|\D)(90|180|270|360|450|540|720|810|900)(?!\d)/.test(title)) return "spins";
@@ -4811,15 +4822,18 @@ function manualTricktionary(profile = {}) {
 }
 
 function coachManualTricktionaryPanel(athlete = {}) {
+  const meta = tricktionaryMeta(athlete);
   const manual = manualTricktionary(athlete).filter((trick) => !(trick?.source === "merged" && Array.isArray(trick.mergedFrom) && trick.mergedFrom.length >= 2));
   const rows = manual.length ? manual.map((trick) => {
-    const title = String(trick.title || trick.name || "").trim();
-    if (!title) return "";
+    const sourceTitle = String(trick.title || trick.name || "").trim();
+    if (!sourceTitle) return "";
+    const canonicalKey = resolveTricktionaryAlias(normalizeTrickKey(sourceTitle), meta.aliases);
+    const title = String(meta.titles?.[canonicalKey] || sourceTitle).trim();
     const addedAt = trick.addedAt || trick.createdAt;
     const count = Math.max(1, Number(trick.count || trick.landedCount || 1));
     return `<div class="list-row">
       <div><strong>${escapeHtml(title)}</strong><small>Manual Tricktionary entry · ${count} landed${addedAt ? ` · Added ${escapeHtml(dateLabel(addedAt))}` : ""}</small></div>
-      <button class="danger-btn compact-btn" type="button" data-coach-remove-manual-trick="${escapeHtml(trick.id || title)}">Remove</button>
+      <button class="danger-btn compact-btn" type="button" data-coach-remove-manual-trick="${escapeHtml(trick.id || sourceTitle)}">Remove</button>
     </div>`;
   }).filter(Boolean).join("") : `<div class="empty compact-empty">No manual Tricktionary tricks added yet.</div>`;
   return `<section class="panel">
@@ -4993,6 +5007,7 @@ function tricktionaryCardHtml(entry = {}, attemptMap = new Map(), editable = fal
     <div class="tricktionary-card-meta">
       <span>${escapeHtml(TRICKTIONARY_CATEGORY_LABELS[category] || "New Tricks")}</span>
       ${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}
+      ${editable ? `<button class="tricktionary-rename-btn" type="button" draggable="false" data-rename-tricktionary-entry="${escapeHtml(key)}" aria-label="Edit name for ${escapeHtml(entry.title)}">Edit name</button>` : ""}
       ${editable ? `<span class="tricktionary-drag-hint tricktionary-drag-handle">↕ Hold + drag to move or merge</span>` : ""}
     </div>
   </article>`;
@@ -5020,7 +5035,11 @@ function tricktionaryBoardHtml(entries = [], attempts = [], options = {}) {
       </div>
       <div class="tricktionary-zone-body">${rowsHtml(rows)}</div>
     </section>`;
-    const subcategories = section.id === "air" ? TRICKTIONARY_AIR_SUBCATEGORIES : TRICKTIONARY_STANDARD_SUBCATEGORIES;
+    const subcategories = section.id === "air"
+      ? TRICKTIONARY_AIR_SUBCATEGORIES
+      : section.id === "box"
+        ? TRICKTIONARY_BOX_SUBCATEGORIES
+        : TRICKTIONARY_STANDARD_SUBCATEGORIES;
     const groupedRows = Object.fromEntries(subcategories.map((subcategory) => [subcategory.id, []]));
     rows.forEach((entry) => groupedRows[entry.tricktionarySubcategory || tricktionarySubcategory(entry, section.id)]?.push(entry));
     const subcategoryHtml = subcategories.map((subcategory) => {
@@ -5060,6 +5079,27 @@ async function moveTricktionaryEntry(athleteId, trickKey, category, subcategory 
   });
   if (error) throw error;
   cacheClear("roster");
+}
+
+async function renameTricktionaryEntry(athleteId, entry = {}, displayTitle = "") {
+  const cleanTitle = String(displayTitle || "").trim().replace(/\s+/g, " ");
+  if (!athleteId || !entry.key || !cleanTitle) return false;
+  const category = safeTricktionaryCategory(entry.category || "new");
+  const subcategory = category === "new"
+    ? null
+    : tricktionarySubcategory({ tricktionarySubcategory: entry.subcategory }, category);
+  const memberKeys = [...new Set([entry.key, ...(entry.memberKeys || [])].map(normalizeTrickKey).filter(Boolean))];
+  const { error } = await client.rpc("rename_tricktionary_entry", {
+    p_athlete_id: athleteId,
+    p_trick_key: entry.key,
+    p_member_keys: memberKeys,
+    p_display_title: cleanTitle.slice(0, 120),
+    p_category: category,
+    p_subcategory: subcategory,
+  });
+  if (error) throw error;
+  cacheClear("roster");
+  return true;
 }
 
 async function mergeTricktionaryEntries(athleteId, sourceEntry = {}, targetEntry = {}, category, subcategory = "") {
@@ -5220,7 +5260,7 @@ function bindTricktionaryBoard({ athleteId, refresh }) {
       } else if (targetCategory) {
         if (safeTricktionaryCategory(payload.category) === safeTricktionaryCategory(category) && String(payload.subcategory || "") === String(subcategory || "")) return;
         await moveTricktionaryEntry(athleteId, payload.key, category, subcategory);
-        const subcategoryLabel = [...TRICKTIONARY_STANDARD_SUBCATEGORIES, ...TRICKTIONARY_AIR_SUBCATEGORIES].find((entry) => entry.id === subcategory)?.label;
+        const subcategoryLabel = [...TRICKTIONARY_STANDARD_SUBCATEGORIES, ...TRICKTIONARY_BOX_SUBCATEGORIES, ...TRICKTIONARY_AIR_SUBCATEGORIES].find((entry) => entry.id === subcategory)?.label;
         notify(`Moved to ${TRICKTIONARY_CATEGORY_LABELS[safeTricktionaryCategory(category)]}${subcategoryLabel ? ` · ${subcategoryLabel}` : ""}.`);
         changed = true;
       }
@@ -5367,6 +5407,42 @@ function bindTricktionaryBoard({ athleteId, refresh }) {
             notify(messageFrom(error, "Unable to restore that trick."), "error");
           }
         });
+      } catch (error) {
+        button.disabled = false;
+        notify(messageFrom(error), "error");
+      } finally {
+        dropInFlight = false;
+      }
+    });
+  });
+  board.querySelectorAll("[data-rename-tricktionary-entry]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.stopPropagation());
+    button.addEventListener("mousedown", (event) => event.stopPropagation());
+    button.addEventListener("dragstart", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dropInFlight) return;
+      const entry = tricktionaryDragEntry(button.closest("[data-tricktionary-card]"));
+      if (!entry?.key) return;
+      const requestedTitle = window.prompt("Edit trick name:", entry.title);
+      if (requestedTitle === null) return;
+      const cleanTitle = String(requestedTitle).trim().replace(/\s+/g, " ");
+      if (!cleanTitle) return notify("Add a trick name before saving.", "error");
+      if (cleanTitle.length > 120) return notify("Trick names can be up to 120 characters.", "error");
+      if (cleanTitle === entry.title) return;
+      const viewState = captureTricktionaryViewState(board);
+      dropInFlight = true;
+      button.disabled = true;
+      try {
+        const renamed = await renameTricktionaryEntry(athleteId, entry, cleanTitle);
+        if (!renamed) return;
+        await refresh?.();
+        restoreTricktionaryViewState(viewState);
+        notify(`${entry.title} renamed to ${cleanTitle}.`);
       } catch (error) {
         button.disabled = false;
         notify(messageFrom(error), "error");

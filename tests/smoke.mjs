@@ -46,7 +46,11 @@ const tricktionaryCorrectiveMigration = readdirSync(join(root, "supabase/migrati
     "public.set_tricktionary_category",
     "public.merge_tricktionary_entries",
   ].every((functionName) => contents.includes(`create or replace function ${functionName}`))) || null;
-const version = "2.14.38";
+const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"))
+  .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
+  .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
+  .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
+const version = "2.14.39";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -79,6 +83,12 @@ function bracedBlock(contents, marker, fromIndex = 0) {
     if (depth === 0) return contents.slice(open + 1, index);
   }
   assert.fail(`${marker} CSS block should close`);
+}
+
+function arrayConstantDeclaration(name) {
+  const match = app.match(new RegExp(`const\\s+${name}\\s*=\\s*\\[[\\s\\S]*?\\];`));
+  assert(match, `${name} should exist`);
+  return match[0];
 }
 
 for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, manifestText })) {
@@ -465,6 +475,9 @@ assert(tricktionaryBoard.includes('<details class="tricktionary-zone tricktionar
 assert(!tricktionaryBoard.includes('<details open class="tricktionary-zone'), "Tricktionary category dropdowns must start closed");
 assert(tricktionaryBoard.includes('class="tricktionary-subcategory"'), "Tricktionary areas must include their requested subcategory dropdowns");
 assert(tricktionaryBoard.includes('data-tricktionary-drop-subcategory='), "Tricktionary subcategories must be direct drag-and-drop targets");
+const tricktionaryBoxSubcategories = arrayConstantDeclaration("TRICKTIONARY_BOX_SUBCATEGORIES");
+assert(/id:\s*"transfers"\s*,\s*label:\s*"Transfers"/.test(tricktionaryBoxSubcategories), "Box must expose a dedicated Transfers subcategory");
+assert(/section\.id\s*===\s*"box"[\s\S]*?TRICKTIONARY_BOX_SUBCATEGORIES/.test(tricktionaryBoard), "The Box accordion must use its Transfers-aware subcategory list");
 assert(functionBody("tricktionaryCardHtml").includes("data-delete-tricktionary-entry"), "Editable Tricktionary cards must include the small delete control");
 const tricktionaryCardRenderer = new Function(`
   const TRICKTIONARY_ALLOWED_CATEGORIES = new Set(["new", "box", "spine", "air", "hip"]);
@@ -482,10 +495,46 @@ const readonlyTricktionaryCard = tricktionaryCardRenderer(tricktionaryCardFixtur
 assert(editableTricktionaryCard.includes('data-delete-tricktionary-entry="truck driver"'), "Editable rider and coach cards must render the red delete control");
 assert(editableTricktionaryCard.includes('draggable="true"'), "Editable rider and coach cards must remain draggable");
 assert(!readonlyTricktionaryCard.includes("data-delete-tricktionary-entry") && !readonlyTricktionaryCard.includes('draggable="true"'), "Read-only parent cards must render neither delete nor drag controls");
+assert(editableTricktionaryCard.includes('class="tricktionary-rename-btn"') && editableTricktionaryCard.includes('data-rename-tricktionary-entry="truck driver"'), "Editable rider and coach cards must render a compact rename control for the canonical trick");
+assert(!readonlyTricktionaryCard.includes("data-rename-tricktionary-entry") && !readonlyTricktionaryCard.includes("tricktionary-rename-btn"), "Read-only parent cards must never render the rename control");
+assert(css.includes(".tricktionary-rename-btn"), "The compact Tricktionary rename control must have an app-native visual treatment");
+const tricktionaryBoardRenderer = new Function(`
+  ${arrayConstantDeclaration("TRICKTIONARY_SECTIONS")}
+  ${arrayConstantDeclaration("TRICKTIONARY_STANDARD_SUBCATEGORIES")}
+  ${tricktionaryBoxSubcategories}
+  ${arrayConstantDeclaration("TRICKTIONARY_AIR_SUBCATEGORIES")}
+  const TRICKTIONARY_CATEGORY_LABELS = Object.fromEntries(TRICKTIONARY_SECTIONS.map((section) => [section.id, section.label]));
+  const TRICKTIONARY_ALLOWED_CATEGORIES = new Set(TRICKTIONARY_SECTIONS.map((section) => section.id));
+  const escapeHtml = (value) => String(value ?? "");
+  ${functionBody("normalizeTrickKey")}
+  ${functionBody("safeTricktionaryCategory")}
+  ${functionBody("manualTricktionary")}
+  ${functionBody("tricktionaryMeta")}
+  ${functionBody("resolveTricktionaryAlias")}
+  ${functionBody("tricktionarySubcategory")}
+  ${functionBody("attemptsByTrick")}
+  ${functionBody("tricktionaryCardHtml")}
+  ${functionBody("tricktionaryBoardHtml")}
+  return tricktionaryBoardHtml;
+`)();
+const transfersBoardHtml = tricktionaryBoardRenderer([
+  { key: "alleyoop transfer", title: "Alleyoop Transfer", source: "Weekly sheet", count: 3, tricktionaryCategory: "box" },
+], [], { editable: true, profile: {} });
+assert(transfersBoardHtml.includes('data-tricktionary-drop-subcategory="transfers"'), "Transfers must render as a direct Tricktionary drag-and-drop destination");
+assert(transfersBoardHtml.includes('data-trick-subcategory="transfers"'), "Automatically classified Box transfers must render inside the Transfers destination");
 const mergeTricktionaryBody = functionBody("mergeTricktionaryEntries");
 assert(mergeTricktionaryBody.includes('rpc("merge_tricktionary_entries_v2"'), "Trick merges must atomically preserve their category and subcategory");
 assert(!mergeTricktionaryBody.includes("crypto.randomUUID"), "Merging tricks must never create a new manual trick");
 assert(!mergeTricktionaryBody.includes("count: 1"), "Merging tricks must never invent a landing");
+const renameTricktionaryBody = functionBody("renameTricktionaryEntry");
+assert(renameTricktionaryBody.includes('rpc("rename_tricktionary_entry"'), "Renaming a Tricktionary card must use one atomic Supabase RPC");
+for (const parameter of ["p_athlete_id", "p_trick_key", "p_member_keys", "p_display_title", "p_category", "p_subcategory"]) {
+  assert(renameTricktionaryBody.includes(parameter), `Atomic Tricktionary rename must send ${parameter}`);
+}
+assert(!renameTricktionaryBody.includes("crypto.randomUUID") && !renameTricktionaryBody.includes("add_manual_tricktionary_entry"), "Renaming must not create a replacement manual landing");
+const coachManualTricktionaryBody = functionBody("coachManualTricktionaryPanel");
+assert(coachManualTricktionaryBody.includes("meta.titles?.[canonicalKey]"), "Coach manual Tricktionary rows must display the renamed canonical title");
+assert(coachManualTricktionaryBody.includes("trick.id || sourceTitle"), "Renamed manual rows must retain their stable removal identity");
 const bindTricktionaryBody = functionBody("bindTricktionaryBoard");
 assert(bindTricktionaryBody.includes('event.pointerType === "mouse"'), "Desktop native drag and touch pointer drag must not both process one gesture");
 assert(bindTricktionaryBody.includes("if (!payload?.key || dropInFlight) return;"), "One physical Tricktionary drop must be rejected while another save is in flight");
@@ -507,6 +556,8 @@ assert(captureTricktionaryStateBody.includes(".tricktionary-category-accordion[o
 assert(restoreTricktionaryStateBody.includes("node.open = categories.has") && restoreTricktionaryStateBody.includes("node.open = subcategories.has"), "Tricktionary refresh must reopen both saved category levels");
 assert(restoreTricktionaryStateBody.includes("window.scrollTo") && restoreTricktionaryStateBody.includes("requestAnimationFrame"), "Tricktionary refresh must restore scroll after the replacement DOM has laid out");
 assert(bindTricktionaryBody.includes('data-delete-tricktionary-entry'), "The shared rider and coach board must wire its delete controls");
+assert(bindTricktionaryBody.includes('data-rename-tricktionary-entry'), "The shared rider and coach board must wire its rename controls");
+assert(bindTricktionaryBody.includes("renameTricktionaryEntry(athleteId, entry"), "The rename control must preserve and submit the selected card's canonical/member metadata");
 assert(css.includes(".tricktionary-board.is-editable *"), "All text inside an editable Tricktionary must opt out of selection");
 assert(css.includes("-webkit-touch-callout: none"), "iPhone Tricktionary dragging must suppress the text callout");
 assert(css.includes(".tricktionary-subcategory.drag-over"), "Dragging over a subcategory must show a clear destination state");
@@ -583,6 +634,19 @@ assert(correctedLegacyCategoryRpc.includes("public.set_tricktionary_location("),
 assert(correctedLegacyMergeRpc.includes("public.merge_tricktionary_entries_v2("), "The legacy merge RPC must delegate to the validated merge-and-placement RPC");
 assert(!correctedLegacyCategoryRpc.includes("update public.profiles") && !correctedLegacyMergeRpc.includes("update public.profiles"), "Legacy Tricktionary wrappers must not retain a second metadata mutation implementation");
 assert(!/delete\s+from\s+public\.(weekly_trick_assignments|assignment_progress|assignment_attempts|assignment_point_awards|percentage_attempts)/i.test(tricktionaryCorrectiveSql), "Corrective Tricktionary SQL must preserve every historical landing, point, XP, and training row");
+assert(tricktionaryRenameMigration, "A new migration must add atomic Tricktionary renaming without rewriting an already-deployed migration");
+const tricktionaryRenameSql = tricktionaryRenameMigration?.contents || "";
+const renameTricktionaryRpc = sqlFunctionBody(tricktionaryRenameSql, "rename_tricktionary_entry");
+for (const parameter of ["p_athlete_id uuid", "p_trick_key text", "p_member_keys text[]", "p_display_title text", "p_category text", "p_subcategory text"]) {
+  assert(renameTricktionaryRpc.includes(parameter), `Atomic rename SQL must accept ${parameter}`);
+}
+assert(renameTricktionaryRpc.includes("private.can_manage_tricktionary") && renameTricktionaryRpc.includes("for update"), "Atomic rename must enforce rider/linked-coach access and lock the profile metadata row");
+assert(renameTricktionaryRpc.includes("update public.profiles") && renameTricktionaryRpc.includes("set tricktionary_meta"), "Atomic rename must save only the rider's canonical Tricktionary metadata");
+for (const metadataMap of ["aliases", "titles", "categories", "subcategories", "hidden"]) {
+  assert(renameTricktionaryRpc.includes(`'{${metadataMap}}'`) || renameTricktionaryRpc.includes(`-> '${metadataMap}'`), `Atomic rename must preserve and reconcile ${metadataMap} metadata`);
+}
+assert(!/(?:update|delete\s+from)\s+public\.(weekly_trick_assignments|assignment_progress|assignment_attempts|assignment_point_awards|percentage_attempts)/i.test(renameTricktionaryRpc), "Renaming a Tricktionary card must never rewrite or delete historical landings, attempts, points, or XP sources");
+assert(tricktionaryRenameSql.includes("revoke all on function public.rename_tricktionary_entry") && tricktionaryRenameSql.includes("grant execute on function public.rename_tricktionary_entry"), "Atomic rename must be unavailable anonymously and executable by authenticated accounts");
 
 const tricktionaryClassifier = new Function(`${functionBody("tricktionarySubcategory")}\nreturn tricktionarySubcategory;`)();
 assert.equal(tricktionaryClassifier({ title: "Backflip 360" }, "box"), "flips", "Flip tricks take priority over spin numbers on Box, Spine, and Hip");
@@ -592,6 +656,9 @@ assert.equal(tricktionaryClassifier({ title: "Ali oop flair" }, "air"), "alleyoo
 assert.equal(tricktionaryClassifier({ title: "Flair 360" }, "air"), "flips", "Air Flairs belong in Flips");
 assert.equal(tricktionaryClassifier({ title: "Backflip" }, "air"), "flips", "Air flip variants belong in Flips");
 assert.equal(tricktionaryClassifier({ title: "540 air" }, "air"), "spins", "Air rotations belong in Spins");
+assert.equal(tricktionaryClassifier({ title: "Alleyoop transfer" }, "box"), "transfers", "Box tricks containing Alleyoop must automatically belong in Transfers");
+assert.equal(tricktionaryClassifier({ title: "Ali oop 360 backflip" }, "box"), "transfers", "Box Transfers must take priority over automatic spin and flip wording");
+assert.equal(tricktionaryClassifier({ title: "Alleyoop 360", tricktionarySubcategory: "spins" }, "box"), "spins", "A saved rider or coach subcategory override must win over automatic Box transfer classification");
 assert.equal(tricktionaryClassifier({ title: "Truck whip" }, "box"), "spins", "Box tricks containing Truck must belong in Spins");
 assert.equal(tricktionaryClassifier({ title: "Truck Driver" }, "spine"), "spins", "Spine Truck Driver tricks must belong in Spins");
 assert.equal(tricktionaryClassifier({ title: "truck-driver flip" }, "box"), "spins", "Truck rules must take priority over flip wording in Box and Spine");
@@ -636,6 +703,22 @@ const staleAliasTombstoneEntries = tricktionaryAggregationFactory.landedTricktio
 });
 assert.equal(staleAliasTombstoneEntries.length, 1, "A stale tombstone on one historical alias must not hide the resolved canonical card");
 assert.equal(staleAliasTombstoneEntries[0].count, 11, "A stale alias tombstone must not remove only that source's landings from a merged total");
+const renamedTricktionaryEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
+  profile: {
+    tricktionary_meta: {
+      aliases: { "old alley oop": "alleyoop transfer" },
+      titles: { "alleyoop transfer": "Alleyoop Transfer" },
+      categories: { "alleyoop transfer": "box" },
+      subcategories: { "alleyoop transfer": "transfers" },
+    },
+    manual_tricktionary: [{ id: "rename-history", title: "Old Alley Oop", count: 9 }],
+  },
+  assignments: [], progress: [], awards: [], percentageAttempts: [],
+});
+assert.equal(renamedTricktionaryEntries.length, 1, "Renaming a canonical Tricktionary card must not duplicate its historical entry");
+assert.equal(renamedTricktionaryEntries[0].title, "Alleyoop Transfer", "Renamed Tricktionary history must display under the new canonical title");
+assert.equal(renamedTricktionaryEntries[0].count, 9, "Renaming a Tricktionary card must preserve every historical landing");
+assert.equal(renamedTricktionaryEntries[0].tricktionarySubcategory, "transfers", "Renaming a Tricktionary card must preserve its Box Transfers placement");
 const hiddenEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
   ...mergedFixture,
   profile: { ...mergedFixture.profile, tricktionary_meta: { ...mergedFixture.profile.tricktionary_meta, hidden: { backflip: new Date().toISOString() } } },

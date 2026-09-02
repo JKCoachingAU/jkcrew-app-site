@@ -931,6 +931,36 @@ html[data-theme="light"] .tricktionary-delete-btn {
   font-size: 0.65rem;
 }
 .tricktionary-card-meta span:first-child { color: var(--trick-tone); }
+.tricktionary-rename-btn {
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--trick-tone) 10%, transparent);
+  color: color-mix(in srgb, var(--trick-tone) 84%, white);
+  font: 800 0.62rem/1 var(--mono);
+  letter-spacing: 0.035em;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.tricktionary-rename-btn:hover {
+  border-color: var(--trick-tone);
+  background: color-mix(in srgb, var(--trick-tone) 20%, transparent);
+}
+.tricktionary-rename-btn:focus-visible {
+  outline: 3px solid var(--trick-tone);
+  outline-offset: 2px;
+}
+.tricktionary-rename-btn:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+html[data-theme="light"] .tricktionary-rename-btn {
+  background: color-mix(in srgb, var(--trick-tone) 14%, white);
+  color: color-mix(in srgb, var(--trick-tone) 68%, #071013);
+}
 .tricktionary-drag-hint { opacity: 0.72; }
 .tricktionary-drag-handle {
   cursor: grab;
@@ -7312,6 +7342,11 @@ html[data-theme="light"] .success-burst {
     height: 44px;
     min-width: 44px;
     min-height: 44px;
+  }
+  .tricktionary-rename-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 10px;
   }
 }
 
