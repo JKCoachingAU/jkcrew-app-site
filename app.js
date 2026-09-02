@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.30";
+const RELEASE_VERSION = "2.14.31";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -415,7 +415,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.30" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.31" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1100,7 +1100,19 @@ async function init() {
       }, 0);
       return;
     }
-    if (event === "INITIAL_SESSION") return;
+    // getSession and INITIAL_SESSION normally arrive together. If a mobile
+    // browser delays one of them, accept the other instead of making the user
+    // close and reopen the installed app.
+    if (event === "INITIAL_SESSION") {
+      if (!nextSession) return;
+      setTimeout(() => {
+        handleSessionOnce(nextSession).catch((error) => {
+          console.error("Initial session setup failed", error);
+          renderBootRecovery(messageFrom(error));
+        });
+      }, 0);
+      return;
+    }
     if (nextSession?.user?.id === state.user?.id && nextSession) return;
     // Leave the auth callback immediately; profile queries inside this callback can
     // block Supabase's auth lock and make a successful sign-in appear frozen.
@@ -1113,7 +1125,7 @@ async function init() {
   });
   let session = null;
   try {
-    const result = await retryNetworkRequest(() => client.auth.getSession(), "Sign in check", { attempts: 3, timeoutMs: 15000 });
+    const result = await withTimeout(client.auth.getSession(), "Sign in check", 8000);
     session = result.data?.session || null;
   } catch (error) {
     renderAuth("login", messageFrom(error));
@@ -1137,11 +1149,15 @@ function handleSessionOnce(session) {
   const userId = session?.user?.id || "signed-out";
   if (state.sessionHandlePromise && state.sessionHandleUserId === userId) return state.sessionHandlePromise;
   state.sessionHandleUserId = userId;
-  state.sessionHandlePromise = handleSession(session).finally(() => {
+  const sessionPromise = handleSession(session);
+  state.sessionHandlePromise = sessionPromise;
+  const clearCurrentSessionPromise = () => {
+    if (state.sessionHandlePromise !== sessionPromise) return;
     state.sessionHandlePromise = null;
     state.sessionHandleUserId = "";
-  });
-  return state.sessionHandlePromise;
+  };
+  sessionPromise.then(clearCurrentSessionPromise, clearCurrentSessionPromise);
+  return sessionPromise;
 }
 
 function renderBootRecovery(message = "The app could not finish loading.") {
@@ -1216,9 +1232,14 @@ async function handleSession(session) {
     cleanUrl.searchParams.delete("push");
     window.history.replaceState({}, "", cleanUrl.href);
   }
-  await setupRealtimeSync();
   renderShell();
-  navigate(state.view);
+  void navigate(state.view);
+  // Realtime is an enhancement, not a gate to opening the app. On a slow
+  // mobile connection the roster query used to leave a successful login on
+  // the sign-in screen until the app was closed and reopened.
+  void setupRealtimeSync().catch((realtimeError) => {
+    console.warn("Realtime progress sync unavailable", realtimeError);
+  });
 }
 
 function authHeroMarkup() {
@@ -1415,10 +1436,13 @@ async function handleAuth(event, mode) {
 
   try {
     if (mode === "login") {
-      const { data, error } = await retryNetworkRequest(
-        () => client.auth.signInWithPassword({ email, password }),
+      // Never automatically repeat a password grant. A timed-out first call
+      // can still have saved a valid session; issuing another grant behind it
+      // can queue on the browser auth lock and make the login look frozen.
+      const { data, error } = await withTimeout(
+        client.auth.signInWithPassword({ email, password }),
         "Sign in",
-        { attempts: 3, timeoutMs: 15000 }
+        15000
       );
       if (error) {
         renderAuth(mode, messageFrom(error, "Unable to sign in right now. Please check your email and password, then try again."));
@@ -1426,10 +1450,10 @@ async function handleAuth(event, mode) {
       }
       let nextSession = data?.session || null;
       if (!nextSession) {
-        const { data: sessionData, error: sessionError } = await retryNetworkRequest(
-          () => client.auth.getSession(),
+        const { data: sessionData, error: sessionError } = await withTimeout(
+          client.auth.getSession(),
           "Session refresh",
-          { attempts: 3, timeoutMs: 15000 }
+          8000
         );
         if (sessionError) {
           renderAuth(mode, messageFrom(sessionError, "Sign in worked, but JKCREW could not finish loading your session. Please try again."));
@@ -1460,10 +1484,10 @@ async function handleAuth(event, mode) {
       return;
     }
 
-    const { data: signInData, error: signInError } = await retryNetworkRequest(
-      () => client.auth.signInWithPassword({ email, password }),
+    const { data: signInData, error: signInError } = await withTimeout(
+      client.auth.signInWithPassword({ email, password }),
       "Sign in",
-      { attempts: 3, timeoutMs: 15000 }
+      15000
     );
     if (signInError) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
@@ -1471,10 +1495,10 @@ async function handleAuth(event, mode) {
     }
     let createdSession = signInData?.session || null;
     if (!createdSession) {
-      const { data: sessionData } = await retryNetworkRequest(
-        () => client.auth.getSession(),
+      const { data: sessionData } = await withTimeout(
+        client.auth.getSession(),
         "Session refresh",
-        { attempts: 3, timeoutMs: 15000 }
+        8000
       );
       createdSession = sessionData?.session || null;
     }
@@ -9087,8 +9111,33 @@ function canEditRun(run = {}) {
   return run.created_by === state.user?.id;
 }
 
+function refreshMountedRunBuilder() {
+  const mounted = document.querySelector("#run-builder-live");
+  if (!mounted || !state.runBuilder) return false;
+  const currentImage = mounted.querySelector("#run-map .run-map-preview img");
+  const canReuseDecodedImage = Boolean(currentImage && currentImage.getAttribute("src") === state.runBuilder.imageDataUrl);
+  const scrollTop = window.scrollY;
+  const template = document.createElement("template");
+  template.innerHTML = runBuilderPanel([], {
+    live: true,
+    showRunList: false,
+    preserveExistingImage: canReuseDecodedImage,
+  }).trim();
+  const replacement = template.content.firstElementChild;
+  if (!replacement) return false;
+  if (canReuseDecodedImage) replacement.querySelector("#run-map .run-map-preview img")?.replaceWith(currentImage);
+  mounted.replaceWith(replacement);
+  bindRunBuilderActions(replacement);
+  window.scrollTo(0, scrollTop);
+  return true;
+}
+
 function runBuilderRefreshView() {
   stopRunPlayback();
+  // Dot placement, selection and deletion are local editor actions. Rebuild
+  // only the mounted editor and retain the already-decoded park photo instead
+  // of reloading Events, attendance, run plans and the full base64 image.
+  if (refreshMountedRunBuilder()) return Promise.resolve();
   if (isCoachRole(state.profile?.role) && state.view === "student") return renderStudentProfile();
   if (state.view === "contests") return renderContests();
   return renderProfile();
@@ -9111,13 +9160,16 @@ function runBuilderPanel(runs = [], options = {}) {
   const selectedIndex = points.length ? Math.max(0, Math.min(points.length - 1, Number(builder.selectedPointIndex ?? points.length - 1))) : -1;
   const selectedPoint = selectedIndex >= 0 ? points[selectedIndex] : null;
   const submitLabel = builder.id ? "Save run changes" : "Save run plan";
+  const builderImageSource = options.preserveExistingImage
+    ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
+    : builder.imageDataUrl;
   const body = `<form id="run-builder-form" class="run-builder-form">
       <div class="run-builder-details">
         <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Competition run, safe line..."></div>
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
-          <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builder.imageDataUrl, points, "Run builder map", true) : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then tap anywhere on it to add the start and numbered trick points.</span></div>`}</div>
+          <div id="run-map" class="run-map ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builderImageSource, points, "Run builder map", true) : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then tap anywhere on it to add the start and numbered trick points.</span></div>`}</div>
           <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${points.length > 1 ? `Finish is point ${points.length}` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
           ${selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output>${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
           ${points.length ? runPlaybackControlsHtml(points, "builder") : ""}
@@ -10979,25 +11031,25 @@ async function copyParentUpdate() {
   notify("Parent update copied.");
 }
 
-function bindRunBuilderActions() {
-  document.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
-  document.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
-  document.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
-  document.querySelectorAll("[data-select-run-point]").forEach((marker) => marker.addEventListener("click", selectRunPoint));
-  document.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
-  document.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
-  document.querySelector("#close-run-builder-top")?.addEventListener("click", closeRunBuilder);
-  document.querySelector("#finish-run-builder")?.addEventListener("click", playFinishedRunBuilder);
-  document.querySelector("#delete-selected-run-point")?.addEventListener("click", deleteSelectedRunPoint);
-  document.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
-  document.querySelector("[data-selected-run-label]")?.addEventListener("input", updateSelectedRunPoint);
-  document.querySelectorAll("[data-selected-run-bend]").forEach((control) => {
+function bindRunBuilderActions(root = document) {
+  root.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
+  root.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
+  root.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
+  root.querySelectorAll("[data-select-run-point]").forEach((marker) => marker.addEventListener("click", selectRunPoint));
+  root.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
+  root.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
+  root.querySelector("#close-run-builder-top")?.addEventListener("click", closeRunBuilder);
+  root.querySelector("#finish-run-builder")?.addEventListener("click", playFinishedRunBuilder);
+  root.querySelector("#delete-selected-run-point")?.addEventListener("click", deleteSelectedRunPoint);
+  root.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
+  root.querySelector("[data-selected-run-label]")?.addEventListener("input", updateSelectedRunPoint);
+  root.querySelectorAll("[data-selected-run-bend]").forEach((control) => {
     control.addEventListener("input", updateSelectedRunPoint);
     control.addEventListener("change", updateSelectedRunPoint);
   });
-  document.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
-  document.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
-  bindRunPlaybackControls();
+  root.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
+  root.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
+  bindRunPlaybackControls(root);
 }
 
 function currentRunFormState() {
@@ -11325,15 +11377,15 @@ function restartRunPlayback(event) {
   if (button) button.textContent = "▶ PLAY RUN";
 }
 
-function bindRunPlaybackControls() {
-  document.querySelectorAll("[data-run-play-toggle]").forEach((button) => button.addEventListener("click", toggleRunPlayback));
-  document.querySelectorAll("[data-run-play-restart]").forEach((button) => button.addEventListener("click", restartRunPlayback));
-  document.querySelectorAll("[data-run-scrub]").forEach((input) => input.addEventListener("input", scrubRunPlayback));
-  document.querySelectorAll("[data-run-duration]").forEach((input) => {
+function bindRunPlaybackControls(root = document) {
+  root.querySelectorAll("[data-run-play-toggle]").forEach((button) => button.addEventListener("click", toggleRunPlayback));
+  root.querySelectorAll("[data-run-play-restart]").forEach((button) => button.addEventListener("click", restartRunPlayback));
+  root.querySelectorAll("[data-run-scrub]").forEach((input) => input.addEventListener("input", scrubRunPlayback));
+  root.querySelectorAll("[data-run-duration]").forEach((input) => {
     input.addEventListener("input", updateRunPlaybackDuration);
     input.addEventListener("change", updateRunPlaybackDuration);
   });
-  document.querySelectorAll("[data-run-duration-preset]").forEach((button) => button.addEventListener("click", applyRunPlaybackDurationPreset));
+  root.querySelectorAll("[data-run-duration-preset]").forEach((button) => button.addEventListener("click", applyRunPlaybackDurationPreset));
 }
 
 function playFinishedRunBuilder() {

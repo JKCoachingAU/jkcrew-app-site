@@ -28,7 +28,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.30";
+const version = "2.14.31";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -54,6 +54,17 @@ assert(functionBody("renderAuth").includes('id="forgot-password"'), "The sign-in
 assert(functionBody("requestPasswordReset").includes("resetPasswordForEmail"), "Password recovery must send a Supabase reset email");
 assert(functionBody("requestPasswordReset").includes("redirectTo: redirectUrl.href"), "Password recovery must return the rider to JKCREW");
 assert(functionBody("init").includes('event === "PASSWORD_RECOVERY"'), "The app must detect Supabase password-recovery sessions");
+assert(functionBody("init").includes('withTimeout(client.auth.getSession(), "Sign in check", 8000)'), "Startup session recovery must fail fast enough to leave login usable");
+assert(functionBody("init").includes('if (event === "INITIAL_SESSION")'), "A delayed Supabase initial session must still resume the installed app");
+assert(functionBody("init").includes("handleSessionOnce(nextSession)"), "Supabase auth events must open a recovered session without an app restart");
+assert(functionBody("handleSessionOnce").includes("state.sessionHandlePromise !== sessionPromise"), "An older auth completion must not clear a newer session attempt");
+const sessionHandlerStart = app.indexOf("async function handleSession(session)");
+const sessionHandler = app.slice(sessionHandlerStart, app.indexOf("\nfunction authHeroMarkup", sessionHandlerStart));
+assert(sessionHandler.indexOf("renderShell()") < sessionHandler.indexOf("setupRealtimeSync()"), "Realtime setup must never block a successful login from opening the app shell");
+assert(sessionHandler.includes('void setupRealtimeSync().catch'), "A realtime connection failure must stay non-blocking after login");
+const authHandler = functionBody("handleAuth");
+assert(authHandler.includes("client.auth.signInWithPassword({ email, password })"), "Login must use Supabase password auth");
+assert(!authHandler.includes("retryNetworkRequest(\n        () => client.auth.signInWithPassword") && !authHandler.includes("retryNetworkRequest(\n      () => client.auth.signInWithPassword"), "Password grants must not be automatically repeated after an uncertain timeout");
 assert(functionBody("updateRecoveredPassword").includes("client.auth.updateUser({ password })"), "The recovery screen must securely save the new Supabase password");
 assert(functionBody("updateRecoveredPassword").includes("password !== confirmPassword"), "The recovery screen must verify both password entries match");
 assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre"'), "What's New needs a fresh notification-centre campaign key");
@@ -730,6 +741,15 @@ const optimizedRunPhotoBody = functionBody("runPhotoToDataUrl");
 assert(optimizedRunPhotoBody.includes("1800 / longestSide"), "Large run photos should be reduced to a screen-sized copy before saving");
 assert(optimizedRunPhotoBody.includes('toDataURL("image/webp", 0.84)'), "Run photos should use efficient WebP encoding when it reduces size");
 assert(functionBody("setRunBuilderPhoto").includes("runPhotoToDataUrl(file)"), "The Run Builder must use the optimized photo pipeline");
+const runBuilderRefresh = functionBody("runBuilderRefreshView");
+assert(runBuilderRefresh.includes("refreshMountedRunBuilder()"), "Run Builder edits must refresh only the mounted editor before considering a full page reload");
+assert(runBuilderRefresh.indexOf("refreshMountedRunBuilder()") < runBuilderRefresh.indexOf("renderContests()"), "Local Run Builder edits must bypass Events and Supabase reloads");
+const mountedRunBuilderRefresh = functionBody("refreshMountedRunBuilder");
+assert(mountedRunBuilderRefresh.includes("currentImage"), "Local Run Builder refreshes must retain the already-decoded course photo");
+assert(mountedRunBuilderRefresh.includes("bindRunBuilderActions(replacement)"), "The fast Run Builder refresh must restore controls only inside the replaced editor");
+assert(functionBody("bindRunBuilderActions").includes("root = document"), "Run Builder bindings must support a local editor scope");
+assert(functionBody("bindRunPlaybackControls").includes("root = document"), "Run playback bindings must not duplicate handlers outside a fast editor refresh");
+assert(functionBody("runBuilderPanel").includes("preserveExistingImage"), "Run Builder markup must support decoded-image reuse during fast local refreshes");
 const getRunPlansBody = functionBody("getRunPlans");
 assert(getRunPlansBody.includes("cacheGet(cacheKey, 15000)"), "Run plans should be briefly cached during repeat renders");
 assert(getRunPlansBody.includes("state.inFlight.get(cacheKey)"), "Duplicate in-flight run-plan requests should be shared");
