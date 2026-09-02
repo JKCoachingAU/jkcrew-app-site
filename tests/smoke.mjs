@@ -50,7 +50,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.39";
+const version = "2.14.40";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1324,7 +1324,35 @@ assert(commandLeaderboardPreviewBody.includes("rows.slice(0, 5)"), "Coach Comman
 assert(!commandLeaderboardPreviewBody.includes("matchMedia"), "Desktop Coach Command must not expand the leaderboard beyond five riders");
 assert(coachCommandBody.includes('id="upcoming-events-section"'), "Coach Command must show its upcoming event panel directly on the dashboard");
 assert(coachCommandBody.indexOf("commandLeaderboardPreviewHtml") < coachCommandBody.indexOf("coachSharedEventsSummaryHtml"), "Coach Command upcoming events must render below the leaderboard");
-assert(functionBody("coachSharedEventsSummaryHtml").includes("Coach attending"), "Coach Command must show coach attendance state for shared events");
+const coachSharedEventsSummaryBody = functionBody("coachSharedEventsSummaryHtml");
+assert(coachSharedEventsSummaryBody.includes("Coach attending"), "Coach Command must show coach attendance state for shared events");
+assert(coachSharedEventsSummaryBody.includes("events.slice(0, 4)"), "Desktop and iPad Coach Command must retain the existing four-event preview");
+assert(coachSharedEventsSummaryBody.includes("events.slice(3)"), "The phone event dropdown must include every event after the first three");
+assert(coachSharedEventsSummaryBody.includes("events.length > 3"), "Coach Command must omit the phone dropdown when three or fewer events exist");
+assert(coachSharedEventsSummaryBody.includes("command-event-desktop-only") && coachSharedEventsSummaryBody.includes("command-event-mobile-overflow"), "Coach Command needs separate fourth-card and phone-overflow presentation hooks");
+const coachSharedEventsSummaryRenderer = new Function(`
+  const state = { user: { id: "coach-test" } };
+  const contestEventAttendees = () => [];
+  const contestEventFacesHtml = () => "";
+  const escapeHtml = (value) => String(value ?? "");
+  const dateLabel = (value) => String(value ?? "");
+  ${functionBody("coachSharedEventsSummaryHtml")}
+  return coachSharedEventsSummaryHtml;
+`)();
+const coachEventFixtures = Array.from({ length: 6 }, (_, index) => ({ id: `event-${index + 1}`, title: `Event ${index + 1}`, due_at: `2026-09-${String(index + 4).padStart(2, "0")}T08:00:00+10:00` }));
+const sixEventSummary = coachSharedEventsSummaryRenderer(coachEventFixtures, []);
+const phoneOverflowMarkup = sixEventSummary.slice(sixEventSummary.indexOf('<details class="command-event-mobile-overflow"'));
+assert(sixEventSummary.includes("SHOW 3 MORE EVENTS"), "Six upcoming events must produce a correctly counted phone dropdown");
+assert(phoneOverflowMarkup.includes("Event 4") && phoneOverflowMarkup.includes("Event 5") && phoneOverflowMarkup.includes("Event 6"), "The phone dropdown must contain every remaining upcoming event");
+assert.equal((sixEventSummary.match(/command-event-desktop-only/g) || []).length, 1, "Only the desktop fourth preview card should be hidden on phones");
+assert(coachSharedEventsSummaryRenderer(coachEventFixtures.slice(0, 4), []).includes("SHOW 1 MORE EVENT"), "The phone dropdown count must use singular wording for one remaining event");
+assert(!coachSharedEventsSummaryRenderer(coachEventFixtures.slice(0, 3), []).includes("command-event-mobile-overflow"), "Three or fewer events must not render an empty phone dropdown");
+const phoneEventRuleIndex = css.indexOf(".command-upcoming-events-panel .command-event-desktop-only");
+const phoneEventMediaIndex = css.lastIndexOf("@media (max-width: 520px)", phoneEventRuleIndex);
+const phoneEventsCss = bracedBlock(css, "@media (max-width: 520px)", phoneEventMediaIndex);
+assert(css.includes(".command-event-mobile-overflow { display: none; }"), "The phone event dropdown must stay hidden on desktop and iPad");
+assert(phoneEventsCss.includes(".command-upcoming-events-panel .command-event-desktop-only { display: none; }"), "Phones must remove the duplicate fourth desktop event from layout and accessibility");
+assert(phoneEventsCss.includes(".command-event-mobile-overflow") && phoneEventsCss.includes("min-height: 56px"), "The phone event dropdown must provide a clear touch-sized disclosure bar");
 assert(app.includes('["contests", "Events & Runs"]'), "Coach navigation must clearly expose Events & Runs");
 for (const selector of [".contest-event-coach-actions", ".coach-event-attendance-editor", ".coach-shared-events-summary", ".run-playback-callout", ".run-playback-presets"]) {
   assert(css.includes(selector), `Coach events or playback styling is missing ${selector}`);

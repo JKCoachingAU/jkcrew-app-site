@@ -3487,6 +3487,12 @@ html.coaching-viewer-open body { overflow: hidden; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.command-event-mobile-overflow { display: none; }
+.command-event-mobile-overflow > summary {
+  list-style: none;
+}
+.command-event-mobile-overflow > summary::-webkit-details-marker { display: none; }
+.command-event-more-open { display: none; }
 .coach-shared-event-row { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: rgba(255,255,255,0.018); text-align: left; }
 .coach-shared-event-row:hover { border-color: rgba(247,209,84,0.38); background: rgba(247,209,84,0.035); }
 .coach-shared-event-row .contest-event-date { width: 48px; height: 48px; }
@@ -8606,6 +8612,57 @@ html[data-theme="light"] .rider-shell textarea {
 }
 
 @media (max-width: 520px) {
+  .command-upcoming-events-panel .command-event-desktop-only { display: none; }
+  .command-event-mobile-overflow {
+    display: block;
+    overflow: hidden;
+    border: 1px solid rgba(247, 200, 62, 0.28);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--yellow) 5%, var(--surface-2));
+  }
+  .command-event-mobile-overflow > summary {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 13px;
+    color: var(--text);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .command-event-mobile-overflow > summary span { display: grid; gap: 2px; }
+  .command-event-mobile-overflow > summary strong {
+    color: var(--yellow);
+    font: 900 0.78rem var(--mono);
+    letter-spacing: 0.07em;
+  }
+  .command-event-mobile-overflow > summary small { color: var(--muted); font-size: 0.68rem; }
+  .command-event-mobile-overflow > summary b {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    flex: 0 0 34px;
+    place-items: center;
+    border: 1px solid rgba(247, 200, 62, 0.32);
+    border-radius: 50%;
+    color: var(--yellow);
+    font: 900 1rem var(--mono);
+    transition: transform 160ms ease, background 160ms ease;
+  }
+  .command-event-mobile-overflow[open] > summary b {
+    transform: rotate(180deg);
+    background: rgba(247, 200, 62, 0.1);
+  }
+  .command-event-mobile-overflow[open] .command-event-more-closed { display: none; }
+  .command-event-mobile-overflow[open] .command-event-more-open { display: block; }
+  .command-event-overflow-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 0 10px 10px;
+    border-top: 1px solid rgba(247, 200, 62, 0.12);
+  }
+  .command-event-overflow-grid .contest-event-card:first-child { margin-top: 10px; }
   .contest-event-backdrop { align-items: end; padding: 0; }
   .contest-event-modal {
     width: 100%;
