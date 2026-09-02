@@ -12,6 +12,8 @@ const serviceWorker = read("sw.js");
 const rileyServiceWorker = read("riley-test/sw.js");
 const manifestText = read("manifest.webmanifest");
 const manifest = JSON.parse(manifestText);
+const rileyManifestText = read("riley-test/manifest.webmanifest");
+const rileyManifest = JSON.parse(rileyManifestText);
 const eventMigration = read("supabase/migrations/20260827101827_share_events_keep_runs_private.sql");
 const mergeEventMigration = read("supabase/migrations/20260827213000_merge_shared_events.sql");
 const coachAttendanceMigration = read("supabase/migrations/20260827124538_coach_manage_event_attendance.sql");
@@ -33,7 +35,7 @@ const parentEngagementMigration = read("supabase/migrations/20260830124500_paren
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
 const tricktionaryMergeMigration = read("supabase/migrations/20260903020000_merge_tricktionary_entries.sql");
 const tricktionaryHardeningMigration = read("supabase/migrations/20260903023000_harden_tricktionary_updates.sql");
-const version = "2.14.36";
+const version = "2.14.37";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -48,6 +50,7 @@ for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, m
   assert(!/2\.11\.(16|44|45|46)/.test(contents), `${name} contains a stale asset version`);
 }
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
+assert(html.includes("initial-scale=1.0, viewport-fit=cover"), "Installed iPads must expose their safe-area insets to the app shell");
 assert(serviceWorker.includes('const CACHE_PREFIX = "jkcrew-shell-"'), "service worker should use the public cache namespace");
 assert(serviceWorker.includes(`const RELEASE_VERSION = "${version}"`), "service worker cache should use the current version");
 assert(serviceWorker.includes("silent: false"), "Background push should request the device's normal notification sound");
@@ -113,6 +116,8 @@ assert(app.includes('navigator.serviceWorker.addEventListener("controllerchange"
 assert(app.includes('window.addEventListener("pageshow"'), "Returning to an installed app must check for a new release");
 assert(app.includes('document.addEventListener("visibilitychange"'), "Resuming an installed app must check for a new release");
 assert.equal(manifest.start_url, `./?jkcrew-version=${version}`, "Installed launches must request the current release URL");
+assert.equal(manifest.orientation, "any", "Installed JKCREW must allow iPad portrait and landscape rotation");
+assert.equal(rileyManifest.orientation, "any", "The Riley test install must allow iPad portrait and landscape rotation");
 assert(functionBody("mountWhatsNewPrompt").includes("rememberBattleIntro()"), "The all-update prompt should prevent a duplicate battle onboarding popup");
 assert(functionBody("mountWhatsNewPrompt").includes("mountPushSetupPrompt()"), "Notification setup should follow the What's New popup");
 assert(app.includes('const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1"'), "In-app notification sound needs a per-device preference");
@@ -929,6 +934,7 @@ assert(functionBody("runBuilderStepsHtml").includes('"playback", "03", "Watch it
 assert(functionBody("runBuilderStepsHtml").includes("index > activeIndex"), "Future Run Builder steps must stay locked until the current step is finished");
 assert(functionBody("runBuilderRouteEditorHtml").includes("Add all tricks after the route is finished"), "Route drawing must stay separate from trick entry");
 assert(functionBody("runBuilderTrickEditorHtml").includes("data-run-trick-index"), "The trick step must expose a numbered input for every dot");
+assert(functionBody("runBuilderTrickEditorHtml").includes('enterkeyhint="${index === points.length - 1 ? "done" : "next"}"'), "iPad keyboards must offer Next while naming route dots and Done on the final dot");
 assert(functionBody("runBuilderRouteEditorHtml").includes("data-selected-run-bend"), "Route drawing must retain the line-bend control");
 for (const removedControl of ['id="run-venue"', 'id="run-type"', 'id="use-demo-run-park"']) {
   assert(!runBuilderMarkup.includes(removedControl), `Run Builder should not show ${removedControl}`);
@@ -941,7 +947,7 @@ assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline R
 assert(runBuilderMarkup.includes('stage === "playback"'), "Saving a run must only be available after playback is reached");
 assert(runBuilderMarkup.includes("COMPLETE 3 STEPS TO SAVE"), "Earlier Run Builder steps must explain why Save is unavailable");
 const runBuilderBindings = functionBody("bindRunBuilderActions");
-for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "setRunBuilderStage", "updateRunBuilderTrick", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
+for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "setRunBuilderStage", "updateRunBuilderTrick", "advanceRunBuilderTrick", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
 }
 assert(!runBuilderMarkup.includes("fullscreenEditor"), "Run Builder must remain in the normal in-page layout");
@@ -953,6 +959,8 @@ assert(addRunPointBody.includes("state.runBuilder.points.push"), "Tapping the pa
 assert(addRunPointBody.includes("await runBuilderRefreshView()"), "Adding a route point must refresh the in-page editor");
 assert(addRunPointBody.includes('runBuilderStage() !== "route"'), "Map taps must add dots only during the route step");
 assert(addRunPointBody.includes("state.runPointMapClickBlockUntil"), "A click retargeted after dragging must never add another dot");
+assert(addRunPointBody.includes("event.clientY < rect.top"), "Letterboxed space outside the course image must never add an invisible route dot");
+assert(addRunPointBody.includes("Math.max(0, Math.min(100"), "Saved route coordinates must stay inside the course image");
 const runPointHarness = new Function(`
   let now = 100;
   let refreshes = 0;
@@ -975,6 +983,12 @@ runPointHarness.state.runPointMapClickBlockUntil = 200;
 await runPointHarness.addRunBuilderPoint(runPointEvent);
 assert.equal(runPointHarness.state.runBuilder.points.length, 0, "A click retargeted to the map after dragging must not add a dot");
 runPointHarness.state.runPointMapClickBlockUntil = 0;
+await runPointHarness.addRunBuilderPoint({
+  ...runPointEvent,
+  clientY: 10,
+  currentTarget: { querySelector: () => ({ getBoundingClientRect: () => ({ left: 0, top: 20, width: 100, height: 80 }) }) },
+});
+assert.equal(runPointHarness.state.runBuilder.points.length, 0, "A tap in the map letterbox must not add a hidden dot");
 await runPointHarness.addRunBuilderPoint(runPointEvent);
 assert.equal(runPointHarness.state.runBuilder.points.length, 1, "A deliberate empty-map tap must add exactly one dot");
 runPointHarness.state.runBuilder.stage = "tricks";
@@ -985,6 +999,14 @@ assert(!app.includes("function enterRunBuilderFullscreen"), "Removed Run Builder
 assert(!app.includes("function leaveRunBuilderFullscreen"), "Removed Run Builder full-screen exit logic must stay removed");
 assert(!css.includes(".run-builder-fullscreen-editor"), "Removed full-screen planner layout must stay removed");
 assert(!css.includes("run-builder-fullscreen-open"), "The planner must not lock the page for full-screen mode");
+assert(css.includes("@media (min-width: 781px) and (max-width: 900px)"), "iPad portrait needs a dedicated full-width app shell");
+assert(css.includes("@media (min-width: 700px) and (max-width: 1180px) and (orientation: portrait)"), "The Run Builder needs a portrait-tablet course-first layout");
+assert(css.includes("scroll-margin-top: calc(90px + env(safe-area-inset-top))"), "Opening the Run Builder on iPad must leave its heading below the sticky header");
+assert(css.includes("@media (display-mode: standalone) and (min-width: 700px) and (max-width: 900px)"), "Installed iPad portrait must keep the header below the status bar");
+assert(css.includes("@media (pointer: coarse) and (min-width: 700px) and (max-width: 1180px)"), "Common iPad controls need tablet-specific touch targets");
+assert(css.includes("max(18px, env(safe-area-inset-top))"), "iPad event modals must stay inside the installed-app safe area");
+assert(css.includes(".nav-sub-btn,\n  summary"), "Nested coach navigation must retain an iPad-sized touch target");
+assert(functionBody("advanceRunBuilderTrick").includes("nextInput.focus()"), "Pressing Next on an iPad keyboard must advance to the following trick");
 const optimizedRunPhotoBody = functionBody("runPhotoToDataUrl");
 assert(optimizedRunPhotoBody.includes("1800 / longestSide"), "Large run photos should be reduced to a screen-sized copy before saving");
 assert(optimizedRunPhotoBody.includes('toDataURL("image/webp", 0.84)'), "Run photos should use efficient WebP encoding when it reduces size");

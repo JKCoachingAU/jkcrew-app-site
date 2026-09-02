@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.36";
+const RELEASE_VERSION = "2.14.37";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.36" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.37" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9570,7 +9570,7 @@ function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
 }
 
 function runBuilderTrickEditorHtml(points = []) {
-  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>NAME EACH DOT</strong><p class="run-phase-tip">Your route is locked while you add the tricks. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { const pointNumber = index + 1; const role = index === 0 ? "START" : index === points.length - 1 ? "FINISH" : `DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Trick at dot ${pointNumber}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}"></span></label>`; }).join("")}</div></div>`;
+  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>NAME EACH DOT</strong><p class="run-phase-tip">Your route is locked while you add the tricks. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { const pointNumber = index + 1; const role = index === 0 ? "START" : index === points.length - 1 ? "FINISH" : `DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Trick at dot ${pointNumber}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>`; }).join("")}</div></div>`;
 }
 
 function runBuilderPlaybackEditorHtml(points = []) {
@@ -11462,6 +11462,7 @@ function bindRunBuilderActions(root = document) {
   root.querySelectorAll("[data-run-trick-index]").forEach((input) => {
     input.addEventListener("input", updateRunBuilderTrick);
     input.addEventListener("focus", focusRunBuilderTrick);
+    input.addEventListener("keydown", advanceRunBuilderTrick);
   });
   root.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
   root.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
@@ -11506,6 +11507,20 @@ function updateRunBuilderTrick(event) {
   }
 }
 
+function advanceRunBuilderTrick(event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const index = Number(event.currentTarget.dataset.runTrickIndex);
+  const nextInput = document.querySelector(`[data-run-trick-index="${index + 1}"]`);
+  if (nextInput) {
+    nextInput.focus();
+    nextInput.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  event.currentTarget.blur();
+  document.querySelector("#finish-run-builder")?.focus();
+}
+
 function focusRunBuilderTrick(event) {
   const index = Number(event.currentTarget.dataset.runTrickIndex);
   if (!state.runBuilder?.points?.[index]) return;
@@ -11546,8 +11561,11 @@ async function addRunBuilderPoint(event) {
   stopRunPlayback();
   const map = event.currentTarget.querySelector(".run-map-preview") || event.currentTarget;
   const rect = map.getBoundingClientRect();
-  const x = Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10;
-  const y = Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10;
+  const right = rect.left + rect.width;
+  const bottom = rect.top + rect.height;
+  if (!rect.width || !rect.height || event.clientX < rect.left || event.clientX > right || event.clientY < rect.top || event.clientY > bottom) return;
+  const x = Math.max(0, Math.min(100, Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10));
+  const y = Math.max(0, Math.min(100, Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10));
   state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points || [] };
   const pointNumber = state.runBuilder.points.length + 1;
   state.runBuilder.points.push({ x, y, label: "", note: "", bend: 0 });
