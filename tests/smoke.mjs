@@ -28,7 +28,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.32";
+const version = "2.14.33";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -735,17 +735,26 @@ assert(parentContestsBody.includes("Family event view · Read only"), "Parent Co
 assert(parentContestsBody.includes("Private rider run plans are not displayed"), "Parent Contests must not load private run plans");
 const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
+assert(openRunBuilderBody.includes('stage: "route"'), "Every new Run Builder must open in the route-drawing step");
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
 assert(openRunBuilderBody.includes("await getEventCoursePhoto(contestItemId)"), "Event run builders must automatically load the shared course photo");
 assert(openRunBuilderBody.includes('imageDataUrl: coursePhoto?.image_data_url || ""'), "The saved event course must immediately populate the Run Builder map");
 assert(openRunBuilderBody.includes("coursePhotoLoaded: Boolean(coursePhoto?.image_data_url)"), "The Run Builder must identify an automatically loaded event course");
 assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "smooth"'), "Opening the Run Builder must take the rider directly to it");
 assert(functionBody("currentRunFormState").includes("coursePhotoLoaded: Boolean(state.runBuilder?.coursePhotoLoaded)"), "The loaded event-course state must survive Run Builder redraws");
+assert(functionBody("currentRunFormState").includes("stage: runBuilderStage()"), "The active Run Builder step must survive local editor refreshes");
 assert(functionBody("setRunBuilderPhoto").includes("coursePhotoLoaded: false"), "Choosing a different private photo must clear the event-course label");
 const runBuilderMarkup = functionBody("runBuilderPanel");
-for (const control of ['id="run-photo"', 'id="run-map"', "data-selected-run-label", "data-selected-run-bend", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
+for (const control of ['id="run-photo"', 'id="run-map"', "runBuilderStepsHtml(stage, points.length)", "runBuilderRouteEditorHtml", "runBuilderTrickEditorHtml", "runBuilderPlaybackEditorHtml", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
   assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
 }
+assert(functionBody("runBuilderStepsHtml").includes('"route", "01", "Draw route"'), "Run Builder must begin with drawing the route");
+assert(functionBody("runBuilderStepsHtml").includes('"tricks", "02", "Add tricks"'), "Adding trick names must be the second step");
+assert(functionBody("runBuilderStepsHtml").includes('"playback", "03", "Watch it back"'), "Playback must be the final planning step");
+assert(functionBody("runBuilderStepsHtml").includes("index > activeIndex"), "Future Run Builder steps must stay locked until the current step is finished");
+assert(functionBody("runBuilderRouteEditorHtml").includes("Add all tricks after the route is finished"), "Route drawing must stay separate from trick entry");
+assert(functionBody("runBuilderTrickEditorHtml").includes("data-run-trick-index"), "The trick step must expose a numbered input for every dot");
+assert(functionBody("runBuilderRouteEditorHtml").includes("data-selected-run-bend"), "Route drawing must retain the line-bend control");
 for (const removedControl of ['id="run-venue"', 'id="run-type"', 'id="use-demo-run-park"']) {
   assert(!runBuilderMarkup.includes(removedControl), `Run Builder should not show ${removedControl}`);
 }
@@ -754,16 +763,48 @@ assert(runBuilderMarkup.includes('builder.coursePhotoLoaded ? "Event course load
 assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
 assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
+assert(runBuilderMarkup.includes('stage === "playback"'), "Saving a run must only be available after playback is reached");
+assert(runBuilderMarkup.includes("COMPLETE 3 STEPS TO SAVE"), "Earlier Run Builder steps must explain why Save is unavailable");
 const runBuilderBindings = functionBody("bindRunBuilderActions");
-for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
+for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "setRunBuilderStage", "updateRunBuilderTrick", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
 }
 assert(!runBuilderMarkup.includes("fullscreenEditor"), "Run Builder must remain in the normal in-page layout");
 assert(!runBuilderMarkup.includes("exit-run-builder-fullscreen"), "Run Builder must not show a full-screen exit control");
 assert(!runBuilderBindings.includes("exitRunBuilderFullscreen"), "Run Builder must not bind removed full-screen controls");
 const addRunPointBody = functionBody("addRunBuilderPoint");
+const executableAddRunPointBody = addRunPointBody.replace("function addRunBuilderPoint", "async function addRunBuilderPoint");
 assert(addRunPointBody.includes("state.runBuilder.points.push"), "Tapping the park must still add a route point");
 assert(addRunPointBody.includes("await runBuilderRefreshView()"), "Adding a route point must refresh the in-page editor");
+assert(addRunPointBody.includes('runBuilderStage() !== "route"'), "Map taps must add dots only during the route step");
+assert(addRunPointBody.includes("state.runPointMapClickBlockUntil"), "A click retargeted after dragging must never add another dot");
+const runPointHarness = new Function(`
+  let now = 100;
+  let refreshes = 0;
+  const state = { runBuilder: { imageDataUrl: "course", stage: "route", points: [], selectedPointIndex: -1 }, draggedRunPoint: null, runPointMapClickBlockUntil: 0 };
+  const performance = { now: () => now };
+  const stopRunPlayback = () => {};
+  const runBuilderStage = () => state.runBuilder.stage;
+  const currentRunFormState = () => ({ ...state.runBuilder });
+  const runBuilderRefreshView = async () => { refreshes += 1; };
+  ${executableAddRunPointBody}
+  return { addRunBuilderPoint, state, setNow: (value) => { now = value; }, refreshes: () => refreshes };
+`)();
+const runPointEvent = {
+  clientX: 50,
+  clientY: 50,
+  target: { closest: () => null },
+  currentTarget: { querySelector: () => ({ getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) }) },
+};
+runPointHarness.state.runPointMapClickBlockUntil = 200;
+await runPointHarness.addRunBuilderPoint(runPointEvent);
+assert.equal(runPointHarness.state.runBuilder.points.length, 0, "A click retargeted to the map after dragging must not add a dot");
+runPointHarness.state.runPointMapClickBlockUntil = 0;
+await runPointHarness.addRunBuilderPoint(runPointEvent);
+assert.equal(runPointHarness.state.runBuilder.points.length, 1, "A deliberate empty-map tap must add exactly one dot");
+runPointHarness.state.runBuilder.stage = "tricks";
+await runPointHarness.addRunBuilderPoint(runPointEvent);
+assert.equal(runPointHarness.state.runBuilder.points.length, 1, "Entering tricks must lock the completed route against extra taps");
 assert(!addRunPointBody.includes("enterRunBuilderFullscreen"), "The first route tap must not enter full screen");
 assert(!app.includes("function enterRunBuilderFullscreen"), "Removed Run Builder full-screen entry logic must stay removed");
 assert(!app.includes("function leaveRunBuilderFullscreen"), "Removed Run Builder full-screen exit logic must stay removed");
@@ -788,17 +829,24 @@ assert(getRunPlansBody.includes("state.inFlight.get(cacheKey)"), "Duplicate in-f
 const runMapMarkup = functionBody("runMapHtml");
 assert(runMapMarkup.includes('decoding="async"'), "Run-plan photos should decode away from the critical rendering path");
 assert(runMapMarkup.includes('loading="lazy"'), "Saved run-plan photos should load only when needed");
+assert(runMapMarkup.includes("showPlayback && safePoints.length"), "Playback labels must stay hidden while the rider draws the route and enters tricks");
+assert(runBuilderMarkup.includes('stage === "playback"'), "The Run Builder must only show playback UI during the final step");
 const saveRunPlanBody = functionBody("saveRunPlan");
 assert(saveRunPlanBody.includes('venue: String(state.runBuilder?.venue || "").trim()'), "Hidden event venue must still save with the private run");
 assert(saveRunPlanBody.includes('state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training")'), "Hidden run type must still be derived and saved automatically");
 assert(!functionBody("addRunBuilderPoint").includes("window.prompt"), "Adding a run point must use the compact selected-dot editor, not a blocking prompt");
 assert(functionBody("runPathBetween").includes("point.bend"), "Each route segment must support a rider-controlled curve");
 assert(runBuilderMarkup.includes("run-bend-control-mobile"), "iPhone Run Builder must place a reachable bend control beside the map");
-assert(runBuilderMarkup.includes("run-bend-control-sidebar"), "iPad and desktop Run Builder must keep the existing sidebar bend control");
+assert(functionBody("runBuilderRouteEditorHtml").includes("run-bend-control-sidebar"), "iPad and desktop Run Builder must keep the existing sidebar bend control");
 assert(functionBody("dragRunPoint").includes("requestAnimationFrame"), "Run Builder dot dragging must be frame-synchronised for smooth touch movement");
 assert(functionBody("updateRunBuilderMapDom").includes('setAttribute("d"'), "Dragging a dot must redraw only the affected route segments");
 assert(functionBody("selectRunPoint").includes("runPointDragClickBlockUntil"), "Releasing a dragged dot must not trigger a second full editor render");
+assert(functionBody("startRunPointDrag").includes("state.runPointMapClickBlockUntil"), "Touching a route dot must suppress the map add gesture");
+assert(functionBody("stopRunPointDrag").includes("Always block that map click"), "Every marker release, including a long press, must suppress the following map click");
+assert(functionBody("stopRunPointDrag").includes("state.runPointMapClickBlockUntil = performance.now() + 900"), "Releasing any marker gesture must refresh the map-click suppression window");
 assert(css.includes(".run-bend-control-mobile input[type=\"range\"]::-webkit-slider-thumb"), "iPhone bend control needs a large touch-friendly slider thumb");
+assert(css.includes(".run-builder-live .run-marker { width: 21px; height: 21px"), "Run Builder circles should stay visually small");
+assert(css.includes('.run-builder-live .run-marker::before { content: ""; position: absolute; inset: -11px'), "Small Run Builder circles still need a forgiving invisible touch target");
 const runPathForTest = new Function(`${functionBody("runPathBetween")}; return runPathBetween;`)();
 assert.notEqual(runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 0 }), runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 60 }), "Changing a dot's bend must change the saved route curve");
 assert(app.includes("const RUN_PLAYBACK_MAX_SECONDS = 60"), "Run playback must be capped at 60 seconds");
@@ -811,6 +859,9 @@ assert(functionBody("runMapHtml").includes("data-run-point-label"), "Saved trick
 assert(functionBody("runMapHtml").includes("data-run-playback-callout"), "Run playback must include a visible trick-name callout");
 assert(functionBody("paintRunPlayback").includes("activeMarker.dataset.runPointLabel"), "Playback must show the active point's saved trick name");
 assert(functionBody("toggleRunPlayback").includes("requestAnimationFrame"), "Run playback must animate continuously and support pause/resume");
+assert(functionBody("playFinishedRunBuilder").includes('stage: "playback"'), "Finishing trick entry must open the playback step before starting the run");
+assert(functionBody("playFinishedRunBuilder").includes("missingTrickIndex"), "Playback must identify the first unnamed route dot instead of silently skipping trick entry");
+assert(functionBody("saveRunPlan").includes('runBuilderStage() !== "playback"'), "Pressing Enter must not bypass the route, trick and playback sequence");
 const formatPlaybackForTest = new Function(`const RUN_PLAYBACK_MAX_SECONDS = 60; ${functionBody("formatRunPlaybackTime")}; return formatRunPlaybackTime;`)();
 assert.equal(formatPlaybackForTest(60), "01:00", "The 60-second playback limit must display as 01:00");
 assert(!functionBody("saveRunPlan").includes("points.length"), "Saving must not force a fixed number of run dots");

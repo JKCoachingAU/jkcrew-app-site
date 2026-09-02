@@ -3649,6 +3649,31 @@ html.coaching-viewer-open body { overflow: hidden; }
 .run-card ol { margin: 8px 0 0; padding-left: 20px; color: #d7ddda; }
 .run-card.archived { opacity: 0.72; border-style: dashed; }
 .run-builder-form { display: grid; gap: 14px; }
+.run-builder-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.run-builder-steps button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 62px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--muted);
+  background: rgba(255,255,255,.018);
+  text-align: left;
+  cursor: pointer;
+}
+.run-builder-steps button > b { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: var(--muted); background: rgba(255,255,255,.055); font: 900 .64rem var(--mono); }
+.run-builder-steps button > span { min-width: 0; display: grid; gap: 2px; }
+.run-builder-steps strong { color: var(--text); font: 900 .82rem var(--display); letter-spacing: .03em; text-transform: uppercase; }
+.run-builder-steps small { overflow: hidden; font: 700 .55rem var(--mono); text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.run-builder-steps button.complete { border-color: rgba(32,227,195,.24); }
+.run-builder-steps button.complete > b { color: #02110f; background: var(--aqua); }
+.run-builder-steps button.active { border-color: var(--aqua); color: #bdeee8; background: linear-gradient(135deg, rgba(32,227,195,.14), rgba(58,156,255,.07)); box-shadow: 0 0 0 3px rgba(32,227,195,.055); }
+.run-builder-steps button.active > b { color: #031012; background: linear-gradient(135deg, var(--aqua), #3a9cff); }
+.run-builder-steps button:disabled { opacity: .42; cursor: not-allowed; }
 .run-builder-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .visual-run-builder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 14px; align-items: start; }
 .run-map-stage { min-width: 0; overflow: hidden; border: 1px solid rgba(32,227,195,0.26); border-radius: 15px; background: rgba(3,8,10,0.76); }
@@ -3678,6 +3703,26 @@ html.coaching-viewer-open body { overflow: hidden; }
 .run-point-empty { min-height: 170px; align-content: center; text-align: center; }
 .run-point-empty strong { font: 900 1.35rem var(--display); }
 .run-point-empty p { margin: 0; color: var(--muted); line-height: 1.4; }
+.run-phase-tip { margin: 0; color: var(--muted); font-size: .75rem; line-height: 1.45; }
+.run-trick-editor > div:first-child > strong,
+.run-playback-ready > strong { font: 900 1.35rem var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.run-trick-editor-list { display: grid; gap: 7px; max-height: 430px; padding-right: 3px; overflow-y: auto; overscroll-behavior: contain; }
+.run-trick-entry { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 8px; padding: 7px; border: 1px solid rgba(183,202,211,.13); border-radius: 11px; background: rgba(255,255,255,.018); }
+.run-trick-entry > b { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 50%; color: #031012; background: var(--run-color, var(--aqua)); font: 900 .6rem var(--mono); }
+.run-trick-entry > span { min-width: 0; display: grid; gap: 3px; }
+.run-trick-entry small { color: var(--muted); font: 800 .52rem var(--mono); letter-spacing: .08em; }
+.run-trick-entry input { width: 100%; min-height: 39px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: rgba(1,6,8,.78); }
+.run-trick-entry:focus-within { border-color: rgba(32,227,195,.48); background: rgba(32,227,195,.045); }
+.run-playback-ready p { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.run-playback-ready > small { color: var(--aqua); font: 800 .6rem var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.run-playback-edit-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.run-playback-edit-actions button { width: 100%; min-height: 42px; }
+.run-map-route .run-map-preview { cursor: crosshair; }
+.run-map-tricks .run-map-preview,
+.run-map-playback .run-map-preview { cursor: default; }
+.run-builder-live .run-marker { width: 21px; height: 21px; border-width: 1.5px; font-size: .56rem; cursor: grab; }
+.run-builder-live .run-marker::before { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
+.run-builder-stage-playback .run-marker { cursor: default; }
 .run-bend-control { display: grid; gap: 7px; color: var(--muted); font: 800 0.63rem var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
 .run-bend-control > div { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; gap: 9px; }
 .run-bend-control input { width: 100%; accent-color: var(--aqua); }
@@ -9542,6 +9587,13 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 
 @media (max-width: 520px) {
   .visual-run-builder { gap: 10px; }
+  .run-builder-steps { gap: 5px; }
+  .run-builder-steps button { grid-template-columns: 25px minmax(0, 1fr); gap: 6px; min-height: 52px; padding: 7px; }
+  .run-builder-steps button > b { width: 24px; height: 24px; font-size: .54rem; }
+  .run-builder-steps strong { font-size: .7rem; }
+  .run-builder-steps small { display: none; }
+  .run-trick-editor-list { max-height: none; }
+  .run-playback-edit-actions { grid-template-columns: 1fr; }
   .run-map-stage { overflow: visible; }
   .run-map-stage .run-map { min-height: 230px; overflow: hidden; }
   .run-map-preview { overflow: hidden; }
