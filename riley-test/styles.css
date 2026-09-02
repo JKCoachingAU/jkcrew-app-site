@@ -516,90 +516,249 @@ button[aria-busy="true"] {
 }
 .tricktionary-board {
   display: grid;
-  gap: 12px;
+  gap: 14px;
+  --trick-tone: var(--aqua);
+}
+.tricktionary-board.is-editable,
+.tricktionary-board.is-editable * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.tricktionary-board.is-dragging,
+.tricktionary-board.is-dragging * {
+  cursor: grabbing !important;
 }
 .tricktionary-help {
   margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(146,84,255,0.32);
+  border-radius: 12px;
+  background: linear-gradient(110deg, rgba(146,84,255,0.11), rgba(58,156,255,0.05));
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.tricktionary-help strong {
+  color: #c9a8ff;
+  font: 900 0.72rem var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .tricktionary-category-grid {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+[data-tricktionary-drop-category="new"] { --trick-tone: #a46cff; --trick-deep: rgba(88,44,154,0.2); }
+[data-tricktionary-drop-category="box"] { --trick-tone: #3a9cff; --trick-deep: rgba(34,98,177,0.2); }
+[data-tricktionary-drop-category="spine"] { --trick-tone: #20e3c3; --trick-deep: rgba(19,140,122,0.19); }
+[data-tricktionary-drop-category="air"] { --trick-tone: #f7c83e; --trick-deep: rgba(172,124,15,0.2); }
+[data-tricktionary-drop-category="hip"] { --trick-tone: #ff6b5e; --trick-deep: rgba(179,60,48,0.19); }
 .tricktionary-zone {
+  position: relative;
   display: grid;
   align-content: start;
-  gap: 10px;
-  min-height: 160px;
-  padding: 10px;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 14px;
-  background: rgba(255,255,255,0.025);
-  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 44%, rgba(255,255,255,0.1));
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--trick-tone) 12%, transparent), transparent 40%),
+    linear-gradient(150deg, var(--trick-deep), rgba(8,13,16,0.92) 52%);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--trick-tone) 82%, transparent), 0 12px 30px rgba(0,0,0,0.18);
+  overflow: hidden;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 .tricktionary-zone.new-zone {
-  min-height: 120px;
-  border-color: rgba(32,227,195,0.28);
-  background: linear-gradient(135deg, rgba(32,227,195,0.08), rgba(255,255,255,0.025));
+  min-height: 126px;
+  padding-bottom: 12px;
 }
 .tricktionary-zone.drag-over {
-  border-color: rgba(32,227,195,0.78);
-  background: rgba(32,227,195,0.12);
+  border-color: var(--trick-tone);
+  background: color-mix(in srgb, var(--trick-tone) 17%, #071014);
+  box-shadow: inset 3px 0 0 var(--trick-tone), 0 0 0 2px color-mix(in srgb, var(--trick-tone) 30%, transparent), 0 0 32px color-mix(in srgb, var(--trick-tone) 24%, transparent);
   transform: translateY(-1px);
 }
+.tricktionary-zone.drag-over::after {
+  content: "MOVE HERE";
+  position: absolute;
+  z-index: 8;
+  right: 12px;
+  bottom: 10px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: var(--trick-tone);
+  color: #041013;
+  font: 900 0.58rem var(--mono);
+  letter-spacing: 0.08em;
+}
 .tricktionary-zone-header {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 13px 15px;
+}
+summary.tricktionary-zone-header {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  cursor: pointer;
+  list-style: none;
+}
+summary.tricktionary-zone-header::-webkit-details-marker,
+.tricktionary-subcategory > summary::-webkit-details-marker { display: none; }
+.tricktionary-category-accordion > summary::after {
+  content: "+";
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 52%, transparent);
+  border-radius: 50%;
+  color: var(--trick-tone);
+  font: 900 1rem/1 var(--mono);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.tricktionary-category-accordion[open] > summary::after {
+  content: "−";
+  background: color-mix(in srgb, var(--trick-tone) 13%, transparent);
+  transform: rotate(180deg);
+}
+.tricktionary-zone-heading {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.tricktionary-zone-heading > b {
+  display: grid;
+  flex: 0 0 35px;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--trick-tone) 12%, transparent);
+  color: var(--trick-tone);
+  font: 900 0.72rem var(--mono);
 }
 .tricktionary-zone-header h3 {
   margin: 0;
-  font: 900 1.05rem/0.95 var(--display);
+  color: var(--trick-tone);
+  font: 900 1.2rem/0.95 var(--display);
+  letter-spacing: 0.025em;
   text-transform: uppercase;
 }
 .tricktionary-zone-header small {
   display: block;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
+  line-height: 1.25;
 }
-.tricktionary-zone-header span {
+.tricktionary-zone-count {
   min-width: 34px;
   padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 46%, transparent);
   border-radius: 999px;
-  background: var(--aqua-soft);
-  color: var(--aqua);
+  background: color-mix(in srgb, var(--trick-tone) 13%, transparent);
+  color: var(--trick-tone);
   font: 900 0.72rem var(--mono);
   text-align: center;
 }
 .tricktionary-zone-body {
   display: grid;
+  gap: 9px;
+  padding: 0 12px 12px;
+}
+.tricktionary-subcategory {
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 25%, rgba(255,255,255,0.08));
+  border-radius: 11px;
+  background: rgba(2,7,9,0.38);
+  overflow: hidden;
+}
+.tricktionary-subcategory > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 45px;
+  padding: 9px 11px;
+  cursor: pointer;
+  list-style: none;
+  color: color-mix(in srgb, var(--trick-tone) 76%, white);
+  font: 900 0.72rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tricktionary-subcategory > summary::after {
+  content: "+";
+  color: var(--trick-tone);
+  font-size: 0.9rem;
+}
+.tricktionary-subcategory[open] > summary::after { content: "−"; }
+.tricktionary-subcategory > summary b {
+  margin-left: auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--trick-tone) 12%, transparent);
+  color: var(--trick-tone);
+  font: 900 0.63rem var(--mono);
+}
+.tricktionary-subcategory-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 7px;
+  padding: 0 8px 8px;
 }
 .tricktionary-card {
+  position: relative;
   display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 7px;
-  background: rgba(255,255,255,0.04);
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 10px 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 24%, rgba(255,255,255,0.11));
+  border-radius: 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--trick-tone) 7%, rgba(255,255,255,0.035)), rgba(4,9,12,0.74));
+  overflow: hidden;
+}
+.tricktionary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--trick-tone);
 }
 .tricktionary-card[draggable="true"] {
   cursor: grab;
-  touch-action: manipulation;
+  touch-action: pan-y;
+  -webkit-user-drag: element;
+  -webkit-user-select: none;
   user-select: none;
 }
 .tricktionary-card.dragging {
-  opacity: 0.56;
+  opacity: 0.5;
   cursor: grabbing;
   transform: scale(0.985);
 }
 .tricktionary-card.merge-target {
-  border-color: rgba(255,213,92,0.75);
-  background: rgba(255,213,92,0.08);
+  border-color: #ffd84d;
+  background: rgba(255,216,77,0.12);
+  box-shadow: 0 0 0 2px rgba(255,216,77,0.24), 0 0 28px rgba(255,216,77,0.18);
+}
+.tricktionary-card.merge-target::after {
+  content: "MERGE + COMBINE TOTALS";
+  position: absolute;
+  z-index: 5;
+  inset: auto 7px 7px auto;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #ffd84d;
+  color: #181000;
+  font: 900 0.48rem var(--mono);
+  letter-spacing: 0.05em;
 }
 .tricktionary-card strong { display: block; font-size: 0.9rem; line-height: 1.05; }
 .tricktionary-card-main {
@@ -618,18 +777,18 @@ button[aria-busy="true"] {
 .tricktionary-count-badge {
   min-width: 38px;
   padding: 4px 5px;
-  border: 1px solid rgba(32,227,195,0.28);
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 45%, transparent);
   border-radius: 9px;
-  background: var(--aqua-soft);
+  background: color-mix(in srgb, var(--trick-tone) 13%, transparent);
   text-align: center;
 }
 .tricktionary-count-badge strong {
-  color: var(--aqua);
+  color: var(--trick-tone);
   font: 900 1rem/0.85 var(--display);
 }
 .tricktionary-count-badge small {
   margin: 2px 0 0;
-  color: var(--aqua);
+  color: var(--trick-tone);
   font: 800 0.42rem var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -641,11 +800,13 @@ button[aria-busy="true"] {
 }
 .tricktionary-card-meta span {
   padding: 2px 5px;
-  border: 1px solid rgba(32,227,195,0.2);
+  border: 1px solid color-mix(in srgb, var(--trick-tone) 28%, transparent);
   border-radius: 999px;
   color: var(--muted);
   font-size: 0.65rem;
 }
+.tricktionary-card-meta span:first-child { color: var(--trick-tone); }
+.tricktionary-drag-hint { opacity: 0.72; }
 .previous-sheet-stack,
 .previous-sheet-body,
 .previous-sheet-group {
@@ -6431,7 +6592,11 @@ html[data-theme="light"] .success-burst {
   .sidebar { display: none; }
   .main-wrap { min-width: 0; }
   .tricktionary-category-grid { grid-template-columns: 1fr; }
-  .tricktionary-zone { min-height: 120px; }
+  .tricktionary-zone.new-zone { min-height: 120px; }
+  .tricktionary-zone-header { min-height: 64px; padding: 12px; }
+  .tricktionary-zone-heading > b { flex-basis: 32px; width: 32px; height: 32px; }
+  .tricktionary-zone-header h3 { font-size: 1.1rem; }
+  .tricktionary-subcategory > summary { min-height: 48px; }
   .topbar { height: 62px; padding: 0 16px; }
   .content {
     width: 100%;
@@ -9732,4 +9897,41 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
     box-shadow: 0 4px 14px rgba(0,0,0,0.46);
   }
   .run-bend-control-mobile output { min-height: 40px; font-size: 0.72rem; }
+}
+
+/* Tricktionary skill-map polish: keep every role's category colours distinct. */
+.rider-shell .tricktionary-zone,
+.parent-shell .tricktionary-zone,
+.coach-shell .tricktionary-zone {
+  border-color: color-mix(in srgb, var(--trick-tone) 44%, var(--line));
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--trick-tone) 12%, transparent), transparent 40%),
+    linear-gradient(150deg, var(--trick-deep), rgba(8,13,16,0.94) 52%);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--trick-tone) 82%, transparent), 0 14px 34px rgba(0,0,0,0.2);
+}
+.rider-shell .tricktionary-zone-header h3,
+.parent-shell .tricktionary-zone-header h3,
+.coach-shell .tricktionary-zone-header h3,
+.rider-shell .tricktionary-zone-count,
+.parent-shell .tricktionary-zone-count,
+.coach-shell .tricktionary-zone-count { color: var(--trick-tone); }
+.rider-shell .tricktionary-card,
+.parent-shell .tricktionary-card,
+.coach-shell .tricktionary-card {
+  border-color: color-mix(in srgb, var(--trick-tone) 27%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--trick-tone) 7%, rgba(255,255,255,0.035)), rgba(4,9,12,0.78));
+  box-shadow: none;
+}
+html[data-theme="light"] .rider-shell .tricktionary-zone,
+html[data-theme="light"] .parent-shell .tricktionary-zone,
+html[data-theme="light"] .coach-shell .tricktionary-zone {
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--trick-tone) 10%, transparent), transparent 42%),
+    linear-gradient(150deg, color-mix(in srgb, var(--trick-tone) 6%, white), rgba(248,245,238,0.98) 55%);
+}
+html[data-theme="light"] .rider-shell .tricktionary-card,
+html[data-theme="light"] .parent-shell .tricktionary-card,
+html[data-theme="light"] .coach-shell .tricktionary-card,
+html[data-theme="light"] .tricktionary-subcategory {
+  background: color-mix(in srgb, var(--trick-tone) 5%, rgba(255,255,255,0.94));
 }

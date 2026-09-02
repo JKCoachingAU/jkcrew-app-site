@@ -31,7 +31,9 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.35";
+const tricktionaryMergeMigration = read("supabase/migrations/20260903020000_merge_tricktionary_entries.sql");
+const tricktionaryHardeningMigration = read("supabase/migrations/20260903023000_harden_tricktionary_updates.sql");
+const version = "2.14.36";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -402,6 +404,118 @@ assert(css.includes(".parent-shell .push-settings-card"), "Parent profile contro
 assert(!css.includes(".parent-shell .parent-readonly { pointer-events: none; }"), "Read-only parent content must still allow accordion navigation");
 assert(functionBody("renderParentWeek").includes("assignmentGroups(assignments, false)"), "Parent weekly sheets must remain read-only");
 assert(!functionBody("renderParentTricktionary").includes("editable: true"), "Parent Tricktionary must remain read-only");
+assert(functionBody("getTricktionaryData").includes("getTricktionaryPagedRows"), "Tricktionary totals must load the complete paged history");
+assert(!functionBody("getTricktionaryData").includes(".limit(400)"), "Tricktionary assignment totals must not stop at 400 rows");
+assert(functionBody("landedTricktionaryEntries").includes("resolveTricktionaryAlias(sourceKey, meta.aliases)"), "Landed totals must roll up through the canonical trick name");
+assert(functionBody("landedTricktionaryEntries").includes('trick.source === "merged"'), "Legacy synthetic merge markers must not add a fake landing");
+assert(functionBody("attemptsByTrick").includes("resolveTricktionaryAlias"), "Attempt totals must roll up through the canonical trick name");
+assert(functionBody("weeklyAttemptsHtml").includes("meta.aliases, meta.titles"), "Weekly attempt summaries must use merged names and totals");
+const tricktionaryBoard = functionBody("tricktionaryBoardHtml");
+assert(tricktionaryBoard.includes('<details class="tricktionary-zone tricktionary-category-accordion"'), "Box, Spine, Air, and Hip must be closed category dropdowns");
+assert(!tricktionaryBoard.includes('<details open class="tricktionary-zone'), "Tricktionary category dropdowns must start closed");
+assert(tricktionaryBoard.includes('class="tricktionary-subcategory"'), "Tricktionary areas must include their requested subcategory dropdowns");
+const mergeTricktionaryBody = functionBody("mergeTricktionaryEntries");
+assert(mergeTricktionaryBody.includes('rpc("merge_tricktionary_entries"'), "Trick merges must use the atomic database function");
+assert(!mergeTricktionaryBody.includes("crypto.randomUUID"), "Merging tricks must never create a new manual trick");
+assert(!mergeTricktionaryBody.includes("count: 1"), "Merging tricks must never invent a landing");
+const bindTricktionaryBody = functionBody("bindTricktionaryBoard");
+assert(bindTricktionaryBody.includes('event.pointerType === "mouse"'), "Desktop native drag and touch pointer drag must not both process one gesture");
+assert(bindTricktionaryBody.includes("dropInFlight"), "One physical Tricktionary drop must only save once");
+assert(bindTricktionaryBody.includes('addEventListener("selectstart"'), "Editable Tricktionary boards must block accidental text highlighting");
+assert(bindTricktionaryBody.includes('targetCard.classList.add("merge-target")'), "Mouse dragging over a trick must clearly show that landed totals will merge");
+assert(css.includes(".tricktionary-board.is-editable *"), "All text inside an editable Tricktionary must opt out of selection");
+assert(css.includes("-webkit-touch-callout: none"), "iPhone Tricktionary dragging must suppress the text callout");
+assert(tricktionaryMergeMigration.includes("update public.profiles profile"), "The merge RPC must save aliases atomically on the rider profile");
+assert(tricktionaryMergeMigration.includes("for update"), "Concurrent Tricktionary merges must lock the rider metadata row");
+assert(tricktionaryMergeMigration.includes("public.coach_athletes"), "A coach may only merge Tricktionary entries for a linked rider");
+assert(tricktionaryMergeMigration.includes("revoke all on function public.merge_tricktionary_entries"), "The merge RPC must not be executable by anonymous users");
+assert(functionBody("moveTricktionaryEntry").includes('rpc("set_tricktionary_category"'), "Category moves must preserve concurrent merges through an atomic RPC");
+assert(functionBody("saveManualTrick").includes('rpc("add_manual_tricktionary_entry"'), "Rider manual additions must preserve concurrent merges through an atomic RPC");
+assert(functionBody("removeManualTrick").includes('rpc("remove_manual_tricktionary_entry"'), "Rider manual removals must be atomic");
+assert(functionBody("saveCoachManualTrick").includes('rpc("add_manual_tricktionary_entry"'), "Coach manual additions must preserve concurrent rider changes");
+assert(functionBody("removeCoachManualTrick").includes('rpc("remove_manual_tricktionary_entry"'), "Coach manual removals must be atomic");
+assert(!app.includes("function saveTricktionaryProfileUpdate"), "Tricktionary edits must not use an unlocked whole-profile metadata overwrite");
+assert(tricktionaryHardeningMigration.includes("create or replace function public.set_tricktionary_category"), "The category update RPC must ship with the app");
+assert(tricktionaryHardeningMigration.includes("create or replace function public.add_manual_tricktionary_entry"), "The atomic manual-add RPC must ship with the app");
+assert(tricktionaryHardeningMigration.includes("create or replace function public.remove_manual_tricktionary_entry"), "The atomic manual-remove RPC must ship with the app");
+assert.equal((tricktionaryHardeningMigration.match(/for update;/g) || []).length, 3, "Every Tricktionary mutation RPC must lock the profile row");
+assert(tricktionaryHardeningMigration.includes("revoke all on function public.set_tricktionary_category"), "Tricktionary mutation RPCs must not be anonymous");
+
+const tricktionaryClassifier = new Function(`${functionBody("tricktionarySubcategory")}\nreturn tricktionarySubcategory;`)();
+assert.equal(tricktionaryClassifier({ title: "Backflip 360" }, "box"), "flips", "Flip tricks take priority over spin numbers on Box, Spine, and Hip");
+assert.equal(tricktionaryClassifier({ title: "360 whip" }, "spine"), "spins", "Rotation tricks belong in Spins");
+assert.equal(tricktionaryClassifier({ title: "Alley-oop 360" }, "air"), "alleyoop", "Air alley-oops belong in Alleyoop even when they include a rotation");
+assert.equal(tricktionaryClassifier({ title: "Ali oop flair" }, "air"), "alleyoop", "Common Ali oop spelling must still belong in Alleyoop");
+assert.equal(tricktionaryClassifier({ title: "Flair 360" }, "air"), "flips", "Air Flairs belong in Flips");
+assert.equal(tricktionaryClassifier({ title: "Backflip" }, "air"), "flips", "Air flip variants belong in Flips");
+assert.equal(tricktionaryClassifier({ title: "540 air" }, "air"), "spins", "Air rotations belong in Spins");
+
+const tricktionaryAggregationFactory = new Function(`
+  const TRICKTIONARY_ALLOWED_CATEGORIES = new Set(["new", "box", "spine", "air", "hip"]);
+  const TRICKTIONARY_CATEGORY_LABELS = { new: "New Tricks", box: "Box", spine: "Spine", air: "Air", hip: "Hip" };
+  const categoryInfo = { manual: { label: "Manual add" } };
+  ${functionBody("normalizeTrickKey")}
+  ${functionBody("safeTricktionaryCategory")}
+  ${functionBody("manualTricktionary")}
+  ${functionBody("tricktionaryMeta")}
+  ${functionBody("resolveTricktionaryAlias")}
+  ${functionBody("tricktionaryCategoryFromText")}
+  ${functionBody("landedTricktionaryEntries")}
+  ${functionBody("attemptsByTrick")}
+  return { landedTricktionaryEntries, attemptsByTrick, tricktionaryMeta };
+`)();
+const mergedFixture = {
+  profile: {
+    tricktionary_meta: {
+      aliases: { "old backflip": "backflip", "back flip": "backflip" },
+      titles: { backflip: "Backflip" },
+      categories: { backflip: "box" },
+    },
+    manual_tricktionary: [
+      { id: "one", title: "Old Backflip", count: 4 },
+      { id: "two", title: "Back Flip", count: 7 },
+    ],
+  },
+  assignments: [], progress: [], awards: [], percentageAttempts: [],
+};
+const mergedEntries = tricktionaryAggregationFactory.landedTricktionaryEntries(mergedFixture);
+assert.equal(mergedEntries.length, 1, "Two merged trick names must render as exactly one trick");
+assert.equal(mergedEntries[0].count, 11, "Merged trick landings must sum without losing either source total");
+const legacyMergedEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
+  ...mergedFixture,
+  profile: {
+    tricktionary_meta: {},
+    manual_tricktionary: [
+      { id: "one", title: "Old Backflip", count: 4 },
+      { id: "two", title: "Back Flip", count: 7 },
+      { id: "bad-old-merge", title: "Backflip", count: 1, source: "merged", mergedFrom: ["Old Backflip", "Back Flip"] },
+    ],
+  },
+});
+assert.equal(legacyMergedEntries.length, 1, "Legacy synthetic merges must be repaired into one visible trick");
+assert.equal(legacyMergedEntries[0].count, 11, "Legacy synthetic merges must not inflate the total with their fake +1 landing");
+assert.equal(tricktionaryAggregationFactory.tricktionaryMeta({ tricktionary_meta: { aliases: { old: "middle", middle: "final" } } }).aliases.old, "middle", "Stored alias chains must remain available for resolution");
+assert.equal(tricktionaryAggregationFactory.attemptsByTrick([{ trick_name: "Old" }, { trick_name: "Middle" }], { old: "middle", middle: "final" }, { final: "Final Trick" }).get("final").title, "Final Trick", "Merged attempts must use the canonical display name");
+assert.equal(tricktionaryAggregationFactory.attemptsByTrick([{ trick_name: "Old" }, { trick_name: "Middle" }], { old: "middle", middle: "final" }, { final: "Final Trick" }).get("final").count, 2, "Merged attempt totals must combine");
+assert.equal(tricktionaryAggregationFactory.attemptsByTrick([{ trick_name: "A" }, { trick_name: "B" }], { a: "b", b: "a" }).size, 1, "A legacy alias cycle must resolve deterministically to one card");
+const mergedGroupEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
+  profile: {
+    tricktionary_meta: {
+      aliases: { "a one": "group a", "a two": "group a", "b one": "group b", "b two": "group b", "group a": "final", "group b": "final" },
+      titles: { final: "Final Combo" },
+    },
+    manual_tricktionary: [
+      { id: "a1", title: "A One", count: 1 },
+      { id: "a2", title: "A Two", count: 2 },
+      { id: "b1", title: "B One", count: 3 },
+      { id: "b2", title: "B Two", count: 4 },
+    ],
+  },
+  assignments: [], progress: [], awards: [], percentageAttempts: [],
+});
+assert.equal(mergedGroupEntries.length, 1, "Merging two already-merged groups must leave one visible trick");
+assert.equal(mergedGroupEntries[0].count, 10, "Merging two already-merged groups must preserve every landing");
+assert(functionBody("coachManualTricktionaryPanel").includes('trick?.source === "merged"'), "Legacy fake merge markers must stay hidden from coach manual management");
 assert(app.includes('parentAthleteId: ""'), "Parent screens must track the selected linked rider");
 assert(functionBody("rememberParentAthleteId").includes("localStorage.setItem(parentSelectionStorageKey(), athleteId)"), "The selected child must persist per parent account");
 assert(functionBody("getParentRiderContext").includes("storedParentAthleteId()"), "Every parent screen must restore the saved child selection");
