@@ -28,7 +28,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.29";
+const version = "2.14.30";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -693,7 +693,12 @@ assert(parentContestsBody.includes("Private rider run plans are not displayed"),
 const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
+assert(openRunBuilderBody.includes("await getEventCoursePhoto(contestItemId)"), "Event run builders must automatically load the shared course photo");
+assert(openRunBuilderBody.includes('imageDataUrl: coursePhoto?.image_data_url || ""'), "The saved event course must immediately populate the Run Builder map");
+assert(openRunBuilderBody.includes("coursePhotoLoaded: Boolean(coursePhoto?.image_data_url)"), "The Run Builder must identify an automatically loaded event course");
 assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "smooth"'), "Opening the Run Builder must take the rider directly to it");
+assert(functionBody("currentRunFormState").includes("coursePhotoLoaded: Boolean(state.runBuilder?.coursePhotoLoaded)"), "The loaded event-course state must survive Run Builder redraws");
+assert(functionBody("setRunBuilderPhoto").includes("coursePhotoLoaded: false"), "Choosing a different private photo must clear the event-course label");
 const runBuilderMarkup = functionBody("runBuilderPanel");
 for (const control of ['id="run-photo"', 'id="run-map"', "data-selected-run-label", "data-selected-run-bend", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
   assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
@@ -702,6 +707,7 @@ for (const removedControl of ['id="run-venue"', 'id="run-type"', 'id="use-demo-r
   assert(!runBuilderMarkup.includes(removedControl), `Run Builder should not show ${removedControl}`);
 }
 assert(!runBuilderMarkup.includes("selected-run-note"), "Run Builder should not show a per-dot Run note field");
+assert(runBuilderMarkup.includes('builder.coursePhotoLoaded ? "Event course loaded"'), "The Run Builder must confirm when it reused the event course");
 assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
 assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
