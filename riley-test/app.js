@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.34";
+const RELEASE_VERSION = "2.14.35";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.34" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.35" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -6290,11 +6290,9 @@ function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
 }
 
 function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
-  const limit = window.matchMedia("(min-width: 980px)").matches ? 10 : 5;
-  const previewRows = rows.slice(0, limit);
-  if (!previewRows.length) return `<div class="empty compact-empty">No leaderboard scores yet.</div>`;
+  const previewRows = rows.slice(0, 5);
   return `
-    <div class="command-leaderboard-list">
+    ${previewRows.length ? `<div class="command-leaderboard-list">
       ${previewRows.map((row, index) => {
         const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
         const xp = riderXpSummary(row);
@@ -6307,7 +6305,7 @@ function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
           <span class="command-points">${points} pts</span>
         </button>`;
       }).join("")}
-    </div>
+    </div>` : `<div class="empty compact-empty">No leaderboard scores yet.</div>`}
     <button class="secondary-btn full-width-btn" type="button" data-view="board">View Full Leaderboard</button>`;
 }
 
@@ -7142,7 +7140,7 @@ function contestEventCardsHtml(events = [], runs = [], attendance = [], roster =
         <span class="contest-event-chevron" aria-hidden="true">›</span>
       </button>
       ${athleteView ? `<div class="contest-event-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ GOING" : "+ I'M GOING"}</button><button class="secondary-btn compact-btn contest-build-button" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>${linkedRuns ? "ADD PRIVATE RUN" : "BUILD PRIVATE RUN"}</button></div>` : ""}
-      ${coachView ? `<div class="contest-event-coach-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-coach-event-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M ATTENDING" : "+ I'LL BE THERE"}</button><button class="secondary-btn compact-btn" type="button" data-open-contest-event="${escapeHtml(item.id)}">EDIT RIDERS</button><span class="contest-merge-grip" aria-hidden="true">⠿</span><span class="contest-merge-hint">Drag duplicate events together</span><button class="secondary-btn compact-btn" type="button" data-select-event-merge="${escapeHtml(item.id)}">${mergeSelected ? "Selected · choose another" : "Merge duplicate"}</button></div>` : ""}
+      ${coachView ? `<div class="contest-event-actions contest-event-coach-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-coach-event-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M ATTENDING" : "+ I'LL BE THERE"}</button><button class="secondary-btn compact-btn" type="button" data-open-contest-event="${escapeHtml(item.id)}">MANAGE EVENT</button><button class="secondary-btn compact-btn contest-merge-button" type="button" data-select-event-merge="${escapeHtml(item.id)}">${mergeSelected ? "SELECTED · CHOOSE ANOTHER" : "MERGE DUPLICATE"}</button></div>` : ""}
     </article>`;
   }).join("")}</div>`;
 }
@@ -8186,12 +8184,19 @@ function coachEventRunPlansHtml(plans = [], roster = []) {
 }
 
 function coachSharedEventsSummaryHtml(events = [], attendance = []) {
-  const rows = events.slice(0, 5).map((item) => {
+  const rows = events.slice(0, 4).map((item) => {
     const attendees = contestEventAttendees(attendance, item.id);
     const coachGoing = attendees.some((row) => row.athlete_id === state.user?.id);
-    return `<button class="coach-shared-event-row" type="button" data-view="contests"><span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span><span><strong>${escapeHtml(item.title)}</strong><small>${coachGoing ? "Coach attending" : "Coach not marked attending"} · ${attendees.length} attending</small></span><b aria-hidden="true">→</b></button>`;
+    return `<article class="contest-event-card ${coachGoing ? "is-going" : ""}">
+      <button class="contest-event-main" type="button" data-view="contests" aria-label="Open ${escapeHtml(item.title)} in Events and Runs">
+        <span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span>
+        <span class="contest-event-copy"><span class="eyebrow">${coachGoing ? "Coach attending" : "Upcoming event"}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
+        <span class="contest-event-going">${contestEventFacesHtml(attendees)}</span>
+        <span class="contest-event-chevron" aria-hidden="true">›</span>
+      </button>
+    </article>`;
   }).join("");
-  return `<div class="coach-shared-events-summary">${rows || `<div class="empty compact-empty">No upcoming shared events.</div>`}<button class="primary-btn" type="button" data-view="contests">OPEN EVENTS · ATTENDANCE · MERGE</button></div>`;
+  return `<div class="coach-shared-events-summary"><div class="contest-event-grid command-event-grid">${rows || `<div class="contest-empty"><strong>No upcoming events yet</strong><span>Open Events & Runs to add the first shared crew event.</span></div>`}</div><button class="primary-btn full-width-btn" type="button" data-view="contests">VIEW ALL UPCOMING EVENTS</button></div>`;
 }
 
 async function reviewRiderSheetProposal(event) {
@@ -8258,7 +8263,7 @@ async function renderCoachCommand() {
     commandAccordionSection("list-requests-section", "List Requests", "Complete weekly lists waiting for your approval", coachListRequestsHtml(commandData.sheetProposals, roster)),
     commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
     commandAccordionSection("event-runs-section", "New Event Run Plans", "Private rider runs created this week", coachEventRunPlansHtml(recentEventRuns, roster)),
-    commandAccordionSection("upcoming-events-section", "Upcoming Events", "Shared with riders · attendance and duplicate merging", `${coachSharedEventsSummaryHtml(sharedEventData.events, sharedEventData.attendance)}<div class="settings-divider"></div><details class="coach-tool-details"><summary>Add a coach-only calendar note</summary>${coachCalendarForm(roster)}</details>`),
+    commandAccordionSection("coach-calendar-note-section", "Coach Calendar Note", "Add a private session or reminder note", coachCalendarForm(roster)),
     commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Parent accounts and links are managed under More → Parents.</div>`),
   ].join("");
   document.querySelector("#view").innerHTML = `
@@ -8280,8 +8285,12 @@ async function renderCoachCommand() {
       <div class="command-message-body">${coachBroadcastComposerHtml(roster, broadcastHistory)}</div>
     </details>
     <section class="panel command-leaderboard-panel coach-tone-gold">
-      <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top riders this week · full board lives under More</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top 5 riders this week</div></div></div>
       ${commandLeaderboardPreviewHtml(leaderboard, "weekly_points")}
+    </section>
+    <section id="upcoming-events-section" class="panel shared-events-panel athlete-event-palette command-upcoming-events-panel coach-tone-gold">
+      <div class="shared-events-head"><div><div class="eyebrow">Events & private planning</div><h2>Upcoming events</h2><p>The same event list riders see. Open Events & Runs to manage attendance, course photos, private runs and duplicates.</p></div><span class="command-event-count">${upcoming} upcoming</span></div>
+      ${coachSharedEventsSummaryHtml(sharedEventData.events, sharedEventData.attendance)}
     </section>
     ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
     <section class="command-management-stack">

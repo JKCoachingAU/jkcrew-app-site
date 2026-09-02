@@ -31,7 +31,7 @@ const eventCourseIndexMigration = read("supabase/migrations/20260830115000_index
 const parentEventCourseMigration = read("supabase/migrations/20260830123000_parent_event_course_read_only.sql");
 const parentEngagementMigration = read("supabase/migrations/20260830124500_parent_engagement_alerts.sql");
 const parkKingLiveScoreMigration = read("supabase/migrations/20260831150239_fix_park_king_live_session_scores.sql");
-const version = "2.14.34";
+const version = "2.14.35";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -708,7 +708,8 @@ assert(contestCardsBody.includes("contestEventFacesHtml(attendees)"), "Event car
 assert(contestCardsBody.includes('draggable="true"'), "Coach event cards must support drag-to-merge");
 assert(contestCardsBody.includes("data-select-event-merge"), "Touch devices need a two-tap event merge fallback");
 assert(contestCardsBody.includes("data-toggle-coach-event-attendance"), "Coaches must be able to mark whether they are attending from the event card");
-assert(contestCardsBody.includes("EDIT RIDERS"), "Coach event cards must expose rider attendance editing");
+assert(contestCardsBody.includes("contest-event-actions contest-event-coach-actions"), "Coach event controls must inherit the rider event-card layout");
+assert(contestCardsBody.includes("MANAGE EVENT"), "Coach event cards must expose event and rider attendance management");
 assert(contestCardsBody.includes("viewerAthleteId"), "Parent event cards must calculate attendance for the selected child");
 assert(contestCardsBody.includes("parentView"), "The shared event cards must support the read-only parent presentation");
 const contestModalBody = functionBody("contestEventModalHtml");
@@ -934,8 +935,13 @@ for (const selector of [".shared-events-panel", ".contest-event-card", ".contest
   assert(css.includes(selector), `Contests release styling is missing ${selector}`);
 }
 const coachCommandBody = functionBody("renderCoachCommand");
+const commandLeaderboardPreviewBody = functionBody("commandLeaderboardPreviewHtml");
 assert(coachCommandBody.includes("getSharedUpcomingEventData()"), "Coach Command must load the same upcoming-event catalogue riders see");
 assert(coachCommandBody.includes('commandMetricCard("Upcoming", upcoming, "Events to manage", { view: "contests" })'), "The coach Upcoming metric must open the event manager");
+assert(commandLeaderboardPreviewBody.includes("rows.slice(0, 5)"), "Coach Command leaderboard preview must always stop at five riders");
+assert(!commandLeaderboardPreviewBody.includes("matchMedia"), "Desktop Coach Command must not expand the leaderboard beyond five riders");
+assert(coachCommandBody.includes('id="upcoming-events-section"'), "Coach Command must show its upcoming event panel directly on the dashboard");
+assert(coachCommandBody.indexOf("commandLeaderboardPreviewHtml") < coachCommandBody.indexOf("coachSharedEventsSummaryHtml"), "Coach Command upcoming events must render below the leaderboard");
 assert(functionBody("coachSharedEventsSummaryHtml").includes("Coach attending"), "Coach Command must show coach attendance state for shared events");
 assert(app.includes('["contests", "Events & Runs"]'), "Coach navigation must clearly expose Events & Runs");
 for (const selector of [".contest-event-coach-actions", ".coach-event-attendance-editor", ".coach-shared-events-summary", ".run-playback-callout", ".run-playback-presets"]) {
