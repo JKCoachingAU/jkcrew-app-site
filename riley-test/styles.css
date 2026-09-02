@@ -681,10 +681,30 @@ summary.tricktionary-zone-header::-webkit-details-marker,
   padding: 0 12px 12px;
 }
 .tricktionary-subcategory {
+  position: relative;
   border: 1px solid color-mix(in srgb, var(--trick-tone) 25%, rgba(255,255,255,0.08));
   border-radius: 11px;
   background: rgba(2,7,9,0.38);
   overflow: hidden;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+.tricktionary-subcategory.drag-over {
+  border-color: var(--trick-tone);
+  background: color-mix(in srgb, var(--trick-tone) 13%, rgba(2,7,9,0.82));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--trick-tone) 45%, transparent), 0 0 24px color-mix(in srgb, var(--trick-tone) 20%, transparent);
+}
+.tricktionary-subcategory.drag-over::after {
+  content: "MOVE HERE";
+  position: absolute;
+  z-index: 8;
+  right: 8px;
+  bottom: 8px;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: var(--trick-tone);
+  color: #041013;
+  font: 900 0.5rem var(--mono);
+  letter-spacing: 0.07em;
 }
 .tricktionary-subcategory > summary {
   display: flex;
@@ -706,6 +726,29 @@ summary.tricktionary-zone-header::-webkit-details-marker,
   font-size: 0.9rem;
 }
 .tricktionary-subcategory[open] > summary::after { content: "−"; }
+.tricktionary-drop-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  margin-left: auto;
+  padding: 3px 6px;
+  border: 1px dashed color-mix(in srgb, var(--trick-tone) 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--trick-tone) 8%, transparent);
+  color: color-mix(in srgb, var(--trick-tone) 78%, var(--muted));
+  font: 800 0.48rem/1.1 var(--mono);
+  letter-spacing: 0.035em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tricktionary-subcategory > summary .tricktionary-drop-label + b { margin-left: 0; }
+.tricktionary-board.is-dragging .tricktionary-drop-label {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--trick-tone) 72%, transparent);
+  background: color-mix(in srgb, var(--trick-tone) 16%, transparent);
+  color: var(--trick-tone);
+}
 .tricktionary-subcategory > summary b {
   margin-left: auto;
   padding: 3px 7px;
@@ -774,6 +817,21 @@ summary.tricktionary-zone-header::-webkit-details-marker,
   justify-content: space-between;
   gap: 7px;
 }
+.tricktionary-card-main > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tricktionary-card-main > div:first-child strong,
+.tricktionary-card-main > div:first-child small {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.tricktionary-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 5px;
+}
 .tricktionary-card-main small {
   display: block;
   margin-top: 2px;
@@ -800,6 +858,66 @@ summary.tricktionary-zone-header::-webkit-details-marker,
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.tricktionary-delete-btn {
+  --trick-delete-color: #ff6675;
+  --trick-delete-border: rgba(255,88,105,0.62);
+  --trick-delete-bg: rgba(255,64,84,0.12);
+  --trick-delete-hover-bg: rgba(255,64,84,0.24);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--trick-delete-color);
+  font: 900 1rem/1 var(--mono);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.tricktionary-delete-btn::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--trick-delete-border);
+  border-radius: 50%;
+  background: var(--trick-delete-bg);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+.tricktionary-delete-btn:hover::before,
+.tricktionary-delete-btn:focus-visible::before {
+  border-color: var(--trick-delete-color);
+  background: var(--trick-delete-hover-bg);
+  transform: translate(-50%, -50%) scale(1.06);
+}
+.tricktionary-delete-btn:focus-visible {
+  outline: 3px solid var(--trick-delete-color);
+  outline-offset: 3px;
+}
+.tricktionary-delete-btn:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+html[data-theme="light"] .tricktionary-delete-btn {
+  --trick-delete-color: #a71934;
+  --trick-delete-border: rgba(167,25,52,0.68);
+  --trick-delete-bg: rgba(167,25,52,0.1);
+  --trick-delete-hover-bg: rgba(167,25,52,0.2);
+}
 .tricktionary-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -814,6 +932,13 @@ summary.tricktionary-zone-header::-webkit-details-marker,
 }
 .tricktionary-card-meta span:first-child { color: var(--trick-tone); }
 .tricktionary-drag-hint { opacity: 0.72; }
+.tricktionary-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tricktionary-drag-handle:active { cursor: grabbing; }
 .previous-sheet-stack,
 .previous-sheet-body,
 .previous-sheet-group {
@@ -7180,6 +7305,12 @@ html[data-theme="light"] .success-burst {
   .nav-btn,
   .nav-sub-btn,
   summary {
+    min-height: 44px;
+  }
+  .tricktionary-delete-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
     min-height: 44px;
   }
 }
