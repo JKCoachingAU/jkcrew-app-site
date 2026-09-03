@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.42";
+const version = "2.14.43";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1046,6 +1046,14 @@ assert(battleMigration.includes("unnest(p_team_one)"), "The database must save e
 assert(battleMigration.includes("unnest(p_team_two)"), "The database must save every opposing rider");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-battle"), "Coach battle oversight needs a create-battle action");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-challenge"), "Coaches need a weekly challenge builder");
+const coachBattleViewerBody = functionBody("renderCoachBattleViewer");
+assert(coachBattleViewerBody.includes("Battle <span>HQ</span>"), "Coach Challenges must use the approved Battle HQ hero");
+assert(coachBattleViewerBody.includes("battle-hq-metrics"), "Battle HQ must expose live operational metrics");
+assert(coachBattleViewerBody.includes("data-battle-hq-filter"), "Battle HQ must provide live status filters");
+assert(coachBattleViewerBody.includes("battle-hq-search"), "Battle HQ must provide rider search");
+assert(coachBattleViewerBody.includes("applyBattleFilters"), "Battle HQ filters and rider search must update the rendered cards");
+assert(functionBody("coachBattleCardHtml").includes("data-battle-hq-riders"), "Battle cards must expose searchable rider names");
+assert(css.includes(".battle-hq-hero") && css.includes(".battle-hq-metrics"), "Battle HQ must ship its approved neon hero and metric styling");
 assert(functionBody("weeklyBattleCardHtml").includes("data-forfeit-battle"), "Live rider battles need a forfeit action");
 assert(functionBody("forfeitWeeklyRiderBattle").includes('rpc("forfeit_rider_battle"'), "Rider forfeits must use the protected database RPC");
 assert(functionBody("coachBattleCardHtml").includes("data-delete-coach-battle"), "Every coach battle card needs a delete action");

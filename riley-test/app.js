@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.42";
+const RELEASE_VERSION = "2.14.43";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.42" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.43" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8141,7 +8141,8 @@ function coachBattleCardHtml(battle) {
   const winners = participants.filter((participant) => participant.is_winner).map((participant) => participant.display_name).join(" + ");
   const coachAcceptActions = battle.status === "pending" && pendingRiders.length ? `<div class="coach-battle-pending-actions"><div><strong>Waiting for rider approval</strong><small>Accept for a rider who cannot access the app.</small></div><div>${pendingRiders.map((participant) => `<button class="secondary-btn compact-btn" type="button" data-coach-accept-battle="${battle.id}" data-coach-accept-athlete="${participant.athlete_id}">✓ Accept for ${escapeHtml(battleParticipantFirstName(participant))}</button>`).join("")}</div></div>` : "";
   const archiveAction = ["completed", "declined"].includes(battle.status) ? `<button class="secondary-btn compact-btn" type="button" data-archive-coach-battle="${battle.id}" data-battle-archived="${archived}">${archived ? "Restore battle" : "Archive battle"}</button>` : "";
-  return `<details class="coach-battle-view-card ${escapeHtml(battle.status)}">
+  const searchableRiders = participants.map((participant) => participant.display_name || "").join(" ").toLowerCase();
+  return `<details class="coach-battle-view-card battle-hq-card ${escapeHtml(battle.status)}" data-battle-hq-status="${escapeHtml(archived ? "archived" : battle.status)}" data-battle-hq-riders="${escapeHtml(searchableRiders)}">
     <summary class="coach-battle-card-summary">
       <span class="status-chip">${escapeHtml(statusLabel)}</span>
       <span class="coach-battle-summary-matchup"><strong>${escapeHtml(teamOneNames)} <b>VS</b> ${escapeHtml(teamTwoNames)}</strong><small>${teamOneScore}–${teamTwoScore} pts · ${escapeHtml(timing)}</small></span>
@@ -8187,7 +8188,7 @@ function sessionGroupBattlesHtml(battles = [], groupLabel = "") {
 }
 
 function coachBattleSection(title, meta, battles) {
-  return `<section class="panel coach-battle-view-section"><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill">${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
+  return `<section class="panel coach-battle-view-section battle-hq-section" data-battle-hq-section><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill" data-battle-hq-count>${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
 }
 
 function coachArchivedBattleSection(battles = []) {
@@ -8207,17 +8208,47 @@ async function renderCoachBattleViewer() {
   const live = current.filter((battle) => battle.status === "accepted");
   const pending = current.filter((battle) => battle.status === "pending");
   const finished = current.filter((battle) => ["completed", "declined"].includes(battle.status)).slice(0, 20);
+  const closestBattle = live.map((battle) => {
+    const teamOne = (battle.participants || []).filter((participant) => participant.team_number === 1).reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
+    const teamTwo = (battle.participants || []).filter((participant) => participant.team_number === 2).reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
+    return { battle, gap: Math.abs(teamOne - teamTwo) };
+  }).sort((a, b) => a.gap - b.gap)[0];
+  const endingNext = live.filter((battle) => battle.ends_at).sort((a, b) => new Date(a.ends_at) - new Date(b.ends_at))[0];
+  const riderCount = new Set(live.flatMap((battle) => (battle.participants || []).map((participant) => participant.athlete_id).filter(Boolean))).size;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Coach oversight</div><h1>Live <span>Challenges</span></h1><p>View every battle, accept for riders without a phone, archive old results, and build new match-ups.</p></div><button class="secondary-btn" type="button" id="refresh-coach-battles">Refresh</button></div>
-    <section class="coach-battle-create-actions"><button class="primary-btn" type="button" id="coach-create-battle">⚡ Create Rider Battle</button><button class="secondary-btn" type="button" id="coach-create-weekly-challenge">＋ Make Weekly Challenge</button></section>
-    <section class="stats-grid coach-battle-stats"><article class="stat-card"><div class="stat-label">Live now</div><div class="stat-value">${live.length}</div><div class="stat-foot">Accepted battles</div></article><article class="stat-card"><div class="stat-label">Waiting</div><div class="stat-value">${pending.length}</div><div class="stat-foot">Coach can accept</div></article><article class="stat-card"><div class="stat-label">Finished</div><div class="stat-value">${finished.length}</div><div class="stat-foot">Ready to archive</div></article><article class="stat-card"><div class="stat-label">Archived</div><div class="stat-value">${archived.length}</div><div class="stat-foot">Saved results</div></article></section>
-    ${coachBattleSection("Live battles", "Current team scores and finish times", live)}
-    ${coachBattleSection("Pending requests", "Accept for riders who cannot use the app", pending)}
-    ${coachBattleSection("Finished battles", "Results and point transfers stay recorded when archived", finished)}
+    <section class="battle-hq-hero">
+      <div class="battle-hq-hero-main"><div><div class="eyebrow">Coach oversight · Battle centre</div><h1>Battle <span>HQ</span></h1><p>Run every matchup from one clean command screen. Close battles stand out, finish times are easy to scan, and every coach action stays one tap away.</p></div><div class="battle-hq-actions"><button class="primary-btn" type="button" id="coach-create-battle">⚡ Create Rider Battle</button><button class="secondary-btn" type="button" id="coach-create-weekly-challenge">＋ Weekly Challenge</button><button class="secondary-btn battle-hq-refresh" type="button" id="refresh-coach-battles" aria-label="Refresh battle scores">↻</button></div></div>
+      <div class="battle-hq-metrics"><article><span>Live now</span><strong>${live.length}<small>battles</small></strong><em>${riderCount} riders competing</em></article><article class="gold"><span>Closest matchup</span><strong>${closestBattle ? closestBattle.gap : "—"}<small>${closestBattle ? "pt gap" : "no live battles"}</small></strong><em>${closestBattle ? "Anyone can take it" : "Ready for the next matchup"}</em></article><article class="coral"><span>Ending next</span><strong>${endingNext ? escapeHtml(dateLabel(endingNext.ends_at)) : "—"}</strong><em>${endingNext ? "Finish time locked" : "No finish time yet"}</em></article><article><span>Needs action</span><strong>${pending.length}<small>waiting</small></strong><em>${pending.length ? "Rider approval needed" : "Everyone has accepted"}</em></article></div>
+    </section>
+    <section class="battle-hq-toolbar"><div class="battle-hq-filters" role="tablist" aria-label="Battle status"><button class="active" type="button" data-battle-hq-filter="all">All <b>${current.length}</b></button><button type="button" data-battle-hq-filter="accepted">Live <b>${live.length}</b></button><button type="button" data-battle-hq-filter="pending">Waiting <b>${pending.length}</b></button><button type="button" data-battle-hq-filter="completed">Finished <b>${finished.length}</b></button></div><label class="battle-hq-search"><span class="sr-only">Search rider</span><input id="battle-hq-search" type="search" placeholder="Search rider…"></label></section>
+    <div class="battle-hq-results">
+      ${coachBattleSection("Live battles", "Tap a matchup for full stats and controls", live)}
+      ${coachBattleSection("Pending requests", "Accept for riders who cannot use the app", pending)}
+      ${coachBattleSection("Finished battles", "Results and point transfers stay recorded when archived", finished)}
+    </div>
     ${coachArchivedBattleSection(archived)}`;
   document.querySelector("#refresh-coach-battles")?.addEventListener("click", renderCoachBattleViewer);
   document.querySelector("#coach-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(roster, renderCoachBattleViewer));
   document.querySelector("#coach-create-weekly-challenge")?.addEventListener("click", () => showWeeklyChallengeBuilder(renderCoachBattleViewer));
+  const applyBattleFilters = () => {
+    const status = document.querySelector("[data-battle-hq-filter].active")?.dataset.battleHqFilter || "all";
+    const query = String(document.querySelector("#battle-hq-search")?.value || "").trim().toLowerCase();
+    document.querySelectorAll(".battle-hq-card").forEach((card) => {
+      const statusMatch = status === "all" || card.dataset.battleHqStatus === status || (status === "completed" && card.dataset.battleHqStatus === "declined");
+      card.hidden = !statusMatch || Boolean(query && !String(card.dataset.battleHqRiders || "").includes(query));
+    });
+    document.querySelectorAll("[data-battle-hq-section]").forEach((section) => {
+      const visibleCards = [...section.querySelectorAll(".battle-hq-card")].filter((card) => !card.hidden).length;
+      section.hidden = visibleCards === 0;
+      const count = section.querySelector("[data-battle-hq-count]");
+      if (count) count.textContent = visibleCards;
+    });
+  };
+  document.querySelectorAll("[data-battle-hq-filter]").forEach((button) => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-battle-hq-filter]").forEach((item) => item.classList.toggle("active", item === button));
+    applyBattleFilters();
+  }));
+  document.querySelector("#battle-hq-search")?.addEventListener("input", applyBattleFilters);
   bindCoachBattleControls();
 }
 
