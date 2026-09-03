@@ -8505,11 +8505,72 @@ html[data-theme="light"] .success-burst {
   background: linear-gradient(105deg, var(--rider-aqua), var(--rider-blue));
   color: #021012;
 }
+.board-quick-replies,
+.board-chat-extras { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; }
+.board-quick-replies::-webkit-scrollbar,
+.board-chat-extras::-webkit-scrollbar { display: none; }
+.board-quick-replies button,
+.board-clip-button,
+.board-chat-extras select {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font: 800 0.69rem var(--mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.board-chat-extras { align-items: center; }
+.board-clip-button { display: inline-flex; align-items: center; color: var(--rider-aqua); border-color: rgba(32, 227, 195, 0.28); }
+.board-clip-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.board-chat-extras select { width: auto; max-width: 210px; margin: 0; }
+.board-replying {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 11px;
+  border-left: 3px solid var(--rider-blue);
+  background: rgba(58, 156, 255, 0.09);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.board-replying[hidden] { display: none; }
+.board-replying button { min-height: 30px; width: 30px; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 1.2rem; }
+.board-reply-preview {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border-left: 2px solid var(--rider-blue);
+  background: rgba(58, 156, 255, 0.07);
+  font-size: 0.74rem;
+}
+.board-reply-preview strong { color: var(--rider-blue); }
+.board-reply-preview span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-chat-tag,
+.board-pinned-label { display: inline-flex; margin: 0 0 9px; color: var(--rider-gold); font: 800 0.61rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.board-chat-clip { display: block; width: min(100%, 430px); max-height: 420px; margin: 2px 0 10px; border-radius: 5px 14px 5px 14px; background: #000; }
+.rider-shell .jkc-crew-chat .board-chat-bubble.is-pinned { border-color: rgba(247, 209, 84, 0.5); border-left-color: var(--rider-gold); background: rgba(247, 209, 84, 0.075); }
+.board-pinned-label { display: flex; margin-bottom: 7px; }
+.board-delete-btn { color: var(--rider-coral); }
+.board-report-queue { display: grid; gap: 7px; margin: 0 0 14px; padding: 11px; border: 1px solid rgba(255, 102, 88, 0.32); border-radius: 10px; background: rgba(255, 102, 88, 0.07); }
+.board-report-queue > strong { color: var(--rider-coral); font: 900 0.65rem var(--mono); letter-spacing: 0.07em; }
+.board-report-queue span { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 0.78rem; }
+.board-report-queue button { min-height: 34px; padding: 0 10px; border: 1px solid rgba(255, 102, 88, 0.35); border-radius: 999px; background: transparent; color: var(--rider-coral); cursor: pointer; }
+.jkc-chat-empty { display: grid; justify-items: center; gap: 7px; padding: 26px 14px; text-align: center; background: radial-gradient(circle, rgba(32, 227, 195, 0.09), transparent 65%); }
+.jkc-chat-empty strong { color: var(--rider-aqua); font: italic 900 1.25rem var(--display); letter-spacing: 0.04em; }
+.jkc-chat-empty span { color: var(--muted); }
+.jkc-chat-empty button { min-height: 42px; margin-top: 5px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--rider-aqua); color: #02110f; font: 900 0.7rem var(--mono); text-transform: uppercase; cursor: pointer; }
 @media (max-width: 560px) {
   .jkc-chat-head { display: flex; }
   .jkc-chat-live { font-size: 0; }
   .jkc-chat-live i { width: 9px; height: 9px; }
   .jkc-chat-callout { margin-inline: -14px; padding-inline: 14px; }
+  .board-chat-extras { align-items: stretch; }
+  .board-chat-extras select { max-width: 165px; }
 }
 
 /* Profile: information is blue, progress gold, destructive controls coral. */

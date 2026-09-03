@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.45";
+const RELEASE_VERSION = "2.14.46";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.45" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.46" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1669,6 +1669,14 @@ function renderShell() {
   }));
   document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
   refreshNotificationCentre({ renderNav: false });
+  refreshBoardChatUnread();
+}
+
+async function refreshBoardChatUnread() {
+  if (!state.user?.id || state.view === "board") return updateBoardChatNavBadge(0);
+  const lastSeen = localStorage.getItem(CHAT_LAST_SEEN_KEY) || new Date(0).toISOString();
+  const { count, error } = await client.from("crew_posts").select("id", { count: "exact", head: true }).in("post_type", ["chat", "announcement"]).gt("created_at", lastSeen);
+  if (!error) updateBoardChatNavBadge(Number(count || 0));
 }
 
 function mountStartupPrompts() {
@@ -2262,6 +2270,10 @@ async function setupRealtimeSync() {
       notify(item.title);
       if (item.payload?.celebration === "weekly_challenge") showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: "+5 leaderboard points", message: item.body || "Challenge complete. Massive work!" });
     }
+  });
+  channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_posts" }, () => {
+    if (state.view === "board") renderBoard();
+    else refreshBoardChatUnread();
   });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
@@ -2864,11 +2876,15 @@ async function getCrewFeed() {
 async function getBoardChat() {
   const { data: posts, error } = await client.from("crew_posts")
     .select("*, profiles:author_id(display_name, avatar)")
-    .eq("post_type", "chat")
+    .in("post_type", ["chat", "announcement"])
     .order("created_at", { ascending: false })
     .limit(60);
   if (error) throw error;
-  const visiblePosts = (posts || []).filter((post) => String(post.body || "").trim());
+  const weekStart = new Date(weekStartDate());
+  const visiblePosts = (posts || []).filter((post) => {
+    const metadata = post.metadata || {};
+    return (String(post.body || "").trim() || metadata.media_path) && (metadata.pinned || new Date(post.created_at) >= weekStart);
+  });
   const postIds = visiblePosts.map((post) => post.id);
   const { data: reactions, error: reactionError } = postIds.length
     ? await client.from("crew_post_reactions").select("*").in("post_id", postIds)
@@ -2885,10 +2901,20 @@ async function getBoardChat() {
     map.set(reaction.post_id, list);
     return map;
   }, new Map());
-  return visiblePosts.map((post) => ({ ...post, reactions: reactionsByPost.get(post.id) || [] }));
+  return Promise.all(visiblePosts.map(async (post) => {
+    const metadata = { ...(post.metadata || {}) };
+    if (metadata.media_path) {
+      const { data } = await client.storage.from(CHAT_MEDIA_BUCKET).createSignedUrl(metadata.media_path, 3600);
+      metadata.media_url = data?.signedUrl || "";
+    }
+    return { ...post, metadata, reactions: reactionsByPost.get(post.id) || [] };
+  }));
 }
 
 const boardReactionEmojis = ["🔥", "💪", "😂", "👏", "❤️", "🚲"];
+const CHAT_MEDIA_BUCKET = "crew-chat-media";
+const CHAT_MEDIA_MAX_BYTES = 50 * 1024 * 1024;
+const CHAT_LAST_SEEN_KEY = "jkcrew-board-chat-last-seen:v1";
 const canPostBoardChat = () => state.profile?.role === "athlete" || isCoachRole(state.profile?.role);
 const mentionToken = (name = "") => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
 const escapeRegExp = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -7089,7 +7115,7 @@ async function endSession() {
 }
 
 async function renderBoard() {
-  const [rawLeaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
+  const [rawLeaderboard, boardChat, openReports] = await Promise.all([getLeaderboard(), getBoardChat(), getOpenCrewReports()]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
   const allTimeLeaderboard = leaderboardWithBenchmark([...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))), "all_time_points");
   const activeBoardView = state.boardLeaderboardView === "allTime" ? "allTime" : "weekly";
@@ -7100,6 +7126,8 @@ async function renderBoard() {
   const mentionableUsers = boardMentionableUsers(rawLeaderboard);
   state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
+  localStorage.setItem(CHAT_LAST_SEEN_KEY, new Date().toISOString());
+  updateBoardChatNavBadge(0);
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at Sunday midnight in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
@@ -7121,7 +7149,8 @@ async function renderBoard() {
         <span class="jkc-chat-live"><i aria-hidden="true"></i>${boardChat.length} messages</span>
       </div>
       <div class="jkc-chat-callout"><span>⚡</span><div><strong>CREW ENERGY</strong><small>Share progress, back your mates and keep it positive.</small></div></div>
-      <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Be the first to hype up the crew.</div>`}</div>
+      ${isCoachRole(state.profile?.role) && openReports.length ? `<div class="board-report-queue"><strong>COACH REVIEW · ${openReports.length}</strong>${openReports.map((report) => `<span>Message reported for review <button type="button" data-dismiss-board-report="${report.id}">Mark reviewed</button></span>`).join("")}</div>` : ""}
+      <div class="board-chat-list">${boardChat.length ? boardChat.sort((a, b) => Number(Boolean(b.metadata?.pinned)) - Number(Boolean(a.metadata?.pinned))).map(boardChatMessageHtml).join("") : `<div class="jkc-chat-empty"><strong>NEW WEEK. NEW LINES.</strong><span>What are you working on this week?</span><button type="button" data-chat-starter="This week I’m working on…">Start the crew chat</button></div>`}</div>
       ${canPost ? boardChatComposerHtml(mentionableUsers) : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
@@ -7134,7 +7163,23 @@ async function renderBoard() {
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
   document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
   document.querySelectorAll("[data-mention-athlete]").forEach((button) => button.addEventListener("click", openMentionedAthleteProfile));
+  document.querySelectorAll("[data-board-reply]").forEach((button) => button.addEventListener("click", startBoardReply));
+  document.querySelectorAll("[data-board-pin]").forEach((button) => button.addEventListener("click", toggleBoardPin));
+  document.querySelectorAll("[data-board-report]").forEach((button) => button.addEventListener("click", reportBoardPost));
+  document.querySelectorAll("[data-board-delete]").forEach((button) => button.addEventListener("click", deleteBoardPost));
+  document.querySelectorAll("[data-dismiss-board-report]").forEach((button) => button.addEventListener("click", dismissBoardReport));
+  document.querySelector("[data-chat-starter]")?.addEventListener("click", (event) => {
+    const textarea = document.querySelector("#board-message");
+    if (textarea) { textarea.value = event.currentTarget.dataset.chatStarter || ""; textarea.focus(); }
+  });
   bindBoardChatComposer(mentionableUsers);
+}
+
+async function getOpenCrewReports() {
+  if (!isCoachRole(state.profile?.role)) return [];
+  const { data, error } = await client.from("crew_post_reports").select("id,post_id,reason,created_at").eq("status", "open").order("created_at", { ascending: false }).limit(20);
+  if (error) throw error;
+  return data || [];
 }
 
 async function submitScoreAdjustment(event) {
@@ -7226,6 +7271,7 @@ function boardChatMessageHtml(post) {
   const authorName = metadata.author_name || author.display_name || (post.author_id === state.user?.id ? state.profile?.display_name : "") || "Crew member";
   const authorAvatar = metadata.avatar || author.avatar || null;
   const coachPost = isCoachRole(metadata.author_role);
+  const canManage = post.author_id === state.user?.id || isCoachRole(state.profile?.role);
   const reactionsByEmoji = post.reactions.reduce((map, reaction) => {
     const list = map.get(reaction.reaction) || [];
     list.push(reaction);
@@ -7243,15 +7289,23 @@ function boardChatMessageHtml(post) {
     return `<span class="reaction-wrap"><button class="reaction-btn ${active ? "active" : ""}" type="button" data-board-reaction="${emoji}" data-post-id="${post.id}" aria-label="React ${emoji}">${emoji}${reactions.length ? `<span>${reactions.length}</span>` : ""}</button>${reactions.length ? `<span class="reaction-popover" role="tooltip">${people}</span>` : ""}</span>`;
   }).join("");
   const bodyHtml = post.body ? `<p>${formatBoardMessageBody(post.body, metadata.mentions || [])}</p>` : "";
+  const replyHtml = metadata.reply_to ? `<div class="board-reply-preview"><strong>${escapeHtml(metadata.reply_to.author || "Crew member")}</strong><span>${escapeHtml(metadata.reply_to.body || "Message")}</span></div>` : "";
+  const tagHtml = metadata.tag ? `<span class="board-chat-tag">${escapeHtml(metadata.tag)}</span>` : "";
+  const mediaHtml = metadata.media_url ? `<video class="board-chat-clip" controls playsinline preload="metadata" src="${escapeHtml(metadata.media_url)}"></video>` : "";
+  const pinHtml = metadata.pinned ? `<div class="board-pinned-label">⚡ PINNED BY COACH</div>` : "";
   return `<article class="board-chat-message">
     ${avatarHtml({ display_name: authorName, avatar: authorAvatar })}
-    <div class="board-chat-bubble ${coachPost ? "is-coach" : ""}"><div class="chat-line-meta"><strong class="${coachPost ? "board-chat-author is-coach" : ""}">${escapeHtml(authorName)}${coachPost ? " · COACH" : ""}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}<div class="reaction-row">${reactionHtml}</div></div>
+    <div class="board-chat-bubble ${coachPost ? "is-coach" : ""} ${metadata.pinned ? "is-pinned" : ""}">${pinHtml}<div class="chat-line-meta"><strong class="${coachPost ? "board-chat-author is-coach" : ""}">${escapeHtml(authorName)}${coachPost ? " · COACH" : ""}</strong><small>${dateLabel(post.created_at)}</small></div>${replyHtml}${bodyHtml}${tagHtml}${mediaHtml}<div class="reaction-row">${reactionHtml}<button class="reaction-btn" type="button" data-board-reply="${post.id}" data-reply-author="${escapeHtml(authorName)}" data-reply-body="${escapeHtml(String(post.body || "Riding clip").slice(0, 80))}">Reply</button>${isCoachRole(state.profile?.role) ? `<button class="reaction-btn" type="button" data-board-pin="${post.id}" data-pinned="${metadata.pinned ? "true" : "false"}">${metadata.pinned ? "Unpin" : "Pin"}</button>` : ""}<button class="reaction-btn" type="button" data-board-report="${post.id}">Report</button>${canManage ? `<button class="reaction-btn board-delete-btn" type="button" data-board-delete="${post.id}" data-media-path="${escapeHtml(metadata.media_path || "")}">Delete</button>` : ""}</div></div>
   </article>`;
 }
 
 function boardChatComposerHtml(mentionableUsers = []) {
   const suggestions = mentionableUsers.map((user) => `<button type="button" data-mention-pick="${escapeHtml(user.id)}" data-mention-token="${escapeHtml(user.token)}"><span>${avatarHtml({ display_name: user.name, avatar: user.avatar }, "reaction-avatar")}</span><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.token)}</small></button>`).join("");
+  const park = String(state.profile?.home_skatepark || "").trim();
   return `<form id="board-chat-form" class="crew-post-form crew-chat-compose board-chat-compose">
+    <div class="board-replying" id="board-replying" hidden><span></span><button type="button" aria-label="Cancel reply" data-cancel-board-reply>×</button></div>
+    <div class="board-quick-replies"><button type="button" data-chat-quick="🔥 Send it">🔥 Send it</button><button type="button" data-chat-quick="👏 Clean!">👏 Clean</button><button type="button" data-chat-quick="⚡ Let’s ride">⚡ Let’s ride</button></div>
+    <div class="board-chat-extras"><label class="board-clip-button">▣ Add riding clip<input id="board-chat-clip" name="clip" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/m4v,video/3gpp"></label><select name="tag" aria-label="Message tag"><option value="">No tag</option>${park ? `<option value="📍 ${escapeHtml(park)}">📍 ${escapeHtml(park)}</option>` : ""}<option value="🚲 Training session">🚲 Training session</option><option value="🏆 Weekly challenge">🏆 Weekly challenge</option></select></div>
     <div class="board-compose-shell">
       <div class="mention-field">
         <textarea id="board-message" name="body" maxlength="300" rows="1" placeholder="${isCoachRole(state.profile?.role) ? "Message the whole crew as coach..." : "Encourage the crew..."}"></textarea>
@@ -7268,12 +7322,24 @@ async function submitBoardChat(event) {
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
   const body = String(form.get("body") || "").trim();
+  const clip = form.get("clip");
   if (containsGifUrl(body)) return notify("GIFs and stickers are turned off for crew chat.", "error");
-  if (!body) return notify("Write a message first.", "error");
+  if (!body && !(clip instanceof File && clip.size)) return notify("Write a message or add a riding clip first.", "error");
+  if (clip instanceof File && clip.size > CHAT_MEDIA_MAX_BYTES) return notify("Riding clips must be smaller than 50 MB.", "error");
   const mentions = extractBoardMentions(body, state.boardMentionableCache || []);
   const button = formElement.querySelector("[data-send-board-chat]");
   button.disabled = true;
-  button.textContent = "Sending...";
+  button.textContent = clip instanceof File && clip.size ? "Uploading..." : "Sending...";
+  let mediaPath = "";
+  if (clip instanceof File && clip.size) {
+    const ext = videoFileExtension(clip);
+    const path = `${state.user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+    const { data: upload, error: uploadError } = await client.storage.from(CHAT_MEDIA_BUCKET).upload(path, clip, { cacheControl: "3600", contentType: baseVideoMimeType(clip.type) || "video/mp4", upsert: false });
+    if (uploadError) { button.disabled = false; button.textContent = "Send"; return notify(messageFrom(uploadError), "error"); }
+    mediaPath = upload?.path || path;
+    button.textContent = "Sending...";
+  }
+  const replyTo = state.boardReplyTarget || null;
   const { error } = await client.from("crew_posts").insert({
     author_id: state.user.id,
     body,
@@ -7283,13 +7349,18 @@ async function submitBoardChat(event) {
       author_role: state.profile?.role || "member",
       avatar: state.profile?.avatar || null,
       mentions,
+      tag: String(form.get("tag") || "").slice(0, 80),
+      media_path: mediaPath,
+      reply_to: replyTo,
     },
   });
   if (error) {
+    if (mediaPath) await client.storage.from(CHAT_MEDIA_BUCKET).remove([mediaPath]);
     button.disabled = false;
     button.textContent = "Send";
     return notify(messageFrom(error), "error");
   }
+  state.boardReplyTarget = null;
   notify("Message posted.");
   await renderBoard();
 }
@@ -7299,6 +7370,24 @@ function bindBoardChatComposer(mentionableUsers = []) {
   if (!form) return;
   const textarea = form.querySelector("#board-message");
   const menu = form.querySelector("#board-mention-menu");
+  const clipInput = form.querySelector("#board-chat-clip");
+  form.querySelectorAll("[data-chat-quick]").forEach((button) => button.addEventListener("click", () => {
+    if (!textarea) return;
+    textarea.value = button.dataset.chatQuick || "";
+    textarea.focus();
+  }));
+  form.querySelector("[data-cancel-board-reply]")?.addEventListener("click", () => {
+    state.boardReplyTarget = null;
+    const banner = form.querySelector("#board-replying");
+    if (banner) banner.hidden = true;
+  });
+  clipInput?.addEventListener("change", () => {
+    const file = clipInput.files?.[0];
+    const label = clipInput.closest("label");
+    if (!file || !label) return;
+    if (file.size > CHAT_MEDIA_MAX_BYTES) { clipInput.value = ""; return notify("Riding clips must be smaller than 50 MB.", "error"); }
+    label.childNodes[0].textContent = `▣ ${file.name.slice(0, 28)} `;
+  });
   const refreshMentionMenu = () => {
     if (!textarea || !menu) return;
     const beforeCursor = textarea.value.slice(0, textarea.selectionStart || textarea.value.length);
@@ -7342,6 +7431,76 @@ function bindBoardChatComposer(mentionableUsers = []) {
     textarea.selectionStart = textarea.selectionEnd = replacementStart + match[1].length + token.length + 2;
     menu.hidden = true;
   }));
+}
+
+function startBoardReply(event) {
+  state.boardReplyTarget = {
+    id: event.currentTarget.dataset.boardReply,
+    author: event.currentTarget.dataset.replyAuthor || "Crew member",
+    body: event.currentTarget.dataset.replyBody || "Message",
+  };
+  const banner = document.querySelector("#board-replying");
+  if (banner) {
+    banner.hidden = false;
+    banner.querySelector("span").textContent = `Replying to ${state.boardReplyTarget.author}: ${state.boardReplyTarget.body}`;
+  }
+  document.querySelector("#board-message")?.focus();
+}
+
+async function toggleBoardPin(event) {
+  if (!isCoachRole(state.profile?.role)) return;
+  const button = event.currentTarget;
+  const postId = button.dataset.boardPin;
+  const pinned = button.dataset.pinned === "true";
+  button.disabled = true;
+  const { data: post, error: readError } = await client.from("crew_posts").select("metadata").eq("id", postId).single();
+  if (readError) return notify(messageFrom(readError), "error");
+  const { error } = await client.from("crew_posts").update({ metadata: { ...(post?.metadata || {}), pinned: !pinned, pinned_by: state.user.id, pinned_at: new Date().toISOString() } }).eq("id", postId);
+  if (error) return notify(messageFrom(error), "error");
+  notify(pinned ? "Message unpinned." : "Message pinned for the crew.");
+  await renderBoard();
+}
+
+async function reportBoardPost(event) {
+  const postId = event.currentTarget.dataset.boardReport;
+  event.currentTarget.disabled = true;
+  const { error } = await client.from("crew_post_reports").upsert({ post_id: postId, reporter_id: state.user.id, reason: "Needs coach review", status: "open" }, { onConflict: "post_id,reporter_id" });
+  if (error) { event.currentTarget.disabled = false; return notify(messageFrom(error), "error"); }
+  event.currentTarget.textContent = "Reported";
+  notify("Sent privately to Coach JK for review.");
+}
+
+async function dismissBoardReport(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  const { error } = await client.from("crew_post_reports").update({ status: "reviewed" }).eq("id", button.dataset.dismissBoardReport);
+  if (error) { button.disabled = false; return notify(messageFrom(error), "error"); }
+  notify("Report marked as reviewed.");
+  await renderBoard();
+}
+
+async function deleteBoardPost(event) {
+  const button = event.currentTarget;
+  const postId = button.dataset.boardDelete;
+  if (!window.confirm("Remove this message from JKCREW chat?")) return;
+  button.disabled = true;
+  const { error } = await client.from("crew_posts").delete().eq("id", postId);
+  if (error) { button.disabled = false; return notify(messageFrom(error), "error"); }
+  if (button.dataset.mediaPath) await client.storage.from(CHAT_MEDIA_BUCKET).remove([button.dataset.mediaPath]);
+  notify("Message removed.");
+  await renderBoard();
+}
+
+function updateBoardChatNavBadge(count = 0) {
+  document.querySelectorAll('.nav-btn[data-view="board"]').forEach((button) => {
+    button.querySelector(".board-chat-nav-badge")?.remove();
+    if (!count) return;
+    const badge = document.createElement("i");
+    badge.className = "nav-unread-badge board-chat-nav-badge";
+    badge.setAttribute("aria-label", `${count} unread crew chat message${count === 1 ? "" : "s"}`);
+    badge.textContent = count > 9 ? "9+" : String(count);
+    button.appendChild(badge);
+  });
 }
 
 async function toggleBoardReaction(event) {
