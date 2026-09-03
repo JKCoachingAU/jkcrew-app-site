@@ -11125,6 +11125,7 @@ html[data-theme="light"] .coach-review-workspace { background: #fff; }
   box-shadow: inset 3px 0 0 rgba(22,223,207,0.72);
 }
 .coach-shell .nav-list {
+  align-content: start;
   gap: 7px;
   padding: 1px 2px 8px;
   scrollbar-width: thin;
