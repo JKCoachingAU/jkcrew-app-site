@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.51";
+const RELEASE_VERSION = "2.14.52";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.51" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.52" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -3132,6 +3132,7 @@ const riderProposalRequirements = {
 };
 
 const contestPrepGroupId = "contest_prep";
+const injuredGroupId = "injured";
 
 const contestPrepCategoryInfo = {
   daily: { label: "Practice 1", description: "Contest prep · 1 point per completed item" },
@@ -3204,7 +3205,7 @@ const coachGroups = [
   ["tuesday", "Tuesday Team"],
   ["wednesday", "Wednesday Team"],
   ["online", "Online Training"],
-  [contestPrepGroupId, "Contest Preparation"],
+  [injuredGroupId, "Injured Athletes"],
 ];
 const heatStatuses = {
   on_track: { label: "On track", dot: "green", icon: "●" },
@@ -10604,8 +10605,11 @@ async function renderCrew() {
         </button>
         ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
       </div>`;
-    }).join("") : `<div class="empty compact-empty">Drop students here.</div>`;
-    return `<section class="group-column group-${groupId}" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${athletes.length} student${athletes.length === 1 ? "" : "s"}</div></div></div><div class="group-list">${students}</div></section>`;
+    }).join("") : `<div class="empty compact-empty">${groupId === injuredGroupId ? "Drop injured athletes here." : "Drop students here."}</div>`;
+    const groupMeta = groupId === injuredGroupId
+      ? `${athletes.length} athlete${athletes.length === 1 ? "" : "s"} out injured`
+      : `${athletes.length} student${athletes.length === 1 ? "" : "s"}`;
+    return `<section class="group-column group-${groupId}" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${groupMeta}</div></div></div><div class="group-list">${students}</div></section>`;
   }).join("");
   const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
   document.querySelector("#view").innerHTML = `

@@ -1596,6 +1596,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .group-tuesday { --group-accent: #83b7ff; }
 .group-wednesday { --group-accent: #d59cff; }
 .group-online { --group-accent: #ffd45a; }
+.group-injured { --group-accent: #ff6c55; }
 .group-column.drag-over { border-color: var(--group-accent, var(--aqua)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--group-accent, var(--aqua)) 18%, transparent); }
 .group-head { margin-bottom: 12px; }
 .group-head .panel-title { color: var(--group-accent, var(--text)); }
@@ -7840,6 +7841,12 @@ html[data-theme="light"] .success-burst {
 .coach-shell .group-tuesday { --group-accent: var(--coach-aqua); }
 .coach-shell .group-wednesday { --group-accent: var(--coach-blue); }
 .coach-shell .group-online { --group-accent: var(--coach-gold); }
+.coach-shell .group-injured { --group-accent: var(--coach-coral); }
+.coach-shell .group-injured .compact-empty {
+  border-color: rgba(255,108,85,0.22);
+  color: #ff9a87;
+  background: rgba(255,108,85,0.045);
+}
 .coach-shell .student-chip {
   border-color: rgba(183, 202, 211, 0.14);
   background: linear-gradient(120deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
