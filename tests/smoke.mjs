@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.53";
+const version = "2.14.54";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1642,6 +1642,7 @@ assert(app.includes('[injuredGroupId, "Injured Athletes"]'), "Coach Students nee
 assert(app.includes('"Drop injured athletes here."'), "The injured roster needs a clear drop target");
 assert(css.includes(".coach-shell .group-injured"), "The injured roster needs a distinct recovery colour");
 assert(!functionBody("renderCrew").includes("heatChip("), "Coach Students cards should not waste space on legacy heat-status pills");
+assert(!functionBody("renderCrew").includes("status.training_focus"), "Coach Students cards should show the rider name without a secondary focus line");
 assert(rileyServiceWorker.includes('const CACHE_PREFIX = "jkcrew-riley-shell-"'), "Riley test cache must not delete the production app cache");
 const riderVideoMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
 assert(riderVideoMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");
