@@ -9900,6 +9900,43 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 .battle-hq-card { background: linear-gradient(105deg, rgba(11, 22, 25, .98), rgba(7, 13, 17, .97)); box-shadow: 0 14px 36px rgba(0, 0, 0, .15); }
 .battle-hq-card.accepted { border-color: rgba(32, 227, 195, .38); box-shadow: inset 3px 0 var(--aqua), 0 14px 36px rgba(0, 0, 0, .15); }
 .battle-hq-card.completed { border-color: rgba(247, 209, 84, .34); box-shadow: inset 3px 0 var(--gold), 0 14px 36px rgba(0, 0, 0, .15); }
+.battle-hq-metrics article:nth-child(1) { background: linear-gradient(145deg, rgba(17, 209, 190, .28), rgba(4, 18, 20, .96) 68%); box-shadow: inset 0 3px var(--aqua); }
+.battle-hq-metrics article:nth-child(2) { background: linear-gradient(145deg, rgba(255, 194, 45, .25), rgba(24, 17, 4, .96) 68%); box-shadow: inset 0 3px var(--gold); }
+.battle-hq-metrics article:nth-child(3) { background: linear-gradient(145deg, rgba(255, 82, 105, .25), rgba(25, 7, 13, .96) 68%); box-shadow: inset 0 3px #ff5269; }
+.battle-hq-metrics article:nth-child(4) { background: linear-gradient(145deg, rgba(135, 80, 255, .28), rgba(14, 8, 29, .96) 68%); box-shadow: inset 0 3px #965fff; }
+.battle-hq-metrics article:nth-child(2) span, .battle-hq-metrics article:nth-child(2) small { color: var(--gold); }
+.battle-hq-metrics article:nth-child(3) span, .battle-hq-metrics article:nth-child(3) small { color: #ff7b8d; }
+.battle-hq-metrics article:nth-child(4) span, .battle-hq-metrics article:nth-child(4) small { color: #b99cff; }
+.battle-hq-section.tone-aqua { border-color: rgba(32, 227, 195, .42); background: radial-gradient(circle at 95% 0, rgba(32, 227, 195, .13), transparent 34%), #061214; box-shadow: 0 20px 48px rgba(0, 0, 0, .2), inset 0 3px var(--aqua); }
+.battle-hq-section.tone-gold { border-color: rgba(247, 209, 84, .46); background: radial-gradient(circle at 95% 0, rgba(247, 209, 84, .14), transparent 34%), #151207; box-shadow: 0 20px 48px rgba(0, 0, 0, .2), inset 0 3px var(--gold); }
+.battle-hq-section.tone-violet { border-color: rgba(146, 84, 255, .46); background: radial-gradient(circle at 95% 0, rgba(146, 84, 255, .16), transparent 35%), #0f0a19; box-shadow: 0 20px 48px rgba(0, 0, 0, .2), inset 0 3px #9254ff; }
+.battle-hq-section.tone-aqua .panel-title, .battle-hq-section.tone-aqua .pill { color: var(--aqua); }
+.battle-hq-section.tone-gold .panel-title, .battle-hq-section.tone-gold .pill { color: var(--gold); }
+.battle-hq-section.tone-violet .panel-title, .battle-hq-section.tone-violet .pill { color: #b998ff; }
+.battle-hq-card.pending { background: linear-gradient(110deg, rgba(40, 31, 7, .98), rgba(16, 12, 5, .98)); }
+.battle-hq-card.completed, .battle-hq-card.declined { background: linear-gradient(110deg, rgba(24, 13, 43, .98), rgba(10, 8, 18, .98)); }
+.coach-battle-archive.tone-blue { border-color: rgba(58, 156, 255, .38); background: linear-gradient(120deg, rgba(58, 156, 255, .11), rgba(7, 12, 22, .96)); box-shadow: inset 0 3px #3a9cff; }
+
+/* Student Challenges uses the same high-energy colour system as Battle HQ. */
+.rider-challenges-head { position: relative; overflow: hidden; padding: clamp(22px, 4vw, 38px); border: 1px solid rgba(146, 84, 255, .48); border-radius: 22px; background: radial-gradient(circle at 86% 5%, rgba(146, 84, 255, .32), transparent 34%), radial-gradient(circle at 5% 100%, rgba(32, 227, 195, .18), transparent 36%), #070b16; box-shadow: 0 24px 70px rgba(0, 0, 0, .3), inset 0 3px #9254ff; }
+.rider-challenges-head h1 span { background: linear-gradient(100deg, #20e3c3, #3a9cff 50%, #b56cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.rider-challenges-head .eyebrow { color: #b99cff; }
+.rider-challenges-head p { position: relative; z-index: 1; max-width: 650px; }
+.rider-challenges-bolt { position: absolute; right: clamp(16px, 6vw, 56px); top: 50%; color: rgba(255, 200, 61, .13); font: 900 clamp(5rem, 14vw, 9rem) var(--display); transform: translateY(-50%) rotate(8deg); }
+.weekly-challenge-card { position: relative; overflow: hidden; border-color: rgba(255, 196, 52, .62); background: radial-gradient(circle at 96% 5%, rgba(255, 196, 52, .28), transparent 34%), linear-gradient(135deg, #211702, #0d1112 72%); box-shadow: 0 22px 54px rgba(0, 0, 0, .28), inset 0 4px var(--gold); }
+.weekly-challenge-card::after { content: "TARGET"; position: absolute; right: -8px; bottom: -13px; color: rgba(255, 211, 87, .055); font: 900 4.8rem var(--display); letter-spacing: .06em; transform: rotate(-5deg); pointer-events: none; }
+.weekly-challenge-card .panel-title, .weekly-challenge-card h2, .weekly-challenge-card .pill { color: #ffd95e; }
+.weekly-challenge-card .xp-bar { position: relative; z-index: 1; background: rgba(255, 255, 255, .08); box-shadow: 0 0 0 1px rgba(255, 200, 61, .18); }
+.weekly-challenge-card .xp-bar > span { background: linear-gradient(90deg, #ff8a37, #ffd33d); box-shadow: 0 0 18px rgba(255, 200, 61, .5); }
+.rider-battle-arena { border-color: rgba(32, 227, 195, .48); background: radial-gradient(circle at 100% 0, rgba(32, 227, 195, .16), transparent 32%), radial-gradient(circle at 0 100%, rgba(58, 156, 255, .13), transparent 34%), #061114; box-shadow: 0 22px 54px rgba(0, 0, 0, .26), inset 0 4px var(--aqua); }
+.rider-battle-arena .panel-title, .rider-battle-arena > .panel-head .pill { color: var(--aqua); }
+.rider-battle-arena .battle-record span:first-child { border-color: rgba(32, 227, 195, .42); background: linear-gradient(145deg, rgba(32, 227, 195, .18), rgba(5, 22, 21, .92)); }
+.rider-battle-arena .battle-record span:last-child { border-color: rgba(255, 82, 105, .4); background: linear-gradient(145deg, rgba(255, 82, 105, .16), rgba(25, 8, 13, .92)); }
+.rider-battle-arena .battle-record span:last-child strong { color: #ff7184; }
+.rider-battle-arena .battle-challenge-cta { border: 0; background: linear-gradient(110deg, #20e3c3, #3a9cff 54%, #9254ff); color: #031012; box-shadow: 0 13px 34px rgba(52, 146, 255, .28); }
+.rider-battle-arena .battle-card.pending { border-color: rgba(255, 200, 61, .5); background: linear-gradient(120deg, rgba(255, 200, 61, .16), rgba(22, 16, 5, .96)); box-shadow: inset 3px 0 var(--gold); }
+.rider-battle-arena .battle-card.accepted { border-color: rgba(32, 227, 195, .55); background: linear-gradient(120deg, rgba(32, 227, 195, .18), rgba(5, 19, 22, .96)); box-shadow: inset 3px 0 var(--aqua); }
+.rider-battle-arena .battle-card.completed { border-color: rgba(146, 84, 255, .5); background: linear-gradient(120deg, rgba(146, 84, 255, .2), rgba(14, 8, 25, .96)); box-shadow: inset 3px 0 #9254ff; }
 @media (max-width: 900px) {
   .battle-hq-hero-main { grid-template-columns: 1fr; }
   .battle-hq-actions { justify-content: flex-start; }
@@ -9918,6 +9955,8 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   .battle-hq-metrics .coral strong { font-size: 1.03rem; }
   .battle-hq-toolbar { align-items: stretch; flex-direction: column; }
   .battle-hq-search input { width: 100%; }
+  .rider-challenges-head { padding: 23px 17px; border-radius: 18px; }
+  .rider-challenges-bolt { right: -4px; opacity: .72; }
 }
 .coach-battle-view-section { margin-bottom: 16px; }
 .coach-battle-view-list { display: grid; gap: 12px; }

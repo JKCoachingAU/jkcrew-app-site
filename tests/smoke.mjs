@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.43";
+const version = "2.14.44";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1054,6 +1054,9 @@ assert(coachBattleViewerBody.includes("battle-hq-search"), "Battle HQ must provi
 assert(coachBattleViewerBody.includes("applyBattleFilters"), "Battle HQ filters and rider search must update the rendered cards");
 assert(functionBody("coachBattleCardHtml").includes("data-battle-hq-riders"), "Battle cards must expose searchable rider names");
 assert(css.includes(".battle-hq-hero") && css.includes(".battle-hq-metrics"), "Battle HQ must ship its approved neon hero and metric styling");
+assert(css.includes(".battle-hq-section.tone-aqua") && css.includes(".battle-hq-section.tone-gold") && css.includes(".battle-hq-section.tone-violet"), "Battle HQ sections must use distinct live, waiting and finished colour treatments");
+assert(riderChallengeView.includes("rider-challenges-head") && riderChallengeView.includes("rider-battle-arena"), "Student Challenges must use the colourful redesign surfaces");
+assert(css.includes(".rider-challenges-head") && css.includes(".rider-battle-arena .battle-card.completed"), "Student Challenges must ship distinct hero, challenge and battle colours");
 assert(functionBody("weeklyBattleCardHtml").includes("data-forfeit-battle"), "Live rider battles need a forfeit action");
 assert(functionBody("forfeitWeeklyRiderBattle").includes('rpc("forfeit_rider_battle"'), "Rider forfeits must use the protected database RPC");
 assert(functionBody("coachBattleCardHtml").includes("data-delete-coach-battle"), "Every coach battle card needs a delete action");

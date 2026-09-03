@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.43";
+const RELEASE_VERSION = "2.14.44";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.43" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.44" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -5744,14 +5744,14 @@ async function renderChallenges() {
   const completedBattles = battleHistory;
   const { wins: battleWins, losses: battleLosses } = riderBattleRecord(completedBattles);
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Weekly competition</div><h1><span>Challenges</span></h1><p>Complete the weekly target or battle another rider to see who earns the most sheet points.</p></div></div>
+    <div class="page-head rider-challenges-head"><div><div class="eyebrow">Weekly competition</div><h1><span>Challenges</span></h1><p>Complete the weekly target or battle another rider to see who earns the most sheet points.</p></div><span class="rider-challenges-bolt" aria-hidden="true">⚡</span></div>
     <section class="panel weekly-challenge-card ${weeklyChallenge ? "" : "challenge-empty"}">
       <div class="panel-head"><div><div class="panel-title">${escapeHtml(weeklyChallenge?.title || "Next weekly challenge")}</div><div class="panel-meta">${weeklyChallenge ? `Weekly challenge · ${challengeReward} point reward` : "Coach JK is preparing the next crew target"}</div></div>${weeklyChallenge ? `<span class="pill">${challengeProgress}/${challengeTarget}</span>` : ""}</div>
       <h2>${escapeHtml(weeklyChallenge?.description || "A fresh BMX challenge is coming soon")}</h2><p>${weeklyChallenge ? (isPerfectionist ? `Land all 10 attempts on each of your ${challengeTarget} Percentage tricks to earn ${challengeReward} extra leaderboard points.` : `Complete ${challengeTarget} ${escapeHtml(categoryInfo[weeklyChallenge.category]?.label || weeklyChallenge.category)} item${challengeTarget === 1 ? "" : "s"} from your training sheet to earn ${challengeReward} leaderboard points.`) : "Your session sheet remains available while you wait."}</p>
       <div class="xp-bar" aria-label="Weekly challenge progress"><span style="width:${challengePercent}%"></span></div>
       ${weeklyChallenge ? `<div class="challenge-progress-copy"><strong>${challengeProgress >= challengeTarget ? `Challenge complete · +${challengeReward} pts` : `${challengeTarget - challengeProgress} to go`}</strong><span>${challengePercent}%</span></div>` : ""}
     </section>
-    <section class="panel">
+    <section class="panel rider-battle-arena">
       <div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">Choose 1–20 points · maximum 3 active battles</div></div><span class="pill">${activeBattleCount}/3 active</span></div>
       <div class="battle-record" aria-label="Battle record"><span><strong>${battleWins}</strong> wins</span><span><strong>${battleLosses}</strong> losses</span></div>
       <button class="primary-btn wide battle-challenge-cta" type="button" id="toggle-battle-rider-list" ${availableRiders.length && !battleLimitReached ? "" : "disabled"}>${battleLimitReached ? "3 battle limit reached" : availableRiders.length ? "⚡ Challenge another rider" : "No riders available right now"}</button>
@@ -8188,11 +8188,12 @@ function sessionGroupBattlesHtml(battles = [], groupLabel = "") {
 }
 
 function coachBattleSection(title, meta, battles) {
-  return `<section class="panel coach-battle-view-section battle-hq-section" data-battle-hq-section><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill" data-battle-hq-count>${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
+  const tone = title.startsWith("Live") ? "aqua" : title.startsWith("Pending") ? "gold" : "violet";
+  return `<section class="panel coach-battle-view-section battle-hq-section tone-${tone}" data-battle-hq-section><div class="panel-head"><div><div class="panel-title">${escapeHtml(title)}</div><div class="panel-meta">${escapeHtml(meta)}</div></div><span class="pill" data-battle-hq-count>${battles.length}</span></div><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">Nothing here right now.</div>`}</div></section>`;
 }
 
 function coachArchivedBattleSection(battles = []) {
-  return `<details class="panel coach-battle-view-section coach-battle-archive"><summary><span><strong>Archived battles</strong><small>Finished results kept safely out of the main view</small></span><span class="pill">${battles.length}</span></summary><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">No archived battles yet.</div>`}</div></details>`;
+  return `<details class="panel coach-battle-view-section coach-battle-archive tone-blue"><summary><span><strong>Archived battles</strong><small>Finished results kept safely out of the main view</small></span><span class="pill">${battles.length}</span></summary><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">No archived battles yet.</div>`}</div></details>`;
 }
 
 async function renderCoachBattleViewer() {
