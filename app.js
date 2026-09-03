@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.41";
+const RELEASE_VERSION = "2.14.42";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.41" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.42" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -5734,6 +5734,8 @@ async function renderChallenges() {
   const battleHistory = battles.filter((battle) => battle.status === "completed");
   const challengeTarget = Number(weeklyChallenge?.target_count || 0);
   const challengeProgress = Number(weeklyChallenge?.progress || 0);
+  const challengeReward = Math.max(0, Number(weeklyChallenge?.reward_points || 5));
+  const isPerfectionist = weeklyChallenge?.completion_rule === "percentage_perfect";
   const challengePercent = challengeTarget ? Math.round((challengeProgress / challengeTarget) * 100) : 0;
   const pointsByRider = new Map(leaderboard.map((row) => [row.athlete_id, Number(row.weekly_points || 0)]));
   const activeBattleCount = battles.filter((battle) => ["pending", "accepted"].includes(battle.status)).length;
@@ -5744,10 +5746,10 @@ async function renderChallenges() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Weekly competition</div><h1><span>Challenges</span></h1><p>Complete the weekly target or battle another rider to see who earns the most sheet points.</p></div></div>
     <section class="panel weekly-challenge-card ${weeklyChallenge ? "" : "challenge-empty"}">
-      <div class="panel-head"><div><div class="panel-title">${escapeHtml(weeklyChallenge?.title || "Next weekly challenge")}</div><div class="panel-meta">${weeklyChallenge ? "Weekly challenge · 5 point reward" : "Coach JK is preparing the next crew target"}</div></div>${weeklyChallenge ? `<span class="pill">${challengeProgress}/${challengeTarget}</span>` : ""}</div>
-      <h2>${escapeHtml(weeklyChallenge?.description || "A fresh BMX challenge is coming soon")}</h2><p>${weeklyChallenge ? `Complete ${challengeTarget} ${escapeHtml(categoryInfo[weeklyChallenge.category]?.label || weeklyChallenge.category)} item${challengeTarget === 1 ? "" : "s"} from your training sheet to earn 5 leaderboard points.` : "Your session sheet remains available while you wait."}</p>
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(weeklyChallenge?.title || "Next weekly challenge")}</div><div class="panel-meta">${weeklyChallenge ? `Weekly challenge · ${challengeReward} point reward` : "Coach JK is preparing the next crew target"}</div></div>${weeklyChallenge ? `<span class="pill">${challengeProgress}/${challengeTarget}</span>` : ""}</div>
+      <h2>${escapeHtml(weeklyChallenge?.description || "A fresh BMX challenge is coming soon")}</h2><p>${weeklyChallenge ? (isPerfectionist ? `Land all 10 attempts on each of your ${challengeTarget} Percentage tricks to earn ${challengeReward} extra leaderboard points.` : `Complete ${challengeTarget} ${escapeHtml(categoryInfo[weeklyChallenge.category]?.label || weeklyChallenge.category)} item${challengeTarget === 1 ? "" : "s"} from your training sheet to earn ${challengeReward} leaderboard points.`) : "Your session sheet remains available while you wait."}</p>
       <div class="xp-bar" aria-label="Weekly challenge progress"><span style="width:${challengePercent}%"></span></div>
-      ${weeklyChallenge ? `<div class="challenge-progress-copy"><strong>${challengeProgress >= challengeTarget ? "Challenge complete · +5 pts" : `${challengeTarget - challengeProgress} to go`}</strong><span>${challengePercent}%</span></div>` : ""}
+      ${weeklyChallenge ? `<div class="challenge-progress-copy"><strong>${challengeProgress >= challengeTarget ? `Challenge complete · +${challengeReward} pts` : `${challengeTarget - challengeProgress} to go`}</strong><span>${challengePercent}%</span></div>` : ""}
     </section>
     <section class="panel">
       <div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">Choose 1–20 points · maximum 3 active battles</div></div><span class="pill">${activeBattleCount}/3 active</span></div>
@@ -5776,7 +5778,7 @@ async function renderChallenges() {
   document.querySelectorAll("[data-battle-response]").forEach((button) => button.addEventListener("click", respondWeeklyRiderBattle));
   document.querySelectorAll("[data-forfeit-battle]").forEach((button) => button.addEventListener("click", forfeitWeeklyRiderBattle));
   document.querySelector("#open-battle-rules")?.addEventListener("click", showBattleRulesModal);
-  if (weeklyChallenge?.new_award) setTimeout(() => showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: "+5 leaderboard points", message: `${weeklyChallenge.title || "Challenge"} complete. The points are on your weekly score.`, actionLabel: "Keep pushing" }), 250);
+  if (weeklyChallenge?.new_award) setTimeout(() => showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: `+${challengeReward} leaderboard points`, message: `${weeklyChallenge.title || "Challenge"} complete. The points are on your weekly score.`, actionLabel: "Keep pushing" }), 250);
 }
 
 function riderBattleSelectionSize(currentSize = 1, teammateCount = 0, opponentCount = 0) {

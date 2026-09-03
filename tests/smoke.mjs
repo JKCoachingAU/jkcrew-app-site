@@ -22,6 +22,7 @@ const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenle
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
 const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
 const dailyHypeMessageMigration = read("supabase/migrations/20260903111500_replace_daily_hype_messages.sql");
+const perfectionistChallengeMigration = read("supabase/migrations/20260903114500_queue_perfectionist_weekly_challenge.sql");
 const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
 const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
 const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
@@ -51,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.41";
+const version = "2.14.42";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -939,6 +940,22 @@ assert(battleMigration.includes("'display_name', profile.display_name"), "Battle
 assert(battleMigration.includes("'avatar', profile.avatar"), "Battle RPCs must return each participant's profile picture");
 assert(battleContractMigration.includes("'one_bang'"), "Weekly challenges must use the original One Bang category key");
 assert(battleContractMigration.includes("'foam_pit'"), "Weekly challenges must use the original Foam Pit category key");
+assert(perfectionistChallengeMigration.includes("'THE PERFECTIONIST'"), "The next weekly challenge must be THE PERFECTIONIST");
+assert(perfectionistChallengeMigration.includes("'percentage_perfect'"), "The Perfectionist needs its own exact completion rule");
+assert(perfectionistChallengeMigration.includes("having count(*) = 10"), "Each Perfectionist trick must contain all 10 Percentage attempts");
+assert(perfectionistChallengeMigration.includes("bool_and(attempt.landed)"), "Every Percentage attempt must be landed for Perfectionist progress");
+assert(perfectionistChallengeMigration.includes("group by assignment.week_start"), "Perfectionist progress must come from one weekly sheet");
+assert(perfectionistChallengeMigration.includes("v_challenge.reward_points"), "Weekly challenge awards must use their configured reward");
+assert(perfectionistChallengeMigration.includes("current_challenge.ends_at"), "The queued challenge must begin when the current challenge ends");
+assert(perfectionistChallengeMigration.includes("'scheduled'"), "The Perfectionist must be queued rather than replacing the live challenge");
+assert(perfectionistChallengeMigration.includes("private.activate_due_weekly_challenges"), "Queued challenges need an automatic activation path");
+assert(perfectionistChallengeMigration.includes("after insert or update of status"), "Activating a queued challenge must send its rider notification");
+assert(perfectionistChallengeMigration.includes("coalesce(v_challenge.reward_points, 5)::text"), "Completion notifications must show the configured reward");
+const riderChallengeView = functionBody("renderChallenges");
+assert(riderChallengeView.includes("weeklyChallenge?.reward_points || 5"), "The rider challenge card must display its configured reward");
+assert(riderChallengeView.includes('weeklyChallenge?.completion_rule === "percentage_perfect"'), "The rider card must explain the Perfectionist rule");
+assert(riderChallengeView.includes("Land all 10 attempts"), "The Perfectionist card must clearly explain 10/10 scoring");
+assert(riderChallengeView.includes("+${challengeReward} leaderboard points"), "The completion popup must use the challenge reward instead of a hard-coded five");
 assert(functionBody("battleRulesMarkup").includes("1v1, 2v2 or 3v3"), "Rider battle help must explain every team format");
 const battleLoader = functionBody("getWeeklyRiderBattles");
 assert(battleLoader.includes('rpc("get_my_rider_battles")'), "Battle identities must load through the limited participant RPC");
