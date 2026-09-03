@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.47";
+const version = "2.14.48";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1636,6 +1636,8 @@ assert(css.includes(".coach-review-recorder.is-recording"), "Active coach record
 assert(css.includes(".coach-review-recording-canvas"), "The attached Safari recording canvas needs safe off-screen styling");
 assert(css.includes(".video-review-hero"), "The Review Cockpit needs its dedicated visual hierarchy");
 assert(css.includes(".coach-review-tool-deck"), "The Review Cockpit needs grouped analysis controls");
+assert(app.includes('data-nav-group="${group.id}"'), "Coach sidebar groups need stable colour landmarks");
+assert(css.includes('.sidebar-nav-group[data-nav-group="coachTools"]'), "Coach Tools needs its own sidebar colour");
 assert(rileyServiceWorker.includes('const CACHE_PREFIX = "jkcrew-riley-shell-"'), "Riley test cache must not delete the production app cache");
 const riderVideoMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
 assert(riderVideoMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");
