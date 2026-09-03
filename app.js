@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.44";
+const RELEASE_VERSION = "2.14.45";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.44" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.45" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7089,7 +7089,7 @@ async function endSession() {
 }
 
 async function renderBoard() {
-  const rawLeaderboard = await getLeaderboard();
+  const [rawLeaderboard, boardChat] = await Promise.all([getLeaderboard(), getBoardChat()]);
   const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
   const allTimeLeaderboard = leaderboardWithBenchmark([...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))), "all_time_points");
   const activeBoardView = state.boardLeaderboardView === "allTime" ? "allTime" : "weekly";
@@ -7097,6 +7097,9 @@ async function renderBoard() {
   const activePointsKey = activeBoardView === "allTime" ? "all_time_points" : "weekly_points";
   const boardTitle = activeBoardView === "allTime" ? "All-time rankings" : "Weekly rankings";
   const boardMeta = activeBoardView === "allTime" ? "Total points since joining" : "Resets Sunday evening in each rider's country";
+  const mentionableUsers = boardMentionableUsers(rawLeaderboard);
+  state.boardMentionableCache = mentionableUsers;
+  const canPost = canPostBoardChat();
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at Sunday midnight in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
@@ -7110,6 +7113,16 @@ async function renderBoard() {
         <div class="panel-meta">${activeRows.length} riders</div>
       </div>
       <div class="leaderboard">${compactLeaderboardHtml(activeRows, activePointsKey)}</div>
+    </section>
+    <section class="panel board-chat-panel jkc-crew-chat">
+      <div class="jkc-chat-stripe" aria-hidden="true"></div>
+      <div class="panel-head jkc-chat-head">
+        <div class="jkc-chat-title"><span class="jkc-chat-signal" aria-hidden="true">⌁</span><div><div class="panel-title">JKCREW CHAT</div><div class="panel-meta">Riders · reactions · Coach JK</div></div></div>
+        <span class="jkc-chat-live"><i aria-hidden="true"></i>${boardChat.length} messages</span>
+      </div>
+      <div class="jkc-chat-callout"><span>⚡</span><div><strong>CREW ENERGY</strong><small>Share progress, back your mates and keep it positive.</small></div></div>
+      <div class="board-chat-list">${boardChat.length ? boardChat.map(boardChatMessageHtml).join("") : `<div class="empty compact-empty">No crew chat yet. Be the first to hype up the crew.</div>`}</div>
+      ${canPost ? boardChatComposerHtml(mentionableUsers) : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
   document.querySelectorAll("[data-board-view]").forEach((button) => button.addEventListener("click", () => {
@@ -7118,6 +7131,10 @@ async function renderBoard() {
   }));
   document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
   document.querySelector("#point-recalc-form")?.addEventListener("submit", submitPointRecalculation);
+  document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
+  document.querySelectorAll("[data-board-reaction]").forEach((button) => button.addEventListener("click", toggleBoardReaction));
+  document.querySelectorAll("[data-mention-athlete]").forEach((button) => button.addEventListener("click", openMentionedAthleteProfile));
+  bindBoardChatComposer(mentionableUsers);
 }
 
 async function submitScoreAdjustment(event) {
@@ -7208,6 +7225,7 @@ function boardChatMessageHtml(post) {
   const metadata = post.metadata || {};
   const authorName = metadata.author_name || author.display_name || (post.author_id === state.user?.id ? state.profile?.display_name : "") || "Crew member";
   const authorAvatar = metadata.avatar || author.avatar || null;
+  const coachPost = isCoachRole(metadata.author_role);
   const reactionsByEmoji = post.reactions.reduce((map, reaction) => {
     const list = map.get(reaction.reaction) || [];
     list.push(reaction);
@@ -7227,7 +7245,7 @@ function boardChatMessageHtml(post) {
   const bodyHtml = post.body ? `<p>${formatBoardMessageBody(post.body, metadata.mentions || [])}</p>` : "";
   return `<article class="board-chat-message">
     ${avatarHtml({ display_name: authorName, avatar: authorAvatar })}
-    <div class="board-chat-bubble"><div class="chat-line-meta"><strong>${escapeHtml(authorName)}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}<div class="reaction-row">${reactionHtml}</div></div>
+    <div class="board-chat-bubble ${coachPost ? "is-coach" : ""}"><div class="chat-line-meta"><strong class="${coachPost ? "board-chat-author is-coach" : ""}">${escapeHtml(authorName)}${coachPost ? " · COACH" : ""}</strong><small>${dateLabel(post.created_at)}</small></div>${bodyHtml}<div class="reaction-row">${reactionHtml}</div></div>
   </article>`;
 }
 

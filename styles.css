@@ -8424,6 +8424,93 @@ html[data-theme="light"] .success-burst {
   border-color: rgba(146, 84, 255, 0.28);
   background: rgba(7, 11, 13, 0.96);
 }
+.rider-shell .jkc-crew-chat {
+  position: relative;
+  margin-top: 16px;
+  padding-top: 4px;
+  border-radius: 6px 20px 6px 20px;
+  border-color: rgba(32, 227, 195, 0.34);
+  background:
+    radial-gradient(circle at 94% 0, rgba(58, 156, 255, 0.13), transparent 28%),
+    linear-gradient(145deg, rgba(7, 16, 20, 0.99), rgba(5, 10, 12, 0.99));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.32), inset 0 1px rgba(255, 255, 255, 0.035);
+}
+.jkc-chat-stripe {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, var(--rider-aqua) 0 46%, var(--rider-blue) 46% 66%, var(--rider-gold) 66% 80%, var(--rider-coral) 80%);
+}
+.jkc-chat-head { align-items: center; }
+.jkc-chat-title { display: flex; align-items: center; gap: 11px; }
+.jkc-chat-title .panel-title {
+  font-style: italic;
+  font-size: 1.34rem;
+  letter-spacing: 0.055em;
+}
+.jkc-chat-signal {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 3px 12px 3px 12px;
+  background: linear-gradient(135deg, var(--rider-aqua), var(--rider-blue));
+  color: #03100e;
+  font: 900 1.55rem/1 var(--display);
+  transform: skew(-6deg);
+}
+.jkc-chat-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--rider-aqua);
+  font: 800 0.62rem var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.jkc-chat-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rider-aqua);
+  box-shadow: 0 0 13px var(--rider-aqua);
+}
+.jkc-chat-callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  margin: 0 -18px 15px;
+  padding: 10px 18px;
+  border-left: 3px solid var(--rider-gold);
+  background: rgba(247, 209, 84, 0.09);
+}
+.jkc-chat-callout strong,
+.jkc-chat-callout small { display: block; }
+.jkc-chat-callout strong { color: var(--rider-gold); font: 900 0.68rem var(--mono); letter-spacing: 0.08em; }
+.jkc-chat-callout small { margin-top: 2px; color: var(--muted); }
+.rider-shell .jkc-crew-chat .board-chat-bubble {
+  border-color: rgba(146, 84, 255, 0.22);
+  border-left: 3px solid rgba(146, 84, 255, 0.72);
+  border-radius: 4px 15px 15px 15px;
+  background: rgba(146, 84, 255, 0.07);
+}
+.rider-shell .jkc-crew-chat .chat-line-meta strong { color: #b899ff; }
+.rider-shell .jkc-crew-chat .reaction-btn.active {
+  border-color: var(--rider-coral);
+  background: rgba(255, 102, 88, 0.11);
+  color: var(--rider-coral);
+}
+.rider-shell .jkc-crew-chat .board-send-btn {
+  background: linear-gradient(105deg, var(--rider-aqua), var(--rider-blue));
+  color: #021012;
+}
+@media (max-width: 560px) {
+  .jkc-chat-head { display: flex; }
+  .jkc-chat-live { font-size: 0; }
+  .jkc-chat-live i { width: 9px; height: 9px; }
+  .jkc-chat-callout { margin-inline: -14px; padding-inline: 14px; }
+}
 
 /* Profile: information is blue, progress gold, destructive controls coral. */
 .rider-shell #view[data-view="profile"] { --rider-tone: var(--rider-blue); }
