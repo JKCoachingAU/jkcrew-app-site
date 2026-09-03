@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.44";
+const version = "2.14.47";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1541,25 +1541,29 @@ const renderCoachReviewWorkspace = new Function("state", "escapeHtml", "avatarHt
 );
 const coachReviewRequest = { id: "review-1", athlete_id: "e230a5a6-68ad-4362-b410-b52f45f58e57", athlete: { display_name: "Riley Chen" }, status: "open", question: "Can’t <land> it", created_at: new Date().toISOString(), video_size_bytes: 520171 };
 const unloadedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
-assert(unloadedCoachReview.includes("Load private video"), "Every rider review must start with an intentional private-media load step");
+assert(unloadedCoachReview.includes("Open review player"), "Every rider review must start with an intentional private-media load step");
 assert(unloadedCoachReview.includes("Can’t &lt;land&gt; it"), "Rider questions must remain escaped in the coach workspace");
 coachReviewTestState.videoReviewMedia.set("review-1", { video_url: "https://signed.example/video.mov" });
 const signedOnlyCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
-assert(signedOnlyCoachReview.includes("Load private video"), "A signed URL alone must still offer authenticated Blob preparation for recording");
+assert(signedOnlyCoachReview.includes("Open review player"), "A signed URL alone must still offer authenticated Blob preparation for recording");
 coachReviewTestState.videoReviewMedia.set("review-1", { video_url: "https://signed.example/video.mov", video_playback_url: "blob:private-video" });
 const loadedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
 assert(loadedCoachReview.includes('id="coach-review-video"'), "Loaded rider media must render in the analysis player");
 assert(loadedCoachReview.includes('id="coach-review-canvas"'), "Loaded rider media must retain the drawing canvas");
-assert(loadedCoachReview.includes("Open original"), "Loaded rider media must offer a browser fallback for phone MOV files");
-assert(loadedCoachReview.includes("Voice + video + drawings"), "Loaded rider media must explain the combined review recording");
+assert(loadedCoachReview.includes(">Original</a>"), "Loaded rider media must offer a browser fallback for phone MOV files");
+assert(loadedCoachReview.includes("Record voice + drawings"), "Loaded rider media must explain the combined review recording");
+assert(loadedCoachReview.includes('class="coach-review-flow"'), "The review workspace must show the Watch, Coach and Send workflow");
+assert(loadedCoachReview.includes('class="coach-review-tool-deck"'), "Playback speed and drawing controls must be grouped into a focused tool deck");
 coachReviewTestState.videoReviewRecordedReplies.set("review-1", { file: { size: 2048 }, url: "blob:review", durationSeconds: 8 });
 const recordedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);
-assert(recordedCoachReview.includes("Send recorded review to Riley"), "A finished review must be previewable and sendable through the private reply form");
+assert(recordedCoachReview.includes("Send review to Riley"), "A finished review must be previewable and sendable through the private reply form");
 assert(recordedCoachReview.includes("Remove recording"), "A coach must be able to discard an unsent recording");
 const coachReviewRender = functionBody("renderVideoReviews");
 assert(coachReviewRender.includes("coachReviewWorkspaceHtml(activeRequest)"), "Every selected rider submission must use the full review studio");
 assert(!coachReviewRender.includes("isRileyCoachVideoCanary"), "The full coach review studio must not be gated to a test rider");
 assert(coachReviewRender.includes("coachReviewQueueItemHtml"), "Coach reviews must provide a selectable rider inbox");
+assert(coachReviewRender.includes('class="video-review-hero"'), "Video Reviews must use the focused Review Cockpit header");
+assert(coachReviewRender.includes("videoReviewFilterHtml(roster)"), "Queue filters must stay with the incoming clip list");
 assert(coachReviewRender.includes("renderSerial !== state.videoReviewRenderSerial"), "Slow coach review reads must not overwrite a newer screen");
 assert(coachReviewRender.includes("state.videoReviewRecording || state.videoReviewRecordingStarting"), "An in-flight review read must not replace a recorder that started while it was loading");
 assert((coachReviewRender.match(/disableStaleCoachReviewRecordButton\(\)/g) || []).length >= 4, "Every queue, filter and search change must disable the outgoing workspace recorder immediately");
@@ -1630,6 +1634,8 @@ assert(app.includes('"videoReviews"]'), "Coach review links must be able to open
 assert(!functionBody("videoReviewCardHtml").includes("data-review-record-toggle"), "Legacy summary cards must not create a second review recorder");
 assert(css.includes(".coach-review-recorder.is-recording"), "Active coach recording needs a clear visual state");
 assert(css.includes(".coach-review-recording-canvas"), "The attached Safari recording canvas needs safe off-screen styling");
+assert(css.includes(".video-review-hero"), "The Review Cockpit needs its dedicated visual hierarchy");
+assert(css.includes(".coach-review-tool-deck"), "The Review Cockpit needs grouped analysis controls");
 assert(rileyServiceWorker.includes('const CACHE_PREFIX = "jkcrew-riley-shell-"'), "Riley test cache must not delete the production app cache");
 const riderVideoMigration = read("supabase/migrations/20260827004923_harden_rider_video_analysis_canary.sql");
 assert(riderVideoMigration.includes("file_size_limit = 52428800"), "Video bucket must match the hosted 50MB ceiling");

@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.46";
+const RELEASE_VERSION = "2.14.47";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.46" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.47" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -12612,11 +12612,11 @@ async function getCoachVideoReviews() {
 
 function videoReviewFilterHtml(roster = []) {
   const riderOptions = roster.map((athlete) => `<option value="${athlete.id}" ${state.videoReviewRider === athlete.id ? "selected" : ""}>${escapeHtml(athlete.display_name)}</option>`).join("");
-  return `<section class="panel video-review-filters">
-    <div class="field"><label for="video-review-status">Status</label><select id="video-review-status"><option value="all" ${state.videoReviewStatus === "all" ? "selected" : ""}>All requests</option><option value="new" ${state.videoReviewStatus === "new" ? "selected" : ""}>New / waiting</option><option value="replied" ${state.videoReviewStatus === "replied" ? "selected" : ""}>Replied</option><option value="reviewed" ${state.videoReviewStatus === "reviewed" ? "selected" : ""}>Reviewed</option></select></div>
-    <div class="field"><label for="video-review-rider">Rider</label><select id="video-review-rider"><option value="all" ${state.videoReviewRider === "all" ? "selected" : ""}>All riders</option>${riderOptions}</select></div>
-    <div class="field"><label for="video-review-search">Search</label><input id="video-review-search" value="${escapeHtml(state.videoReviewSearch)}" placeholder="Trick, question, rider..."></div>
-  </section>`;
+  return `<div class="video-review-filters" aria-label="Review queue filters">
+    <div class="field"><label for="video-review-status">Queue</label><select id="video-review-status"><option value="all" ${state.videoReviewStatus === "all" ? "selected" : ""}>All videos</option><option value="new" ${state.videoReviewStatus === "new" ? "selected" : ""}>Needs reply</option><option value="replied" ${state.videoReviewStatus === "replied" ? "selected" : ""}>Replied</option><option value="reviewed" ${state.videoReviewStatus === "reviewed" ? "selected" : ""}>Completed</option></select></div>
+    <div class="field"><label for="video-review-rider">Rider</label><select id="video-review-rider"><option value="all" ${state.videoReviewRider === "all" ? "selected" : ""}>Everyone</option>${riderOptions}</select></div>
+    <div class="field video-review-search-field"><label for="video-review-search">Find a clip</label><input id="video-review-search" value="${escapeHtml(state.videoReviewSearch)}" placeholder="Search rider or trick..."></div>
+  </div>`;
 }
 
 function videoReviewTimeLabel(seconds = 0) {
@@ -12632,6 +12632,7 @@ function coachReviewQueueItemHtml(request) {
   const status = request.status || "open";
   const active = state.videoReviewActiveRequestId === request.id;
   return `<button class="coach-review-queue-item ${active ? "active" : ""}" type="button" data-open-video-review="${request.id}" aria-pressed="${active}">
+    <i class="coach-review-queue-rail" aria-hidden="true"></i>
     ${avatarHtml(athlete)}
     <span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(request.question || "Video review")}</small><em>${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)}</em></span>
     <b class="coach-review-status status-${escapeHtml(status)}">${escapeHtml(status === "open" ? "New" : status)}</b>
@@ -12649,13 +12650,14 @@ function coachReviewWorkspaceHtml(request) {
   const reviewed = status === "reviewed";
   const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
   const hasSavedReply = Boolean(request.coach_comment || request.coach_video_storage_path || coachVideoUrl || ["replied", "reviewed"].includes(status));
+  const responseStarted = Boolean(recordedReply || String(request.coach_comment || "").trim());
   const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
   const sourceExtension = String(request.video_file_name || "").split(".").pop();
   const videoFormat = sourceExtension && sourceExtension !== request.video_file_name ? sourceExtension.toUpperCase() : "VIDEO";
   const recorderPanel = riderVideoUrl ? `<section class="coach-review-recorder ${recordedReply ? "has-recording" : ""}" aria-label="Record voice and drawing review">
       <div class="coach-review-recorder-head">
-        <div><span class="eyebrow">Record your review</span><strong>Voice + video + drawings</strong><small>Your microphone starts only after you press record. Maximum ${COACH_REVIEW_RECORDING_MAX_SECONDS} seconds.</small></div>
-        <button class="coach-review-record-button" type="button" data-review-record-toggle data-review-request="${request.id}">${recordedReply ? "Record again" : "Start recording review"}</button>
+        <div><span class="eyebrow">02 · Coach the moment</span><strong>Record voice + drawings</strong><small>Play the clip while you talk and mark the frame. Max ${COACH_REVIEW_RECORDING_MAX_SECONDS} seconds.</small></div>
+        <button class="coach-review-record-button" type="button" data-review-record-toggle data-review-request="${request.id}">${recordedReply ? "Record again" : "● Record review"}</button>
       </div>
       <div class="coach-review-record-status" aria-live="polite"><span class="coach-review-record-dot" aria-hidden="true"></span><strong data-review-record-status>${recordedReply ? "Recording ready to send" : "Ready when you are"}</strong><time data-review-record-time>${recordedReply ? videoReviewTimeLabel(recordedReply.durationSeconds) : "0:00"}</time></div>
       ${recordedReply ? `<div class="coach-review-recorded-preview"><video src="${escapeHtml(recordedReply.url)}" controls playsinline preload="metadata"></video><div><strong>Saved review preview</strong><small>${videoReviewTimeLabel(recordedReply.durationSeconds)} · ${videoSizeLabel(recordedReply.file?.size)} · private until you send it</small><button class="secondary-btn compact-btn" type="button" data-review-record-remove="${request.id}">Remove recording</button></div></div>` : ""}
@@ -12663,31 +12665,34 @@ function coachReviewWorkspaceHtml(request) {
   const player = riderVideoUrl ? `<div class="coach-review-stage" id="coach-review-stage">
       <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" crossorigin="anonymous" playsinline preload="auto"></video>
       <canvas id="coach-review-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Video drawing layer"></canvas>
-      <div class="coach-review-stage-label"><span>Private rider video</span><strong id="coach-review-speed-label">1×</strong></div>
+      <div class="coach-review-stage-label"><span>01 · Rider clip</span><strong id="coach-review-speed-label">1×</strong></div>
     </div>
     <div class="coach-review-playback" aria-label="Video playback controls">
-      <button type="button" data-review-step="-0.033" aria-label="Step back 33 milliseconds">−33 ms</button>
-      <button class="coach-review-play" type="button" data-review-play>Play</button>
-      <button type="button" data-review-step="0.033" aria-label="Step forward 33 milliseconds">+33 ms</button>
+      <button type="button" data-review-step="-0.033" aria-label="Previous frame">← Frame</button>
+      <button class="coach-review-play" type="button" data-review-play>▶ Play</button>
+      <button type="button" data-review-step="0.033" aria-label="Next frame">Frame →</button>
       <span id="coach-review-time">0:00 / 0:00</span>
       <input id="coach-review-scrubber" type="range" min="0" max="1000" value="0" aria-label="Video timeline">
-      <button type="button" data-review-fullscreen aria-label="Open video full screen">Full screen</button>
+      <button type="button" data-review-fullscreen aria-label="Open video full screen">⛶ Expand</button>
     </div>
-    <div class="coach-review-speed-row"><span>Slow motion</span>${[1, 0.5, 0.25, 0.125].map((speed) => `<button class="${speed === 1 ? "active" : ""}" type="button" data-review-speed="${speed}">${speed === 1 ? "1×" : speed === 0.5 ? "½×" : speed === 0.25 ? "¼×" : "⅛×"}</button>`).join("")}</div>
-    <div class="coach-review-analysis-tools" aria-label="On-screen drawing tools">
-      <button class="coach-review-draw-toggle ${state.videoReviewDrawEnabled ? "active" : ""}" type="button" data-review-draw-toggle>${state.videoReviewDrawEnabled ? "Drawing on" : "Draw on video"}</button>
-      <button class="${state.videoReviewDrawTool === "pen" ? "active" : ""}" type="button" data-review-draw-tool="pen">Freehand</button>
-      <button class="${state.videoReviewDrawTool === "line" ? "active" : ""}" type="button" data-review-draw-tool="line">Line</button>
-      <button class="${state.videoReviewDrawTool === "arrow" ? "active" : ""}" type="button" data-review-draw-tool="arrow">Arrow</button>
-      <label class="coach-review-colour">Colour <input type="color" value="${escapeHtml(state.videoReviewDrawColor)}" data-review-draw-colour></label>
-      <button type="button" data-review-draw-undo>Undo</button>
-      <button type="button" data-review-draw-clear>Clear</button>
+    <div class="coach-review-tool-deck">
+      <section class="coach-review-tool-group"><div class="coach-review-tool-label"><strong>Speed</strong><small>Slow it down</small></div><div class="coach-review-speed-row">${[1, 0.5, 0.25, 0.125].map((speed) => `<button class="${speed === 1 ? "active" : ""}" type="button" data-review-speed="${speed}">${speed === 1 ? "1×" : speed === 0.5 ? "½×" : speed === 0.25 ? "¼×" : "⅛×"}</button>`).join("")}</div></section>
+      <section class="coach-review-tool-group"><div class="coach-review-tool-label"><strong>Mark-up</strong><small>Draw on frame</small></div><div class="coach-review-analysis-tools" aria-label="On-screen drawing tools">
+        <button class="coach-review-draw-toggle ${state.videoReviewDrawEnabled ? "active" : ""}" type="button" data-review-draw-toggle>${state.videoReviewDrawEnabled ? "Drawing on" : "Draw"}</button>
+        <button class="${state.videoReviewDrawTool === "pen" ? "active" : ""}" type="button" data-review-draw-tool="pen">Pen</button>
+        <button class="${state.videoReviewDrawTool === "line" ? "active" : ""}" type="button" data-review-draw-tool="line">Line</button>
+        <button class="${state.videoReviewDrawTool === "arrow" ? "active" : ""}" type="button" data-review-draw-tool="arrow">Arrow</button>
+        <label class="coach-review-colour" aria-label="Drawing colour"><input type="color" value="${escapeHtml(state.videoReviewDrawColor)}" data-review-draw-colour></label>
+        <button type="button" data-review-draw-undo>Undo</button>
+        <button type="button" data-review-draw-clear>Clear</button>
+      </div></section>
     </div>
     ${recorderPanel}` : `<div class="coach-review-load-stage">
       <div class="coach-review-load-icon" aria-hidden="true">▶</div>
-      <strong>${escapeHtml(athleteFirstName)}'s private video is ready</strong>
-      <p>Load the submitted clip to begin frame-by-frame analysis.</p>
-      <button class="primary-btn" type="button" data-load-help-video="${request.id}" data-coach-analysis="1">Load private video</button>
+      <span>01 · Watch</span>
+      <strong>Load ${escapeHtml(athleteFirstName)}'s clip</strong>
+      <p>Private video stays inside the studio. Open it to unlock slow motion, drawing and recording.</p>
+      <button class="primary-btn" type="button" data-load-help-video="${request.id}" data-coach-analysis="1">Open review player →</button>
     </div>`;
   const savedReply = hasSavedReply ? `<div class="coach-review-saved-reply"><strong>Feedback already sent</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>` : ""}</div>` : "";
   return `<section class="coach-review-workspace" aria-label="Rider video analysis workspace">
@@ -12695,22 +12700,29 @@ function coachReviewWorkspaceHtml(request) {
       <div class="person">${avatarHtml(athlete)}<div class="person-name"><div class="eyebrow">Private rider review</div><strong>${escapeHtml(athlete.display_name)}</strong><small>Submitted ${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)} ${escapeHtml(videoFormat)}</small></div></div>
       <div class="coach-review-head-actions"><span class="coach-review-status status-${escapeHtml(status)}">${escapeHtml(status === "open" ? "New review" : status)}</span><button class="secondary-btn compact-btn" type="button" data-open-student="${escapeHtml(request.athlete_id)}">Open rider</button></div>
     </header>
-    <div class="coach-review-question"><span>Rider question</span><strong>“${escapeHtml(request.question || "Please review this attempt.")}”</strong></div>
+    <div class="coach-review-flow" aria-label="Review workflow">
+      <div class="${riderVideoUrl ? "done" : "active"}"><b>01</b><span><strong>Watch</strong><small>Find the moment</small></span></div>
+      <i aria-hidden="true"></i>
+      <div class="${recordedReply || hasSavedReply ? "done" : riderVideoUrl ? "active" : ""}"><b>02</b><span><strong>Coach</strong><small>Talk + draw</small></span></div>
+      <i aria-hidden="true"></i>
+      <div class="${hasSavedReply ? "done" : responseStarted ? "active" : ""}"><b>03</b><span><strong>Send</strong><small>One clear cue</small></span></div>
+    </div>
+    <div class="coach-review-question"><span>“</span><div><small>Rider wants help with</small><strong>${escapeHtml(request.question || "Please review this attempt.")}</strong></div></div>
     <div class="coach-review-workspace-grid">
       <div class="coach-review-editor">
         ${player}
-        <div class="coach-review-editor-note">Play, pause or slow the clip while you speak and draw. Your finished recording combines the rider's video, your live markings and your microphone into one private reply.</div>
-        <div class="video-actions">${originalRiderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(originalRiderVideoUrl)}" target="_blank" rel="noopener">Open original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download original</button></div>
+        <div class="coach-review-editor-footer"><span>Private · only you and ${escapeHtml(athleteFirstName)}</span><div class="video-actions">${originalRiderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(originalRiderVideoUrl)}" target="_blank" rel="noopener">Original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download</button></div></div>
       </div>
       <aside class="coach-review-feedback">
-        <div><div class="eyebrow">Coach response</div><h3>Send feedback to ${escapeHtml(athleteFirstName)}</h3><p>Explain the biggest correction first, then give ${escapeHtml(athleteFirstName)} one clear cue for the next attempt.</p></div>
+        <div><div class="eyebrow">03 · Send it back</div><h3>Give ${escapeHtml(athleteFirstName)} one clear win</h3><p>Short feedback lands harder. Keep it focused and rideable.</p></div>
+        <div class="coach-review-cue-strip"><span>1 correction</span><span>1 cue</span><span>1 confidence boost</span></div>
         ${savedReply}
         <form class="reply-form" data-help-reply="${request.id}">
-          <div class="field"><label for="central-reply-${request.id}">Written feedback</label><textarea id="central-reply-${request.id}" name="comment" placeholder="Example: Keep your eyes through the turn and drive your outside shoulder...">${escapeHtml(request.coach_comment || "")}</textarea></div>
-          <div class="field"><label for="central-reply-video-${request.id}">${recordedReply ? "Or choose a different video" : "Optional video reply"}</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*"><small>${recordedReply ? "Your recorded review is selected. Choosing a file here will replace it." : "Record above or choose a reply up to 50 MB."}</small></div>
-          <button class="primary-btn wide" type="submit">${recordedReply ? `Send recorded review to ${escapeHtml(athleteFirstName)}` : `Send feedback to ${escapeHtml(athleteFirstName)}`}</button>
+          <div class="field"><label for="central-reply-${request.id}">Your coaching note</label><textarea id="central-reply-${request.id}" name="comment" placeholder="Try this next run: eyes through the turn, then drive the outside shoulder...">${escapeHtml(request.coach_comment || "")}</textarea></div>
+          <details class="coach-review-alt-reply"><summary>${recordedReply ? "Replace recorded review" : "Attach a separate reply video"}</summary><div class="field"><label for="central-reply-video-${request.id}">Video file</label><input id="central-reply-video-${request.id}" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*"><small>${recordedReply ? "Your studio recording is ready. A file selected here will replace it." : "Optional · up to 50 MB."}</small></div></details>
+          <button class="primary-btn wide coach-review-send" type="submit">${recordedReply ? `Send review to ${escapeHtml(athleteFirstName)} →` : `Send feedback to ${escapeHtml(athleteFirstName)} →`}</button>
         </form>
-        <button class="secondary-btn wide" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "Review completed" : "Mark review complete"}</button>
+        <button class="secondary-btn wide coach-review-complete" type="button" data-mark-help-reviewed="${request.id}" ${reviewed ? "disabled" : ""}>${reviewed ? "✓ Review completed" : "Archive as complete"}</button>
       </aside>
     </div>
   </section>`;
@@ -13417,15 +13429,16 @@ async function renderVideoReviews() {
     ? coachReviewWorkspaceHtml(activeRequest)
     : `<div class="empty compact-empty">No videos match those filters.</div>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Video Review <span>Studio</span></h1><p>Open a rider submission, inspect the movement in slow motion, then return clear coaching feedback.</p></div></div>
-    <section class="stats-grid">
-      ${statCard("New", newCount, "", "Waiting")}
-      ${statCard("Total", requests.length, "", "Submissions")}
-      ${statCard("Riders", new Set(requests.map((request) => request.athlete_id)).size, "", "With videos")}
-    </section>
-    ${videoReviewFilterHtml(roster)}
+    <header class="video-review-hero">
+      <div><div class="eyebrow">JKC private coaching</div><h1>Review <span>Cockpit</span></h1><p>One rider. One moment. One clear cue.</p></div>
+      <div class="video-review-summary" aria-label="Video review totals">
+        <span class="is-live"><b>${newCount}</b><small>Need reply</small></span>
+        <span><b>${requests.length}</b><small>Total clips</small></span>
+        <span><b>${new Set(requests.map((request) => request.athlete_id)).size}</b><small>Riders</small></span>
+      </div>
+    </header>
     <section class="coach-review-console">
-      <aside class="coach-review-queue panel"><div class="panel-head"><div><div class="panel-title">Review inbox</div><div class="panel-meta">${filtered.length} video${filtered.length === 1 ? "" : "s"}</div></div></div><div class="coach-review-queue-list">${filtered.length ? filtered.map(coachReviewQueueItemHtml).join("") : `<div class="empty compact-empty">Nothing waiting.</div>`}</div></aside>
+      <aside class="coach-review-queue panel"><div class="coach-review-queue-head"><div><span>Incoming clips</span><strong>Choose a rider</strong></div><b>${filtered.length}</b></div>${videoReviewFilterHtml(roster)}<div class="coach-review-queue-list">${filtered.length ? filtered.map(coachReviewQueueItemHtml).join("") : `<div class="empty compact-empty">Nothing waiting.</div>`}</div></aside>
       <div class="coach-review-active">${activeReviewHtml}</div>
     </section>`;
   document.querySelector("#video-review-status")?.addEventListener("change", (event) => {
