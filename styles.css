@@ -11279,3 +11279,142 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
   .coach-shell .sidebar .group-nav-btn .nav-icon { width: 30px; height: 30px; }
   .coach-shell .sidebar-subnav { padding-left: 41px; }
 }
+
+/* Kim's rider theme: a pink performance palette on the existing JKC system. */
+.rider-shell.rider-theme-kim {
+  --bg: #080309;
+  --surface: #120a12;
+  --surface-2: #1b101a;
+  --surface-3: #261525;
+  --line: rgba(255,154,218,0.18);
+  --muted: #b39aaa;
+  --text: #fff5fb;
+  --aqua: #ff52b5;
+  --purple: #b578ff;
+  --red: #ff6f96;
+  --yellow: #ffd070;
+  --rider-aqua: #ff52b5;
+  --rider-blue: #ff8ed8;
+  --rider-violet: #b578ff;
+  --rider-gold: #ffd070;
+  --rider-coral: #ff6f96;
+  background:
+    radial-gradient(circle at 6% 8%, rgba(255,82,181,0.14), transparent 25rem),
+    radial-gradient(circle at 96% 16%, rgba(181,120,255,0.12), transparent 29rem),
+    linear-gradient(145deg, #080309, #030405 68%);
+}
+.rider-shell.rider-theme-kim .main-wrap {
+  background-image:
+    linear-gradient(rgba(255,82,181,0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(181,120,255,0.025) 1px, transparent 1px),
+    radial-gradient(circle at 78% 8%, rgba(255,82,181,0.08), transparent 28rem);
+  background-size: 86px 86px, 86px 86px, auto;
+}
+.rider-shell.rider-theme-kim .sidebar,
+.rider-shell.rider-theme-kim .topbar,
+.rider-shell.rider-theme-kim .bottom-nav {
+  border-color: rgba(255,154,218,0.16);
+  background: rgba(10,3,10,0.94);
+  box-shadow: 0 18px 50px rgba(29,0,22,0.34);
+}
+.rider-shell.rider-theme-kim .topbar-title::after {
+  content: "KIM EDITION";
+  margin-left: 9px;
+  padding: 4px 7px;
+  border: 1px solid rgba(255,82,181,0.35);
+  border-radius: 999px;
+  color: #ff8ed8;
+  background: rgba(255,82,181,0.09);
+  font: 800 0.5rem var(--mono);
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+}
+.rider-shell.rider-theme-kim .logo-sidebar-brand img,
+.rider-shell.rider-theme-kim .topbar-logo,
+.rider-shell.rider-theme-kim .brand-mark,
+.rider-shell.rider-theme-kim .topbar-brand .brand-mark {
+  background:
+    linear-gradient(#080508, #080508) padding-box,
+    linear-gradient(135deg, #ff52b5, #ff8ed8 52%, #b578ff) border-box;
+  box-shadow: 0 0 0 1px rgba(255,82,181,0.3), 0 0 24px rgba(255,82,181,0.2);
+}
+.rider-shell.rider-theme-kim .role-pill {
+  color: #ff8ed8;
+  border-color: rgba(255,82,181,0.25);
+  background: linear-gradient(90deg, rgba(255,82,181,0.14), rgba(181,120,255,0.06));
+}
+.rider-shell.rider-theme-kim .page-head h1 span,
+.rider-shell.rider-theme-kim .hero-title span {
+  background: linear-gradient(108deg, #ff52b5, #ff9cda 52%, #b578ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.rider-shell.rider-theme-kim .panel,
+.rider-shell.rider-theme-kim .stat-card,
+.rider-shell.rider-theme-kim .assignment-row,
+.rider-shell.rider-theme-kim .percentage-card,
+.rider-shell.rider-theme-kim .daily-venue-accordion,
+.rider-shell.rider-theme-kim .tricktionary-zone,
+.rider-shell.rider-theme-kim .tricktionary-card,
+.rider-shell.rider-theme-kim .leader-row,
+.rider-shell.rider-theme-kim .board-chat-bubble {
+  border-color: rgba(255,154,218,0.17);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255,82,181,0.07), transparent 44%),
+    linear-gradient(145deg, rgba(25,13,23,0.98), rgba(9,6,10,0.98));
+  box-shadow: 0 16px 38px rgba(28,0,20,0.25);
+}
+.rider-shell.rider-theme-kim .athlete-scoreboard,
+.rider-shell.rider-theme-kim .xp-panel,
+.rider-shell.rider-theme-kim .xp-progress-card {
+  border-color: rgba(255,82,181,0.32);
+  box-shadow: 0 18px 44px rgba(255,82,181,0.08);
+}
+.rider-shell.rider-theme-kim .primary-btn,
+.rider-shell.rider-theme-kim .start-session-btn,
+.rider-shell.rider-theme-kim .chat-send-btn {
+  color: #240018;
+  background: linear-gradient(105deg, #ff52b5, #ff91d8 55%, #b578ff);
+  box-shadow: 0 12px 28px rgba(255,82,181,0.2);
+}
+.rider-shell.rider-theme-kim .bottom-nav .nav-btn.active {
+  color: #ff8ed8;
+}
+.rider-shell.rider-theme-kim .bottom-nav .nav-btn.active .nav-icon {
+  color: #260018;
+  background: linear-gradient(135deg, #ff52b5, #ff8ed8 52%, #b578ff);
+  box-shadow: 0 0 26px rgba(255,82,181,0.28);
+}
+.rider-shell.rider-theme-kim .bottom-nav .nav-btn.active::after {
+  background: linear-gradient(90deg, #ff52b5, #ff8ed8, #b578ff);
+  box-shadow: 0 0 13px rgba(255,82,181,0.42);
+}
+.phone-preview-frame.rider-theme-kim {
+  border-color: rgba(255,82,181,0.38);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(255,82,181,0.15), transparent 24rem),
+    linear-gradient(150deg, #100710, #040506 62%);
+  box-shadow: 0 30px 80px rgba(26,0,19,0.4), 0 0 0 1px rgba(255,82,181,0.08), 0 0 46px rgba(255,82,181,0.1);
+}
+.phone-preview-frame.rider-theme-kim .preview-phone-tabs {
+  border-bottom-color: rgba(255,154,218,0.16);
+  background: rgba(13,5,12,0.92);
+}
+.phone-preview-frame.rider-theme-kim .preview-phone-tabs button.active {
+  color: #ff8ed8;
+  border-color: rgba(255,82,181,0.38);
+  background: rgba(255,82,181,0.1);
+}
+
+html[data-theme="light"] .rider-shell.rider-theme-kim {
+  --bg: #fff7fc;
+  --surface: #fffafd;
+  --surface-2: #fff0f9;
+  --text: #28101f;
+  --muted: #806776;
+  background: linear-gradient(145deg, #fff9fd, #f8f1ff);
+}
+
+@media (max-width: 430px) {
+  .rider-shell.rider-theme-kim .topbar-title::after { content: "KIM"; margin-left: 6px; padding-inline: 6px; }
+}
