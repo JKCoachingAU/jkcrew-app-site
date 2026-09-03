@@ -21,6 +21,7 @@ const coachEventEditMigration = read("supabase/migrations/20260827233000_coach_e
 const beenleighMigration = read("supabase/migrations/20260827220000_merge_beenleigh_locations.sql");
 const notificationMigration = read("supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql");
 const dailyListNotificationMigration = read("supabase/migrations/20260829090000_notify_daily_list_completion_only.sql");
+const dailyHypeMessageMigration = read("supabase/migrations/20260903111500_replace_daily_hype_messages.sql");
 const battleScoreMigration = read("supabase/migrations/20260830090000_persist_battle_scores_across_weekly_resets.sql");
 const lifetimeXpBadgeMigration = read("supabase/migrations/20260830094500_keep_badges_on_lifetime_xp.sql");
 const battlePointsMigration = read("supabase/migrations/20260830110000_choose_rider_battle_points.sql");
@@ -99,6 +100,48 @@ assert(html.includes("initial-scale=1.0, viewport-fit=cover"), "Installed iPads 
 assert(serviceWorker.includes('const CACHE_PREFIX = "jkcrew-shell-"'), "service worker should use the public cache namespace");
 assert(serviceWorker.includes(`const RELEASE_VERSION = "${version}"`), "service worker cache should use the current version");
 assert(serviceWorker.includes("silent: false"), "Background push should request the device's normal notification sound");
+const approvedDailyHypeMessages = [
+  "It’s 9am. Go do something useful with your bike.",
+  "Warm up first. You’re not made of spare parts.",
+  "Go ride. Watching BMX clips doesn’t count.",
+  "Try the trick you’ve been avoiding.",
+  "One clean trick is enough progress for today.",
+  "Morning. Ride if you can.",
+  "The app says you have tricks to do.",
+  "One decent attempt would be a start.",
+  "Today’s suggestion: BMX.",
+  "Do a lap. Go from there.",
+  "Today’s goal: fewer excuses and cleaner riding.",
+  "Give it a proper attempt before saying it doesn’t work.",
+  "Ride for twenty minutes and see what happens.",
+  "Pick one thing and improve it.",
+  "The trick probably isn’t going to fix itself.",
+  "Make the easy tricks look good today.",
+  "Your session isn’t going to start itself.",
+  "No big speech today. Just go ride.",
+  "The bike is still where you left it.",
+  "Stop scrolling. Go ride.",
+  "A short session still counts.",
+  "Don’t rush the difficult stuff.",
+  "Try something. Preferably something on your sheet.",
+  "Go ride before you find another reason not to.",
+  "You can stop reading now.",
+  "Do some BMX today. That’s the whole message.",
+  "Check your sheet. There’s probably something you’re avoiding.",
+  "Less phone. More bike.",
+  "It’s 9am. Apparently I have to remind you to ride.",
+  "That’s the reminder. Off you go.",
+];
+assert.equal(approvedDailyHypeMessages.length, 30, "The approved morning rotation must contain exactly 30 messages");
+for (const message of approvedDailyHypeMessages) {
+  assert(dailyHypeMessageMigration.includes(`'${message}'`), `The morning rotation is missing: ${message}`);
+}
+assert(dailyHypeMessageMigration.includes("private.jkcrew_daily_hype_message"), "The scheduled sender must use the approved daily message rotation");
+assert(dailyHypeMessageMigration.includes("coalesce(preference.daily_hype, true)"), "The approved morning messages must still honour each rider's daily-hype setting");
+assert(dailyHypeMessageMigration.includes("time >= time '09:00'"), "Morning messages must not send before 9am in the rider's local timezone");
+assert(dailyHypeMessageMigration.includes("time < time '09:10'"), "The 9am send window must remain bounded to prevent late reminders");
+assert(dailyHypeMessageMigration.includes("on conflict (dedupe_key) do nothing"), "Morning messages must remain deduplicated per rider and day");
+assert(!dailyHypeMessageMigration.includes("Coach JK says:"), "The old seven-message morning copy must not return");
 
 const shellRenderer = functionBody("renderShell");
 assert(functionBody("mountStartupPrompts").includes("!mountWhatsNewPrompt() && !mountBattleIntroPrompt()"), "What's New must appear before the older battle and push prompts");
