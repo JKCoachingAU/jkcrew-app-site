@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.56";
+const version = "2.14.57";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -956,7 +956,7 @@ assert(riderChallengeView.includes("weeklyChallenge?.reward_points || 5"), "The 
 assert(riderChallengeView.includes('weeklyChallenge?.completion_rule === "percentage_perfect"'), "The rider card must explain the Perfectionist rule");
 assert(riderChallengeView.includes("Land all 10 attempts"), "The Perfectionist card must clearly explain 10/10 scoring");
 assert(riderChallengeView.includes("+${challengeReward} leaderboard points"), "The completion popup must use the challenge reward instead of a hard-coded five");
-assert(functionBody("battleRulesMarkup").includes("1v1, 2v2 or 3v3"), "Rider battle help must explain every team format");
+assert(functionBody("battleRulesMarkup").includes("1v1, 2v2, 3v3, 1v1v1 or 2v2v2"), "Rider battle help must explain every team format");
 const battleLoader = functionBody("getWeeklyRiderBattles");
 assert(battleLoader.includes('rpc("get_my_rider_battles")'), "Battle identities must load through the limited participant RPC");
 assert(!battleLoader.includes('challenger:profiles'), "Battle loading must not rely on profile joins hidden by rider RLS");
@@ -990,13 +990,9 @@ assert.equal(battleSelectionSizer(1, 2, 3), 3, "Selecting two teammates and thre
 assert.equal(battleSelectionSizer(3, 0, 1), 3, "An explicitly selected 3v3 format should remain selected while riders are added");
 assert.equal(battleSelectionSizer(1, 99, 99), 3, "The battle format must remain capped at 3v3");
 const riderBattlePicker = functionBody("updateRiderBattlePicker");
-assert(riderBattlePicker.includes("opponentChecked.length >= 3"), "Riders must be able to select up to three opponents");
-assert(riderBattlePicker.includes("teammateChecked.length >= 2"), "Riders must be able to select up to two teammates alongside themselves");
 assert(!riderBattlePicker.includes("opponentChecked.length >= size"), "The current format must not block adding another opponent");
 assert(!riderBattlePicker.includes("teammateTarget === 0"), "The initial 1v1 format must not block adding a teammate");
 assert(riderBattlePicker.includes("sizeSelect.value = String(size)"), "Adding riders should automatically update the battle format");
-assert(riderBattlePicker.includes("duplicate.checked = false"), "A rider selected for one team must be removed from the other team");
-assert(riderBattlePicker.includes("teammateChecked.length === teammateTarget && opponentChecked.length === size"), "A battle request must require two complete equal teams");
 assert(functionBody("renderChallenges").includes('addEventListener("input", updateRiderBattlePicker)'), "Mobile battle-format changes must update immediately");
 const makeBattleCheckbox = (name, value) => ({ name, value, checked: false, disabled: false, matches: (selector) => selector === 'input[type="checkbox"]' });
 const teammateInputs = [makeBattleCheckbox("teammateIds", "opponent-1"), makeBattleCheckbox("teammateIds", "teammate-1"), makeBattleCheckbox("teammateIds", "teammate-2"), makeBattleCheckbox("teammateIds", "teammate-3")];
@@ -1010,7 +1006,7 @@ const battlePickerForm = {
   querySelectorAll: (selector) => selector === '[name="teammateIds"]' ? teammateInputs : selector === '[name="opponentIds"]' ? opponentInputs : [],
 };
 const battlePickerDocument = { querySelector: (selector) => selector === "#battle-request-form" ? battlePickerForm : selector === "#teammate-count-help" ? teammateHelp : selector === "#opponent-count-help" ? opponentHelp : null };
-const updateBattlePicker = new Function("document", `${functionBody("riderBattleSelectionSize")}\n${functionBody("updateRiderBattlePicker")}; return updateRiderBattlePicker;`)(battlePickerDocument);
+const updateBattlePicker = new Function("document", `${functionBody("parseBattleFormat")}\n${functionBody("riderBattleSelectionSize")}\n${functionBody("updateRiderBattlePicker")}; return updateRiderBattlePicker;`)(battlePickerDocument);
 updateBattlePicker();
 assert(opponentInputs.every((input) => !input.disabled), "The initial 1v1 picker must leave extra opponents selectable");
 opponentInputs[0].checked = true; updateBattlePicker({ target: opponentInputs[0] });
@@ -1030,10 +1026,10 @@ assert.equal(sendBattleButton.textContent, "Send 3v3 battle request", "The ready
 const riderBattleRequest = functionBody("requestWeeklyRiderBattle");
 assert(riderBattleRequest.includes("p_team_one: [state.user.id, ...teammateIds]"), "Rider battle requests must send the complete home team array");
 assert(riderBattleRequest.includes("p_team_two: opponentIds"), "Rider battle requests must send every selected opponent");
-assert(riderBattleRequest.includes('rpc("request_rider_battle_v2"'), "Riders must use the battle RPC that accepts a chosen point value");
+assert(riderBattleRequest.includes('rpc("request_rider_battle_v3"'), "Riders must use the battle RPC that accepts a chosen point value");
 assert(riderBattleRequest.includes("p_reward_points: rewardPoints"), "Rider battle requests must send the chosen point value");
 assert(functionBody("showCoachBattleBuilder").includes('name="rewardPoints"'), "The coach battle builder must include a point selector");
-assert(functionBody("showCoachBattleBuilder").includes('rpc("request_rider_battle_v2"'), "Coach-created battles must use the variable-point RPC");
+assert(functionBody("showCoachBattleBuilder").includes('rpc("request_rider_battle_v3"'), "Coach-created battles must use the variable-point RPC");
 assert(functionBody("weeklyBattleCardHtml").includes("battle.reward_points || 5"), "Rider battle cards must show the stored point value with a legacy fallback");
 assert(functionBody("coachBattleCardHtml").includes("battle.reward_points || 5"), "Coach battle cards must show the stored point value with a legacy fallback");
 assert(battlePointsMigration.includes("reward_points between 1 and 20"), "The database must restrict battle stakes to 1–20 points");
@@ -1063,7 +1059,7 @@ assert(functionBody("coachBattleCardHtml").includes("data-delete-coach-battle"),
 assert(functionBody("coachBattleCardHtml").includes('<details class="coach-battle-view-card'), "Each coach battle must render as a dropdown");
 assert(functionBody("coachBattleCardHtml").includes('class="coach-battle-card-summary"'), "Closed battle rows must show a compact summary");
 assert(!functionBody("coachBattleCardHtml").includes('<details open'), "Coach battle dropdowns must be closed by default");
-assert(functionBody("coachBattleCardHtml").includes("teamOneScore") && functionBody("coachBattleCardHtml").includes("teamTwoScore"), "Closed battle rows must show the current score");
+assert(functionBody("coachBattleCardHtml").includes("teamScores") && functionBody("coachBattleCardHtml").includes("battleTeamScore"), "Closed battle rows must show the current score");
 assert(functionBody("deleteCoachBattle").includes('rpc("delete_rider_battle"'), "Coach battle deletion must use the protected database RPC");
 assert(functionBody("respondCoachRiderBattle").includes('rpc("coach_respond_rider_battle"'), "Coaches need a protected accept-on-behalf action");
 assert(functionBody("setCoachBattleArchived").includes('rpc("set_rider_battle_archived"'), "Coaches need a protected battle archive action");

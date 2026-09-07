@@ -11329,3 +11329,16 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-fullscreen-playback .run-playback-callout strong { font-size: clamp(16px, 3vw, 28px); }
 .run-map-preview .run-line-overlay path { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }
 .run-map-preview .run-line-overlay path.play-active { stroke-width: 2.5px; }
+
+/* Three equal battle sides, stacked on narrow screens. */
+.battle-team-versus.three-teams,
+.coach-battle-riders.three-teams,
+.coach-battle-team-builder.three-teams { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); gap: 10px; }
+.battle-third-team { margin: 12px 0; padding: 12px; border: 1px solid var(--purple); border-radius: 16px; }
+.battle-third-team > small { display: block; margin-top: 5px; color: var(--muted); }
+.coach-battle-team-builder [hidden], .coach-battle-slot[hidden] { display: none !important; }
+.three-teams .battle-team strong, .three-teams .coach-battle-team strong { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .battle-team-versus.three-teams, .coach-battle-riders.three-teams, .coach-battle-team-builder.three-teams { grid-template-columns: minmax(0,1fr); }
+  .three-teams > b, .three-teams > span, .three-teams > .coach-builder-vs { text-align: center; }
+}
