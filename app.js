@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.55";
+const RELEASE_VERSION = "2.14.56";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.55" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.56" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9949,8 +9949,43 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   return `<div class="run-map-preview" data-run-map-preview data-run-view="${escapeHtml(JSON.stringify(framing))}"><div class="run-map-content" style="--run-zoom:${framing.scale};transform:translate(${framing.x}%,${framing.y}%) scale(${framing.scale})"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`} draggable="false">${runRouteSvg(safePoints)}${markers}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span></div>${showPlayback && safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>` : ""}${safePoints.length ? `<button type="button" class="run-expand" data-run-expand aria-label="Fullscreen run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></svg></button>` : ""}</div>`;
 }
 
+function cloneRunDialogPreview(source) {
+  const preview = source.cloneNode(true);
+  const content = source.querySelector(".run-map-content");
+  const image = content?.querySelector("img");
+  const cloneImage = preview.querySelector("img");
+  if (!image || !cloneImage) return preview;
+  const frame = content.getBoundingClientRect();
+  const bounds = image.getBoundingClientRect();
+  if (!frame.width || !frame.height || !image.naturalWidth || !image.naturalHeight) return preview;
+  const style = getComputedStyle(image);
+  const scale = style.objectFit === "cover"
+    ? Math.max(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight)
+    : Math.min(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight);
+  const width = style.objectFit === "fill" ? bounds.width : image.naturalWidth * scale;
+  const height = style.objectFit === "fill" ? bounds.height : image.naturalHeight * scale;
+  const position = style.objectPosition.split(" ").map((value) => Number.parseFloat(value) / 100);
+  // Freeze the painted photo rectangle in the same coordinates as the dots.
+  // Re-running object-fit in a different layout can move the photo underneath them.
+  Object.assign(cloneImage.style, {
+    position: "absolute",
+    left: `${(bounds.left - frame.left + (bounds.width - width) * (position[0] ?? 0.5)) / frame.width * 100}%`,
+    top: `${(bounds.top - frame.top + (bounds.height - height) * (position[1] ?? 0.5)) / frame.height * 100}%`,
+    width: `${width / frame.width * 100}%`,
+    height: `${height / frame.height * 100}%`,
+    maxWidth: "none",
+    maxHeight: "none",
+    objectFit: "fill",
+    objectPosition: "50% 50%",
+  });
+  return preview;
+}
+
 function fitRunDialogPreview(dialog, preview, ratio, reserved = 0) {
-  const width = Math.max(1, Math.min(window.innerWidth - 24, (window.innerHeight - reserved - 24) * ratio));
+  const style = getComputedStyle(dialog);
+  const availableWidth = dialog.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const availableHeight = dialog.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - reserved;
+  const width = Math.max(1, Math.min(availableWidth, availableHeight * ratio));
   preview.style.width = `${width}px`;
   preview.style.height = `${width / ratio}px`;
 }
@@ -9963,7 +9998,7 @@ function openRunCrop() {
   const dialog = document.createElement("dialog");
   dialog.className = "run-view-dialog run-crop-dialog";
   dialog.innerHTML = `<h2>Crop image</h2><p>Pinch to zoom. Drag to choose your view.</p><div class="run-crop-stage"></div><label class="run-crop-zoom">Zoom <input type="range" min="1" max="4" step="0.01" aria-label="Image zoom"></label><div class="run-crop-actions"><button type="button" data-crop-reset>Reset</button><button type="button" data-crop-cancel>Cancel</button><button type="button" data-crop-save>Save view</button></div>`;
-  const preview = source.cloneNode(true);
+  const preview = cloneRunDialogPreview(source);
   preview.querySelectorAll(".run-expand, .run-playback-callout").forEach((element) => element.remove());
   preview.querySelector("[data-run-playhead]")?.setAttribute("hidden", "");
   preview.querySelectorAll(".run-marker").forEach((marker) => { marker.tabIndex = -1; });
@@ -10039,7 +10074,7 @@ function openRunPlaybackFullscreen(event) {
   const dialog = document.createElement("dialog");
   dialog.className = "run-view-dialog run-fullscreen-playback run-playback-surface";
   dialog.setAttribute("aria-label", "Run playback");
-  const preview = source.cloneNode(true);
+  const preview = cloneRunDialogPreview(source);
   preview.querySelector(".run-expand")?.remove();
   preview.querySelectorAll(".run-marker").forEach((marker) => {
     marker.removeAttribute("data-run-point-index");
