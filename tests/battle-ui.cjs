@@ -8,7 +8,7 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.setContent('<html data-theme="dark"><body><div id="view"></div></body></html>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
- await page.addScriptTag({content:`
+ const harness=`
  const state={user:{id:'r0'},profile:{role:'athlete'}};window.requests=[];window.notices=[];
  const roster=Array.from({length:8},(_,i)=>({id:'r'+i,athlete_id:'r'+i,display_name:'Test Rider '+i,weekly_points:i*2}));
  const client={rpc:async(name,args)=>{window.requests.push({name,args});return {};}};
@@ -17,7 +17,8 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  const avatarHtml=p=>'<span class="avatar">'+p.display_name.slice(-1)+'</span>',escapeHtml=s=>String(s).replaceAll('<','&lt;').replaceAll('"','&quot;');
  const dateLabel=s=>s||'',setButtonBusy=button=>{button.disabled=true;return()=>button.disabled=false;},navigate=()=>{},showBattleRulesModal=()=>{},showAchievementCelebration=()=>{},respondWeeklyRiderBattle=()=>{},forfeitWeeklyRiderBattle=()=>{},renderCoachBattleViewer=()=>{};
  ${code}
- renderChallenges();`});
+ renderChallenges();`;
+ await page.addScriptTag({content:harness});
  await page.click('#toggle-battle-rider-list');
  await page.selectOption('#rider-battle-size','1v1v1');
  assert.equal(await page.locator('#rider-battle-third-team').isVisible(),true);
@@ -30,6 +31,24 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  for(const [name,ids] of [['teammateIds',['r1']],['opponentIds',['r2','r3']],['thirdTeamIds',['r4','r5']]])for(const id of ids)await page.check('[name='+name+'][value='+id+']');
  assert.equal(await page.locator('#send-rider-battle').isEnabled(),true);await page.click('#send-rider-battle');
  assert.deepEqual((await page.evaluate(()=>requests.at(-1))).args.p_team_three,['r4','r5']);
+ // Real touch gestures on the backdrop must scroll long forms, including beside the card.
+ const touch=await browser.newPage({viewport:{width:390,height:667},isMobile:true,hasTouch:true});
+ await touch.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><body></body>');
+ await touch.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
+ await touch.addScriptTag({content:harness.replace(/renderChallenges\(\);$/, '')});
+ const cdp=await touch.context().newCDPSession(touch);
+ for(const format of ['3v3','2v2v2']) {
+   await touch.evaluate(()=>showCoachBattleBuilder(roster,async()=>{}));
+   await touch.selectOption('#coach-battle-size',format);
+   for(let i=0;i<5;i++) {
+     await cdp.send('Input.synthesizeScrollGesture',{x:4,y:530,yDistance:-420,speed:850,gestureSourceType:'touch'});
+   }
+   assert(await touch.locator('#coach-battle-builder-modal').evaluate(e=>e.scrollTop>100),'Touch swipes beside the battle card scroll the form');
+   const cancel=touch.locator('[data-close-coach-builder]');
+   const box=await cancel.boundingBox();assert(box.y>=0&&box.y+box.height<=667,'Cancel reachable by swiping');
+   await cancel.click();assert.equal(await touch.locator('#coach-battle-builder-modal').count(),0);
+ }
+ await touch.close();
  await page.evaluate(()=>showCoachBattleBuilder(roster,async()=>{}));await page.selectOption('#coach-battle-size','2v2v2');
  for(const [team,ids] of [['One',['r0','r1']],['Two',['r2','r3']],['Three',['r4','r5']]])for(let i=0;i<ids.length;i++)await page.locator('[name=team'+team+'Rider]').nth(i).selectOption(ids[i]);
  assert.equal(await page.locator('#coach-battle-builder-form select:not([disabled])').count(),8);

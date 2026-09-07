@@ -11342,3 +11342,26 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
   .battle-team-versus.three-teams, .coach-battle-riders.three-teams, .coach-battle-team-builder.three-teams { grid-template-columns: minmax(0,1fr); }
   .three-teams > b, .three-teams > span, .three-teams > .coach-builder-vs { text-align: center; }
 }
+
+/* Keep tall battle forms in one viewport-sized scroll surface, including swipes beside the card. */
+#coach-battle-builder-modal {
+  display: block;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+}
+#coach-battle-builder-modal .coach-battle-builder-card {
+  width: min(760px, 100%);
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  margin: 0 auto;
+}
+@media (max-width: 640px) {
+  #coach-battle-builder-modal { padding-inline: 8px; }
+}
