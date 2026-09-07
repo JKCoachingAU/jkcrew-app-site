@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.54";
+const RELEASE_VERSION = "2.14.55";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.54" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.55" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9921,17 +9921,158 @@ function runRouteSvg(points = []) {
   return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
 }
 
-function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable = false, showPlayback = true) {
+function runView(value = {}) {
+  const scale = Math.max(1, Math.min(4, Number(value?.scale) || 1));
+  const limit = (scale - 1) * 50;
+  return { scale, x: Math.max(-limit, Math.min(limit, Number(value?.x) || 0)), y: Math.max(-limit, Math.min(limit, Number(value?.y) || 0)) };
+}
+
+function applyRunView(preview, value) {
+  const view = runView(value);
+  preview.dataset.runView = JSON.stringify(view);
+  const content = preview.querySelector(".run-map-content");
+  content.style.transform = `translate(${view.x}%, ${view.y}%) scale(${view.scale})`;
+  content.style.setProperty("--run-zoom", view.scale);
+}
+
+function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable = false, showPlayback = true, view = points?.[0]?.view) {
   if (!imageDataUrl) return "";
   const safePoints = Array.isArray(points) ? points : [];
+  const framing = runView(view);
   const markers = safePoints.map((point, index) => {
     const pointNumber = index + 1;
+    const endpoint = index === 0 || index === safePoints.length - 1;
+    const label = endpoint ? (index === 0 ? "Start location" : "Finish location") : point.label || `Trick ${index}`;
     const selected = editable && Number(state.runBuilder?.selectedPointIndex) === index;
-    return `<button type="button" class="run-marker ${selected ? "is-selected" : ""}" data-run-point-number="${pointNumber}" data-run-point-label="${escapeHtml(point.label || `Point ${pointNumber}`)}" ${editable ? `data-run-point-index="${index}" data-select-run-point="${index}"` : ""} aria-label="${escapeHtml(`${pointNumber}. ${point.label || `Point ${pointNumber}`}`)}" style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
+    return `<button type="button" class="run-marker ${endpoint ? "run-endpoint" : ""} ${selected ? "is-selected" : ""}" data-run-point-number="${pointNumber}" data-run-point-label="${escapeHtml(label)}" ${editable ? `data-run-point-index="${index}" data-select-run-point="${index}"` : "tabindex=\"-1\""} aria-label="${escapeHtml(`${pointNumber}. ${label}`)}" style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
   }).join("");
-  const start = safePoints[0];
-  const finish = safePoints.length > 1 ? safePoints[safePoints.length - 1] : null;
-  return `<div class="run-map-preview" data-run-map-preview><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`}>${runRouteSvg(safePoints)}${markers}${start ? `<span class="run-endpoint-label start" style="left:${start.x}%;top:${start.y}%">START</span>` : ""}${finish ? `<span class="run-endpoint-label finish" style="left:${finish.x}%;top:${finish.y}%">FINISH</span>` : ""}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span>${showPlayback && safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout><b data-run-playback-number>1</b><span><small>TRICK 1</small><strong data-run-playback-label>${escapeHtml(safePoints[0].label || "Point 1")}</strong></span></span>` : ""}</div>`;
+  return `<div class="run-map-preview" data-run-map-preview data-run-view="${escapeHtml(JSON.stringify(framing))}"><div class="run-map-content" style="--run-zoom:${framing.scale};transform:translate(${framing.x}%,${framing.y}%) scale(${framing.scale})"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`} draggable="false">${runRouteSvg(safePoints)}${markers}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span></div>${showPlayback && safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>` : ""}${safePoints.length ? `<button type="button" class="run-expand" data-run-expand aria-label="Fullscreen run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></svg></button>` : ""}</div>`;
+}
+
+function fitRunDialogPreview(dialog, preview, ratio, reserved = 0) {
+  const width = Math.max(1, Math.min(window.innerWidth - 24, (window.innerHeight - reserved - 24) * ratio));
+  preview.style.width = `${width}px`;
+  preview.style.height = `${width / ratio}px`;
+}
+
+function openRunCrop() {
+  const source = document.querySelector("#run-map .run-map-preview");
+  if (!source || !state.runBuilder) return;
+  stopRunPlayback();
+  state.runBuilder = { ...currentRunFormState() };
+  const dialog = document.createElement("dialog");
+  dialog.className = "run-view-dialog run-crop-dialog";
+  dialog.innerHTML = `<h2>Crop image</h2><p>Pinch to zoom. Drag to choose your view.</p><div class="run-crop-stage"></div><label class="run-crop-zoom">Zoom <input type="range" min="1" max="4" step="0.01" aria-label="Image zoom"></label><div class="run-crop-actions"><button type="button" data-crop-reset>Reset</button><button type="button" data-crop-cancel>Cancel</button><button type="button" data-crop-save>Save view</button></div>`;
+  const preview = source.cloneNode(true);
+  preview.querySelectorAll(".run-expand, .run-playback-callout").forEach((element) => element.remove());
+  preview.querySelector("[data-run-playhead]")?.setAttribute("hidden", "");
+  preview.querySelectorAll(".run-marker").forEach((marker) => { marker.tabIndex = -1; });
+  dialog.querySelector(".run-crop-stage").append(preview);
+  let view = runView(state.runBuilder.view || state.runBuilder.points?.[0]?.view);
+  const zoom = dialog.querySelector("input");
+  const pointers = new Map();
+  const rect = source.getBoundingClientRect();
+  const ratio = rect.width / Math.max(1, rect.height);
+  let gesture = null;
+  const paint = () => { applyRunView(preview, view); zoom.value = String(view.scale); };
+  const rebase = () => {
+    const values = [...pointers.values()];
+    if (!values.length) { gesture = null; return; }
+    const middle = values.length > 1 ? { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 } : values[0];
+    const bounds = preview.getBoundingClientRect();
+    gesture = { view: { ...view }, x: (middle.x - bounds.left) / bounds.width * 100 - 50, y: (middle.y - bounds.top) / bounds.height * 100 - 50, distance: values.length > 1 ? Math.max(1, Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y)) : 0 };
+  };
+  preview.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    if (pointers.size >= 2) return;
+    preview.setPointerCapture(event.pointerId);
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    rebase();
+  });
+  preview.addEventListener("pointermove", (event) => {
+    if (!pointers.has(event.pointerId) || !gesture) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const values = [...pointers.values()];
+    const middle = values.length > 1 ? { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 } : values[0];
+    const bounds = preview.getBoundingClientRect();
+    const x = (middle.x - bounds.left) / bounds.width * 100 - 50;
+    const y = (middle.y - bounds.top) / bounds.height * 100 - 50;
+    const scale = gesture.distance ? runView({ scale: gesture.view.scale * Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y) / gesture.distance }).scale : gesture.view.scale;
+    const factor = scale / gesture.view.scale;
+    view = runView({ scale, x: x - (gesture.x - gesture.view.x) * factor, y: y - (gesture.y - gesture.view.y) * factor });
+    paint();
+  });
+  const release = (event) => { pointers.delete(event.pointerId); rebase(); };
+  preview.addEventListener("pointerup", release);
+  preview.addEventListener("pointercancel", release);
+  preview.addEventListener("lostpointercapture", release);
+  zoom.addEventListener("input", () => { view = runView({ ...view, scale: zoom.value }); paint(); });
+  preview.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    view = runView({ ...view, scale: view.scale * Math.exp(-event.deltaY * 0.002) });
+    paint();
+  }, { passive: false });
+  dialog.querySelector("[data-crop-reset]").onclick = () => { view = runView(); paint(); };
+  dialog.querySelector("[data-crop-cancel]").onclick = () => dialog.close();
+  dialog.querySelector("[data-crop-save]").onclick = () => {
+    state.runBuilder.view = { ...view };
+    dialog.close();
+    runBuilderRefreshView();
+  };
+  const resize = () => { fitRunDialogPreview(dialog, preview, ratio, 230); pointers.clear(); gesture = null; };
+  dialog.addEventListener("close", () => { window.removeEventListener("resize", resize); dialog.remove(); document.querySelector("#crop-run-image")?.focus(); }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+  window.addEventListener("resize", resize);
+  resize();
+  paint();
+}
+
+function openRunPlaybackFullscreen(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const source = event.currentTarget.closest(".run-map-preview");
+  if (!source) return;
+  const origin = event.currentTarget;
+  const sourceControls = source.closest(".run-playback-surface, .run-map-stage")?.querySelector("[data-run-playback-controls]");
+  stopRunPlayback();
+  const dialog = document.createElement("dialog");
+  dialog.className = "run-view-dialog run-fullscreen-playback run-playback-surface";
+  dialog.setAttribute("aria-label", "Run playback");
+  const preview = source.cloneNode(true);
+  preview.querySelector(".run-expand")?.remove();
+  preview.querySelectorAll(".run-marker").forEach((marker) => {
+    marker.removeAttribute("data-run-point-index");
+    marker.removeAttribute("data-select-run-point");
+    marker.classList.remove("is-selected");
+    marker.tabIndex = -1;
+  });
+  if (!preview.querySelector("[data-run-playback-callout]")) preview.insertAdjacentHTML("beforeend", `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>`);
+  dialog.append(preview);
+  const duration = sourceControls?.dataset.runPlaybackSeconds || runPlaybackDefaultSeconds([...preview.querySelectorAll(".run-marker")]);
+  dialog.insertAdjacentHTML("beforeend", `<button type="button" class="run-fullscreen-close" aria-label="Close fullscreen playback">×</button><div class="run-fullscreen-controls" data-run-playback-controls data-run-playback-seconds="${Number(duration)}"><button type="button" data-run-play-toggle>▶ PLAY RUN</button><button type="button" data-run-play-restart aria-label="Restart run playback">↺</button><input type="hidden" data-run-scrub value="0"></div>`);
+  const bounds = source.getBoundingClientRect();
+  const resize = () => fitRunDialogPreview(dialog, preview, bounds.width / Math.max(1, bounds.height), 0);
+  const close = () => dialog.close();
+  const fullscreenChange = () => { if (!document.fullscreenElement && dialog.dataset.nativeFullscreen) close(); };
+  dialog.querySelector(".run-fullscreen-close").onclick = close;
+  dialog.addEventListener("close", () => {
+    stopRunPlayback();
+    window.removeEventListener("resize", resize);
+    document.removeEventListener("fullscreenchange", fullscreenChange);
+    if (document.fullscreenElement === dialog) document.exitFullscreen().catch(() => {});
+    dialog.remove();
+    origin.focus();
+  }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+  window.addEventListener("resize", resize);
+  document.addEventListener("fullscreenchange", fullscreenChange);
+  resize();
+  bindRunPlaybackControls(dialog);
+  dialog.querySelector("[data-run-play-toggle]").click();
+  // The dialog also fills the screen in installed apps and browsers without Fullscreen API support.
+  if (dialog.requestFullscreen) dialog.requestFullscreen().then(() => { dialog.dataset.nativeFullscreen = "true"; resize(); }).catch(() => {});
 }
 
 function runPlaybackDefaultSeconds(points = []) {
@@ -10012,7 +10153,7 @@ function runBuilderStage(builder = state.runBuilder) {
 function runBuilderStepsHtml(stage = "route", pointCount = 0) {
   const stages = [
     ["route", "01", "Draw route", "Tap and drag dots"],
-    ["tricks", "02", "Add tricks", "Name every point"],
+    ["tricks", "02", "Add tricks", "Name the tricks"],
     ["playback", "03", "Watch it back", "Check the full run"],
   ];
   const activeIndex = Math.max(0, stages.findIndex(([id]) => id === stage));
@@ -10026,7 +10167,7 @@ function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
 }
 
 function runBuilderTrickEditorHtml(points = []) {
-  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>NAME EACH DOT</strong><p class="run-phase-tip">Your route is locked while you add the tricks. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { const pointNumber = index + 1; const role = index === 0 ? "START" : index === points.length - 1 ? "FINISH" : `DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Trick at dot ${pointNumber}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>`; }).join("")}</div></div>`;
+  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>NAME EACH TRICK</strong><p class="run-phase-tip">Your route is locked while you add the tricks. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { if (index === 0 || index === points.length - 1) return ""; const pointNumber = index + 1; const role = `TRICK ${index} · DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Trick at dot ${pointNumber}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>`; }).join("")}</div></div>`;
 }
 
 function runBuilderPlaybackEditorHtml(points = []) {
@@ -10042,7 +10183,7 @@ function runBuilderPanel(runs = [], options = {}) {
   const submitLabel = builder.id ? "Save run changes" : "Save run plan";
   const stageCopy = {
     route: "Step 1 of 3 · Draw the complete route first. Tap empty space, drag any dot to move it, and finish on any number.",
-    tricks: "Step 2 of 3 · Add the trick for every numbered dot after the route is ready.",
+    tricks: "Step 2 of 3 · Name the tricks between the black start and finish dots.",
     playback: "Step 3 of 3 · Watch the finished route and tricks back before saving.",
   }[stage];
   const builderImageSource = options.preserveExistingImage
@@ -10055,13 +10196,13 @@ function runBuilderPanel(runs = [], options = {}) {
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
-          <div id="run-map" class="run-map run-map-${stage} ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback") : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then draw the route first, add every trick, and watch the finished run back.</span></div>`}</div>
+          <div id="run-map" class="run-map run-map-${stage} ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view) : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then draw the route first, add every trick, and watch the finished run back.</span></div>`}</div>
           <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Finish is point ${points.length} · drag any dot to adjust` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Route locked · add the tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
           ${stage === "route" && selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output>${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
           ${stage === "playback" && points.length ? runPlaybackControlsHtml(points, "builder") : ""}
         </div>
         <aside class="run-builder-sidebar">
-          <div class="run-sidebar-section"><div class="eyebrow">${builder.coursePhotoLoaded ? "Event course loaded" : "Park photo"}</div><label class="secondary-btn run-photo-button" for="run-photo">${builder.imageDataUrl ? "CHANGE PARK PHOTO" : "CHOOSE PARK PHOTO"}</label><input id="run-photo" name="photo" type="file" accept="image/*" hidden></div>
+          <div class="run-sidebar-section"><div class="eyebrow">${builder.coursePhotoLoaded ? "Event course loaded" : "Park photo"}</div><label class="secondary-btn run-photo-button" for="run-photo">${builder.imageDataUrl ? "CHANGE PARK PHOTO" : "CHOOSE PARK PHOTO"}</label>${builder.imageDataUrl ? `<button class="secondary-btn" type="button" id="crop-run-image">CROP IMAGE</button>` : ""}<input id="run-photo" name="photo" type="file" accept="image/*" hidden></div>
           <div class="run-sidebar-divider"></div>
           ${stage === "route" ? runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points) : stage === "tricks" ? runBuilderTrickEditorHtml(points) : runBuilderPlaybackEditorHtml(points)}
           <div class="run-sidebar-divider"></div>
@@ -11913,6 +12054,7 @@ async function copyParentUpdate() {
 }
 
 function bindRunBuilderActions(root = document) {
+  root.querySelector("#crop-run-image")?.addEventListener("click", openRunCrop);
   root.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
   root.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
   root.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));
@@ -12000,6 +12142,7 @@ function currentRunFormState() {
     contestItemId: state.runBuilder?.contestItemId || null,
     points: state.runBuilder?.points || [],
     imageDataUrl: state.runBuilder?.imageDataUrl || "",
+    view: runView(state.runBuilder?.view || state.runBuilder?.points?.[0]?.view),
     coursePhotoLoaded: Boolean(state.runBuilder?.coursePhotoLoaded),
     selectedPointIndex: state.runBuilder?.selectedPointIndex ?? -1,
     stage: runBuilderStage(),
@@ -12010,15 +12153,15 @@ async function setRunBuilderPhoto(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
   if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
-  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await runPhotoToDataUrl(file), coursePhotoLoaded: false, points: state.runBuilder?.points || [] };
+  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await runPhotoToDataUrl(file), coursePhotoLoaded: false, view: runView(), points: (state.runBuilder?.points || []).map(({ view, ...point }) => point) };
   await runBuilderRefreshView();
 }
 
 async function addRunBuilderPoint(event) {
   if (!state.runBuilder?.imageDataUrl || runBuilderStage() !== "route" || state.draggedRunPoint !== null) return;
-  if (performance.now() < state.runPointMapClickBlockUntil || event.target.closest?.(".run-marker")) return;
+  if (performance.now() < state.runPointMapClickBlockUntil || event.target.closest?.(".run-marker, .run-expand")) return;
   stopRunPlayback();
-  const map = event.currentTarget.querySelector(".run-map-preview") || event.currentTarget;
+  const map = event.currentTarget.querySelector(".run-map-content") || event.currentTarget;
   const rect = map.getBoundingClientRect();
   const right = rect.left + rect.width;
   const bottom = rect.top + rect.height;
@@ -12041,7 +12184,7 @@ function updateRunBuilderMapDom(changedIndex = null) {
   if (!currentSvg || paths.length !== Math.max(0, points.length - 1)) {
     const nextSvg = runRouteSvg(points);
     if (currentSvg) currentSvg.outerHTML = nextSvg;
-    else preview.insertAdjacentHTML("beforeend", nextSvg);
+    else preview.querySelector(".run-map-content").insertAdjacentHTML("beforeend", nextSvg);
   } else if (Number.isInteger(changedIndex)) {
     [changedIndex - 1, changedIndex].forEach((pathIndex) => {
       if (pathIndex < 0 || pathIndex >= points.length - 1 || !paths[pathIndex]) return;
@@ -12090,7 +12233,7 @@ function dragRunPoint(event) {
   const index = state.draggedRunPoint;
   if (!Number.isInteger(index) || !state.runBuilder?.points?.[index]) return;
   if (event.cancelable) event.preventDefault();
-  const map = document.querySelector("#run-map .run-map-preview");
+  const map = document.querySelector("#run-map .run-map-content");
   if (!map) return;
   const rect = map.getBoundingClientRect();
   const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
@@ -12227,7 +12370,8 @@ function paintRunPlayback(controls, progress = 0) {
     const caption = callout.querySelector("small");
     const trick = callout.querySelector("[data-run-playback-label]");
     if (number) number.textContent = String(pointNumber);
-    if (caption) caption.textContent = `TRICK ${pointNumber}`;
+    callout.hidden = completedMarker === 0 || completedMarker === markers.length - 1;
+    if (caption) caption.textContent = `TRICK ${completedMarker}`;
     if (trick) trick.textContent = label;
     callout.classList.toggle("is-active", safeProgress > 0 && safeProgress < 1);
   }
@@ -12322,6 +12466,7 @@ function restartRunPlayback(event) {
 }
 
 function bindRunPlaybackControls(root = document) {
+  root.querySelectorAll("[data-run-expand]").forEach((button) => { button.onclick = openRunPlaybackFullscreen; });
   root.querySelectorAll("[data-run-play-toggle]").forEach((button) => button.addEventListener("click", toggleRunPlayback));
   root.querySelectorAll("[data-run-play-restart]").forEach((button) => button.addEventListener("click", restartRunPlayback));
   root.querySelectorAll("[data-run-scrub]").forEach((input) => input.addEventListener("input", scrubRunPlayback));
@@ -12334,7 +12479,7 @@ function bindRunPlaybackControls(root = document) {
 
 async function playFinishedRunBuilder() {
   if (!state.runBuilder?.points?.length) return notify("Add at least one numbered point first.", "error");
-  const missingTrickIndex = state.runBuilder.points.findIndex((point) => !String(point.label || "").trim());
+  const missingTrickIndex = state.runBuilder.points.findIndex((point, index, points) => index > 0 && index < points.length - 1 && !String(point.label || "").trim());
   if (missingTrickIndex >= 0) {
     const input = document.querySelector(`[data-run-trick-index="${missingTrickIndex}"]`);
     input?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -12372,6 +12517,7 @@ async function editRunPlan(event) {
     notes: run.notes,
     contestItemId: run.contest_item_id || null,
     imageDataUrl: run.image_data_url,
+    view: runView(run.points?.[0]?.view),
     points: Array.isArray(run.points) ? run.points : [],
     selectedPointIndex: Array.isArray(run.points) && run.points.length ? run.points.length - 1 : -1,
     stage: "route",
@@ -12412,7 +12558,7 @@ async function saveRunPlan(event) {
     venue: String(state.runBuilder?.venue || "").trim(),
     plan_type: state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training"),
     image_data_url: state.runBuilder.imageDataUrl,
-    points: state.runBuilder.points || [],
+    points: (state.runBuilder.points || []).map((point, index) => ({ ...point, ...(index === 0 ? { view: runView(state.runBuilder.view || state.runBuilder.points[0]?.view) } : {}) })),
     notes: String(form.get("notes") || "").trim(),
     contest_item_id: state.runBuilder.contestItemId || null,
     updated_at: new Date().toISOString(),

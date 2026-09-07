@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.54";
+const version = "2.14.55";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1379,6 +1379,12 @@ assert(functionBody("saveRunPlan").includes('runBuilderStage() !== "playback"'),
 const formatPlaybackForTest = new Function(`const RUN_PLAYBACK_MAX_SECONDS = 60; ${functionBody("formatRunPlaybackTime")}; return formatRunPlaybackTime;`)();
 assert.equal(formatPlaybackForTest(60), "01:00", "The 60-second playback limit must display as 01:00");
 assert(!functionBody("saveRunPlan").includes("points.length"), "Saving must not force a fixed number of run dots");
+const normalizeRunView = new Function(`${functionBody("runView")}; return runView;`)();
+assert.deepEqual(normalizeRunView(), { scale: 1, x: 0, y: 0 }, "Existing runs must keep their original framing");
+assert.deepEqual(normalizeRunView({ scale: 2, x: 90, y: -90 }), { scale: 2, x: 50, y: -50 }, "Panning must not reveal empty space beyond the photo");
+assert.deepEqual(normalizeRunView({ scale: 0.2, x: 10, y: 20 }), { scale: 1, x: 0, y: 0 }, "Zooming back out must restore the complete photo");
+const savedFraming = JSON.parse(JSON.stringify([{ x: 20, y: 30, view: { scale: 2.5, x: 15, y: -20 } }]));
+assert.deepEqual(normalizeRunView(savedFraming[0].view), { scale: 2.5, x: 15, y: -20 }, "Framing must survive route JSON persistence");
 const runPointColourForTest = new Function(`${functionBody("runPointColor")}; return runPointColor;`)();
 assert.equal(runPointColourForTest(1), runPointColourForTest(5), "Run points 1–5 must share one route colour");
 assert.notEqual(runPointColourForTest(5), runPointColourForTest(6), "The route colour must change after point 5");
