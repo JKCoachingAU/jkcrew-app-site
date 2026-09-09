@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.64";
+const RELEASE_VERSION = "2.14.65";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.64" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.65" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8411,28 +8411,63 @@ function bindContestEventActions(events = [], attendance = [], runs = [], roster
   bindCoachContestMergeActions(events, attendance);
 }
 
+function runBuilderLoadingHtml(builder = {}) {
+  const failed = Boolean(builder.courseLoadError);
+  return `<section class="panel run-builder-live run-builder-loading" id="run-builder-live">
+    <div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Private run builder"}</div><div class="panel-title">${escapeHtml(builder.title || "Build a run")}</div></div><button class="secondary-btn compact-btn" type="button" id="close-run-builder-top">Close</button></div>
+    <div class="run-builder-loading-body" role="status" aria-live="polite" aria-atomic="true">
+      ${failed ? `<span class="run-builder-load-symbol" aria-hidden="true">↻</span>` : `<span class="run-builder-spinner" aria-hidden="true"></span>`}
+      <h2>${failed ? "Course photo couldn't load" : "Opening your run builder"}</h2>
+      <p>${failed ? "Check your connection and try again, or choose your own park photo." : "Loading the park photo. Your route editor will appear here."}</p>
+    </div>
+    <div class="actions">${failed ? `<button class="primary-btn" type="button" id="retry-run-course">Try again</button>` : ""}<button class="secondary-btn" type="button" id="skip-run-course">Choose my own photo</button></div>
+  </section>`;
+}
+
+async function loadRunBuilderCourse(builder = state.runBuilder) {
+  if (!builder?.contestItemId || state.runBuilder !== builder) return;
+  const requestId = (builder.courseLoadRequest || 0) + 1;
+  builder.courseLoadRequest = requestId;
+  builder.loadingCourse = true;
+  builder.courseLoadError = false;
+  if (state.view === "contests") refreshMountedRunBuilder();
+  try {
+    const coursePhoto = await withTimeout(getEventCoursePhoto(builder.contestItemId), "Load park photo", 15000);
+    if (state.runBuilder !== builder || builder.courseLoadRequest !== requestId) return;
+    builder.imageDataUrl = coursePhoto?.image_data_url || "";
+    builder.coursePhotoLoaded = Boolean(coursePhoto?.image_data_url);
+    builder.loadingCourse = false;
+  } catch (error) {
+    if (state.runBuilder !== builder || builder.courseLoadRequest !== requestId) return;
+    builder.loadingCourse = false;
+    builder.courseLoadError = true;
+  }
+  // A late photo must never replace another run or take over a different tab.
+  if (state.runBuilder === builder && state.view === "contests") refreshMountedRunBuilder();
+}
+
+function skipRunBuilderCourse() {
+  const builder = state.runBuilder;
+  if (!builder) return;
+  builder.courseLoadRequest = (builder.courseLoadRequest || 0) + 1;
+  builder.loadingCourse = false;
+  builder.courseLoadError = false;
+  refreshMountedRunBuilder();
+  document.querySelector("#run-photo")?.click();
+}
+
 async function openRunBuilder(event = null) {
-  runUndoStack = []; runRedoStack = [];
   event?.preventDefault?.();
   const button = event?.currentTarget;
+  if (button?.disabled) return;
+  const restore = setButtonBusy(button, "OPENING RUN BUILDER…");
+  runUndoStack = []; runRedoStack = [];
   const eventTitle = button?.dataset.eventTitle || "";
   const eventDetails = button?.dataset.eventDetails || "";
   const eventDate = button?.dataset.eventDate || "";
   const contestItemId = button?.dataset.eventId || null;
   const athleteId = button?.dataset.createRiderEventRun || button?.dataset.runAthleteId || "";
   const athleteName = button?.dataset.runAthleteName || "";
-  let coursePhoto = null;
-  if (contestItemId) {
-    const restore = setButtonBusy(button, "LOADING COURSE...");
-    try {
-      coursePhoto = await getEventCoursePhoto(contestItemId);
-    } catch (error) {
-      restore();
-      notify(messageFrom(error, "The event course could not be loaded. Please try again."), "error");
-      return;
-    }
-    restore();
-  }
   if (isCoachRole(state.profile?.role) && athleteId) state.selectedAthleteId = athleteId;
   state.runBuilder = {
     points: [],
@@ -8444,24 +8479,38 @@ async function openRunBuilder(event = null) {
     contestItemId,
     athleteId: athleteId || null,
     athleteName,
-    imageDataUrl: coursePhoto?.image_data_url || "",
-    coursePhotoLoaded: Boolean(coursePhoto?.image_data_url),
+    imageDataUrl: "",
+    coursePhotoLoaded: false,
+    loadingCourse: Boolean(contestItemId),
   };
-  await renderContests();
-  document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const builder = state.runBuilder;
+  try {
+    if (state.view === "contests") await renderContests();
+    else await navigate("contests");
+    if (state.runBuilder !== builder || state.view !== "contests") return;
+    document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "instant", block: "start" });
+    if (contestItemId) void loadRunBuilderCourse(builder);
+  } finally { restore(); }
 }
 
 async function closeRunBuilder() {
   stopRunPlayback();
   state.runBuilder = null;
-  await renderContests();
+  await navigate("contests");
 }
 
 async function renderContests() {
+  const renderVersion = state.contestsRenderVersion = (state.contestsRenderVersion || 0) + 1;
   stopRunPlayback();
   closeContestEventModal();
   const coachView = isCoachRole(state.profile?.role);
   const parentView = state.profile?.role === "parent";
+  // A new editor needs no roster, attendance or saved-run photos.
+  if (state.runBuilder && !parentView) {
+    document.querySelector("#view").innerHTML = runBuilderPanel([], { live: true, showRunList: false });
+    bindRunBuilderActions();
+    return;
+  }
   const parentContext = parentView ? await getParentRiderContext() : null;
   if (parentView && !parentContext?.selected) {
     document.querySelector("#view").innerHTML = parentWaitingHtml();
@@ -8473,9 +8522,11 @@ async function renderContests() {
     getSharedUpcomingEventData(),
     coachView ? getCoachRoster() : Promise.resolve([]),
   ]);
+  if (renderVersion !== state.contestsRenderVersion || state.view !== "contests") return;
   const runs = coachView
     ? await getCoachContestRunPlans(events.map((item) => item.id), roster)
     : state.profile?.role === "athlete" ? await getRunPlans(state.user.id) : [];
+  if (renderVersion !== state.contestsRenderVersion || state.view !== "contests") return;
   const activeRuns = runs.filter((run) => !run.archived_at);
   const athleteView = state.profile?.role === "athlete";
   document.querySelector("#view").innerHTML = `
@@ -10557,6 +10608,7 @@ function runBuilderPlaybackEditorHtml(points = []) {
 
 function runBuilderPanel(runs = [], options = {}) {
   const builder = state.runBuilder || { points: [] };
+  if (builder.loadingCourse || builder.courseLoadError) return runBuilderLoadingHtml(builder);
   const points = builder.points || [];
   const stage = runBuilderStage(builder);
   const selectedIndex = points.length ? Math.max(0, Math.min(points.length - 1, Number(builder.selectedPointIndex ?? points.length - 1))) : -1;
@@ -12438,6 +12490,8 @@ async function copyParentUpdate() {
 }
 
 function bindRunBuilderActions(root = document) {
+  root.querySelector("#retry-run-course")?.addEventListener("click", () => loadRunBuilderCourse());
+  root.querySelector("#skip-run-course")?.addEventListener("click", skipRunBuilderCourse);
   root.querySelectorAll("[data-run-history]").forEach(button => button.addEventListener("click", restoreRunEdit));
   root.querySelectorAll("[data-run-copy]").forEach(button => button.addEventListener("click", duplicateCurrentRun));
   root.querySelectorAll("[data-run-mode]").forEach(button => button.addEventListener("click", async () => {

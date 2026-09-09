@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.64";
+const version = "2.14.65";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1230,10 +1230,11 @@ const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
 assert(openRunBuilderBody.includes('stage: "route"'), "Every new Run Builder must open in the route-drawing step");
 assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
-assert(openRunBuilderBody.includes("await getEventCoursePhoto(contestItemId)"), "Event run builders must automatically load the shared course photo");
-assert(openRunBuilderBody.includes('imageDataUrl: coursePhoto?.image_data_url || ""'), "The saved event course must immediately populate the Run Builder map");
-assert(openRunBuilderBody.includes("coursePhotoLoaded: Boolean(coursePhoto?.image_data_url)"), "The Run Builder must identify an automatically loaded event course");
-assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "smooth"'), "Opening the Run Builder must take the rider directly to it");
+const loadRunBuilderCourseBody = functionBody("loadRunBuilderCourse");
+assert(loadRunBuilderCourseBody.includes("withTimeout(getEventCoursePhoto(builder.contestItemId)"), "Course photos must load in the background with a bounded wait");
+assert(loadRunBuilderCourseBody.includes('builder.imageDataUrl = coursePhoto?.image_data_url || ""'), "The saved event course must populate the Run Builder map");
+assert(loadRunBuilderCourseBody.includes("builder.coursePhotoLoaded = Boolean(coursePhoto?.image_data_url)"), "The Run Builder must identify an automatically loaded event course");
+assert(openRunBuilderBody.includes('scrollIntoView({ behavior: "instant"'), "Opening the Run Builder must take the rider directly to it");
 assert(functionBody("currentRunFormState").includes("coursePhotoLoaded: Boolean(state.runBuilder?.coursePhotoLoaded)"), "The loaded event-course state must survive Run Builder redraws");
 assert(functionBody("currentRunFormState").includes("stage: runBuilderStage()"), "The active Run Builder step must survive local editor refreshes");
 assert(functionBody("setRunBuilderPhoto").includes("coursePhotoLoaded: false"), "Choosing a different private photo must clear the event-course label");

@@ -11442,3 +11442,12 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-review-panel small { color: var(--muted, #94a3a8); line-height: 1.4; }
 .run-review-panel.is-ready { border-color: rgba(0,224,208,.4); background: rgba(0,224,208,.05); }
 .run-review-panel .actions { margin: 0; flex-wrap: wrap; }
+.run-builder-loading-body { min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 28px 16px; text-align: center; }
+.run-builder-loading-body h2 { margin: 0; font-size: clamp(22px, 5vw, 32px); }
+.run-builder-loading-body p { max-width: 360px; margin: 0; color: var(--muted); line-height: 1.5; }
+.run-builder-loading .panel-head > div { min-width: 0; overflow-wrap: anywhere; }
+.run-builder-loading .actions { justify-content: center; }
+.run-builder-spinner { width: 44px; height: 44px; border: 3px solid rgba(32,227,195,.18); border-top-color: var(--aqua); border-radius: 50%; animation: run-builder-spin .85s linear infinite; }
+.run-builder-load-symbol { color: var(--aqua); font-size: 40px; }
+@keyframes run-builder-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .run-builder-spinner { animation: none; border-style: dotted; } }
