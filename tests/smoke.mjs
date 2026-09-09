@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.68";
+const version = "2.14.69";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1229,7 +1229,7 @@ assert(parentContestsBody.includes("Private rider run plans are not displayed"),
 const openRunBuilderBody = functionBody("openRunBuilder");
 assert(openRunBuilderBody.includes("state.runBuilder ="), "Opening the Run Builder must initialise a new run");
 assert(openRunBuilderBody.includes('stage: "route"'), "Every new Run Builder must open in the route-drawing step");
-assert(openRunBuilderBody.includes('planType: eventTitle ? "competition" : "training"'), "Event launches must seed a competition run");
+assert(openRunBuilderBody.includes('planType: eventTitle || button?.id === "open-home-run-builder" ? "competition" : "training"'), "Event launches must seed a competition run");
 const loadRunBuilderCourseBody = functionBody("loadRunBuilderCourse");
 assert(loadRunBuilderCourseBody.includes("withTimeout(getEventCoursePhoto(builder.contestItemId)"), "Course photos must load in the background with a bounded wait");
 assert(loadRunBuilderCourseBody.includes('builder.imageDataUrl = coursePhoto?.image_data_url || ""'), "The saved event course must populate the Run Builder map");
@@ -1488,7 +1488,7 @@ assert(athleteHomeBody.includes('battle.status === "completed"'), "Athlete Home 
 assert(athleteHomeBody.includes("athleteHomeRenderVersion"), "Background Home hydration must be guarded against stale renders");
 assert(athleteHomeBody.includes('id="athlete-home-week"'), "Athlete Home must render its main dashboard before secondary weekly data finishes");
 assert(athleteHomeBody.includes("athleteRunBuilderCtaHtml()"), "Athlete Home must display the live Run Builder action");
-assert(athleteHomeBody.includes('navigate("contests")'), "The Home Run Builder action must open Contests");
+assert(athleteHomeBody.includes("openRunBuilder") && functionBody("openRunBuilder").includes('navigate("contests")'), "The Home Run Builder action must open Contests through the shared launch handler");
 assert(athleteHomeBody.includes("athleteCoachingCtaHtml(coachingRequests)"), "Athlete Home must display the video-help action");
 assert(!athleteHomeBody.includes("rememberCoachingReplies(coachingRequests)"), "The Home notification badge must remain visible until the Coaching page actually opens");
 const homeLeaderboardBody = functionBody("getAthleteHomeLeaderboard");

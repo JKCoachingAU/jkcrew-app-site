@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.68";
+const RELEASE_VERSION = "2.14.69";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.68" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.69" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1280,6 +1280,8 @@ async function handleSession(session) {
   teardownRealtimeSync();
   const nextUserId = session?.user?.id || "";
   if ((state.user?.id || "") !== nextUserId) {
+    state.runBuilder = null;
+    runUndoStack = []; runRedoStack = [];
     closeAthleteReviewViewer();
     closeContestEventModal();
     resetVideoReviewPrivateState();
@@ -2093,6 +2095,7 @@ async function mountPushSetupPrompt() {
 
 async function navigate(view) {
   const previousView = state.view;
+  if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
   if (view === previousView && view === "videoReviews" && (state.videoReviewRecording || state.videoReviewRecordingStarting)) return;
   if (previousView === "videoReviews" && view !== "videoReviews") {
     const hasActiveCapture = Boolean(state.videoReviewRecording || state.videoReviewRecordingStarting);
@@ -2202,6 +2205,7 @@ async function navigate(view) {
   } finally {
     if (finishScreenLoading(loadingToken)) document.querySelector("#view")?.removeAttribute("aria-busy");
   }
+  if (navigationCompleted) void refreshLiveRunInvites();
   if (navigationCompleted && state.startupPromptsPending) {
     state.startupPromptsPending = false;
     mountStartupPrompts();
@@ -2209,6 +2213,8 @@ async function navigate(view) {
 }
 
 function teardownRealtimeSync() {
+  clearInterval(liveRunDiscoveryTimer);
+  disconnectLiveRun();
   if (state.syncRefreshTimer) {
     clearTimeout(state.syncRefreshTimer);
     state.syncRefreshTimer = null;
@@ -2256,6 +2262,7 @@ async function setupRealtimeSync() {
   const athleteIds = await realtimeVisibleAthleteIds();
   if (!state.user?.id || !state.session?.access_token) return;
   const channel = client.channel(`jkcrew-progress-sync:${state.user.id}`);
+  setupLiveRunDiscovery(channel);
   const athleteFilter = realtimeFilter("athlete_id", athleteIds);
   const profileFilter = realtimeFilter("id", [state.user.id, ...athleteIds]);
   const subscriptions = [
@@ -6356,10 +6363,7 @@ async function renderAthleteHome() {
     <div id="athlete-home-proposals"></div>
     <div id="athlete-home-trick-requests"></div>`;
   bindGoalActions();
-  document.querySelector("#open-home-run-builder")?.addEventListener("click", () => {
-    state.runBuilder = { points: [], planType: "competition", stage: "route" };
-    navigate("contests");
-  });
+  document.querySelector("#open-home-run-builder")?.addEventListener("click", openRunBuilder);
   document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => navigate("coaching"));
   document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
   if (activeSession) {
@@ -8411,6 +8415,343 @@ function bindContestEventActions(events = [], attendance = [], runs = [], roster
   bindCoachContestMergeActions(events, attendance);
 }
 
+// Live run collaboration: one leased editor, two private participants.
+let liveRun = null, liveRunDiscoveryTimer = null, liveRunDiscoveryBusy = false, liveRunStarting = false, liveRunJoining = false;
+
+function liveRunFingerprint(value) {
+  const normalize = item => Array.isArray(item) ? item.map(normalize) : item && typeof item === "object"
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, normalize(item[key])])) : item;
+  return JSON.stringify(normalize(value));
+}
+
+function liveRunSnapshot() {
+  const b = { ...state.runBuilder, ...currentRunFormState() };
+  return { title: document.querySelector("#run-title")?.value ?? b.title ?? "", venue: b.venue || "", planType: b.planType || "training", notes: document.querySelector("#run-notes")?.value ?? b.notes ?? "",
+    contestItemId: b.contestItemId || null, imageDataUrl: b.imageDataUrl || "", points: structuredClone(b.points || []),
+    view: runView(b.view || b.points?.[0]?.view) };
+}
+
+function liveRunOwnsEditor(l = liveRun) {
+  return Boolean(l && l.session.status === "active" && l.session.editor_id === state.user?.id &&
+    l.session.editor_client === l.clientId && Date.parse(l.session.lease_until) > Date.now());
+}
+
+function liveRunCanEdit() {
+  return !liveRun || (liveRunOwnsEditor() && !liveRun.error && !liveRun.busy && navigator.onLine);
+}
+
+async function liveRunRequest(action, l = liveRun, extra = {}) {
+  const { data, error } = await withTimeout(client.rpc("live_run_action", {
+    p_action: action, p_session_id: l?.session?.id || null, p_client_id: l?.clientId || null,
+    p_version: l?.session?.version || null, ...extra,
+  }), "Live run connection", 15000);
+  if (error) throw error;
+  return data;
+}
+
+function liveRunBarHtml() {
+  if (!liveRun) return `<div class="run-live-bar"><div><strong>Build together</strong><small>Share a live draft with your ${isCoachRole(state.profile?.role) ? "rider" : "coach"}.</small></div><button type="button" class="secondary-btn compact-btn" data-live-run-action="start">Build together</button></div>`;
+  const l = liveRun, s = l.session, mine = liveRunOwnsEditor(l);
+  const editor = s.editor_id === s.athlete_id ? (s.athlete_name || "Rider") : "Coach";
+  const available = !s.editor_client || Date.parse(s.lease_until) <= Date.now();
+  const saved = s.status === "saved", ended = s.status !== "active";
+  const status = l.error ? l.error : !navigator.onLine ? "Connection lost · edits paused" : saved ? "Run saved by the rider" : ended ? "Live session ended" : l.busy ? "Connecting…" : l.sending ? "Syncing edits…" : mine ? "Your turn to edit · changes synced" : available ? "Choose Edit run when you’re ready" : `${editor} is editing · ${l.connected ? "live view" : "checking for updates"}`;
+  return `<div class="run-live-bar ${l.error ? "has-error" : "is-live"}"><div><strong>Build together · ${escapeHtml(s.athlete_name || "Private run")}</strong><small role="status">${escapeHtml(status)}</small><small>${ended ? "Close to return to your runs." : "One person edits at a time. The rider saves the finished run."}</small></div><div class="run-live-actions">
+    ${l.error ? `<button type="button" data-live-run-action="retry">Retry connection</button>${l.unsynced ? `<button type="button" data-live-run-action="local">Keep my edits as a private draft</button><button type="button" data-live-run-action="latest">Load shared version</button>` : ""}` : !ended ? `<button type="button" data-live-run-action="${mine ? "release" : "claim"}" ${l.busy || (!mine && !available) ? "disabled" : ""}>${mine ? "Pass editing" : "Edit run"}</button>` : ""}
+    ${!ended && !l.error ? `<button type="button" data-live-run-action="leave">Leave session</button>` : ""}
+  </div></div>`;
+}
+
+function paintLiveRunControls() {
+  const root = document.querySelector("#run-builder-live");
+  if (!root) return;
+  const bar = root.querySelector("[data-live-run-bar]");
+  const html = liveRunBarHtml();
+  if (bar && bar.innerHTML !== html) bar.innerHTML = html;
+  const locked = !liveRunCanEdit();
+  root.classList.toggle("run-live-readonly", Boolean(liveRun && locked));
+  root.querySelectorAll("#run-builder-form input:not([data-run-scrub]), #run-builder-form textarea, #run-builder-form button").forEach(el => {
+    const viewControl = el.matches("[data-run-mode], [data-run-builder-stage], [data-run-play-toggle], [data-run-play-restart], [data-run-expand], #close-run-builder");
+    if (viewControl) return;
+    if (liveRun && (locked || el.matches("[data-run-copy]") || (el.type === "submit" && state.user.id !== liveRun.session.athlete_id))) {
+      if (!el.disabled) { el.dataset.liveDisabled = "true"; el.disabled = true; }
+    } else if (el.dataset.liveDisabled) { el.disabled = false; delete el.dataset.liveDisabled; }
+  });
+}
+
+function bindLiveRunControls(root = document) {
+  const panel = root.matches?.("#run-builder-live") ? root : root.querySelector("#run-builder-live");
+  if (!panel || panel.dataset.liveBound) return;
+  panel.dataset.liveBound = "true";
+  panel.addEventListener("click", event => {
+    const action = event.target.closest("[data-live-run-action]");
+    if (action) { event.preventDefault(); void handleLiveRunAction(action.dataset.liveRunAction); return; }
+    if (!liveRun || liveRunCanEdit()) return;
+    if (event.target.closest("[data-run-mode], [data-run-builder-stage], [data-run-play-toggle], [data-run-play-restart], [data-run-expand], [data-run-scrub], #close-run-builder, #close-run-builder-top")) return;
+    if (event.target.closest("#run-builder-form")) { event.preventDefault(); event.stopImmediatePropagation(); }
+  }, true);
+  panel.addEventListener("pointerdown", event => {
+    if (liveRun && !liveRunCanEdit() && event.target.closest(".run-marker")) { event.preventDefault(); event.stopImmediatePropagation(); }
+  }, true);
+  paintLiveRunControls();
+}
+
+function applyLiveRunDraft(draft, session) {
+  stopRunPlayback();
+  // Stage, selected point and scroll belong to each viewer, not the shared draft.
+  const stage = runBuilderStage(), selected = state.runBuilder?.selectedPointIndex ?? -1;
+  const scroll = [...document.querySelectorAll("#run-builder-live .run-trick-editor-list, #run-builder-live .run-builder-sidebar")].map(el => [el.className, el.scrollTop]);
+  state.runBuilder = { ...structuredClone(draft), id: null, athleteId: session.athlete_id, athleteName: session.athlete_name,
+    stage, selectedPointIndex: Math.min(selected, (draft.points?.length || 0) - 1), liveSessionId: session.id };
+  runUndoStack = []; runRedoStack = [];
+  refreshMountedRunBuilder();
+  scroll.forEach(([name, top]) => [...document.querySelectorAll("#run-builder-live [class]")].find(el => el.className === name)?.scrollTo(0, top));
+}
+
+async function flushLiveRun(l = liveRun) {
+  if (!l || liveRun !== l) return;
+  if (l.sending) { await l.sending; return flushLiveRun(l); }
+  const snapshot = liveRunSnapshot();
+  const patch = Object.fromEntries(Object.entries(snapshot).filter(([key, value]) => liveRunFingerprint(value) !== liveRunFingerprint(l.base[key])));
+  if (!Object.keys(patch).length) return;
+  if (!liveRunOwnsEditor(l) || l.error || !navigator.onLine) {
+    l.unsynced = true;
+    throw new Error("Edits kept on this device. Reconnect before passing editing or saving.");
+  }
+  l.sending = (async () => {
+    try {
+      const result = await liveRunRequest("patch", l, { p_patch: patch });
+      if (liveRun !== l) return;
+      l.base = snapshot; l.session = result.session; l.unsynced = false;
+    } catch (error) {
+      if (liveRun === l) { l.unsynced = true; l.error = "Edits kept on this device · connection needs attention"; }
+      throw error;
+    } finally { l.sending = null; if (liveRun === l) paintLiveRunControls(); }
+  })();
+  paintLiveRunControls();
+  return l.sending;
+}
+
+async function pollLiveRun(l = liveRun) {
+  if (!l || l.polling || l.busy || l.sending || l.error || liveRun !== l) return;
+  l.polling = true;
+  try {
+    const { data: s, error } = await client.from("run_live_sessions").select("*").eq("id", l.session.id).single();
+    if (error) throw error;
+    if (liveRun !== l || l.busy || l.sending || s.version < l.session.version) return;
+    if (s.version !== l.session.version || s.status !== l.session.status) {
+      if (liveRunFingerprint(liveRunSnapshot()) !== liveRunFingerprint(l.base)) {
+        l.unsynced = true; throw new Error("Editing changed hands. Your local edits have been kept.");
+      }
+      const result = await liveRunRequest("get", l);
+      if (liveRun !== l || l.busy || l.sending) return;
+      l.session = result.session; l.base = structuredClone(result.draft);
+      applyLiveRunDraft(result.draft, result.session);
+      document.querySelector(".run-fullscreen-playback")?.dispatchEvent(new Event("run-live-update"));
+      if (result.session.status === "saved") { cacheClear("run-plans:"); cacheClear("coach-command:"); }
+    } else {
+      if ((s.editor_client !== l.clientId || Date.parse(s.lease_until) <= Date.now()) && liveRunFingerprint(liveRunSnapshot()) !== liveRunFingerprint(l.base)) {
+        l.unsynced = true; throw new Error("Your edits are kept on this device. Reconnect before continuing.");
+      }
+      l.session = s;
+    }
+  } catch (error) { if (liveRun === l) l.error = messageFrom(error); }
+  finally { l.polling = false; if (liveRun === l) paintLiveRunControls(); }
+}
+
+function connectLiveRun(result, clientId) {
+  const l = liveRun = { session: result.session, clientId, base: structuredClone(result.draft), lastPoll: 0, lastHeartbeat: Date.now(), connected: false };
+  state.runBuilder.liveSessionId = result.session.id;
+  l.channel = client.channel(`run-live:${result.session.id}:${clientId}`)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "run_live_sessions", filter: `id=eq.${result.session.id}` }, () => { l.lastPoll = 0; })
+    .subscribe(status => { if (liveRun === l) { l.connected = status === "SUBSCRIBED"; paintLiveRunControls(); } });
+  l.timer = setInterval(async () => {
+    if (liveRun !== l || l.ticking || l.busy || l.error) return;
+    if (!navigator.onLine) { paintLiveRunControls(); return; }
+    l.ticking = true;
+    try {
+      if (liveRunOwnsEditor(l)) {
+        await flushLiveRun(l);
+        if (Date.now() - l.lastHeartbeat > 15000 && liveRun === l && !l.busy) {
+          const response = await liveRunRequest("heartbeat", l);
+          if (liveRun === l && !l.busy) { l.session = response.session; l.lastHeartbeat = Date.now(); }
+        }
+      }
+      if (Date.now() - l.lastPoll > 2000) { l.lastPoll = Date.now(); await pollLiveRun(l); }
+    } catch (error) { if (liveRun === l) { l.error ||= messageFrom(error); paintLiveRunControls(); } }
+    finally { l.ticking = false; }
+  }, 300);
+  paintLiveRunControls();
+}
+
+function disconnectLiveRun() {
+  const l = liveRun;
+  liveRun = null;
+  if (!l) return;
+  clearInterval(l.timer);
+  if (l.channel) void client.removeChannel(l.channel);
+  if (state.runBuilder) delete state.runBuilder.liveSessionId;
+}
+
+async function leaveLiveRun() {
+  const l = liveRun;
+  if (!l) return true;
+  try {
+    if (l.unsynced) throw new Error("Keep your edits as a private draft or reconnect before leaving.");
+    if (liveRunOwnsEditor(l)) {
+      await flushLiveRun(l);
+      await liveRunRequest("release", l);
+    }
+    disconnectLiveRun();
+    state.runBuilder = null;
+    return true;
+  } catch (error) { notify(messageFrom(error), "error"); return false; }
+}
+
+async function joinLiveRun(id) {
+  if (liveRunJoining) return;
+  if (liveRun?.session.id === id) { await navigate("contests"); return; }
+  if (liveRun && !await leaveLiveRun()) return;
+  if (state.runBuilder?.points?.length && !window.confirm("Open the shared run? Your current unshared draft has not been saved.")) return;
+  const clientId = crypto.randomUUID(), userId = state.user.id, originView = state.view;
+  liveRunJoining = true;
+  try {
+    const result = await liveRunRequest("get", { session: { id }, clientId });
+    if (state.user?.id !== userId || state.view !== originView) return;
+    if (result.session.status !== "active") throw new Error("This live session has finished.");
+    state.runBuilder = { ...result.draft, stage: "route", athleteId: result.session.athlete_id, athleteName: result.session.athlete_name };
+    runUndoStack = []; runRedoStack = [];
+    connectLiveRun(result, clientId);
+    await navigate("contests");
+  } catch (error) { notify(messageFrom(error), "error"); }
+  finally { liveRunJoining = false; }
+}
+
+async function handleLiveRunAction(action) {
+  const l = liveRun;
+  if (l?.busy) return;
+  try {
+    if (action === "start") {
+      if (liveRunStarting) return;
+      if (!state.runBuilder?.imageDataUrl) return notify("Choose the park photo, then tap Build together.");
+      liveRunStarting = true;
+      const coach = isCoachRole(state.profile?.role);
+      const athleteId = coach ? (state.runBuilder.athleteId || state.selectedAthleteId) : state.user.id;
+      const coachId = coach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
+      if (!athleteId || !coachId) throw new Error("Choose a linked rider and coach first.");
+      const button = document.querySelector('[data-live-run-action="start"]');
+      const restore = setButtonBusy(button, "Connecting…");
+      try {
+        const clientId = crypto.randomUUID(), draft = liveRunSnapshot();
+        state.runBuilder.liveStartKey = clientId;
+        const result = await liveRunRequest("create", { clientId }, { p_patch: draft, p_athlete_id: athleteId, p_coach_id: coachId });
+        if (state.runBuilder?.liveStartKey !== clientId || !document.querySelector("#run-builder-live")) {
+          await liveRunRequest("release", {session:result.session,clientId});
+          return;
+        }
+        state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), id: null, athleteId, athleteName: result.session.athlete_name };
+        connectLiveRun(result, clientId);
+        refreshMountedRunBuilder();
+        notify("Live draft ready. Open Build together on the other account’s home screen or Events & runs.");
+      } finally { restore(); }
+      return;
+    }
+    if (!l) return;
+    if (action === "leave") { if (await leaveLiveRun()) await navigate("contests"); return; }
+    if (action === "local") {
+      const draft = liveRunSnapshot();
+      if (liveRunOwnsEditor(l) && navigator.onLine) void liveRunRequest("release", l).catch(() => {});
+      disconnectLiveRun();
+      state.runBuilder = { ...state.runBuilder, ...draft, id: null, stage: "route" };
+      refreshMountedRunBuilder();
+      notify("Your edits are now a private draft. The shared version is unchanged.");
+      return;
+    }
+    l.busy = true; paintLiveRunControls();
+    if (action === "release") {
+      await flushLiveRun(l);
+      const result = await liveRunRequest("release", l);
+      if (liveRun === l) { l.session = result.session; runUndoStack = []; runRedoStack = []; }
+    } else if (action === "claim") {
+      if (liveRunFingerprint(liveRunSnapshot()) !== liveRunFingerprint(l.base)) {
+        l.unsynced = true; throw new Error("You have local edits. Retry connection or keep them as a private draft first.");
+      }
+      const result = await liveRunRequest("claim", l);
+      if (liveRun === l) { l.session = result.session; l.base = structuredClone(result.draft); applyLiveRunDraft(result.draft, result.session); }
+    } else if (action === "retry" || action === "latest") {
+      const result = await liveRunRequest("get", l);
+      if (liveRun !== l) return;
+      if (l.unsynced && liveRunFingerprint(result.draft) === liveRunFingerprint(liveRunSnapshot())) {
+        l.session = result.session; l.base = structuredClone(result.draft); l.error = null; l.unsynced = false;
+      } else if (l.unsynced && action !== "latest") {
+        if (result.session.version !== l.session.version) throw new Error("The shared run has newer edits. Keep your edits as a private draft, or load the shared version.");
+        const claimed = await liveRunRequest("claim", l);
+        l.session = claimed.session; l.error = null;
+        await flushLiveRun(l);
+      } else {
+        l.session = result.session; l.base = structuredClone(result.draft); l.error = null; l.unsynced = false;
+        applyLiveRunDraft(result.draft, result.session);
+      }
+    }
+  } catch (error) { notify(messageFrom(error), "error"); if (l) l.error = messageFrom(error); }
+  finally { liveRunStarting = false; if (l && liveRun === l) { l.busy = false; paintLiveRunControls(); } }
+}
+
+async function saveLiveRun() {
+  const l = liveRun;
+  if (!l || l.busy) return;
+  if (state.user.id !== l.session.athlete_id) return notify("Pass editing back to the rider so they can save the run.");
+  l.busy = true; paintLiveRunControls();
+  try {
+    if (l.error || !navigator.onLine) throw new Error("Reconnect and sync the shared run before saving.");
+    if (liveRunOwnsEditor(l)) await flushLiveRun(l);
+    const result = await liveRunRequest("save", l);
+    if (liveRun !== l) return;
+    l.session = result.session;
+    disconnectLiveRun(); state.runBuilder = null;
+    runUndoStack = []; runRedoStack = [];
+    cacheClear("run-plans:"); cacheClear("coach-command:");
+    notify("Your shared run is saved in your private runs.");
+    await navigate("contests");
+  } catch (error) { if (liveRun === l) l.error = messageFrom(error); notify(messageFrom(error), "error"); }
+  finally { if (liveRun === l) { l.busy = false; paintLiveRunControls(); } }
+}
+
+async function refreshLiveRunInvites() {
+  if (liveRunDiscoveryBusy || !state.user?.id || !["athlete", "coach", "admin"].includes(state.profile?.role) ||
+    !["home", "command", "contests", "student"].includes(state.view) || document.querySelector("#run-builder-live") || document.hidden) return;
+  const userId = state.user.id, view = state.view, host = document.querySelector("#view");
+  if (!host) return;
+  liveRunDiscoveryBusy = true;
+  try {
+    const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,updated_at")
+      .eq(isCoachRole(state.profile.role) ? "coach_id" : "athlete_id", userId).eq("status", "active")
+      .gt("expires_at", new Date().toISOString()).order("updated_at", { ascending: false }).limit(20);
+    if (error || userId !== state.user?.id || view !== state.view || document.querySelector("#run-builder-live") || !host.isConnected) return;
+    let card = host.querySelector("#live-run-invites");
+    if (!data?.length) { card?.remove(); return; }
+    if (!card) { card = document.createElement("section"); card.id = "live-run-invites"; card.className = "panel run-live-invites"; host.prepend(card); }
+    const html = `<div><div class="eyebrow">Private rider + coach sessions</div><h2>Build together</h2></div>${data.map(s => `<div class="run-live-invite"><div><strong>${escapeHtml(s.athlete_name)}</strong><small>${escapeHtml(s.title)}</small></div><button type="button" class="secondary-btn compact-btn" data-join-live-run="${s.id}">Open live run</button></div>`).join("")}`;
+    if (card.innerHTML !== html) { card.innerHTML = html; card.querySelectorAll("[data-join-live-run]").forEach(button => { button.onclick = async () => { const restore = setButtonBusy(button, "Opening…"); try { await joinLiveRun(button.dataset.joinLiveRun); } finally { restore(); } }; }); }
+  } catch (error) { console.warn("Live run list temporarily unavailable", error); }
+  finally { liveRunDiscoveryBusy = false; }
+}
+
+function setupLiveRunDiscovery(channel) {
+  clearInterval(liveRunDiscoveryTimer);
+  liveRunDiscoveryTimer = setInterval(() => { void refreshLiveRunInvites(); }, 10000);
+  if (["athlete", "coach", "admin"].includes(state.profile?.role)) channel.on("postgres_changes", {
+    event: "*", schema: "public", table: "run_live_sessions",
+    filter: `${isCoachRole(state.profile.role) ? "coach_id" : "athlete_id"}=eq.${state.user.id}`,
+  }, () => { void refreshLiveRunInvites(); });
+  void refreshLiveRunInvites();
+}
+
+window.addEventListener("beforeunload", event => {
+  if (!liveRun || (!liveRun.unsynced && liveRunFingerprint(liveRunSnapshot()) === liveRunFingerprint(liveRun.base))) return;
+  event.preventDefault(); event.returnValue = "";
+});
+
 function runBuilderLoadingHtml(builder = {}) {
   const failed = Boolean(builder.courseLoadError);
   return `<section class="panel run-builder-live run-builder-loading" id="run-builder-live">
@@ -8457,6 +8798,7 @@ function skipRunBuilderCourse() {
 }
 
 async function openRunBuilder(event = null) {
+  if (liveRun && !await leaveLiveRun()) return;
   event?.preventDefault?.();
   const button = event?.currentTarget;
   if (button?.disabled) return;
@@ -8474,7 +8816,7 @@ async function openRunBuilder(event = null) {
     stage: "route",
     title: eventTitle ? `${eventTitle} · Run` : "",
     venue: eventDetails,
-    planType: eventTitle ? "competition" : "training",
+    planType: eventTitle || button?.id === "open-home-run-builder" ? "competition" : "training",
     notes: eventTitle ? `Contest: ${eventTitle}${eventDate ? ` · ${dateLabel(eventDate)}` : ""}` : "",
     contestItemId,
     athleteId: athleteId || null,
@@ -8494,6 +8836,7 @@ async function openRunBuilder(event = null) {
 }
 
 async function closeRunBuilder() {
+  if (liveRun && !await leaveLiveRun()) return;
   stopRunPlayback();
   state.runBuilder = null;
   await navigate("contests");
@@ -10400,7 +10743,7 @@ function openRunPlaybackFullscreen(event) {
   const duration = sourceControls?.dataset.runPlaybackSeconds || Math.max(1, JSON.parse(preview.dataset.runTiming || "[]").reduce((sum, point) => sum + point.hold + point.travel, 0));
   dialog.insertAdjacentHTML("beforeend", `<button type="button" class="run-fullscreen-close" aria-label="Close fullscreen playback">×</button><div class="run-fullscreen-controls" data-run-playback-controls data-run-playback-seconds="${Number(duration)}"><button type="button" data-run-play-toggle>PLAY RUN</button><button type="button" data-run-play-restart aria-label="Restart run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button><input type="hidden" data-run-scrub value="0"></div>`);
   const bounds = source.getBoundingClientRect();
-  const photo = preview.querySelector("img");
+  let photo = preview.querySelector("img");
   const resize = () => {
     const ratio = photo?.naturalWidth && photo.naturalHeight ? photo.naturalWidth / photo.naturalHeight : bounds.width / Math.max(1, bounds.height);
     syncRunPhotoFrame(preview);
@@ -10409,6 +10752,27 @@ function openRunPlaybackFullscreen(event) {
     const controls = dialog.querySelector("[data-run-playback-controls]");
     if (controls) paintRunPlayback(controls, Number(controls.querySelector("[data-run-scrub]")?.value || 0) / 1000);
   };
+  dialog.addEventListener("run-live-update", () => {
+    const current = document.querySelector("#run-map .run-map-preview");
+    if (!current) return;
+    const next = cloneRunDialogPreview(current);
+    next.querySelector(".run-expand")?.remove();
+    next.querySelectorAll(".run-marker").forEach(marker => {
+      marker.removeAttribute("data-run-point-index"); marker.removeAttribute("data-select-run-point");
+      marker.classList.remove("is-selected"); marker.tabIndex = -1;
+    });
+    if (!next.querySelector("[data-run-playback-callout]")) next.insertAdjacentHTML("beforeend", `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>`);
+    preview.replaceChildren(...next.childNodes);
+    preview.dataset.runTiming = next.dataset.runTiming;
+    preview.dataset.runView = next.dataset.runView;
+    delete preview.dataset.fullscreenBaseTransform;
+    delete preview.dataset.fullscreenBaseZoom;
+    photo = preview.querySelector("img");
+    photo?.addEventListener("load", resize, { once: true });
+    const controls = dialog.querySelector("[data-run-playback-controls]");
+    setRunPlaybackDuration(controls, runPlaybackDefaultSeconds(state.runBuilder?.points || []));
+    resize();
+  });
   const close = () => dialog.close();
   const fullscreenChange = () => { if (!document.fullscreenElement && dialog.dataset.nativeFullscreen) close(); };
   dialog.querySelector(".run-fullscreen-close").onclick = close;
@@ -10629,7 +10993,7 @@ function runBuilderPanel(runs = [], options = {}) {
   const builderImageSource = options.preserveExistingImage
     ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
     : builder.imageDataUrl;
-  const body = `<form id="run-builder-form" class="run-builder-form">
+  const body = `<div data-live-run-bar>${liveRunBarHtml()}</div><form id="run-builder-form" class="run-builder-form">
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
       <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy="Qualifying">Copy as Qualifying</button><button type="button" data-run-copy="Finals">Copy as Finals</button></div>
@@ -12538,6 +12902,7 @@ function bindRunBuilderActions(root = document) {
   root.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
   root.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
   bindRunPlaybackControls(root);
+  bindLiveRunControls(root);
 }
 
 async function setRunBuilderStage(event) {
@@ -12596,10 +12961,10 @@ function currentRunFormState() {
   return {
     ...state.runBuilder,
     id: state.runBuilder?.id || null,
-    title: String(data.get("title") || state.runBuilder?.title || "").trim(),
+    title: String(form.elements.namedItem("title")?.value ?? state.runBuilder?.title ?? "").trim(),
     venue: String(data.get("venue") || state.runBuilder?.venue || "").trim(),
     planType: data.get("planType") || state.runBuilder?.planType || "training",
-    notes: String(data.get("notes") || state.runBuilder?.notes || "").trim(),
+    notes: String(form.elements.namedItem("notes")?.value ?? state.runBuilder?.notes ?? "").trim(),
     contestItemId: state.runBuilder?.contestItemId || null,
     points: state.runBuilder?.points || [],
     imageDataUrl: state.runBuilder?.imageDataUrl || "",
@@ -13017,6 +13382,7 @@ async function archiveRunPlan(event) {
 async function saveRunPlan(event) {
   event.preventDefault();
   if (runBuilderStage() !== "playback") return notify("Finish the route and tricks, then watch the run before saving.", "error");
+  if (liveRun) return saveLiveRun();
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
   const isCoach = isCoachRole(state.profile.role);
@@ -14485,6 +14851,7 @@ async function disablePushNotifications() {
 }
 
 async function signOutCurrentDevice() {
+  if (liveRun && !await leaveLiveRun()) return;
   try {
     if (supportsPushNotifications()) {
       const registration = await navigator.serviceWorker.getRegistration();

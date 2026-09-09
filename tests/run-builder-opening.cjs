@@ -10,6 +10,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.setContent('<main id="view" style="padding:16px"></main>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
  await page.addScriptTag({content:`
+ let liveRun=null; const liveRunBarHtml=()=>"", bindLiveRunControls=()=>{}, leaveLiveRun=async()=>true;
  const state={user:{id:'rider'},profile:{role:'athlete'},view:'contests'};let runUndoStack=[],runRedoStack=[];
  const escapeHtml=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
  const isCoachRole=role=>role==='coach';const dateLabel=s=>s;const stopRunPlayback=()=>{},closeContestEventModal=()=>{},bindRunPlaybackControls=()=>{};

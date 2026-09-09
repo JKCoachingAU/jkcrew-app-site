@@ -17,6 +17,7 @@ const functions = names.map(name => {
  await page.setContent('<html><body><main id="host"></main></body></html>');
  await page.addStyleTag({content:fs.readFileSync(root+'/styles.css','utf8')});
  await page.addScriptTag({content:`
+ let liveRun=null;
  const state = {runBuilder:{stage:'route',imageDataUrl:'', points:[]}, draggedRunPoint:null, runPointMapClickBlockUntil:0, profile:{role:'athlete'},user:{id:'test'}};
  const RUN_PLAYBACK_MAX_SECONDS=3600; const rememberRunEdit=()=>{}; let runUndoStack=[],runRedoStack=[];
  const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

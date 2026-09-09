@@ -1,0 +1,65 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
+(async()=>{
+ const db=new PGlite();
+ await db.exec(`create schema auth; create schema private; create role anon; create role authenticated;
+ grant usage on schema public,auth to authenticated;
+ create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ create table public.profiles(id uuid primary key,role text,display_name text);
+ create table public.coach_athletes(coach_id uuid,athlete_id uuid);
+ create table public.run_plans(id uuid primary key default gen_random_uuid(),athlete_id uuid,coach_id uuid,created_by uuid,title text,venue text,plan_type text,notes text,image_data_url text,points jsonb,contest_item_id uuid);
+ grant select on profiles,coach_athletes to authenticated;
+ alter table coach_athletes enable row level security;
+ create policy linked on coach_athletes for select to authenticated using(coach_id=auth.uid() or athlete_id=auth.uid());`);
+ const sql=process.env.JKCREW_LIVE_SQL||path.join(__dirname,'../supabase/migrations',fs.readdirSync(path.join(__dirname,'../supabase/migrations')).find(f=>f.endsWith('_live_run_sessions.sql')));
+ await db.exec(fs.readFileSync(sql,'utf8'));
+ const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+ const rider=id(1),coach=id(2),stranger=id(3),parent=id(4),otherCoach=id(5),riderTab=id(10),coachTab=id(11);
+ await db.query("insert into profiles values($1,'athlete','Rider'),($2,'coach','Coach'),($3,'athlete','Other'),($4,'parent','Parent'),($5,'coach','Other coach')",[rider,coach,stranger,parent,otherCoach]);
+ await db.query('insert into coach_athletes values($1,$2)',[coach,rider]);
+ const as=async who=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[who]);await db.exec('set role authenticated');};
+ let session=null,client=riderTab;
+ const call=async(action,patch={},version=session?.version)=> (await db.query('select public.live_run_action($1,$2,$3,$4,$5,$6,$7) result',[action,session?.id||null,client,version,JSON.stringify(patch),rider,coach])).rows[0].result;
+ await as(rider);
+ const draft={title:'Qualifying',planType:'competition',imageDataUrl:'photo',points:[{x:10,y:10},{x:30,y:40,label:''},{x:90,y:90}],view:{scale:2,x:10,y:20}};
+ let r=await call('create',draft); session=r.session; assert.equal(r.draft.title,'Qualifying');
+ await assert.rejects(()=>db.query("update public.run_live_sessions set version=99 where id=$1",[session.id]),/permission denied/);
+ await assert.rejects(()=>db.query('select * from private.run_live_drafts'),/permission denied/);
+ for(const who of [stranger,parent,otherCoach]){
+  await as(who);assert.equal((await db.query('select * from run_live_sessions')).rows.length,0);
+  for(const action of ['get','claim','patch','save','end'])await assert.rejects(()=>call(action),/private/);
+  await assert.rejects(()=>call('create',draft),/linked/);
+ }
+ await as(coach);client=coachTab;assert.equal((await call('get')).draft.title,'Qualifying');
+ await assert.rejects(()=>call('claim'),/Pass editing/);await assert.rejects(()=>call('patch',{title:'stolen'}),/changed hands/);
+ await assert.rejects(()=>call('save'),/rider saves/);
+ await as(rider);client=riderTab;
+ const v1=session.version;session=(await call('patch',{notes:'First note'})).session;
+ await assert.rejects(()=>call('patch',{notes:'stale'},v1),/changed hands/);
+ await assert.rejects(()=>call('patch',{athlete_id:stranger}),/Invalid run field/);
+ await assert.rejects(()=>call('patch',{points:'invalid'}),/Check the run/);
+ session=(await call('release')).session;
+ await as(coach);client=coachTab;r=await call('claim');session=r.session;assert.equal(r.draft.notes,'First note');
+ session=(await call('patch',{points:[{x:10,y:10},{x:45,y:60,label:'Manual',travelSeconds:12},{x:90,y:90}]})).session;
+ await as(rider);client=riderTab;assert.equal((await call('get')).draft.points[1].x,45);
+ await assert.rejects(()=>call('save'),/pass editing/);
+ await as(coach);client=coachTab;session=(await call('release')).session;
+ await as(rider);client=riderTab;session=(await call('claim')).session;
+ await assert.rejects(()=>call('save',{},v1),/run changed/);
+ session=(await call('save')).session;assert.equal(session.status,'saved');
+ assert.equal((await call('save')).session.saved_run_id,session.saved_run_id,'Save retry is idempotent');
+ await db.exec('reset role');const saved=(await db.query('select * from run_plans')).rows;assert.equal(saved.length,1);assert.equal(saved[0].created_by,rider);assert.equal(saved[0].points[1].x,45);assert.deepEqual(saved[0].points[0].view,draft.view);
+ // Coach-created drafts also become rider-owned saves. Expired leases may be reclaimed.
+ await as(coach);client=coachTab;r=await call('create',draft);session=r.session;
+ await db.exec('reset role');await db.query("update run_live_sessions set lease_until=now()-interval '1 second' where id=$1",[session.id]);
+ await as(coach);await assert.rejects(()=>call('heartbeat'),/changed hands/);await assert.rejects(()=>call('patch',{notes:'late'}),/changed hands/);
+ await as(rider);client=riderTab;session=(await call('claim')).session;session=(await call('save')).session;
+ await db.exec('reset role');assert.equal((await db.query('select created_by from run_plans where id=$1',[session.saved_run_id])).rows[0].created_by,rider);
+ // Revoking the coaching relationship cuts off reads and writes immediately.
+ await as(rider);r=await call('create',draft);session=r.session;
+ await db.exec('reset role');await db.exec('delete from coach_athletes');
+ await as(coach);assert.equal((await db.query('select * from run_live_sessions')).rows.length,0);await assert.rejects(()=>call('get'),/private/);
+ assert.equal((await db.query("select has_function_privilege('anon','public.live_run_action(text,uuid,uuid,bigint,jsonb,uuid,uuid)','execute') ok")).rows[0].ok,false);
+ assert.equal((await db.query("select has_function_privilege('anon','private.live_run_action(text,uuid,uuid,bigint,jsonb,uuid,uuid)','execute') ok")).rows[0].ok,false);
+ await db.close();console.log('PASS: private two-party access, no direct writes, leased handover, stale-write rejection, photo-preserving patches, coach edits, rider save, idempotent retries, expired leases, revoked links.');
+})().catch(e=>{console.error(e);process.exit(1);});
