@@ -11397,3 +11397,18 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-time-stepper input { width: 72px; min-width: 0; }
 .run-timing-row > strong { font-size: .85rem; }
 .run-timing-row > small { color: var(--muted); }
+
+[data-points-receipt] { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 5px; }
+[data-points-receipt]:focus-visible { outline: 2px solid var(--aqua); outline-offset: 4px; }
+.points-receipt-dialog { width: min(540px, calc(100vw - 24px)); max-height: 88dvh; overflow-y: auto; padding: 20px; border: 1px solid var(--aqua); border-radius: 18px; background: var(--surface, #0b1518); color: var(--text, #fff); }
+.points-receipt-dialog::backdrop { background: #000b; }
+.points-receipt-dialog header { display: flex; align-items: center; justify-content: space-between; position: sticky; top: -20px; padding-block: 10px; background: var(--surface, #0b1518); }
+.points-receipt-dialog header button { width: 44px; height: 44px; background: transparent; color: inherit; border: 1px solid var(--line); border-radius: 9px; font-size: 26px; }
+.points-receipt-dialog .point-history-row { display: flex; justify-content: space-between; gap: 12px; }
+.points-receipt-dialog .point-history-row small { display: block; overflow-wrap: anywhere; }
+.battle-contributions { width: 100%; padding-top: 8px; border-top: 1px solid var(--line); font-size: .78rem; }
+.battle-contributions > div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; text-align: left; }
+.battle-contributions b { white-space: nowrap; color: var(--aqua); }
+.sync-status.error b, .sync-status.offline b, .sync-status.syncing b { display: inline !important; }
+@media (max-width: 600px) { .sync-status { max-width: 140px; } .sync-status b { white-space: normal; font-size: .65rem; } }
+.sync-status b { display: inline !important; }

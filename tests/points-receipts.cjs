@@ -1,0 +1,24 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
+(async()=>{const db=new PGlite();
+await db.exec(`create schema auth;create schema private;create role anon;create role authenticated;grant usage on schema public,private to authenticated;
+create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+create table profiles(id uuid,role text,country_code text);create table coach_athletes(coach_id uuid,athlete_id uuid);create table parent_athletes(parent_id uuid,athlete_id uuid);
+create table weekly_trick_assignments(id uuid,trick_name text,category text);create table assignment_point_awards(athlete_id uuid,assignment_id uuid,session_id uuid,points integer,created_at timestamptz);
+create table weekly_challenges(id uuid,title text);create table leaderboard_point_adjustments(athlete_id uuid,points integer,reason text,created_at timestamptz,week_start date);create table training_sessions(id uuid,athlete_id uuid,total_points integer,started_at timestamptz);
+create function public.jkcrew_week_bounds(text) returns table(week_start_ts timestamptz,next_week_start_ts timestamptz,week_start_date date) language sql as $$select '2026-09-06T00:00:00Z'::timestamptz,'2026-09-13T00:00:00Z'::timestamptz,'2026-09-06'::date$$;`);
+await db.exec(fs.readFileSync(require('node:path').join(__dirname,'../supabase/migrations/20260909085252_add_private_points_receipts.sql'),'utf8'));
+const ids=Array.from({length:5},(_,i)=>'00000000-0000-0000-0000-'+String(i+1).padStart(12,'0'));const [r,c,p,other,assignment]=ids;
+for(const [id,role] of [[r,'athlete'],[c,'coach'],[p,'parent'],[other,'athlete']])await db.query("insert into profiles values($1,$2,'AU')",[id,role]);
+await db.query('insert into coach_athletes values($1,$2)',[c,r]);await db.query('insert into parent_athletes values($1,$2)',[p,r]);
+await db.query("insert into weekly_trick_assignments values($1,'Cannon Ball','bonus')",[assignment]);
+await db.query("insert into assignment_point_awards values($1,$2,$3,5,'2026-09-09')",[r,assignment,assignment]);
+await db.query("insert into training_sessions values($1,$2,5,'2026-09-09'),($3,$2,3,'2026-09-09')",[assignment,r,other]);
+await db.query("insert into leaderboard_point_adjustments values($1,5,'Weekly challenge extra','2026-09-09','2026-09-06'),($1,2,'Battle won','2026-09-09','2026-09-06'),($1,20,'All-time score correction','2026-09-09','2026-09-06'),($1,4,'Old bonus','2026-08-01','2026-07-26')",[r]);
+const receipt=async scope=>(await db.query('select get_points_receipt($1,$2) result',[r,scope])).rows[0].result;
+for(const id of [r,c,p]){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);const result=await receipt('weekly');assert.equal(result.total,15);assert.equal(result.rows.find(x=>x.label==='Bonus trick').points,5);assert.equal(result.rows.find(x=>x.label==='Weekly challenge').points,5);assert.equal(result.rows.find(x=>x.label==='Battle result').points,2);assert.equal((await receipt('all_time')).total,39);}
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[other]);await assert.rejects(()=>receipt('weekly'),/private/);
+await db.query("select set_config('request.jwt.claim.sub','',false)");await assert.rejects(()=>receipt('weekly'),/private/);
+assert.equal((await db.query("select has_function_privilege('anon','public.get_points_receipt(uuid,text)','execute') allowed")).rows[0].allowed,false);
+await db.close();console.log('PASS: exact weekly/all-time totals, no session double count, separate bonus/challenge/battle entries, linked parent/coach access and unauthorized denial.');
+})().catch(e=>{console.error(e);process.exit(1)});

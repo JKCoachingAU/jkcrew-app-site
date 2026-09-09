@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.61";
+const RELEASE_VERSION = "2.14.62";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.61" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.62" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1668,6 +1668,7 @@ function renderShell() {
     navigate(button.dataset.view);
   }));
   document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
+  setSyncStatus();
   refreshNotificationCentre({ renderNav: false });
   refreshBoardChatUnread();
 }
@@ -1683,15 +1684,48 @@ function mountStartupPrompts() {
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
 }
 
-function setSyncStatus(status = "saved") {
+const progressSaveStates = new Map();
+function setSyncStatus(status = state.lastSyncStatus || "saved") {
+  if (status !== "offline") state.lastSyncStatus = status;
   const element = document.querySelector("#sync-status");
+  const ownSaves = [...progressSaveStates.entries()].filter(([key]) => key.startsWith(`${state.user?.id}:`)).map(([,value]) => value);
+  const pending = ownSaves.includes("syncing");
+  const failed = ownSaves.includes("error");
+  const effective = !navigator.onLine ? "offline" : pending ? "syncing" : failed ? "error" : status;
   if (!element) return;
   clearTimeout(state.syncStatusTimer);
-  const effective = navigator.onLine ? status : "offline";
   element.className = `sync-status ${effective}`;
-  const labels = { syncing: "Syncing", saved: "Saved", offline: "Offline", error: "Not saved" };
+  const labels = { syncing: "Saving…", saved: "Saved", offline: "Waiting for connection", error: "Save unconfirmed" };
   element.querySelector("b").textContent = labels[effective] || "Saved";
-  if (effective === "syncing") state.syncStatusTimer = setTimeout(() => setSyncStatus("saved"), 5000);
+  element.setAttribute("role", "status");
+  element.title = effective === "offline" ? "Changes cannot be saved offline. Reconnect before recording attempts." : effective === "error" ? "Check the latest session before trying again. Your last save was not confirmed." : labels[effective];
+}
+
+async function saveProgressRpc(name, args) {
+  const key = `${state.user?.id}:${name}:${args.p_assignment_id}:${args.p_attempt_number || ""}`;
+  if (!navigator.onLine) {
+    progressSaveStates.set(key, "error");
+    setSyncStatus("offline");
+    return { data: null, error: new Error("Waiting for connection. This attempt was not saved; reconnect and try again.") };
+  }
+  if (progressSaveStates.get(key) === "syncing") return { data: null, error: new Error("This attempt is still saving. Please wait.") };
+  progressSaveStates.set(key, "syncing");
+  setSyncStatus("syncing");
+  try {
+    const result = await client.rpc(name, args);
+    if (result.error) {
+      progressSaveStates.set(key, "error");
+      setSyncStatus("error");
+    } else {
+      progressSaveStates.delete(key);
+      setSyncStatus("saved");
+    }
+    return result;
+  } catch (error) {
+    progressSaveStates.set(key, "error");
+    setSyncStatus("error");
+    return { data: null, error };
+  }
 }
 
 async function getAppNotifications(limit = 50) {
@@ -2289,7 +2323,7 @@ async function setupRealtimeSync() {
   state.realtimeChannel = channel;
 }
 
-window.addEventListener("online", () => setSyncStatus("saved"));
+window.addEventListener("online", () => setSyncStatus());
 window.addEventListener("offline", () => setSyncStatus("offline"));
 
 function realtimeRow(payload = {}) {
@@ -2481,6 +2515,47 @@ async function getLeaderboardFallback(cause) {
     notify("Leaderboard is temporarily using a safe fallback while scores reload.", "error");
   }
   return rows;
+}
+
+function pointsReceiptAttributes(athleteId, scope = "weekly") {
+  return `data-points-receipt="${escapeHtml(athleteId || "")}" data-points-scope="${scope === "all_time_points" || scope === "all_time" ? "all_time" : "weekly"}" role="button" tabindex="0" aria-label="View points receipt"`;
+}
+
+async function showPointsReceipt(target) {
+  const athleteId = target.dataset.pointsReceipt;
+  if (!athleteId) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "points-receipt-dialog";
+  dialog.setAttribute("aria-label", "Points receipt");
+  dialog.innerHTML = `<header><h2>Points receipt</h2><button type="button" aria-label="Close points receipt">×</button></header><div data-receipt-body aria-live="polite">Loading points…</div>`;
+  dialog.querySelector("button").onclick = () => dialog.close();
+  dialog.addEventListener("close", () => { dialog.remove(); target.focus(); }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+  try {
+    const { data, error } = await client.rpc("get_points_receipt", { p_athlete_id: athleteId, p_scope: target.dataset.pointsScope || "weekly" });
+    if (error) throw error;
+    if (!dialog.isConnected) return;
+    dialog.querySelector("[data-receipt-body]").innerHTML = `<p>${data.scope === "weekly" ? "This week" : "All time"} · <strong>${Number(data.total)} points</strong></p><div class="point-history-list">${(data.rows || []).map(row => `<div class="point-history-row"><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.detail)}${Number(row.events)>1 ? ` · ${Number(row.events)} awards` : ""}</small></div><b>${Number(row.points)>0 ? "+" : ""}${Number(row.points)}</b></div>`).join("") || '<p>No points recorded in this period.</p>'}</div>${Number(data.raw_total)<0 ? '<p>The leaderboard displays a minimum of 0 points.</p>' : ""}`;
+  } catch (error) {
+    if (dialog.isConnected) dialog.querySelector("[data-receipt-body]").textContent = messageFrom(error, "Unable to load the receipt. Please try again.");
+  }
+}
+
+document.addEventListener("click", event => {
+  const target = event.target.closest?.("[data-points-receipt]");
+  if (!target) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  void showPointsReceipt(target);
+}, true);
+document.addEventListener("keydown", event => {
+  if (!["Enter", " "].includes(event.key) || !event.target.matches?.("[data-points-receipt]")) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  void showPointsReceipt(event.target);
+}, true);
+
+function battleContributionsHtml(team) {
+  return `<div class="battle-contributions" aria-label="Rider contributions">${team.map(rider => `<div><span>${escapeHtml(rider.display_name || "Rider")}</span><b>${Number(rider.battle_points ?? rider.weekly_points ?? 0)} pts</b></div>`).join("")}</div>`;
 }
 
 async function getPointHistory(athleteId) {
@@ -5741,7 +5816,7 @@ function battleTeamScore(battle, teamNumber) {
 function battleTeamHtml(participants = [], teamNumber, myTeamNumber) {
   const team = participants.filter((participant) => participant.team_number === teamNumber);
   const score = team.reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
-  return `<div class="battle-team ${teamNumber === myTeamNumber ? "my-team" : ""}"><small>${teamNumber === myTeamNumber ? "Your team" : `Team ${teamNumber}`}</small><div class="battle-team-avatars">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(battleParticipantFirstName(participant))).join(" + ")}</strong><b>${score} pts</b>${team.some((rider) => rider.forfeited_at) ? "<small>Forfeited</small>" : ""}</div>`;
+  return `<div class="battle-team ${teamNumber === myTeamNumber ? "my-team" : ""}"><small>${teamNumber === myTeamNumber ? "Your team" : `Team ${teamNumber}`}</small><div class="battle-team-avatars">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(battleParticipantFirstName(participant))).join(" + ")}</strong><b>${score} pts</b>${team.some((rider) => rider.forfeited_at) ? "<small>Forfeited</small>" : ""}${battleContributionsHtml(team)}</div>`;
 }
 
 function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory = []) {
@@ -6241,19 +6316,19 @@ async function renderAthleteHome() {
   }).catch((error) => console.warn("Home details could not finish loading", error));
 }
 
-function statCard(label, value, unit, foot, className = "") {
-  return `<article class="stat-card ${escapeHtml(className)}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${escapeHtml(value)}${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
+function statCard(label, value, unit, foot, className = "", receiptAthleteId = "") {
+  return `<article class="stat-card ${escapeHtml(className)}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value" ${receiptAthleteId ? pointsReceiptAttributes(receiptAthleteId) : ""}>${escapeHtml(value)}${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
 }
 
 function statCardRaw(label, body, foot, className = "") {
   return `<article class="stat-card ${className}"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${body}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`;
 }
 
-function scoreRankingCard(weeklyPoints, rank, riderCount, battleRecord = null) {
+function scoreRankingCard(weeklyPoints, rank, riderCount, battleRecord = null, athleteId = state.user?.id) {
   return `<article class="stat-card score-ranking-card ${battleRecord ? "with-battle-record" : ""}">
     <div class="score-ranking-stat">
       <div class="stat-label">Weekly score</div>
-      <div class="stat-value">${escapeHtml(Number(weeklyPoints || 0))}<small>pts</small></div>
+      <div class="stat-value" ${pointsReceiptAttributes(athleteId)}>${escapeHtml(Number(weeklyPoints || 0))}<small>pts</small></div>
       <div class="stat-foot">This week</div>
     </div>
     <div class="score-ranking-stat">
@@ -6478,7 +6553,7 @@ async function renderParentHome() {
     <section class="panel parent-home-hero">
       <div class="parent-home-identity">${avatarHtml(athlete, "score-avatar")}<div><span>This week</span><h2>${escapeHtml(firstName(athlete))}</h2><p>${percent}% of tracked weekly items complete.</p></div></div>
       <div class="parent-home-metrics">
-        <div><small>Weekly score</small><strong>${Number(weeklyRow?.weekly_points || 0)}<b> pts</b></strong><span>${rank ? `Crew rank #${rank}` : "Week in progress"}</span></div>
+        <div><small>Weekly score</small><strong ${pointsReceiptAttributes(athlete.id)}>${Number(weeklyRow?.weekly_points || 0)}<b> pts</b></strong><span>${rank ? `Crew rank #${rank}` : "Week in progress"}</span></div>
         <div><small>Current level</small><strong>${xp.level}<b> L</b></strong><span>${xp.xp_needed} XP to Level ${xp.next_level}</span></div>
         <div><small>Current sheet</small><strong>${completedWeekly}/${weeklyItems.length}</strong><span>${percent}% complete</span></div>
       </div>
@@ -6694,7 +6769,7 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const content = `
     <div class="rank">#${rank}</div>
     <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
-    <div class="points ${hasStarted ? "" : "dns-points"}">${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
+    <div class="points ${hasStarted ? "" : "dns-points"}" ${row.isBenchmarkBot ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
 
@@ -6720,7 +6795,7 @@ function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
           ${avatarHtml(row)}
           <strong>${escapeHtml(row.display_name)}${row.ghost_mode ? ` <span class="ghost-mode-mini">Ghost</span>` : ""}</strong>
           <span class="command-level">L${xp.level}</span>
-          <span class="command-points">${points} pts</span>
+          <span class="command-points" ${row.isBenchmarkBot ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${points} pts</span>
         </button>`;
       }).join("")}
     </div>` : `<div class="empty compact-empty">No leaderboard scores yet.</div>`}
@@ -6963,7 +7038,7 @@ async function recordAssignmentAction(event) {
   button.textContent = wasComplete ? "" : "✓";
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.assignmentAction === "landed");
   const isLine = button.dataset.assignmentCategory === "lines";
-  const { data, error } = await client.rpc(isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue", isLine ? {
+  const { data, error } = await saveProgressRpc(isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue", isLine ? {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
     p_venue: state.selectedVenue || "",
@@ -7014,7 +7089,7 @@ async function recordAssignmentAttempt(event) {
   button.disabled = true;
   button.classList.add("attempted");
   button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
-  const { data, error } = await client.rpc("record_assignment_attempt", {
+  const { data, error } = await saveProgressRpc("record_assignment_attempt", {
     p_assignment_id: button.dataset.assignmentAttempt,
   });
   if (error) {
@@ -7042,7 +7117,7 @@ async function recordPercentageAttempt(event) {
     : button.dataset.percentageAction === "true";
   const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
   setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
-  const { data, error } = await client.rpc("set_percentage_attempt_at_venue", {
+  const { data, error } = await saveProgressRpc("set_percentage_attempt_at_venue", {
     p_assignment_id: button.dataset.assignmentId,
     p_attempt_number: attemptNumber,
     p_landed: clearAttempt ? null : landed,
@@ -7600,7 +7675,7 @@ async function renderPublicAthleteProfile() {
     <section class="panel">${xpProgressHtml(scoreXp)}${levelBadgesAccordionHtml(scoreXp)}</section>
     ${socialLinksHtml(profile)}
     <section class="stats-grid public-profile-stats">
-      ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`)}
+      ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`, "", state.publicAthleteId)}
       ${statCard("Weekly wins", profile.weekly_wins || 0, "", "Leaderboard wins")}
       ${statCard("Battle record", `${battleRecord.wins || 0}W — ${battleRecord.losses || 0}L`, "", `${battleRecord.win_percent || 0}% win rate`)}
       ${statCard("Country", profile.country_code ? `${countryFlag(profile.country_code)} ${profile.country_name || countryNameFromCode(profile.country_code)}` : "-", "", "Where they ride from")}
@@ -8332,7 +8407,7 @@ async function renderContests() {
 function coachBattleTeamHtml(battle, teamNumber) {
   const team = (battle.participants || []).filter((participant) => participant.team_number === teamNumber);
   const score = team.reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
-  return `<div class="coach-battle-team"><div class="battle-team-avatars">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(participant.display_name)).join(" + ")}</strong><small>${team.map((participant) => participant.response === "accepted" ? "✓" : participant.response === "declined" ? "×" : "…").join(" ")} · ${score} pts${team.some((rider) => rider.forfeited_at) ? " · Forfeited" : ""}</small></div>`;
+  return `<div class="coach-battle-team"><div class="battle-team-avatars">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(participant.display_name)).join(" + ")}</strong><small>${team.map((participant) => participant.response === "accepted" ? "✓" : participant.response === "declined" ? "×" : "…").join(" ")} · ${score} pts${team.some((rider) => rider.forfeited_at) ? " · Forfeited" : ""}</small>${battleContributionsHtml(team)}</div>`;
 }
 
 function coachBattleCardHtml(battle) {
@@ -9412,7 +9487,7 @@ async function recordViewerAssignmentAction(event) {
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
   try {
     const isLine = button.dataset.assignmentCategory === "lines";
-    const { data, error } = await withTimeout(client.rpc(isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue", isLine ? {
+    const { data, error } = await withTimeout(saveProgressRpc(isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue", isLine ? {
       p_assignment_id: button.dataset.assignmentId,
       p_action: button.dataset.viewerAssignmentAction,
       p_venue: state.sessionViewerVenue || "",
@@ -9452,7 +9527,7 @@ async function recordViewerAssignmentAttempt(event) {
   button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
   try {
     const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
-    const { data, error } = await withTimeout(client.rpc("record_assignment_attempt", {
+    const { data, error } = await withTimeout(saveProgressRpc("record_assignment_attempt", {
       p_assignment_id: button.dataset.viewerAssignmentAttempt,
       p_group_session_id: session?.id || null,
     }), "Save trick attempt", 15000);
@@ -9485,7 +9560,7 @@ async function recordViewerPercentageAttempt(event) {
   const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
   setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
   try {
-    const { data, error } = await withTimeout(client.rpc("set_percentage_attempt_at_venue", {
+    const { data, error } = await withTimeout(saveProgressRpc("set_percentage_attempt_at_venue", {
       p_assignment_id: button.dataset.assignmentId,
       p_attempt_number: attemptNumber,
       p_landed: clearAttempt ? null : landed,
@@ -11105,7 +11180,7 @@ function coachStudentPreviewHtml({ athlete, assignments, awards, events, session
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats preview-stats home-scoreboard-summary">
-        ${scoreRankingCard(weeklyRow?.weekly_points || 0, rank, leaderboard.length)}
+        ${scoreRankingCard(weeklyRow?.weekly_points || 0, rank, leaderboard.length, null, athlete.id)}
       </div>
       ${xpProgressHtml(xp, true)}
     </section>
@@ -11176,7 +11251,7 @@ function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttemp
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats preview-stats">
-        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week", "", athlete.id)}
         ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
@@ -11212,7 +11287,7 @@ function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = 
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats preview-stats">
-        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week")}
+        ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week", "", athlete.id)}
         ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
@@ -11505,7 +11580,7 @@ async function renderStudentProfile() {
       ${template ? `<button class="secondary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}
     </section>
     <section class="student-profile-summary" aria-label="Rider progress summary">
-      <article><span>Weekly points</span><strong>${Number(weeklyRow?.weekly_points || 0)}</strong></article>
+      <article><span>Weekly points</span><strong ${pointsReceiptAttributes(athlete.id)}>${Number(weeklyRow?.weekly_points || 0)}</strong></article>
       <article><span>Daily days</span><strong>${dailyDone}/7</strong></article>
       <article><span>XP level</span><strong>L${scoreXp.level}</strong></article>
       <article><span>Weekly sheet</span><strong>${completedWeekly}/${assignedWeekly}</strong></article>

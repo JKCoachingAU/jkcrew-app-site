@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.61";
+const version = "2.14.62";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -227,7 +227,7 @@ assert(parentEngagementMigration.includes("last_app_opened_at"), "Parent engagem
 assert(parentEngagementMigration.includes("queue_parent_engagement_alerts"), "Parent inactivity and low-progress alerts need a scheduled queue function");
 assert(parentEngagementMigration.includes("parent-engagement:"), "Parent engagement alerts must be deduplicated per parent, rider and week");
 assert(parentEngagementMigration.includes("'sheet'"), "Parent engagement pushes must respect the existing sheet notification preference");
-assert(app.includes('rpc(isLine ? "record_line_action_at_venue"'), "Rider and coach Line actions must preserve the selected venue");
+assert(app.includes('saveProgressRpc(isLine ? "record_line_action_at_venue"'), "Rider and coach Line actions must preserve the selected venue");
 assert(parkKingLiveScoreMigration.includes("'percentage', 'lines', 'bonus'"), "Park King scores must include Lines");
 assert(!parkKingLiveScoreMigration.includes("session.ended_at is not null"), "Park King must update while a training session is live");
 assert(parkKingLiveScoreMigration.includes("jkcrew_country_timezone"), "Detached Daily completion recovery must use the rider's local date");
