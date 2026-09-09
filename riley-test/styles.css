@@ -11583,3 +11583,20 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 
 .run-save-actions { display: flex; justify-content: flex-end; margin: 12px 0; }
 .run-save-actions button { min-height: 44px; touch-action: manipulation; }
+
+/* Point-to-point timing stays beside the course; Watch has no editing targets. */
+.run-map-preview .run-line-overlay .run-segment-hit {
+  stroke: transparent; stroke-width: 24px; pointer-events: stroke;
+  filter: none; cursor: pointer; touch-action: manipulation;
+}
+.run-map-preview .run-line-overlay path.segment-selected { stroke-width: 4px; opacity: 1; filter: drop-shadow(0 0 3px #fff9); }
+.run-map-preview .run-line-overlay .run-segment-hit:focus-visible { stroke: #ffffff60; stroke-width: 12px; outline: none; }
+.run-segment-editor { margin: 12px 0; padding: 16px; border: 1px solid var(--accent, #16d8cb); border-radius: 16px; background: #09191c; display: grid; gap: 10px; }
+.run-segment-editor[hidden] { display: none; }
+.run-segment-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.run-segment-heading strong { color: #20e3c3; font-size: 18px; }
+.run-segment-heading button { min-height: 44px; padding: 8px 16px; touch-action: manipulation; }
+.run-segment-editor p { margin: 0; overflow-wrap: anywhere; }
+.run-segment-editor > small { color: var(--muted, #a7b6bb); }
+.run-segment-editor input { font-size: 18px; min-height: 44px; padding: 8px; border: 1px solid #20e3c370; border-radius: 9px; color: #fff; background: #031013; }
+.run-segment-editor [data-run-segment-total] { font-size: 14px; }

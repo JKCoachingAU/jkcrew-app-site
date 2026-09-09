@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.74";
+const RELEASE_VERSION = "2.14.75";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.74" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.75" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10689,15 +10689,16 @@ function runPathBetween(previous, point) {
   return `M ${previous.x} ${previous.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${point.x} ${point.y}`;
 }
 
-function runRouteSvg(points = []) {
+function runRouteSvg(points = [], editTiming = false) {
   const safePoints = Array.isArray(points) ? points : [];
   if (safePoints.length < 2) return "";
+  const timing = editTiming ? runTiming(safePoints) : [];
   const lines = safePoints.slice(1).map((point, index) => {
     const previous = safePoints[index];
     const pointNumber = index + 2;
-    return `<path data-run-segment="${pointNumber}" d="${runPathBetween(previous, point)}" stroke="${runPointColor(pointNumber)}" />`;
+    return `<path data-run-segment="${pointNumber}" d="${runPathBetween(previous, point)}" stroke="${runPointColor(pointNumber)}" />${editTiming ? `<path class="run-segment-hit" data-edit-run-segment="${index}" d="${runPathBetween(previous, point)}" role="button" tabindex="0" aria-label="Dot ${index + 1} to dot ${pointNumber}: ${Math.round(timing[index].travel * 10) / 10} seconds. Edit travel time" />` : ""}`;
   }).join("");
-  return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
+  return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" ${editTiming ? `aria-label="Route travel times"` : `aria-hidden="true"`}>${lines}</svg>`;
 }
 
 function runView(value = {}) {
@@ -10714,7 +10715,7 @@ function applyRunView(preview, value) {
   content.style.setProperty("--run-zoom", view.scale);
 }
 
-function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable = false, showPlayback = true, view = points?.[0]?.view) {
+function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable = false, showPlayback = true, view = points?.[0]?.view, editTiming = editable) {
   if (!imageDataUrl) return "";
   const safePoints = Array.isArray(points) ? points : [];
   const framing = runView(view);
@@ -10725,7 +10726,7 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
     const selected = editable && Number(state.runBuilder?.selectedPointIndex) === index;
     return `<button type="button" class="run-marker ${endpoint ? "run-endpoint" : ""} ${selected ? "is-selected" : ""}" data-run-point-number="${pointNumber}" data-run-point-label="${escapeHtml(label)}" ${editable ? `data-run-point-index="${index}" data-select-run-point="${index}"` : "tabindex=\"-1\""} aria-label="${escapeHtml(`${pointNumber}. ${label}`)}" style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
   }).join("");
-  return `<div class="run-map-preview" data-run-map-preview data-run-timing="${escapeHtml(JSON.stringify(runTiming(safePoints)))}" data-run-view="${escapeHtml(JSON.stringify(framing))}"><div class="run-map-content" style="--run-zoom:${framing.scale};transform:translate(${framing.x}%,${framing.y}%) scale(${framing.scale})"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`} draggable="false">${runRouteSvg(safePoints)}${markers}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span></div>${showPlayback && safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>` : ""}${safePoints.length ? `<button type="button" class="run-expand" data-run-expand aria-label="Fullscreen run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></svg></button>` : ""}</div>`;
+  return `<div class="run-map-preview" data-run-map-preview data-run-timing="${escapeHtml(JSON.stringify(runTiming(safePoints)))}" data-run-view="${escapeHtml(JSON.stringify(framing))}"><div class="run-map-content" style="--run-zoom:${framing.scale};transform:translate(${framing.x}%,${framing.y}%) scale(${framing.scale})"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`} draggable="false">${runRouteSvg(safePoints, editTiming)}${markers}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span></div>${showPlayback && safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>` : ""}${safePoints.length ? `<button type="button" class="run-expand" data-run-expand aria-label="Fullscreen run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></svg></button>` : ""}</div>`;
 }
 
 function syncRunPhotoFrame(preview) {
@@ -10738,6 +10739,8 @@ function syncRunPhotoFrame(preview) {
 function cloneRunDialogPreview(source) {
   syncRunPhotoFrame(source);
   const preview = source.cloneNode(true);
+  preview.querySelectorAll("[data-edit-run-segment]").forEach(path => path.remove());
+  preview.querySelectorAll(".segment-selected").forEach(path => path.classList.remove("segment-selected"));
   const image = preview.querySelector(".run-map-content img");
   if (image) {
     image.loading = "eager";
@@ -10998,7 +11001,66 @@ function runTimingRowHtml(points, index) {
   const timing = runTiming(points)[index];
   if (!timing || (index === points.length - 1 && !points[index]?.isTrick)) return "";
   const field = (key, label, value, min) => `<div class="run-time-field"><span>${label}</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease ${label}">−</button><input type="number" min="${min}" max="120" step="0.1" value="${value}" data-run-time-index="${index}" data-run-time-key="${key}" aria-label="${label}"><button type="button" data-run-time-step="1" aria-label="Increase ${label}">+</button><small>seconds</small></span></div>`;
-  return `<div class="run-timing-row"><strong>${index === 0 ? "Start" : `Trick ${index}`}${index < points.length - 1 ? ` → ${index+1 === points.length-1 && !points[index+1]?.isTrick ? "Finish" : `Trick ${index+1}`}` : " · Final trick"}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${index < points.length - 1 ? `${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small>` : ""}</div>`;
+  return `<div class="run-timing-row"><strong>Dot ${index + 1}${index < points.length - 1 ? ` → Dot ${index + 2}` : " · Final trick"}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${index < points.length - 1 ? `${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small>` : ""}</div>`;
+}
+
+function bindRunTimingControls(root) {
+  root.querySelectorAll("[data-run-time-index], [data-run-limit]").forEach(input => {
+    if (input.dataset.timingBound) return;
+    input.dataset.timingBound = "true";
+    input.addEventListener("input", updateRunTiming);
+    input.addEventListener("change", updateRunTiming);
+  });
+  root.querySelectorAll("[data-run-time-step]").forEach(button => {
+    if (button.dataset.timingBound) return;
+    button.dataset.timingBound = "true";
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      if (!liveRunCanEdit()) return;
+      const input = button.parentElement.querySelector("input");
+      input.value = String(Math.round((Number(input.value) + Number(button.dataset.runTimeStep)) * 10) / 10);
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+
+function runSegmentEditorHtml(points, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= points.length - 1) return `<section class="run-segment-editor" data-run-segment-editor hidden></section>`;
+  const name = i => i === 0 ? "Start location" : i === points.length - 1 && !points[i].isTrick ? "Finish location" : points[i].label?.trim() || "NO TRICK";
+  const seconds = Math.round(runTiming(points)[index].travel * 10) / 10;
+  return `<section class="run-segment-editor" data-run-segment-editor aria-label="Selected line timing">
+    <div class="run-segment-heading"><strong>Dot ${index + 1} → Dot ${index + 2}</strong><button type="button" class="secondary-btn compact-btn" data-close-run-segment>Done</button></div>
+    <p>${escapeHtml(name(index))} → ${escapeHtml(name(index + 1))}</p>
+    <div class="run-time-field"><span>Travel time to next trick</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease travel time">−</button><input type="number" inputmode="decimal" min="0.1" max="120" step="0.1" value="${seconds}" data-run-time-index="${index}" data-run-time-key="travelSeconds" aria-label="Seconds from dot ${index + 1} to dot ${index + 2}"><button type="button" data-run-time-step="1" aria-label="Increase travel time">+</button><small>seconds</small></span></div>
+    <small>Travel only · trick time is separate</small>
+    <strong data-run-segment-total>${runTimeBudget(points).total}s planned · ${runTimeBudget(points).message}</strong>
+  </section>`;
+}
+
+function paintRunSegmentSelection() {
+  const index = state.runBuilder?.selectedSegmentIndex;
+  document.querySelectorAll("#run-map [data-run-segment]").forEach(path => path.classList.toggle("segment-selected", Number(path.dataset.runSegment) === index + 2));
+  document.querySelectorAll("#run-map [data-edit-run-segment]").forEach(path => path.setAttribute("aria-pressed", String(Number(path.dataset.editRunSegment) === index)));
+}
+
+function selectRunSegment(event) {
+  const path = event.target.closest?.("[data-edit-run-segment]");
+  if (!path || (event.type === "keydown" && !["Enter", " "].includes(event.key))) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!liveRunCanEdit() || runBuilderStage() === "playback") return;
+  const index = Number(path.dataset.editRunSegment);
+  if (!state.runBuilder?.points?.[index + 1]) return;
+  stopRunPlayback();
+  state.runBuilder.selectedSegmentIndex = index;
+  const panel = document.querySelector("#run-builder-live [data-run-segment-editor]");
+  if (!panel) return;
+  panel.outerHTML = runSegmentEditorHtml(state.runBuilder.points, index);
+  const next = document.querySelector("#run-builder-live [data-run-segment-editor]");
+  bindRunTimingControls(next);
+  paintRunSegmentSelection();
+  // Keep the photo in place and let the rider tap the number to open the keyboard.
+  next.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function runTimeBudget(points = []) {
@@ -11041,13 +11103,19 @@ function runTimingEditorHtml(points) {
 function updateRunTiming(event) {
   const input = event.currentTarget;
   const index = Number(input.dataset.runTimeIndex || 0);
-  if (!state.runBuilder?.points?.[index]) return;
+  if (!state.runBuilder?.points?.[index] || !liveRunCanEdit()) return;
   if (event.type === "input" && (input.value === "" || input.validity?.badInput)) return;
   rememberRunEdit();
   const key = input.hasAttribute("data-run-limit") ? "timeLimitSeconds" : input.dataset.runTimeKey;
   const value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) || Number(input.min)));
   state.runBuilder.points[index] = { ...state.runBuilder.points[index], [key]: value };
   if (event.type !== "input") input.value = String(value);
+  document.querySelectorAll(`#run-builder-live [data-run-time-index="${index}"][data-run-time-key="${key}"]`).forEach(other => {
+    if (other !== input) other.value = String(value);
+  });
+  if (key === "travelSeconds") document.querySelector(`#run-map [data-edit-run-segment="${index}"]`)?.setAttribute("aria-label", `Dot ${index + 1} to dot ${index + 2}: ${value} seconds. Edit travel time`);
+  const segmentTotal = document.querySelector("#run-builder-live [data-run-segment-total]");
+  if (segmentTotal) { const budget = runTimeBudget(state.runBuilder.points); segmentTotal.textContent = `${budget.total}s planned · ${budget.message}`; }
   // Keep the current input, focus and nested scroll containers intact.
   stopRunPlayback();
   const points = state.runBuilder.points;
@@ -11199,8 +11267,9 @@ function runBuilderPanel(runs = [], options = {}) {
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
-          <div id="run-map" class="run-map run-map-${stage} ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view) : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then draw the route first, add every trick, and watch the finished run back.</span></div>`}</div>
-          <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Finish is point ${points.length} · drag any dot to adjust` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Route locked · add the tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
+          <div id="run-map" class="run-map run-map-${stage} ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback") : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then draw the route first, add every trick, and watch the finished run back.</span></div>`}</div>
+          ${stage !== "playback" ? runSegmentEditorHtml(points, builder.selectedSegmentIndex) : ""}
+          <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Tap a line to edit its time · drag dots to adjust` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Tap a line to edit its time · add tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
           ${stage === "route" && selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output>${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
           ${stage === "playback" && points.length ? `<p class="run-watch-total">${runPlaybackDefaultSeconds(points)} seconds planned · ${Math.abs(Math.round(((Number(points[0]?.timeLimitSeconds) || 60) - runPlaybackDefaultSeconds(points))*10)/10)} seconds ${runPlaybackDefaultSeconds(points) > (Number(points[0]?.timeLimitSeconds) || 60) ? "over limit" : "remaining"}</p>${runPlaybackControlsHtml(points, "builder")}` : ""}
         </div>
@@ -13066,16 +13135,16 @@ function bindRunBuilderActions(root = document) {
     state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), stage: button.dataset.runMode };
     await runBuilderRefreshView();
   }));
-  root.querySelectorAll("[data-run-time-index], [data-run-limit]").forEach(input => {
-    input.addEventListener("input", updateRunTiming);
-    input.addEventListener("change", updateRunTiming);
+  bindRunTimingControls(root);
+  root.querySelector("#run-map")?.addEventListener("click", selectRunSegment);
+  root.querySelector("#run-map")?.addEventListener("keydown", selectRunSegment);
+  root.querySelector("#run-builder-form")?.addEventListener("click", event => {
+    if (!event.target.closest("[data-close-run-segment]")) return;
+    delete state.runBuilder.selectedSegmentIndex;
+    document.querySelector("[data-run-segment-editor]")?.setAttribute("hidden", "");
+    paintRunSegmentSelection();
   });
-  root.querySelectorAll("[data-run-time-step]").forEach(button => button.addEventListener("click", event => {
-    event.preventDefault();
-    const input = button.parentElement.querySelector("input");
-    input.value = String(Number(input.value) + Number(button.dataset.runTimeStep));
-    input.dispatchEvent(new Event("change"));
-  }));
+  paintRunSegmentSelection();
 
   root.querySelector("#crop-run-image")?.addEventListener("click", openRunCrop);
   root.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
@@ -13195,7 +13264,7 @@ async function setRunBuilderPhoto(event) {
 
 async function addRunBuilderPoint(event) {
   if (!state.runBuilder?.imageDataUrl || runBuilderStage() !== "route" || state.draggedRunPoint !== null) return;
-  if (performance.now() < state.runPointMapClickBlockUntil || event.target.closest?.(".run-marker, .run-expand")) return;
+  if (performance.now() < state.runPointMapClickBlockUntil || event.target.closest?.(".run-marker, .run-expand, [data-edit-run-segment]")) return;
   stopRunPlayback();
   const map = event.currentTarget.querySelector(".run-map-content") || event.currentTarget;
   const rect = map.getBoundingClientRect();
@@ -13219,13 +13288,14 @@ function updateRunBuilderMapDom(changedIndex = null) {
   const currentSvg = preview.querySelector(".run-line-overlay");
   const paths = currentSvg ? [...currentSvg.querySelectorAll("[data-run-segment]")] : [];
   if (!currentSvg || paths.length !== Math.max(0, points.length - 1)) {
-    const nextSvg = runRouteSvg(points);
+    const nextSvg = runRouteSvg(points, runBuilderStage() !== "playback");
     if (currentSvg) currentSvg.outerHTML = nextSvg;
     else preview.querySelector(".run-map-content").insertAdjacentHTML("beforeend", nextSvg);
   } else if (Number.isInteger(changedIndex)) {
     [changedIndex - 1, changedIndex].forEach((pathIndex) => {
       if (pathIndex < 0 || pathIndex >= points.length - 1 || !paths[pathIndex]) return;
       paths[pathIndex].setAttribute("d", runPathBetween(points[pathIndex], points[pathIndex + 1]));
+      currentSvg.querySelector(`[data-edit-run-segment="${pathIndex}"]`)?.setAttribute("d", paths[pathIndex].getAttribute("d"));
     });
   }
   const markerIndexes = Number.isInteger(changedIndex) ? [changedIndex] : points.map((_point, index) => index);

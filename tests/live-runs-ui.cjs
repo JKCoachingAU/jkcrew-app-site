@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const names=[...new Set([
  ...fs.readFileSync(path.join(__dirname,'run-framing.cjs'),'utf8').match(/const names = (\[[^;]+\]);/)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]))];
-names.push(...['runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','updateRunFinalType','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy'].filter(n=>!names.includes(n)));
+names.push(...['bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','updateRunFinalType','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy'].filter(n=>!names.includes(n)));
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('function runBuilderLoadingHtml('));
 (async()=>{
@@ -94,9 +94,13 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await coach.waitForFunction(()=>inspect().live.session.editor_id==='coach'&&!inspect().live.error);
  await coach.locator('[data-run-builder-stage="tricks"]').last().click();
  await coach.fill('[data-run-trick-index="1"]','Barspin');
- await coach.click('[data-run-time-index="1"][data-run-time-key="travelSeconds"]');
- await coach.fill('[data-run-time-index="1"][data-run-time-key="travelSeconds"]','12');
- await coach.locator('[data-run-time-index="1"][data-run-time-key="travelSeconds"]').press('Tab');
+ // Set travel time by tapping the rendered line while the rider watches live.
+ const timingLine=coach.locator('[data-edit-run-segment="1"]');await timingLine.scrollIntoViewIfNeeded();
+ const lineMiddle=await timingLine.evaluate(el=>{const p=el.getPointAtLength(el.getTotalLength()/2);return new DOMPoint(p.x,p.y).matrixTransform(el.getScreenCTM()).toJSON();});
+ await coach.touchscreen.tap(lineMiddle.x,lineMiddle.y);
+ const lineTime=coach.locator('[data-run-segment-editor] input');
+ await lineTime.fill('12');await lineTime.press('Tab');
+ assert.equal(await coach.locator('.run-timing-row [data-run-time-index="1"][data-run-time-key="travelSeconds"]').inputValue(),'12');
  try { await rider.waitForFunction(()=>inspect().draft.points[1].label==='Barspin'&&inspect().draft.points[1].travelSeconds===12); } catch(e) { console.log('SYNC DEBUG',JSON.stringify({rider:await rider.evaluate(()=>inspect()),coach:await coach.evaluate(()=>inspect()),requests:requests.slice(-8)},null,2));throw e; }
  assert(await rider.locator('#run-title').isDisabled(),'Rider becomes a viewer during coach editing');
  await coach.locator('[data-run-final-type]').selectOption('trick');await coach.fill('[data-run-trick-index="2"]','Flair');await coach.fill('[data-run-time-index="2"][data-run-time-key="holdSeconds"]','3');
