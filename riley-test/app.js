@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.59";
+const RELEASE_VERSION = "2.14.60";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.59" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.60" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9168,12 +9168,12 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
     const label = info.label;
     return `<div class="panel-meta viewer-list-meta">${escapeHtml(label)} · ${complete}/${assignments.length} complete${isPaused ? " · timer paused" : ""}</div>${editor}<div class="viewer-percentage-list">${percentageAssignmentList(assignments, "No Percentage Tricks assigned.", true)}</div>`;
   }
-  const list = assignments.length ? assignments.map((assignment) => {
+  const list = assignments.length ? assignments.map((assignment, index) => {
     const presentation = assignmentPresentation(assignment);
     const done = isAssignmentComplete(assignment);
     return `<div class="viewer-trick-row viewer-attempt-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}">
       <button class="assignment-check" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}" data-assignment-category="${assignment.category}" data-athlete-id="${assignment.athlete_id || entry.athlete.id}" aria-label="${done ? "Untick landed" : "Mark landed"}">${done ? "✓" : ""}</button>
-      <span><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></span>
+      <span>${listId === "lines" ? `<small class="viewer-line-number">Line ${index + 1}</small>` : ""}<strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></span>
     </div>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
   const label = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
@@ -9196,15 +9196,15 @@ function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
     : listId === "percentage"
       ? "Maximum 3 percentage tricks. One trick per line."
       : listId === "lines"
-        ? "One complete 3–4 trick run per row. Example: Manual - Barspin - 180."
+        ? "Keep each complete run in its own numbered box. Example: Manual - Barspin - 180."
         : "One trick per line. Add notes after a dash.";
   return `<details class="viewer-edit-panel">
     <summary>Edit ${escapeHtml(editLabel)}</summary>
     <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
-      <div class="field">
+      ${listId === "lines" ? `<p class="panel-meta">${escapeHtml(helper)}</p><div class="viewer-numbered-lines">${Array.from({ length: Math.max(3, assignments.length) }, (_, index) => `<label class="field viewer-line-field"><span>Line ${index + 1}</span><textarea name="numberedLine" rows="3" placeholder="Enter the full run for Line ${index + 1}">${escapeHtml(assignments[index] ? assignmentLinesForEditor([assignments[index]]) : "")}</textarea></label>`).join("")}</div>` : `<div class="field">
         <label>${escapeHtml(helper)}</label>
         <textarea name="assignmentLines" rows="${listId === "daily" ? 7 : 5}" placeholder="Add tricks here...">${escapeHtml(assignmentLinesForEditor(assignments))}</textarea>
-      </div>
+      </div>`}
       <button class="primary-btn compact-save-btn" type="submit">Save ${escapeHtml(info.label)}</button>
     </form>
   </details>`;
@@ -9523,7 +9523,9 @@ async function saveSessionViewerAssignments(event) {
   const button = formElement.querySelector("button");
   const restoreButton = setButtonBusy(button, "Saving...");
 
-  const editedLines = String(new FormData(formElement).get("assignmentLines") || "").split("\n")
+  const formData = new FormData(formElement);
+  const rows = listId === "lines" ? formData.getAll("numberedLine").map(line => String(line).replace(/\s*\r?\n\s*/g, " ")) : String(formData.get("assignmentLines") || "").split("\n");
+  const editedLines = rows
     .map((line, index) => parseAssignmentLine(line.trim(), index, listId, listId === "daily" ? venue : ""))
     .filter(Boolean)
     .slice(0, listId === "percentage" ? 3 : undefined);

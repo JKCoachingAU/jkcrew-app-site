@@ -11365,3 +11365,9 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 @media (max-width: 640px) {
   #coach-battle-builder-modal { padding-inline: 8px; }
 }
+
+.viewer-numbered-lines { display: grid; gap: 16px; }
+.viewer-line-field { padding: 14px; margin: 0; border: 1px solid var(--line); border-radius: 14px; }
+.viewer-line-field > span, .viewer-line-number { color: var(--coral); font: 800 .8rem var(--mono); text-transform: uppercase; }
+.viewer-line-field textarea { min-height: 110px; resize: vertical; }
+.viewer-trick-row .viewer-line-number { display: block; margin-bottom: 8px; }
