@@ -76,7 +76,7 @@ const functions = names.map(name => {
    const dot=preview.querySelector('.run-marker.play-active').getBoundingClientRect(),label=preview.querySelector('.run-dot-label'),box=label.getBoundingClientRect();
    return {text:label.textContent,visible:!label.hidden,below:box.top>=dot.bottom,inside:box.left>=0&&box.right<=innerWidth&&box.bottom<=innerHeight};
  });
- assert(labelGeometry.visible&&labelGeometry.below&&labelGeometry.inside,'Active trick label should appear below the dot and remain on screen');
+ assert(labelGeometry.visible&&labelGeometry.below&&labelGeometry.inside,'Active trick label should appear below the dot and remain on screen: '+JSON.stringify({photoWidth,photoHeight,width,height,card,crop,labelGeometry}));
  assert(labelGeometry.text.includes('Long trick name'));
  if(process.env.JKCREW_SCREENSHOT&&photoWidth===964&&width===1366&&!card&&!crop){await page.setViewportSize({width:1366,height:1024});await page.screenshot({path:process.env.JKCREW_SCREENSHOT});}
  await page.click('.run-fullscreen-close');

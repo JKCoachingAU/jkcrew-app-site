@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.67";
+const RELEASE_VERSION = "2.14.68";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.67" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.68" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10355,7 +10355,7 @@ function fitFullscreenRunRoute(preview) {
     bottom = Math.max(bottom, rect.bottom - frame.top);
   });
   const margin = 18;
-  const labelSpace = Math.min(96, frame.height * .3);
+  const labelSpace = Math.min(124, frame.height * .4);
   const scale = Math.max(.01, Math.min((frame.width - margin*2) / (right-left), (frame.height-margin*2-labelSpace) / (bottom-top)));
   const dx = frame.width/2 - (frame.width/2 + scale*((left+right)/2-frame.width/2));
   const dy = (frame.height-labelSpace)/2 - (frame.height/2 + scale*((top+bottom)/2-frame.height/2));
@@ -10398,7 +10398,7 @@ function openRunPlaybackFullscreen(event) {
   if (!preview.querySelector("[data-run-playback-callout]")) preview.insertAdjacentHTML("beforeend", `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>`);
   dialog.append(preview);
   const duration = sourceControls?.dataset.runPlaybackSeconds || Math.max(1, JSON.parse(preview.dataset.runTiming || "[]").reduce((sum, point) => sum + point.hold + point.travel, 0));
-  dialog.insertAdjacentHTML("beforeend", `<button type="button" class="run-fullscreen-close" aria-label="Close fullscreen playback">×</button><div class="run-fullscreen-controls" data-run-playback-controls data-run-playback-seconds="${Number(duration)}"><button type="button" data-run-play-toggle>▶ PLAY RUN</button><button type="button" data-run-play-restart aria-label="Restart run playback">↺</button><input type="hidden" data-run-scrub value="0"></div>`);
+  dialog.insertAdjacentHTML("beforeend", `<button type="button" class="run-fullscreen-close" aria-label="Close fullscreen playback">×</button><div class="run-fullscreen-controls" data-run-playback-controls data-run-playback-seconds="${Number(duration)}"><button type="button" data-run-play-toggle>PLAY RUN</button><button type="button" data-run-play-restart aria-label="Restart run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button><input type="hidden" data-run-scrub value="0"></div>`);
   const bounds = source.getBoundingClientRect();
   const photo = preview.querySelector("img");
   const resize = () => {
@@ -10529,7 +10529,7 @@ function formatRunPlaybackTime(seconds = 0) {
 function runPlaybackControlsHtml(points = [], id = "run") {
   const duration = runPlaybackDefaultSeconds(points);
   return `<div class="run-playback-controls" data-run-playback-controls="${escapeHtml(id)}" data-run-playback-seconds="${duration}">
-    <button class="run-playback-main" type="button" data-run-play-toggle>▶ PLAY RUN</button>
+    <button class="run-playback-main" type="button" data-run-play-toggle>PLAY RUN</button>
     <button class="run-playback-restart" type="button" data-run-play-restart aria-label="Restart run playback">↺</button>
     <label class="run-playback-scrub"><span class="sr-only">Playback position</span><input type="range" min="0" max="1000" step="1" value="0" data-run-scrub></label>
     <span class="run-playback-time" data-run-time>${formatRunPlaybackTime(0)} / ${formatRunPlaybackTime(duration)}</span>
@@ -12833,6 +12833,7 @@ function paintRunPlayback(controls, progress = 0) {
   if (callout && activeMarker) {
     const pointNumber = Number(activeMarker.dataset.runPointNumber) || completedMarker + 1;
     const label = String(activeMarker.dataset.runPointLabel || "").trim() || "NO TRICK";
+    callout.style.setProperty("--run-callout-color", activeMarker.style.getPropertyValue("--run-color") || "#20e3c3");
     const number = callout.querySelector("[data-run-playback-number]");
     const caption = callout.querySelector("small");
     const trick = callout.querySelector("[data-run-playback-label]");
@@ -12857,7 +12858,7 @@ function stopRunPlayback(reset = false) {
   if (session?.controls?.isConnected) {
     session.controls.classList.remove("is-playing");
     const button = session.controls.querySelector("[data-run-play-toggle]");
-    if (button) button.textContent = reset ? "▶ PLAY RUN" : "▶ RESUME";
+    if (button) button.textContent = reset ? "PLAY RUN" : "RESUME";
     if (reset) paintRunPlayback(session.controls, 0);
   }
   state.runPlayback = null;
@@ -12877,7 +12878,7 @@ function toggleRunPlayback(event) {
   const session = { controls, duration, progress, startedAt: performance.now() };
   state.runPlayback = session;
   controls.classList.add("is-playing");
-  event.currentTarget.textContent = "Ⅱ PAUSE";
+  event.currentTarget.textContent = "PAUSE";
   const tick = (timestamp) => {
     if (state.runPlayback !== session) return;
     const nextProgress = Math.min(1, session.progress + ((timestamp - session.startedAt) / 1000 / session.duration));
@@ -12885,7 +12886,7 @@ function toggleRunPlayback(event) {
     if (nextProgress >= 1) {
       stopRunPlayback(false);
       const button = controls.querySelector("[data-run-play-toggle]");
-      if (button) button.textContent = "↺ REPLAY";
+      if (button) button.textContent = "REPLAY";
       return;
     }
     state.runPlaybackTimer = window.requestAnimationFrame(tick);
@@ -12900,7 +12901,7 @@ function scrubRunPlayback(event) {
   if (state.runPlayback?.controls === controls) stopRunPlayback(false);
   paintRunPlayback(controls, Number(event.currentTarget.value || 0) / 1000);
   const button = controls.querySelector("[data-run-play-toggle]");
-  if (button) button.textContent = Number(event.currentTarget.value || 0) >= 1000 ? "↺ REPLAY" : "▶ PLAY RUN";
+  if (button) button.textContent = Number(event.currentTarget.value || 0) >= 1000 ? "REPLAY" : "PLAY RUN";
 }
 
 function setRunPlaybackDuration(controls, value) {
@@ -12930,7 +12931,7 @@ function restartRunPlayback(event) {
   stopRunPlayback(false);
   paintRunPlayback(controls, 0);
   const button = controls.querySelector("[data-run-play-toggle]");
-  if (button) button.textContent = "▶ PLAY RUN";
+  if (button) button.textContent = "PLAY RUN";
 }
 
 function bindRunPlaybackControls(root = document) {
