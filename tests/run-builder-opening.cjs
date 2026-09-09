@@ -16,7 +16,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  const escapeHtml=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
  const isCoachRole=role=>role==='coach';const dateLabel=s=>s;const stopRunPlayback=()=>{},closeContestEventModal=()=>{},bindRunPlaybackControls=()=>{};
  const runMapHtml=src=>'<div class="run-map-preview"><img alt="Park photo" src="'+src+'"></div>';
- window.networkCalls=[]; window.courseRequests=[];
+ window.networkCalls=[]; window.courseRequests=[];const handleLiveRunAction=async action=>networkCalls.push('live:'+action);
  const getSharedUpcomingEventData=async()=>{networkCalls.push('events');return new Promise(resolve=>window.resolveEvents=resolve);};
  const getEventCoachRoster=async()=>{networkCalls.push('roster');return [];};
  const getCoachContestRunPlans=async()=>{networkCalls.push('coach-runs');return [];};
@@ -42,6 +42,14 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
   await page.evaluate(()=>courseRequests.at(-1).resolve({image_data_url:photo}));
   await page.locator('#run-photo').waitFor({state:'attached'});
   assert.equal(await page.locator('.run-builder-loading').count(),0);
+ }
+ // Event Build together entry sends its invitation after loading the shared park once.
+ for(const role of ['athlete','coach']){
+  await page.evaluate(role=>{networkCalls.length=0;mountLaunch(role);document.querySelector('#launch').dataset.buildTogether='true';},role);
+  await page.click('#launch');assert(!(await page.evaluate(()=>networkCalls)).includes('live:start'));
+  await page.evaluate(()=>courseRequests.at(-1).resolve({image_data_url:photo}));
+  await page.waitForFunction(()=>networkCalls.includes('live:start'));
+  assert.deepEqual(await page.evaluate(()=>networkCalls),['photo:park','live:start']);
  }
  // No event photo means the editable builder opens without any request.
  await page.evaluate(()=>{networkCalls.length=0;mountLaunch('athlete','');});await page.click('#launch');

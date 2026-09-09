@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const names=[...new Set([
  ...fs.readFileSync(path.join(__dirname,'run-framing.cjs'),'utf8').match(/const names = (\[[^;]+\]);/)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]))];
-names.push(...['runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy'].filter(n=>!names.includes(n)));
+names.push(...['runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','updateRunFinalType','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy'].filter(n=>!names.includes(n)));
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('function runBuilderLoadingHtml('));
 (async()=>{
@@ -20,10 +20,12 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    if(kind==='list')return {data:session?.status==='active'?[structuredClone(session)]:[]};
    const a=args.p_action;
    const wire=value=>JSON.parse(JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item));
-   const ok=()=>({data:{session:wire(session),...(['create','get','claim'].includes(a)?{draft:wire(draft)}:{})}});
+   const ok=()=>({data:{session:wire(session),...(['create','get','claim','accept'].includes(a)?{draft:wire(draft)}:{})}});
    if(a==='create'){
-    session={id:'shared',athlete_id:'rider',coach_id:'coach',athlete_name:'Test Rider',title:args.p_patch.title,version:1,status:'active',editor_id:role==='coach'?'coach':'rider',editor_client:args.p_client_id,lease_until:new Date(Date.now()+45000).toISOString()};draft=structuredClone(args.p_patch);return ok();
+    session={id:'shared',created_by:role==='coach'?'coach':'rider',invitation_status:'pending',expires_at:new Date(Date.now()+86400000).toISOString(),athlete_id:'rider',coach_id:'coach',athlete_name:'Test Rider',title:args.p_patch.title,version:1,status:'active',editor_id:role==='coach'?'coach':'rider',editor_client:args.p_client_id,lease_until:new Date(Date.now()+45000).toISOString()};draft=structuredClone(args.p_patch);return ok();
    }
+   if(a==='accept'){session.invitation_status='accepted';return ok();}
+   if(a==='decline'){session.invitation_status='declined';session.status='ended';return ok();}
    if(a==='get')return ok();
    if(a==='claim'){
     if(session.editor_client&&session.editor_client!==args.p_client_id&&Date.parse(session.lease_until)>Date.now())return {error:{message:'Pass editing first'}};
@@ -48,7 +50,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    let runUndoStack=[],runRedoStack=[];const RUN_PLAYBACK_MAX_SECONDS=3600;
    const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
    const isCoachRole=r=>r==='coach',messageFrom=e=>e.message||String(e),cacheClear=()=>{},getLinkedCoachIdForCurrentAthlete=async()=>'coach';
-   window.messages=[];const notify=m=>messages.push(m);const setSyncStatus=()=>{};
+   window.soundCount=0;const playNotificationSound=()=>soundCount++;window.messages=[];const notify=m=>messages.push(m);const setSyncStatus=()=>{};
    const renderContests=async()=>{document.querySelector('#view').innerHTML=state.runBuilder?runBuilderPanel([],{live:true,showRunList:false}):'<h1>Events & runs</h1>';if(state.runBuilder)bindRunBuilderActions();};
    const navigate=async v=>{state.view=v;await renderContests();};const renderProfile=renderContests,renderStudentProfile=renderContests;
    const client={rpc:(name,args)=>server('rpc',args),removeChannel:async()=>{},channel:()=>({on(){return this},subscribe(callback){callback('SUBSCRIBED');return this}}),from:()=>{
@@ -66,15 +68,20 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  console.log('Starting two-device scenario');await rider.evaluate(()=>seed());
  await rider.click('[data-live-run-action="start"]');
  await rider.waitForFunction(()=>inspect().live?.session.id==='shared');
- await coach.evaluate(async()=>{state.runBuilder=null;await refreshLiveRunInvites();});
- assert(await coach.getByRole('button',{name:'Open live run'}).isVisible());
- await coach.click('[data-join-live-run]');
+ await coach.evaluate(async()=>{await seed();state.runBuilder.title='Unfinished private draft';await renderContests();await refreshLiveRunInvites();});
+ assert(await coach.locator('#live-run-invitation').isVisible());
+ if(process.env.JKCREW_SCREENSHOT)await coach.screenshot({path:'/tmp/jkcrew-live-invitation.png'});
+ assert.equal(await coach.evaluate(()=>soundCount),1);await coach.evaluate(()=>refreshLiveRunInvites());assert.equal(await coach.evaluate(()=>soundCount),1,'Polling does not repeat the sound');
+ coach.once('dialog',dialog=>dialog.dismiss());await coach.click('#live-run-invitation [data-accept-session]');
+ assert.equal(await coach.locator('#run-title').inputValue(),'Unfinished private draft');assert.equal(session.invitation_status,'pending','Cancelling the draft warning does not accept');
+ coach.once('dialog',dialog=>dialog.accept());await coach.click('#live-run-invitation [data-accept-session]');
  await coach.waitForFunction(()=>inspect().live?.session.id==='shared');
  assert(await coach.locator('#run-title').isDisabled());
  // One device moves a dot; the other receives the actual updated route.
+ await rider.locator('[data-run-point-index="1"]').scrollIntoViewIfNeeded();
  const marker=await rider.locator('[data-run-point-index="1"]').boundingBox();
  await rider.mouse.move(marker.x+marker.width/2,marker.y+marker.height/2);await rider.mouse.down();await rider.mouse.move(marker.x+35,marker.y+20,{steps:4});await rider.mouse.up();
- await coach.waitForFunction(()=>inspect().draft.points[1].x>45);
+ try { await coach.waitForFunction(()=>inspect().draft.points[1].x>45); } catch(e) { console.log('Drag debug',marker,await rider.evaluate(()=>({points:inspect().draft.points,live:inspect().live})),await coach.evaluate(()=>({points:inspect().draft.points,live:inspect().live})));throw e; }
  assert(!requests.filter(r=>r.args?.p_action==='patch').some(r=>'imageDataUrl' in r.args.p_patch),'Normal edits do not resend park photo');
  await coach.click('[data-run-expand]');
  await rider.fill('#run-title','Finals with coach');
@@ -92,19 +99,25 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await coach.locator('[data-run-time-index="1"][data-run-time-key="travelSeconds"]').press('Tab');
  try { await rider.waitForFunction(()=>inspect().draft.points[1].label==='Barspin'&&inspect().draft.points[1].travelSeconds===12); } catch(e) { console.log('SYNC DEBUG',JSON.stringify({rider:await rider.evaluate(()=>inspect()),coach:await coach.evaluate(()=>inspect()),requests:requests.slice(-8)},null,2));throw e; }
  assert(await rider.locator('#run-title').isDisabled(),'Rider becomes a viewer during coach editing');
+ await coach.locator('[data-run-final-type]').selectOption('trick');await coach.fill('[data-run-trick-index="2"]','Flair');await coach.fill('[data-run-time-index="2"][data-run-time-key="holdSeconds"]','3');
+ await rider.waitForFunction(()=>inspect().draft.points[2].isTrick&&inspect().draft.points[2].label==='Flair'&&inspect().draft.points[2].holdSeconds===3);
+ await coach.click('[data-run-mode="playback"]');await coach.click('[data-run-expand]');
+ await coach.locator('.run-fullscreen-playback [data-run-scrub]').evaluate(el=>{el.value='1000';el.dispatchEvent(new Event('input',{bubbles:true}));});
+ assert(await coach.locator('.run-fullscreen-playback [data-run-playback-label]').isVisible());assert.equal(await coach.locator('.run-fullscreen-playback [data-run-playback-label]').textContent(),'Flair');await coach.click('.run-fullscreen-close');await coach.click('[data-run-mode="route"]');
+ assert.equal(await coach.locator('#run-notes').count(),0);assert.equal(await coach.getByText('COMPLETE 3 STEPS TO SAVE',{exact:true}).count(),0);
  // A failed write freezes editing and keeps the local draft. Retry sends it safely.
- failPatch=true;await coach.fill('#run-notes','Keep speed into the second jump');
+ failPatch=true;await coach.fill('#run-title','Safer finals');
  await coach.waitForFunction(()=>inspect().live.unsynced===true);
- assert.equal(await coach.locator('#run-notes').inputValue(),'Keep speed into the second jump');
+ assert.equal(await coach.locator('#run-title').inputValue(),'Safer finals');
  await coach.click('[data-live-run-action="retry"]');
  await coach.waitForFunction(()=>!inspect().live.error&&!inspect().live.unsynced);
- await rider.waitForFunction(()=>inspect().draft.notes==='Keep speed into the second jump');
+ await rider.waitForFunction(()=>inspect().draft.title==='Safer finals');
  // A committed write with a lost response is recognised on reconnect.
- failPatch='after';await coach.fill('#run-notes','Keep speed into the second jump. Stay relaxed.');
+ failPatch='after';await coach.fill('#run-title','Safer finals. Version two.');
  await coach.waitForFunction(()=>inspect().live.unsynced===true);
  await coach.click('[data-live-run-action="retry"]');
  await coach.waitForFunction(()=>!inspect().live.error&&!inspect().live.unsynced);
- await rider.waitForFunction(()=>inspect().draft.notes.endsWith('Stay relaxed.'));
+ await rider.waitForFunction(()=>inspect().draft.title.endsWith('Version two.'));
  if(process.env.JKCREW_SCREENSHOT){await coach.evaluate(()=>window.scrollTo(0,0));await coach.screenshot({path:process.env.JKCREW_SCREENSHOT,fullPage:true});}
  // Handover then the rider saves the latest coach edits exactly once.
  await coach.click('[data-live-run-action="release"]');
@@ -114,7 +127,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await rider.click('[data-run-mode="playback"]');
  await rider.click('#run-builder-form button[type="submit"]');
  await rider.waitForFunction(()=>inspect().live===null);
- assert.equal(saves,1);assert.equal(draft.points[1].label,'Barspin');assert.equal(draft.points[1].travelSeconds,12);assert.equal(draft.notes,'Keep speed into the second jump. Stay relaxed.');
+ assert.equal(saves,1);assert.equal(draft.points[1].label,'Barspin');assert.equal(draft.points[1].travelSeconds,12);assert.equal(draft.title,'Safer finals. Version two.');
  await coach.waitForFunction(()=>inspect().live.session.status==='saved');
  assert(await coach.locator('#run-title').isDisabled());
  assert.deepEqual(errors,[]);

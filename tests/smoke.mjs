@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.73";
+const version = "2.14.74";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1239,7 +1239,7 @@ assert(functionBody("currentRunFormState").includes("coursePhotoLoaded: Boolean(
 assert(functionBody("currentRunFormState").includes("stage: runBuilderStage()"), "The active Run Builder step must survive local editor refreshes");
 assert(functionBody("setRunBuilderPhoto").includes("coursePhotoLoaded: false"), "Choosing a different private photo must clear the event-course label");
 const runBuilderMarkup = functionBody("runBuilderPanel");
-for (const control of ['id="run-photo"', 'id="run-map"', "runBuilderStepsHtml(stage, points.length)", "runBuilderRouteEditorHtml", "runBuilderTrickEditorHtml", "runBuilderPlaybackEditorHtml", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder"']) {
+for (const control of ['id="run-photo"', 'id="run-map"', "runBuilderStepsHtml(stage, points.length)", "runBuilderRouteEditorHtml", "runBuilderTrickEditorHtml", "runBuilderPlaybackEditorHtml", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder-top"']) {
   assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
 }
 assert(functionBody("runBuilderStepsHtml").includes('"route", "01", "Draw route"'), "Run Builder must begin with drawing the route");
@@ -1258,8 +1258,8 @@ assert(runBuilderMarkup.includes('builder.coursePhotoLoaded ? "Event course load
 assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
 assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
-assert(runBuilderMarkup.includes('stage === "playback"'), "Saving a run must only be available after playback is reached");
-assert(runBuilderMarkup.includes("COMPLETE 3 STEPS TO SAVE"), "Earlier Run Builder steps must explain why Save is unavailable");
+assert(runBuilderMarkup.includes('points.length < 2 ? "disabled"'), "Saving requires a route with at least two dots");
+assert(!runBuilderMarkup.includes("COMPLETE 3 STEPS TO SAVE") && !runBuilderMarkup.includes('id="run-notes"'), "Remove the redundant circled bottom section");
 const runBuilderBindings = functionBody("bindRunBuilderActions");
 for (const binding of ["setRunBuilderPhoto", "addRunBuilderPoint", "startRunPointDrag", "selectRunPoint", "setRunBuilderStage", "updateRunBuilderTrick", "advanceRunBuilderTrick", "updateSelectedRunPoint", "playFinishedRunBuilder", "bindRunPlaybackControls", "saveRunPlan", "closeRunBuilder"]) {
   assert(runBuilderBindings.includes(binding), `Run Builder must bind ${binding}`);
@@ -1372,7 +1372,7 @@ assert(functionBody("toggleRunPlayback").includes("requestAnimationFrame"), "Run
 assert(functionBody("playFinishedRunBuilder").includes('stage: "playback"'), "Finishing trick entry must open the playback step before starting the run");
 assert(!functionBody("playFinishedRunBuilder").includes("missingTrickIndex"), "Playback must allow unnamed dots");
 assert(functionBody("runMapHtml").includes("NO TRICK"), "Unnamed interior dots must show NO TRICK in playback");
-assert(functionBody("saveRunPlan").includes('runBuilderStage() !== "playback"'), "Pressing Enter must not bypass the route, trick and playback sequence");
+assert(!functionBody("saveRunPlan").includes('runBuilderStage() !== "playback"'), "A valid draft can be saved before reaching Watch");
 const formatPlaybackForTest = new Function(`const RUN_PLAYBACK_MAX_SECONDS = 60; ${functionBody("formatRunPlaybackTime")}; return formatRunPlaybackTime;`)();
 assert.equal(formatPlaybackForTest(60), "01:00", "The 60-second playback limit must display as 01:00");
 assert(!functionBody("saveRunPlan").includes("points.length"), "Saving must not force a fixed number of run dots");

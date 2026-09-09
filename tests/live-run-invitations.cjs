@@ -1,0 +1,47 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
+(async()=>{
+ const db=new PGlite();
+ await db.exec(`create schema auth;create schema private;create role anon;create role authenticated;
+ grant usage on schema public,auth to authenticated;
+ create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ create table profiles(id uuid primary key,role text,display_name text);
+ create table coach_athletes(coach_id uuid,athlete_id uuid);
+ create table run_plans(id uuid primary key default gen_random_uuid(),athlete_id uuid,coach_id uuid,created_by uuid,title text,venue text,plan_type text,notes text,image_data_url text,points jsonb,contest_item_id uuid);
+ create table private.test_notifications(recipient uuid,kind text,title text,body text,view text,payload jsonb,source text unique);
+ create function private.emit_jkcrew_notification(uuid,text,text,text,text,jsonb,text,text) returns void language sql as $$insert into private.test_notifications values($1,$2,$3,$4,$5,$6,$7) on conflict(source) do nothing$$;
+ grant select on profiles,coach_athletes to authenticated;
+ alter table coach_athletes enable row level security;
+ create policy linked on coach_athletes for select to authenticated using(coach_id=auth.uid() or athlete_id=auth.uid());`);
+ const migration=name=>fs.readFileSync(path.join(__dirname,'../supabase/migrations',fs.readdirSync(path.join(__dirname,'../supabase/migrations')).find(f=>f.endsWith('_'+name+'.sql'))),'utf8');
+ await db.exec(migration('live_run_sessions'));
+ const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+ const rider=id(1),coach=id(2),stranger=id(3),parent=id(4),riderTab=id(10),coachTab=id(11);
+ await db.query("insert into profiles values($1,'athlete','Rider'),($2,'coach','Coach'),($3,'athlete','Other'),($4,'parent','Parent')",[rider,coach,stranger,parent]);await db.query('insert into coach_athletes values($1,$2)',[coach,rider]);
+ const as=async who=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[who]);await db.exec('set role authenticated')};
+ let session=null,tab=riderTab;
+ const call=async(action,patch={})=>(await db.query('select live_run_action($1,$2,$3,$4,$5,$6,$7) result',[action,session?.id||null,tab,session?.version||null,JSON.stringify(patch),rider,coach])).rows[0].result;
+ const draft={title:'Finals',imageDataUrl:'photo',points:[{x:10,y:10},{x:90,y:90,label:'Flair',isTrick:true,holdSeconds:3}],view:{scale:1,x:0,y:0}};
+ await as(rider);session=(await call('create',draft)).session;const legacyId=session.id;
+ await db.exec('reset role');await db.exec(migration('live_run_invitations'));
+ assert.equal((await db.query('select invitation_status from run_live_sessions where id=$1',[legacyId])).rows[0].invitation_status,'accepted','Existing drafts remain usable without a new invitation');
+ await as(rider);session=(await call('create',draft)).session;assert.equal(session.invitation_status,'pending');
+ const invitedId=session.id;await assert.rejects(()=>call('accept'),/other person/);await call('get');
+ for(const who of [stranger,parent]){await as(who);for(const action of ['accept','decline','get','claim'])await assert.rejects(()=>call(action),/private/)}
+ await as(coach);tab=coachTab;await assert.rejects(()=>call('get'),/Accept/);await assert.rejects(()=>call('claim'),/Accept/);
+ let accepted=await call('accept');session=accepted.session;assert.equal(session.invitation_status,'accepted');assert.equal(accepted.draft.title,'Finals');assert.equal((await call('accept')).session.id,invitedId,'Accept retries are idempotent');
+ await assert.rejects(()=>call('claim'),/Pass editing/);
+ await as(rider);tab=riderTab;session=(await call('release')).session;
+ await as(coach);tab=coachTab;session=(await call('claim')).session;session=(await call('patch',{title:'Reviewed finals'})).session;
+ await db.exec('reset role');let notes=(await db.query('select * from private.test_notifications order by source')).rows;
+ assert.equal(notes.length,2,'Invite plus acceptance only; edits/heartbeats do not alert repeatedly');assert.equal(notes.find(n=>n.kind==='live_run_invite').recipient,coach);assert.equal(notes.find(n=>n.kind==='live_run_response').recipient,rider);
+ // Coach-initiated requests notify the rider; decline ends only that session.
+ await as(coach);session=(await call('create',draft)).session;const declinedId=session.id;
+ await as(rider);tab=riderTab;session=(await call('decline')).session;assert.equal(session.status,'ended');assert.equal(session.invitation_status,'declined');await assert.rejects(()=>call('accept'),/finished/);
+ await db.exec('reset role');notes=(await db.query('select * from private.test_notifications where payload->>\'live_run_id\'=$1',[declinedId])).rows;assert.equal(notes.length,2);assert.equal(notes.find(n=>n.kind==='live_run_invite').recipient,rider);
+ await as(coach);tab=coachTab;session=(await call('create',draft)).session;
+ await db.exec('reset role');await db.query("update run_live_sessions set expires_at=now()-interval '1 second' where id=$1",[session.id]);
+ await as(rider);await assert.rejects(()=>call('accept'),/finished/);
+ await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from run_plans')).rows[0].n,0,'Inviting never creates or changes saved runs');
+ await db.close();console.log('PASS: legacy sessions preserved, both invite directions, authorized acceptance/decline, idempotence, one notification per decision, no alerts on edits, expired/private requests rejected and saved runs untouched.');
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.73";
+const RELEASE_VERSION = "2.14.74";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.73" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.74" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1292,6 +1292,7 @@ async function handleSession(session) {
   cancelScreenLoading();
   clearInterval(state.timer);
   teardownRealtimeSync();
+  document.querySelector("#live-run-invitation")?.remove();
   const nextUserId = session?.user?.id || "";
   if ((state.user?.id || "") !== nextUserId) {
     state.runBuilder = null;
@@ -1816,7 +1817,9 @@ async function showNotificationDrawer() {
       const view = button.dataset.notificationView || "home";
       await markNotificationRead(button.dataset.appNotification).catch(() => {});
       close();
-      await navigate(view);
+      const item = items.find(item => item.id === button.dataset.appNotification);
+      if (item?.notification_type === "live_run_invite" && item.payload?.live_run_id) await openLiveRunInvitation(item.payload.live_run_id);
+      else await navigate(view);
       await refreshNotificationCentre();
     }));
   } catch (error) {
@@ -2322,6 +2325,7 @@ async function setupRealtimeSync() {
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "app_notifications", filter: `recipient_id=eq.${state.user.id}` }, (payload) => {
     const item = payload.new || {};
     refreshNotificationCentre();
+    if (item.notification_type === "live_run_invite") { void refreshLiveRunInvites(); return; }
     if (item.title) {
       notify(item.title);
       if (item.payload?.celebration === "weekly_challenge") showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: "+5 leaderboard points", message: item.body || "Challenge complete. Massive work!" });
@@ -8014,11 +8018,11 @@ function coachEventAttendeeRunActionHtml(item = {}, attendee = {}, runs = [], ro
   if (!isCoachRole(state.profile?.role) || attendee.athlete_id === state.user?.id || !roster.some((athlete) => athlete.id === attendee.athlete_id)) return "";
   const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === attendee.athlete_id && !run.archived_at);
   const riderName = attendee.profile?.display_name || "JKCREW rider";
-  return riderRuns.length
+  const runAction = riderRuns.length
     ? `<button class="secondary-btn compact-btn contest-rider-run-button" type="button" data-view-rider-event-runs="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}">VIEW RIDER'S RUN${riderRuns.length > 1 ? `S · ${riderRuns.length}` : ""}</button>`
     : `<button class="secondary-btn compact-btn contest-rider-run-button create" type="button" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>CREATE RUN</button>`;
+  return `${runAction}<button type="button" class="primary-btn compact-btn contest-rider-run-button" data-build-together="true" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>BUILD TOGETHER</button>`;
 }
-
 function contestEventCourseHtml(item = {}, viewOptions = {}) {
   const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
   const coachView = isCoachRole(state.profile?.role) && !parentView;
@@ -8047,7 +8051,7 @@ function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []
     ${coachView ? coachContestEventEditorHtml(item) : ""}
     ${coachView ? coachEventAttendanceEditorHtml(item, attendees, roster) : ""}
     <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : parentView ? "Private run plans stay protected" : "Your run plan stays private"}</strong><p>${coachView ? "The shared course photo is separate. Each rider's route, trick list, notes and private run photo remain visible only to that rider and their linked coach." : parentView ? "You can view the shared event and clean course photo. Rider routes, numbered dots, trick notes and private run photos are never shown on this parent page." : `The shared course photo never includes another rider's plan. Other riders cannot see your route, tricks, notes or private run photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
-    ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="secondary-btn" type="button" data-rider-saved-runs="${escapeHtml(item.id)}">VIEW MY SAVED RUNS</button><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
+    ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="secondary-btn" type="button" data-rider-saved-runs="${escapeHtml(item.id)}">VIEW MY SAVED RUNS</button><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button><button class="secondary-btn" type="button" data-build-together="true" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD TOGETHER</button></div>` : ""}
   </section>`;
 }
 
@@ -8546,7 +8550,7 @@ function liveRunBarHtml() {
   const editor = s.editor_id === s.athlete_id ? (s.athlete_name || "Rider") : "Coach";
   const available = !s.editor_client || Date.parse(s.lease_until) <= Date.now();
   const saved = s.status === "saved", ended = s.status !== "active";
-  const status = l.error ? l.error : !navigator.onLine ? "Connection lost · edits paused" : saved ? "Run saved by the rider" : ended ? "Live session ended" : l.busy ? "Connecting…" : l.sending ? "Syncing edits…" : mine ? "Your turn to edit · changes synced" : available ? "Choose Edit run when you’re ready" : `${editor} is editing · ${l.connected ? "live view" : "checking for updates"}`;
+  const status = l.error ? l.error : !navigator.onLine ? "Connection lost · edits paused" : saved ? "Run saved by the rider" : ended ? "Live session ended" : l.busy ? "Connecting…" : s.invitation_status === "pending" ? "Invitation sent · waiting for acceptance" : l.sending ? "Syncing edits…" : mine ? "Your turn to edit · changes synced" : available ? "Choose Edit run when you’re ready" : `${editor} is editing · ${l.connected ? "live view" : "checking for updates"}`;
   return `<div class="run-live-bar ${l.error ? "has-error" : "is-live"}"><div><strong>Build together · ${escapeHtml(s.athlete_name || "Private run")}</strong><small role="status">${escapeHtml(status)}</small><small>${ended ? "Close to return to your runs." : "One person edits at a time. The rider saves the finished run."}</small></div><div class="run-live-actions">
     ${l.error ? `<button type="button" data-live-run-action="retry">Retry connection</button>${l.unsynced ? `<button type="button" data-live-run-action="local">Keep my edits as a private draft</button><button type="button" data-live-run-action="latest">Load shared version</button>` : ""}` : !ended ? `<button type="button" data-live-run-action="${mine ? "release" : "claim"}" ${l.busy || (!mine && !available) ? "disabled" : ""}>${mine ? "Pass editing" : "Edit run"}</button>` : ""}
     ${!ended && !l.error ? `<button type="button" data-live-run-action="leave">Leave session</button>` : ""}
@@ -8561,7 +8565,7 @@ function paintLiveRunControls() {
   if (bar && bar.innerHTML !== html) bar.innerHTML = html;
   const locked = !liveRunCanEdit();
   root.classList.toggle("run-live-readonly", Boolean(liveRun && locked));
-  root.querySelectorAll("#run-builder-form input:not([data-run-scrub]), #run-builder-form textarea, #run-builder-form button").forEach(el => {
+  root.querySelectorAll("#run-builder-form input:not([data-run-scrub]), #run-builder-form textarea, #run-builder-form select, #run-builder-form button").forEach(el => {
     const viewControl = el.matches("[data-run-mode], [data-run-builder-stage], [data-run-play-toggle], [data-run-play-restart], [data-run-expand], #close-run-builder");
     if (viewControl) return;
     if (liveRun && (locked || el.matches("[data-run-copy]") || (el.type === "submit" && state.user.id !== liveRun.session.athlete_id))) {
@@ -8699,7 +8703,7 @@ async function leaveLiveRun() {
   } catch (error) { notify(messageFrom(error), "error"); return false; }
 }
 
-async function joinLiveRun(id) {
+async function joinLiveRun(id, accept = false) {
   if (liveRunJoining) return;
   if (liveRun?.session.id === id) { await navigate("contests"); return; }
   if (liveRun && !await leaveLiveRun()) return;
@@ -8707,12 +8711,13 @@ async function joinLiveRun(id) {
   const clientId = crypto.randomUUID(), userId = state.user.id, originView = state.view;
   liveRunJoining = true;
   try {
-    const result = await liveRunRequest("get", { session: { id }, clientId });
+    const result = await liveRunRequest(accept ? "accept" : "get", { session: { id }, clientId });
     if (state.user?.id !== userId || state.view !== originView) return;
     if (result.session.status !== "active") throw new Error("This live session has finished.");
     state.runBuilder = { ...result.draft, stage: "route", athleteId: result.session.athlete_id, athleteName: result.session.athlete_name };
     runUndoStack = []; runRedoStack = [];
     connectLiveRun(result, clientId);
+    document.querySelector("#live-run-invitation")?.remove();
     await navigate("contests");
   } catch (error) { notify(messageFrom(error), "error"); }
   finally { liveRunJoining = false; }
@@ -8724,7 +8729,7 @@ async function handleLiveRunAction(action) {
   try {
     if (action === "start") {
       if (liveRunStarting) return;
-      if (!state.runBuilder?.imageDataUrl) return notify("Choose the park photo, then tap Build together.");
+      if (!state.runBuilder) return;
       liveRunStarting = true;
       const coach = isCoachRole(state.profile?.role);
       const athleteId = coach ? (state.runBuilder.athleteId || state.selectedAthleteId) : state.user.id;
@@ -8743,7 +8748,7 @@ async function handleLiveRunAction(action) {
         state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), id: null, athleteId, athleteName: result.session.athlete_name };
         connectLiveRun(result, clientId);
         refreshMountedRunBuilder();
-        notify("Live draft ready. Open Build together on the other account’s home screen or Events & runs.");
+        notify("Invitation sent. Waiting for the other person to accept.");
       } finally { restore(); }
       return;
     }
@@ -8808,22 +8813,70 @@ async function saveLiveRun() {
   finally { if (liveRun === l) { l.busy = false; paintLiveRunControls(); } }
 }
 
+const seenLiveRunInvites = new Set();
+function liveRunInviteSeen(id) {
+  const key = `${state.user?.id}:${id}`;
+  if (seenLiveRunInvites.has(key)) return true;
+  try { return JSON.parse(localStorage.getItem(`jkcrew-live-invites:${state.user?.id}`) || "[]").includes(id); } catch { return false; }
+}
+
+function showLiveRunInvitation(session, force = false) {
+  if (!state.user?.id || session.created_by === state.user.id || session.invitation_status !== "pending" ||
+      Date.parse(session.expires_at) <= Date.now() || document.hidden || (!force && liveRunInviteSeen(session.id))) return;
+  if (document.querySelector("#live-run-invitation")) return;
+  seenLiveRunInvites.add(`${state.user.id}:${session.id}`);
+  try {
+    const key = `jkcrew-live-invites:${state.user.id}`;
+    const seen = JSON.parse(localStorage.getItem(key) || "[]");
+    localStorage.setItem(key, JSON.stringify([...new Set([...seen, session.id])].slice(-100)));
+  } catch {}
+  const popup = document.createElement("aside");
+  popup.id = "live-run-invitation"; popup.className = "live-run-invitation"; popup.dataset.sessionId = session.id;
+  popup.setAttribute("role", "alertdialog"); popup.setAttribute("aria-labelledby", "live-run-invite-title");
+  popup.innerHTML = `<div class="eyebrow">Live run invitation</div><h2 id="live-run-invite-title">Build together?</h2><p>${escapeHtml(session.created_by === session.athlete_id ? session.athlete_name || "Your rider" : "Your coach")} wants to plan a run with you.</p><strong>${escapeHtml(session.title || "Shared run")}</strong><div class="actions"><button type="button" class="primary-btn" data-accept-session>Accept session</button><button type="button" class="secondary-btn" data-decline-session>Decline</button><button type="button" class="secondary-btn" data-later-session>Not now</button></div>`;
+  document.body.append(popup); playNotificationSound("update");
+  popup.querySelector("[data-later-session]").onclick = () => popup.remove();
+  popup.querySelector("[data-accept-session]").onclick = async event => {
+    const restore = setButtonBusy(event.currentTarget, "Opening…");
+    try { await joinLiveRun(session.id, true); } finally { restore(); }
+  };
+  popup.querySelector("[data-decline-session]").onclick = async event => {
+    const restore = setButtonBusy(event.currentTarget, "Declining…");
+    try { await liveRunRequest("decline", { session, clientId: crypto.randomUUID() }); popup.remove(); void refreshLiveRunInvites(); }
+    catch (error) { notify(messageFrom(error), "error"); } finally { restore(); }
+  };
+}
+
+async function openLiveRunInvitation(id) {
+  const userId = state.user?.id;
+  const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,athlete_id,created_by,invitation_status,status,expires_at").eq("id", id).single();
+  if (userId !== state.user?.id) return;
+  if (error || !data || data.status !== "active" || Date.parse(data.expires_at) <= Date.now()) return notify("This live session is no longer available.");
+  if (data.invitation_status === "pending" && data.created_by !== userId) { document.querySelector("#live-run-invitation")?.remove(); showLiveRunInvitation(data, true); }
+  else await joinLiveRun(id);
+}
+
 async function refreshLiveRunInvites() {
   if (liveRunDiscoveryBusy || !state.user?.id || !["athlete", "coach", "admin"].includes(state.profile?.role) ||
-    !["home", "command", "contests", "student"].includes(state.view) || document.querySelector("#run-builder-live") || document.hidden) return;
+    document.hidden) return;
   const userId = state.user.id, view = state.view, host = document.querySelector("#view");
   if (!host) return;
   liveRunDiscoveryBusy = true;
   try {
-    const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,updated_at")
+    const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,athlete_id,coach_id,created_by,invitation_status,expires_at,updated_at")
       .eq(isCoachRole(state.profile.role) ? "coach_id" : "athlete_id", userId).eq("status", "active")
       .gt("expires_at", new Date().toISOString()).order("updated_at", { ascending: false }).limit(20);
-    if (error || userId !== state.user?.id || view !== state.view || document.querySelector("#run-builder-live") || !host.isConnected) return;
+    if (error || userId !== state.user?.id) return;
+    const popup = document.querySelector("#live-run-invitation");
+    if (popup && !(data || []).some(s => s.id === popup.dataset.sessionId && s.invitation_status === "pending")) popup.remove();
+    const invitation = (data || []).find(s => s.created_by !== userId && s.invitation_status === "pending" && !liveRunInviteSeen(s.id));
+    if (invitation) showLiveRunInvitation(invitation);
+    if (view !== state.view || !["home","command","contests","student"].includes(view) || document.querySelector("#run-builder-live") || !host.isConnected) return;
     let card = host.querySelector("#live-run-invites");
     if (!data?.length) { card?.remove(); return; }
     if (!card) { card = document.createElement("section"); card.id = "live-run-invites"; card.className = "panel run-live-invites"; host.prepend(card); }
-    const html = `<div><div class="eyebrow">Private rider + coach sessions</div><h2>Build together</h2></div>${data.map(s => `<div class="run-live-invite"><div><strong>${escapeHtml(s.athlete_name)}</strong><small>${escapeHtml(s.title)}</small></div><button type="button" class="secondary-btn compact-btn" data-join-live-run="${s.id}">Open live run</button></div>`).join("")}`;
-    if (card.innerHTML !== html) { card.innerHTML = html; card.querySelectorAll("[data-join-live-run]").forEach(button => { button.onclick = async () => { const restore = setButtonBusy(button, "Opening…"); try { await joinLiveRun(button.dataset.joinLiveRun); } finally { restore(); } }; }); }
+    const html = `<div><div class="eyebrow">Private rider + coach sessions</div><h2>Build together</h2></div>${data.map(s => `<div class="run-live-invite"><div><strong>${escapeHtml(s.athlete_name)}</strong><small>${escapeHtml(s.title)}</small></div><button type="button" class="secondary-btn compact-btn" data-join-live-run="${s.id}" data-accept-live-run="${s.created_by !== userId && s.invitation_status === "pending"}">${s.created_by !== userId && s.invitation_status === "pending" ? "Accept session" : "Open live run"}</button></div>`).join("")}`;
+    if (card.innerHTML !== html) { card.innerHTML = html; card.querySelectorAll("[data-join-live-run]").forEach(button => { button.onclick = async () => { const restore = setButtonBusy(button, "Opening…"); try { await joinLiveRun(button.dataset.joinLiveRun, button.dataset.acceptLiveRun === "true"); } finally { restore(); } }; }); }
   } catch (error) { console.warn("Live run list temporarily unavailable", error); }
   finally { liveRunDiscoveryBusy = false; }
 }
@@ -8875,7 +8928,10 @@ async function loadRunBuilderCourse(builder = state.runBuilder) {
     builder.courseLoadError = true;
   }
   // A late photo must never replace another run or take over a different tab.
-  if (state.runBuilder === builder && state.view === "contests") refreshMountedRunBuilder();
+  if (state.runBuilder === builder && state.view === "contests") {
+    refreshMountedRunBuilder();
+    if (builder.startTogether && !builder.courseLoadError) { builder.startTogether = false; await handleLiveRunAction("start"); }
+  }
 }
 
 function skipRunBuilderCourse() {
@@ -8914,6 +8970,7 @@ async function openRunBuilder(event = null) {
     athleteName,
     imageDataUrl: "",
     coursePhotoLoaded: false,
+    startTogether: Boolean(button?.dataset.buildTogether),
     loadingCourse: Boolean(contestItemId),
   };
   const builder = state.runBuilder;
@@ -8923,6 +8980,7 @@ async function openRunBuilder(event = null) {
     if (state.runBuilder !== builder || state.view !== "contests") return;
     document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "instant", block: "start" });
     if (contestItemId) void loadRunBuilderCourse(builder);
+    else if (builder.startTogether) { builder.startTogether = false; await handleLiveRunAction("start"); }
   } finally { restore(); }
 }
 
@@ -10662,7 +10720,7 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   const framing = runView(view);
   const markers = safePoints.map((point, index) => {
     const pointNumber = index + 1;
-    const endpoint = index === 0 || index === safePoints.length - 1;
+    const endpoint = index === 0 || (index === safePoints.length - 1 && !point.isTrick);
     const label = endpoint ? (index === 0 ? "Start location" : "Finish location") : String(point.label || "").trim() || "NO TRICK";
     const selected = editable && Number(state.runBuilder?.selectedPointIndex) === index;
     return `<button type="button" class="run-marker ${endpoint ? "run-endpoint" : ""} ${selected ? "is-selected" : ""}" data-run-point-number="${pointNumber}" data-run-point-label="${escapeHtml(label)}" ${editable ? `data-run-point-index="${index}" data-select-run-point="${index}"` : "tabindex=\"-1\""} aria-label="${escapeHtml(`${pointNumber}. ${label}`)}" style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
@@ -10898,7 +10956,7 @@ function openRunPlaybackFullscreen(event) {
 function runTiming(points = []) {
   const fallback = Math.max(5, points.length * 2) / Math.max(1, points.length - 1);
   return points.map((point, index) => ({
-    hold: index > 0 && index < points.length - 1 ? Math.max(0, Math.min(120, Number(point.holdSeconds) || 0)) : 0,
+    hold: index > 0 && (index < points.length - 1 || point.isTrick) ? Math.max(0, Math.min(120, Number(point.holdSeconds) || 0)) : 0,
     travel: index < points.length - 1 ? Math.max(0.1, Math.min(120, Number(point.travelSeconds) || fallback)) : 0,
   }));
 }
@@ -10938,9 +10996,9 @@ async function restoreRunEdit(event) {
 
 function runTimingRowHtml(points, index) {
   const timing = runTiming(points)[index];
-  if (!timing || index === points.length - 1) return "";
+  if (!timing || (index === points.length - 1 && !points[index]?.isTrick)) return "";
   const field = (key, label, value, min) => `<div class="run-time-field"><span>${label}</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease ${label}">−</button><input type="number" min="${min}" max="120" step="0.1" value="${value}" data-run-time-index="${index}" data-run-time-key="${key}" aria-label="${label}"><button type="button" data-run-time-step="1" aria-label="Increase ${label}">+</button><small>seconds</small></span></div>`;
-  return `<div class="run-timing-row"><strong>${index === 0 ? "Start" : `Trick ${index}`} → ${index+1 === points.length-1 ? "Finish" : `Trick ${index+1}`}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small></div>`;
+  return `<div class="run-timing-row"><strong>${index === 0 ? "Start" : `Trick ${index}`}${index < points.length - 1 ? ` → ${index+1 === points.length-1 && !points[index+1]?.isTrick ? "Finish" : `Trick ${index+1}`}` : " · Final trick"}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${index < points.length - 1 ? `${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small>` : ""}</div>`;
 }
 
 function runTimeBudget(points = []) {
@@ -10977,7 +11035,7 @@ function paintRunTimeBudget(points = []) {
 function runTimingEditorHtml(points) {
   const total = runPlaybackDefaultSeconds(points);
   const limit = Number(points[0]?.timeLimitSeconds) || 60;
-  return `<section class="run-timing-editor"><h3>Run timing</h3><label>Competition time limit <input type="number" min="1" max="3600" value="${limit}" data-run-limit> seconds</label><p data-run-total>${total} seconds planned · ${total <= limit ? `${Math.round((limit-total)*10)/10} seconds remaining` : `${Math.round((total-limit)*10)/10} seconds over limit`}</p>${runTimingRowHtml(points,0)}</section>`;
+  return `<section class="run-timing-editor"><h3>Run timing</h3><label>Competition time limit <input type="number" min="1" max="3600" value="${limit}" data-run-limit> seconds</label><p data-run-total>${total} seconds planned · ${total <= limit ? `${Math.round((limit-total)*10)/10} seconds remaining` : `${Math.round((total-limit)*10)/10} seconds over limit`}</p></section>`;
 }
 
 function updateRunTiming(event) {
@@ -11102,12 +11160,12 @@ function runBuilderStepsHtml(stage = "route", pointCount = 0) {
 
 function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
   if (!selectedPoint) return `<div class="run-sidebar-section run-point-empty"><div class="eyebrow">Step 1 · Draw route</div><strong>TAP THE PARK TO START</strong><p>Tap empty space to add each dot. Drag a dot to move it. Add all tricks after the route is finished.</p></div>`;
-  const pointRole = selectedIndex === 0 ? "START" : selectedIndex === points.length - 1 ? "FINISH" : "ROUTE";
-  return `<div class="run-sidebar-section selected-run-point" data-selected-run-point="${selectedIndex}"><div class="run-selected-head"><div><div class="eyebrow">Route point</div><strong>DOT ${selectedIndex + 1}</strong></div><span class="run-point-role">${pointRole}</span></div><p class="run-phase-tip">Drag this dot on the course${selectedIndex > 0 ? ", then bend the line if needed." : "."}</p><label class="run-bend-control run-bend-control-sidebar"><span>Bend line into this dot</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend ${selectedIndex === 0 ? "disabled" : ""}><output data-selected-run-bend-output>${selectedIndex === 0 ? "START" : Number(selectedPoint.bend || 0)}</output></div></label><button class="danger-btn" type="button" id="delete-selected-run-point">DELETE DOT ${selectedIndex + 1}</button></div>`;
+  const pointRole = selectedIndex === 0 ? "START" : selectedIndex === points.length - 1 ? (selectedPoint.isTrick ? "TRICK" : "FINISH") : "ROUTE";
+  return `<div class="run-sidebar-section selected-run-point" data-selected-run-point="${selectedIndex}"><div class="run-selected-head"><div><div class="eyebrow">Route point</div><strong>DOT ${selectedIndex + 1}</strong></div><span class="run-point-role">${pointRole}</span></div><p class="run-phase-tip">Drag this dot on the course${selectedIndex > 0 ? ", then bend the line if needed." : "."}</p><label class="run-bend-control run-bend-control-sidebar"><span>Bend line into this dot</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend ${selectedIndex === 0 ? "disabled" : ""}><output data-selected-run-bend-output>${selectedIndex === 0 ? "START" : Number(selectedPoint.bend || 0)}</output></div></label>${selectedIndex === 0 && points.length > 1 ? runTimingRowHtml(points, 0) : ""}<button class="danger-btn" type="button" id="delete-selected-run-point">DELETE DOT ${selectedIndex + 1}</button></div>`;
 }
 
 function runBuilderTrickEditorHtml(points = []) {
-  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>ADD TRICKS & TIMING</strong><p class="run-phase-tip">Leave a trick blank to show NO TRICK in playback. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { if (index === 0 || index === points.length - 1) return ""; const pointNumber = index + 1; const role = `TRICK ${index} · DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Optional trick · blank = NO TRICK" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>${runTimingRowHtml(points, index)}`; }).join("")}</div></div>`;
+  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>ADD TRICKS & TIMING</strong><p class="run-phase-tip">Leave a trick blank to show NO TRICK in playback. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { if (index === 0) return ""; const pointNumber = index + 1; const role = index === points.length - 1 && !point.isTrick ? `FINISH · DOT ${pointNumber}` : `TRICK ${index} · DOT ${pointNumber}`; return `${index === points.length - 1 ? `<label class="run-final-type">Last dot<select data-run-final-type aria-label="Last dot type"><option value="finish" ${!point.isTrick ? "selected" : ""}>Finish location</option><option value="trick" ${point.isTrick ? "selected" : ""}>Trick</option></select></label>` : ""}<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" ${index === points.length - 1 && !point.isTrick ? "disabled" : ""} placeholder="${index === points.length - 1 && !point.isTrick ? "Finish location" : "Optional trick · blank = NO TRICK"}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>${runTimingRowHtml(points, index)}`; }).join("")}</div></div>`;
 }
 
 function runBuilderPlaybackEditorHtml(points = []) {
@@ -11134,6 +11192,7 @@ function runBuilderPanel(runs = [], options = {}) {
       ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
+      <div class="run-save-actions"><button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
       <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy="Qualifying">Copy as Qualifying</button><button type="button" data-run-copy="Finals">Copy as Finals</button></div>
       <div class="run-builder-details">
         <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Qualifying or Finals — tap to rename"></div>
@@ -11154,8 +11213,7 @@ function runBuilderPanel(runs = [], options = {}) {
         </aside>
       </div>
       ${stage === "tricks" ? runTimingEditorHtml(points) : ""}
-      <div class="field run-builder-notes"><label for="run-notes">Notes</label><textarea id="run-notes" name="notes" placeholder="Run notes, risks, timing...">${escapeHtml(builder.notes || "")}</textarea></div>
-      <div class="actions">${options.live ? `<button class="secondary-btn" id="close-run-builder" type="button">Close builder</button>` : ""}${stage === "playback" ? `<button class="primary-btn" type="submit">${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button>` : `<button class="primary-btn" type="button" disabled>COMPLETE 3 STEPS TO SAVE</button>`}</div>
+
     </form>
     ${options.showRunList === false ? "" : `<div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`}`;
   if (options.collapsed) {
@@ -13033,6 +13091,7 @@ function bindRunBuilderActions(root = document) {
   root.querySelector("#clear-run-builder")?.addEventListener("click", clearRunBuilder);
   root.querySelector("#close-run-builder")?.addEventListener("click", closeRunBuilder);
   root.querySelector("#close-run-builder-top")?.addEventListener("click", closeRunBuilder);
+  root.querySelector("[data-run-final-type]")?.addEventListener("change", updateRunFinalType);
   root.querySelector("#finish-run-builder")?.addEventListener("click", playFinishedRunBuilder);
   root.querySelector("#delete-selected-run-point")?.addEventListener("click", deleteSelectedRunPoint);
   root.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
@@ -13045,6 +13104,15 @@ function bindRunBuilderActions(root = document) {
   root.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
   bindRunPlaybackControls(root);
   bindLiveRunControls(root);
+}
+
+async function updateRunFinalType(event) {
+  if (!state.runBuilder?.points?.length || !liveRunCanEdit()) return;
+  rememberRunEdit();
+  const point = state.runBuilder.points.at(-1);
+  point.isTrick = event.currentTarget.value === "trick";
+  await runBuilderRefreshView();
+  document.querySelector("[data-run-final-type]")?.focus();
 }
 
 async function setRunBuilderStage(event) {
@@ -13080,7 +13148,7 @@ function advanceRunBuilderTrick(event) {
   event.preventDefault();
   const index = Number(event.currentTarget.dataset.runTrickIndex);
   const nextInput = document.querySelector(`[data-run-trick-index="${index + 1}"]`);
-  if (nextInput) {
+  if (nextInput && !nextInput.disabled) {
     nextInput.focus();
     nextInput.scrollIntoView({ behavior: "smooth", block: "nearest" });
     return;
@@ -13345,7 +13413,7 @@ function paintRunPlayback(controls, progress = 0) {
     const caption = callout.querySelector("small");
     const trick = callout.querySelector("[data-run-playback-label]");
     if (number) number.textContent = String(pointNumber);
-    callout.hidden = completedMarker === 0 || completedMarker === markers.length - 1;
+    callout.hidden = activeMarker.classList.contains("run-endpoint");
     if (caption) caption.textContent = `TRICK ${completedMarker}`;
     if (trick) trick.textContent = label;
     callout.classList.toggle("is-active", safeProgress > 0 && safeProgress < 1);
@@ -13529,8 +13597,8 @@ async function archiveRunPlan(event) {
 
 async function saveRunPlan(event) {
   event.preventDefault();
-  if (runBuilderStage() !== "playback") return notify("Finish the route and tricks, then watch the run before saving.", "error");
   if (liveRun) return saveLiveRun();
+  if ((state.runBuilder?.points?.length || 0) < 2) return notify("Add at least two route dots before saving.", "error");
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
   const isCoach = isCoachRole(state.profile.role);
@@ -13545,7 +13613,7 @@ async function saveRunPlan(event) {
     plan_type: state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training"),
     image_data_url: state.runBuilder.imageDataUrl,
     points: (state.runBuilder.points || []).map((point, index) => ({ ...point, ...(index === 0 ? { view: runView(state.runBuilder.view || state.runBuilder.points[0]?.view) } : {}) })),
-    notes: String(form.get("notes") || "").trim(),
+    notes: String(form.get("notes") ?? state.runBuilder?.notes ?? "").trim(),
     contest_item_id: state.runBuilder.contestItemId || null,
     updated_at: new Date().toISOString(),
   };

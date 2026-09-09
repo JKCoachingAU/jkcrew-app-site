@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTiming','runPlaybackDefaultSeconds','runTimingRowHtml','runTimingEditorHtml','runBuilderTrickEditorHtml','runPointColor','updateRunTiming','bindRunBuilderActions'];
+const names=['runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTiming','runPlaybackDefaultSeconds','runTimingRowHtml','runTimingEditorHtml','runBuilderTrickEditorHtml','runPointColor','updateRunTiming','updateRunFinalType','updateRunBuilderTrick','runMapHtml','runView','runRouteSvg','runPathBetween','bindRunBuilderActions'];
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 (async()=>{
@@ -10,7 +10,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="host" class="content" style="padding:16px"></main>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
  await page.addScriptTag({content:`
- const bindLiveRunControls=()=>{};
+ const bindLiveRunControls=()=>{};const liveRunCanEdit=()=>true;
  const bindRiderSavedRuns=()=>{};
  const state={runBuilder:{points:Array.from({length:14},(_,i)=>({x:i*7,y:50,label:'Trick '+i,travelSeconds:7,holdSeconds:0})),selectedPointIndex:7}};
  const escapeHtml=s=>String(s);const rememberRunEdit=()=>{};const stopRunPlayback=()=>{},bindRunPlaybackControls=()=>{};
@@ -50,6 +50,19 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.locator('[data-run-limit]').fill('45');assert.equal(await total.innerText(),'41s / 45s');assert.equal(await remaining.innerText(),'4s remaining');
  await page.evaluate(()=>{document.querySelector('#run-builder-live').style.paddingBottom='1000px';window.scrollTo(0,500);});
  const bounds=await counter.boundingBox();assert(bounds.y>=79&&bounds.y<=82,'Counter stays visible while the editor scrolls');
+ // The last dot defaults to a finish, but can become a timed, named final trick.
+ assert(await page.locator('[data-run-trick-index="2"]').isDisabled());
+ await page.locator('[data-run-final-type]').selectOption('trick');
+ await page.locator('[data-run-trick-index="2"]').fill('Flair');
+ await page.locator('[data-run-time-index="2"][data-run-time-key="holdSeconds"]').fill('3');
+ assert.equal(await page.evaluate(()=>state.runBuilder.points[2].label),'Flair');
+ assert.equal(await page.evaluate(()=>runTiming(state.runBuilder.points)[2].hold),3);
+ assert.equal(await total.innerText(),'44s / 45s');
+ const markup=await page.evaluate(()=>runMapHtml('photo',state.runBuilder.points));
+ assert(markup.includes('data-run-point-label="Flair"'));assert.equal((markup.match(/class="run-marker run-endpoint/g)||[]).length,1,'Only start is an endpoint for a final trick');
+ await page.locator('[data-run-final-type]').selectOption('finish');
+ assert.equal(await total.innerText(),'41s / 45s');assert(await page.locator('[data-run-trick-index="2"]').isDisabled());
+ assert.equal(await page.locator('.run-timing-editor [data-run-time-index="0"]').count(),0,'Circled starting-time block is removed');
  assert.deepEqual(errors,[]);await browser.close();
  console.log('PASS: repeated touch timing adjustments retain the seventh trick, DOM/focus context, scroll and zoom; live typing, travel plus hold totals, 52/60/62-second states, custom limits, sticky visibility and playback timing stay in sync.');
 })().catch(e=>{console.error(e);process.exit(1)});

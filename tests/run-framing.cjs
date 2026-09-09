@@ -66,6 +66,8 @@ const functions = names.map(name => {
  await page.evaluate(()=>stopRunPlayback());
  matches(before,await geometry('.run-fullscreen-playback .run-map-preview'));
  await page.setViewportSize({width:height,height:width});
+ // Let the browser deliver resize/ResizeObserver and paint the rotated frame.
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  matches(before,await geometry('.run-fullscreen-playback .run-map-preview'));
  const onScreen = await page.locator('.run-fullscreen-playback .run-map-preview').evaluate(preview => {
    const frame=preview.getBoundingClientRect();
