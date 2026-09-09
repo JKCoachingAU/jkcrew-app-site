@@ -11549,3 +11549,16 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-live-invites h2 { margin:4px 0 12px; }
 .run-live-invite { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-top:1px solid #24413d; }
 @media(max-width:600px) { .run-live-bar { align-items:stretch; flex-direction:column; } .run-live-actions button { flex:1; } .run-live-invite { align-items:flex-start; } }
+.content:has(.run-builder-stage-tricks) { overflow-x: clip; overflow-y: visible; }
+.run-time-budget { --budget-color:#20e3c3; position:sticky; top:calc(80px + env(safe-area-inset-top)); z-index:9; align-self:start; display:grid; grid-template-columns:1fr auto; align-items:center; gap:6px 12px; padding:10px 14px; border:1px solid var(--budget-color); border-radius:12px; background:#091715; color:#f3faf8; box-shadow:0 6px 20px #0006; }
+.run-time-budget-heading { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; }
+.run-time-budget-heading > span { font-size:12px; }
+.run-time-budget strong { color:var(--budget-color); font-size:23px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.run-time-budget strong small { font-size:14px; color:#c2d4ce; }
+.run-time-budget-remaining { font-size:13px; font-weight:700; color:var(--budget-color); text-align:right; }
+.run-time-budget-track { grid-column:1/-1; height:4px; overflow:hidden; border-radius:8px; background:#ffffff20; }
+.run-time-budget-track > span { display:block; height:100%; background:var(--budget-color); }
+.run-time-budget[data-budget-tone="near"] { --budget-color:#f7d154; }
+.run-time-budget[data-budget-tone="over"] { --budget-color:#ff8574; }
+@media(min-width:700px) { .run-builder-stage-tricks .run-builder-sidebar { top:calc(170px + env(safe-area-inset-top)); max-height:calc(100dvh - 190px - env(safe-area-inset-top)); } }
+@media(min-width:700px) and (max-width:1180px) and (orientation:portrait) { .run-builder-stage-tricks .run-builder-sidebar { max-height:none; } }

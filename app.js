@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.69";
+const RELEASE_VERSION = "2.14.70";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.69" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.70" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10844,6 +10844,37 @@ function runTimingRowHtml(points, index) {
   return `<div class="run-timing-row"><strong>${index === 0 ? "Start" : `Trick ${index}`} → ${index+1 === points.length-1 ? "Finish" : `Trick ${index+1}`}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small></div>`;
 }
 
+function runTimeBudget(points = []) {
+  const total = points.length > 1 ? runPlaybackDefaultSeconds(points) : 0;
+  const limit = Math.max(1, Math.min(3600, Number(points[0]?.timeLimitSeconds) || 60));
+  const remaining = Math.round((limit - total) * 10) / 10;
+  return { total, limit, remaining, tone: remaining < 0 ? "over" : remaining <= 10 ? "near" : "ready",
+    message: remaining < 0 ? `${Math.abs(remaining)}s over limit` : remaining === 0 ? "Limit reached · 0s remaining" : `${remaining}s remaining` };
+}
+
+function runTimeBudgetHtml(points = []) {
+  const budget = runTimeBudget(points);
+  return `<section class="run-time-budget" data-run-time-budget data-budget-tone="${budget.tone}" aria-label="Planned run time">
+    <div class="run-time-budget-heading"><span>Planned run time</span><strong data-run-budget-total>${budget.total}s <small>/ ${budget.limit}s</small></strong></div>
+    <span class="run-time-budget-remaining" data-run-budget-remaining role="status">${budget.message}</span>
+    <div class="run-time-budget-track" role="progressbar" aria-label="Run time used" aria-valuemin="0" aria-valuemax="${budget.limit}" aria-valuenow="${Math.min(budget.total, budget.limit)}" aria-valuetext="${budget.total} seconds planned, ${budget.message}"><span style="width:${Math.min(100, budget.total / budget.limit * 100)}%"></span></div>
+  </section>`;
+}
+
+function paintRunTimeBudget(points = []) {
+  const budget = runTimeBudget(points);
+  document.querySelectorAll("#run-builder-live [data-run-time-budget]").forEach(counter => {
+    counter.dataset.budgetTone = budget.tone;
+    counter.querySelector("[data-run-budget-total]").innerHTML = `${budget.total}s <small>/ ${budget.limit}s</small>`;
+    counter.querySelector("[data-run-budget-remaining]").textContent = budget.message;
+    const track = counter.querySelector('[role="progressbar"]');
+    track.setAttribute("aria-valuemax", budget.limit);
+    track.setAttribute("aria-valuenow", Math.min(budget.total, budget.limit));
+    track.setAttribute("aria-valuetext", `${budget.total} seconds planned, ${budget.message}`);
+    track.firstElementChild.style.width = `${Math.min(100, budget.total / budget.limit * 100)}%`;
+  });
+}
+
 function runTimingEditorHtml(points) {
   const total = runPlaybackDefaultSeconds(points);
   const limit = Number(points[0]?.timeLimitSeconds) || 60;
@@ -10854,14 +10885,16 @@ function updateRunTiming(event) {
   const input = event.currentTarget;
   const index = Number(input.dataset.runTimeIndex || 0);
   if (!state.runBuilder?.points?.[index]) return;
+  if (event.type === "input" && (input.value === "" || input.validity?.badInput)) return;
   rememberRunEdit();
   const key = input.hasAttribute("data-run-limit") ? "timeLimitSeconds" : input.dataset.runTimeKey;
   const value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) || Number(input.min)));
   state.runBuilder.points[index] = { ...state.runBuilder.points[index], [key]: value };
-  input.value = String(value);
+  if (event.type !== "input") input.value = String(value);
   // Keep the current input, focus and nested scroll containers intact.
   stopRunPlayback();
   const points = state.runBuilder.points;
+  paintRunTimeBudget(points);
   const total = runPlaybackDefaultSeconds(points);
   const limit = Number(points[0]?.timeLimitSeconds) || 60;
   const summary = document.querySelector("#run-builder-live [data-run-total]");
@@ -10994,6 +11027,7 @@ function runBuilderPanel(runs = [], options = {}) {
     ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
     : builder.imageDataUrl;
   const body = `<div data-live-run-bar>${liveRunBarHtml()}</div><form id="run-builder-form" class="run-builder-form">
+      ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
       <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy="Qualifying">Copy as Qualifying</button><button type="button" data-run-copy="Finals">Copy as Finals</button></div>
@@ -12869,7 +12903,10 @@ function bindRunBuilderActions(root = document) {
     state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), stage: button.dataset.runMode };
     await runBuilderRefreshView();
   }));
-  root.querySelectorAll("[data-run-time-index], [data-run-limit]").forEach(input => input.addEventListener("change", updateRunTiming));
+  root.querySelectorAll("[data-run-time-index], [data-run-limit]").forEach(input => {
+    input.addEventListener("input", updateRunTiming);
+    input.addEventListener("change", updateRunTiming);
+  });
   root.querySelectorAll("[data-run-time-step]").forEach(button => button.addEventListener("click", event => {
     event.preventDefault();
     const input = button.parentElement.querySelector("input");
