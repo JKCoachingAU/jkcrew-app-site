@@ -18,9 +18,9 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  const runMapHtml=src=>'<div class="run-map-preview"><img alt="Park photo" src="'+src+'"></div>';
  window.networkCalls=[]; window.courseRequests=[];
  const getSharedUpcomingEventData=async()=>{networkCalls.push('events');return new Promise(resolve=>window.resolveEvents=resolve);};
- const getCoachRoster=async()=>{networkCalls.push('roster');return [];};
+ const getEventCoachRoster=async()=>{networkCalls.push('roster');return [];};
  const getCoachContestRunPlans=async()=>{networkCalls.push('coach-runs');return [];};
- const getRunPlans=async()=>{networkCalls.push('rider-runs');return [];};
+ const getRiderRunSummaries=async()=>{networkCalls.push('rider-runs');return [];};
  const getEventCoursePhoto=id=>{networkCalls.push('photo:'+id);return new Promise((resolve,reject)=>courseRequests.push({resolve,reject}));};
  const navigate=async view=>{state.view=view;if(state.runBuilder)await renderContests();else document.querySelector('#view').textContent='Events';};
  ${[...new Set(handlers)].map(n=>`const ${n}=()=>{};`).join('\n')}
@@ -67,7 +67,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.evaluate(()=>mountLaunch());await page.click('#launch');await page.evaluate(()=>{state.view='session';document.querySelector('#view').textContent='Session';courseRequests.at(-1).resolve({image_data_url:photo});});await page.waitForTimeout(30);
  assert.equal(await page.locator('#view').innerText(),'Session');
  // A previous events request cannot start loading saved runs or replace the new editor.
- await page.evaluate(()=>{mountLaunch();state.view='contests';window.oldRender=renderContests();});
+ await page.evaluate(()=>{mountLaunch();state.view='contests';window.oldRender=renderContests();networkCalls.length=0;});
  await page.click('#launch');await page.evaluate(()=>resolveEvents({events:[],attendance:[]}));await page.evaluate(()=>oldRender);
  assert(await page.getByRole('heading',{name:'Opening your run builder'}).isVisible());
  assert(!(await page.evaluate(()=>networkCalls)).some(n=>n==='rider-runs'||n==='coach-runs'));

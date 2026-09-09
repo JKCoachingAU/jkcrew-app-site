@@ -1,19 +1,20 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.72";
+const RELEASE_VERSION = "2.14.73";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
+  "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.72",
-  "./app.js?v=2.14.72",
-  "./manifest.webmanifest?v=2.14.72",
+  "./styles.css?v=2.14.73",
+  "./app.js?v=2.14.73",
+  "./manifest.webmanifest?v=2.14.73",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.72",
+  "./icons/badges/prestige-01.png?v=2.14.73",
 ];
 
 self.addEventListener("install", (event) => {
@@ -53,27 +54,37 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || requestUrl.origin !== self.location.origin) return;
 
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request, { cache: "reload" })
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html")),
-    );
+    const appBase = new URL("./", self.location.href);
+    if (requestUrl.pathname !== appBase.pathname && requestUrl.pathname !== `${appBase.pathname}index.html`) return;
+    // Serve only this release's public shell. Refresh HTML in the background;
+    // the existing service-worker update flow still activates new releases.
+    const network = fetch(event.request, { cache: "reload" }).then(async response => {
+      if (response.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put("./index.html", response.clone());
+      }
+      return response;
+    });
+    event.waitUntil(network.catch(() => {}));
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      return await cache.match("./index.html") || network;
+    })());
     return;
   }
 
-  event.respondWith(
-    fetch(event.request, { cache: "reload" })
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(event.request)),
-  );
+  // Versioned public assets can be reused immediately, even on a weak signal.
+  // Never cache API responses, account data, or files outside the app shell.
+  const shellUrls = new Set(APP_SHELL.map(path => new URL(path, self.location.href).href));
+  if (!shellUrls.has(requestUrl.href)) return;
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(event.request);
+    if (cached) return cached;
+    const response = await fetch(event.request);
+    if (response.ok) await cache.put(event.request, response.clone());
+    return response;
+  })());
 });
 
 self.addEventListener("push", (event) => {
