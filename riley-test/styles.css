@@ -11412,3 +11412,17 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .sync-status.error b, .sync-status.offline b, .sync-status.syncing b { display: inline !important; }
 @media (max-width: 600px) { .sync-status { max-width: 140px; } .sync-status b { white-space: normal; font-size: .65rem; } }
 .sync-status b { display: inline !important; }
+
+/* Anchor the active trick to its dot, without scaling text with the park crop. */
+.run-map-preview .run-playback-callout.run-dot-label {
+  position: absolute; bottom: auto; right: auto; margin: 0; transform: none;
+  display: block; width: max-content; max-width: min(220px, calc(100% - 12px));
+  padding: 6px 9px; border-radius: 8px; pointer-events: none; z-index: 7;
+  background: #031211ed; border: 1px solid var(--aqua); box-shadow: 0 3px 10px #0008;
+}
+.run-dot-label > b, .run-dot-label > span > small { display: none; }
+.run-map-preview .run-dot-label strong {
+  display: block; white-space: normal; overflow: visible; text-overflow: clip;
+  overflow-wrap: anywhere; text-align: center; font: 700 14px/1.25 var(--sans);
+}
+.run-fullscreen-playback { overflow: hidden; }

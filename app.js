@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.62";
+const RELEASE_VERSION = "2.14.63";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.62" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.63" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10200,6 +10200,47 @@ function openRunCrop() {
   paint();
 }
 
+function fitFullscreenRunRoute(preview) {
+  const content = preview.querySelector(".run-map-content");
+  if (!content) return;
+  const base = preview.dataset.fullscreenBaseTransform ?? content.style.transform;
+  preview.dataset.fullscreenBaseTransform = base;
+  const baseZoom = Number(preview.dataset.fullscreenBaseZoom || content.style.getPropertyValue("--run-zoom")) || 1;
+  preview.dataset.fullscreenBaseZoom = String(baseZoom);
+  content.style.transform = base;
+  content.style.setProperty("--run-zoom", baseZoom);
+  const frame = preview.getBoundingClientRect();
+  if (!frame.width || !frame.height) return;
+  let left = 0, top = 0, right = frame.width, bottom = frame.height;
+  preview.querySelectorAll(".run-marker, [data-run-segment]").forEach(element => {
+    const rect = element.getBoundingClientRect();
+    left = Math.min(left, rect.left - frame.left);
+    top = Math.min(top, rect.top - frame.top);
+    right = Math.max(right, rect.right - frame.left);
+    bottom = Math.max(bottom, rect.bottom - frame.top);
+  });
+  const margin = 18;
+  const labelSpace = Math.min(96, frame.height * .3);
+  const scale = Math.max(.01, Math.min((frame.width - margin*2) / (right-left), (frame.height-margin*2-labelSpace) / (bottom-top)));
+  const dx = frame.width/2 - (frame.width/2 + scale*((left+right)/2-frame.width/2));
+  const dy = (frame.height-labelSpace)/2 - (frame.height/2 + scale*((top+bottom)/2-frame.height/2));
+  content.style.transform = `translate(${dx}px, ${dy}px) scale(${scale}) ${base}`;
+  content.style.setProperty("--run-zoom", baseZoom * scale);
+}
+
+function positionRunTrickLabel(preview, callout, marker) {
+  if (!callout || callout.hidden || !marker) return;
+  callout.classList.add("run-dot-label");
+  const frame = preview.getBoundingClientRect();
+  const dot = marker.getBoundingClientRect();
+  const width = callout.offsetWidth;
+  const height = callout.offsetHeight;
+  const left = Math.max(6, Math.min(frame.width - width - 6, dot.left + dot.width/2 - frame.left - width/2));
+  const top = Math.max(6, Math.min(frame.height - height - 6, dot.bottom - frame.top + 8));
+  callout.style.left = `${left}px`;
+  callout.style.top = `${top}px`;
+}
+
 function openRunPlaybackFullscreen(event) {
   event.preventDefault();
   event.stopPropagation();
@@ -10224,7 +10265,12 @@ function openRunPlaybackFullscreen(event) {
   const duration = sourceControls?.dataset.runPlaybackSeconds || Math.max(1, JSON.parse(preview.dataset.runTiming || "[]").reduce((sum, point) => sum + point.hold + point.travel, 0));
   dialog.insertAdjacentHTML("beforeend", `<button type="button" class="run-fullscreen-close" aria-label="Close fullscreen playback">×</button><div class="run-fullscreen-controls" data-run-playback-controls data-run-playback-seconds="${Number(duration)}"><button type="button" data-run-play-toggle>▶ PLAY RUN</button><button type="button" data-run-play-restart aria-label="Restart run playback">↺</button><input type="hidden" data-run-scrub value="0"></div>`);
   const bounds = source.getBoundingClientRect();
-  const resize = () => fitRunDialogPreview(dialog, preview, bounds.width / Math.max(1, bounds.height), 0);
+  const resize = () => {
+    fitRunDialogPreview(dialog, preview, bounds.width / Math.max(1, bounds.height), 70);
+    fitFullscreenRunRoute(preview);
+    const controls = dialog.querySelector("[data-run-playback-controls]");
+    if (controls) paintRunPlayback(controls, Number(controls.querySelector("[data-run-scrub]")?.value || 0) / 1000);
+  };
   const close = () => dialog.close();
   const fullscreenChange = () => { if (!document.fullscreenElement && dialog.dataset.nativeFullscreen) close(); };
   dialog.querySelector(".run-fullscreen-close").onclick = close;
@@ -12641,6 +12687,7 @@ function paintRunPlayback(controls, progress = 0) {
     if (caption) caption.textContent = `TRICK ${completedMarker}`;
     if (trick) trick.textContent = label;
     callout.classList.toggle("is-active", safeProgress > 0 && safeProgress < 1);
+    positionRunTrickLabel(preview, callout, activeMarker);
   }
   const scrub = controls.querySelector("[data-run-scrub]");
   if (scrub) scrub.value = String(Math.round(safeProgress * 1000));
