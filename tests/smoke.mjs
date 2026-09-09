@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.60";
+const version = "2.14.61";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1280,6 +1280,7 @@ const runPointHarness = new Function(`
   const state = { runBuilder: { imageDataUrl: "course", stage: "route", points: [], selectedPointIndex: -1 }, draggedRunPoint: null, runPointMapClickBlockUntil: 0 };
   const performance = { now: () => now };
   const stopRunPlayback = () => {};
+  const rememberRunEdit = () => {};
   const runBuilderStage = () => state.runBuilder.stage;
   const currentRunFormState = () => ({ ...state.runBuilder });
   const runBuilderRefreshView = async () => { refreshes += 1; };
@@ -1359,12 +1360,10 @@ assert(css.includes(".run-builder-live .run-marker { width: 21px; height: 21px")
 assert(css.includes('.run-builder-live .run-marker::before { content: ""; position: absolute; inset: -11px'), "Small Run Builder circles still need a forgiving invisible touch target");
 const runPathForTest = new Function(`${functionBody("runPathBetween")}; return runPathBetween;`)();
 assert.notEqual(runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 0 }), runPathForTest({ x: 0, y: 0 }, { x: 50, y: 50, bend: 60 }), "Changing a dot's bend must change the saved route curve");
-assert(app.includes("const RUN_PLAYBACK_MAX_SECONDS = 60"), "Run playback must be capped at 60 seconds");
-for (const playbackControl of ["data-run-play-toggle", "data-run-play-restart", "data-run-duration", "data-run-scrub"]) {
+assert(app.includes("const RUN_PLAYBACK_MAX_SECONDS = 3600"), "Long planned runs must not be truncated at the competition limit");
+for (const playbackControl of ["data-run-play-toggle", "data-run-play-restart", "data-run-scrub"]) {
   assert(functionBody("runPlaybackControlsHtml").includes(playbackControl), `Run playback is missing ${playbackControl}`);
 }
-assert(functionBody("runPlaybackControlsHtml").includes('max="${RUN_PLAYBACK_MAX_SECONDS}"'), "The playback duration control must enforce the 60-second maximum");
-assert(functionBody("runPlaybackControlsHtml").includes("data-run-duration-preset=\"${seconds}\""), "Playback must expose clear 15, 30, 45 and 60 second presets");
 assert(functionBody("runMapHtml").includes("data-run-point-label"), "Saved trick names must be attached to every playback point");
 assert(functionBody("runMapHtml").includes("data-run-playback-callout"), "Run playback must include a visible trick-name callout");
 assert(functionBody("paintRunPlayback").includes("activeMarker.dataset.runPointLabel"), "Playback must show the active point's saved trick name");

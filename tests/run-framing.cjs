@@ -3,7 +3,7 @@ const assert = require('assert/strict');
 const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
 const root = require('path').resolve(__dirname, '..');
 const app = fs.readFileSync(root+'/app.js','utf8');
-const names = ['runPointColor','runPathBetween','runRouteSvg','runView','applyRunView','runMapHtml','cloneRunDialogPreview','fitRunDialogPreview','openRunCrop','openRunPlaybackFullscreen','runPlaybackDefaultSeconds','formatRunPlaybackTime','runPlaybackControlsHtml','runPlaybackSurface','paintRunPlayback','stopRunPlayback','toggleRunPlayback','scrubRunPlayback','setRunPlaybackDuration','updateRunPlaybackDuration','applyRunPlaybackDurationPreset','restartRunPlayback','bindRunPlaybackControls','runBuilderStage','runBuilderTrickEditorHtml','addRunBuilderPoint','dragRunPoint','updateRunBuilderMapDom','saveRunPlan'];
+const names = ['runTiming','runTimedPosition','runTimingRowHtml','runPointColor','runPathBetween','runRouteSvg','runView','applyRunView','runMapHtml','cloneRunDialogPreview','fitRunDialogPreview','openRunCrop','openRunPlaybackFullscreen','runPlaybackDefaultSeconds','formatRunPlaybackTime','runPlaybackControlsHtml','runPlaybackSurface','paintRunPlayback','stopRunPlayback','toggleRunPlayback','scrubRunPlayback','setRunPlaybackDuration','updateRunPlaybackDuration','applyRunPlaybackDurationPreset','restartRunPlayback','bindRunPlaybackControls','runBuilderStage','runBuilderTrickEditorHtml','addRunBuilderPoint','dragRunPoint','updateRunBuilderMapDom','saveRunPlan'];
 const functions = names.map(name => {
  const start = app.search(new RegExp('^(?:async )?function '+name+'\\(', 'm'));
  assert(start>=0,name);
@@ -18,7 +18,7 @@ const functions = names.map(name => {
  await page.addStyleTag({content:fs.readFileSync(root+'/styles.css','utf8')});
  await page.addScriptTag({content:`
  const state = {runBuilder:{stage:'route',imageDataUrl:'', points:[]}, draggedRunPoint:null, runPointMapClickBlockUntil:0, profile:{role:'athlete'},user:{id:'test'}};
- const RUN_PLAYBACK_MAX_SECONDS=60;
+ const RUN_PLAYBACK_MAX_SECONDS=3600; const rememberRunEdit=()=>{}; let runUndoStack=[],runRedoStack=[];
  const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const currentRunFormState=()=>({...state.runBuilder});
  const runBuilderRefreshView=async()=>render();

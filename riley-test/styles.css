@@ -11371,3 +11371,29 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .viewer-line-field > span, .viewer-line-number { color: var(--coral); font: 800 .8rem var(--mono); text-transform: uppercase; }
 .viewer-line-field textarea { min-height: 110px; resize: vertical; }
 .viewer-trick-row .viewer-line-number { display: block; margin-bottom: 8px; }
+
+.run-mode-tabs, .run-edit-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.run-mode-tabs button { flex: 1; padding: 14px; border: 1px solid var(--aqua); border-radius: 12px; background: var(--surface); color: var(--text); }
+.run-mode-tabs button.active { background: var(--aqua); color: #061014; }
+.run-edit-toolbar button { padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); }
+.run-edit-toolbar button:disabled { opacity: .4; }
+.run-timing-editor { display: grid; gap: 14px; margin: 20px 0; }
+.run-timing-row { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; }
+.run-time-field { display: grid; gap: 8px; }
+.run-time-stepper { display: flex; align-items: center; gap: 8px; }
+.run-time-stepper input, .run-timing-editor > label input { width: 88px; }
+.run-time-stepper button { width: 44px; height: 44px; border: 1px solid var(--aqua); border-radius: 10px; background: var(--surface); color: var(--text); }
+.run-builder-stage-playback .run-builder-sidebar, .run-builder-stage-playback .run-map-status, .run-builder-stage-playback .run-builder-notes, .run-builder-stage-playback .run-edit-toolbar { display: none; }
+.run-builder-stage-playback .visual-run-builder { grid-template-columns: minmax(0, 1fr); }
+.run-map-preview .run-marker.is-selected, .run-map-preview .run-marker.play-active { transform: translate(-50%, -50%) scale(calc(1.5 / var(--run-zoom, 1))); }
+.run-map-preview.is-playback-highlighted .run-marker:not(.play-active) { opacity: .25; }
+.run-map-preview.is-playback-highlighted .run-line-overlay path:not(.play-active) { opacity: .15; }
+.run-map-preview.is-playback-highlighted .run-line-overlay path.play-active { opacity: 1; stroke-width: 3px; }
+@media (orientation: landscape) {
+  .run-fullscreen-playback { width: 100dvw; height: 100dvh; max-width: none; max-height: none; }
+  .run-fullscreen-playback .run-playback-callout { max-width: 45%; }
+}
+.run-time-stepper { flex-wrap: wrap; }
+.run-time-stepper input { width: 72px; min-width: 0; }
+.run-timing-row > strong { font-size: .85rem; }
+.run-timing-row > small { color: var(--muted); }
