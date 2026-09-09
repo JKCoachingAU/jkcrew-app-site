@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.65";
+const version = "2.14.66";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1370,7 +1370,8 @@ assert(functionBody("runMapHtml").includes("data-run-playback-callout"), "Run pl
 assert(functionBody("paintRunPlayback").includes("activeMarker.dataset.runPointLabel"), "Playback must show the active point's saved trick name");
 assert(functionBody("toggleRunPlayback").includes("requestAnimationFrame"), "Run playback must animate continuously and support pause/resume");
 assert(functionBody("playFinishedRunBuilder").includes('stage: "playback"'), "Finishing trick entry must open the playback step before starting the run");
-assert(functionBody("playFinishedRunBuilder").includes("missingTrickIndex"), "Playback must identify the first unnamed route dot instead of silently skipping trick entry");
+assert(!functionBody("playFinishedRunBuilder").includes("missingTrickIndex"), "Playback must allow unnamed dots");
+assert(functionBody("runMapHtml").includes("NO TRICK"), "Unnamed interior dots must show NO TRICK in playback");
 assert(functionBody("saveRunPlan").includes('runBuilderStage() !== "playback"'), "Pressing Enter must not bypass the route, trick and playback sequence");
 const formatPlaybackForTest = new Function(`const RUN_PLAYBACK_MAX_SECONDS = 60; ${functionBody("formatRunPlaybackTime")}; return formatRunPlaybackTime;`)();
 assert.equal(formatPlaybackForTest(60), "01:00", "The 60-second playback limit must display as 01:00");

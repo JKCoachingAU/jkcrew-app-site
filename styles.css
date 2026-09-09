@@ -11451,3 +11451,7 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-builder-load-symbol { color: var(--aqua); font-size: 40px; }
 @keyframes run-builder-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .run-builder-spinner { animation: none; border-style: dotted; } }
+.run-time-stepper input,
+.run-timing-editor input,
+.run-trick-entry input { font-size: max(16px, 1rem); }
+.run-time-stepper button { touch-action: manipulation; flex-shrink: 0; }

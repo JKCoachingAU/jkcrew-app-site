@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.65";
+const RELEASE_VERSION = "2.14.66";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.65" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.66" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10221,7 +10221,7 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   const markers = safePoints.map((point, index) => {
     const pointNumber = index + 1;
     const endpoint = index === 0 || index === safePoints.length - 1;
-    const label = endpoint ? (index === 0 ? "Start location" : "Finish location") : point.label || `Trick ${index}`;
+    const label = endpoint ? (index === 0 ? "Start location" : "Finish location") : String(point.label || "").trim() || "NO TRICK";
     const selected = editable && Number(state.runBuilder?.selectedPointIndex) === index;
     return `<button type="button" class="run-marker ${endpoint ? "run-endpoint" : ""} ${selected ? "is-selected" : ""}" data-run-point-number="${pointNumber}" data-run-point-label="${escapeHtml(label)}" ${editable ? `data-run-point-index="${index}" data-select-run-point="${index}"` : "tabindex=\"-1\""} aria-label="${escapeHtml(`${pointNumber}. ${label}`)}" style="left:${point.x}%;top:${point.y}%;--run-color:${runPointColor(pointNumber)}">${pointNumber}</button>`;
   }).join("");
@@ -10480,7 +10480,7 @@ async function restoreRunEdit(event) {
 function runTimingRowHtml(points, index) {
   const timing = runTiming(points)[index];
   if (!timing || index === points.length - 1) return "";
-  const field = (key, label, value, min) => `<label class="run-time-field"><span>${label}</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease ${label}">−</button><input type="number" min="${min}" max="120" step="0.1" value="${value}" data-run-time-index="${index}" data-run-time-key="${key}" aria-label="${label}"><button type="button" data-run-time-step="1" aria-label="Increase ${label}">+</button><small>seconds</small></span></label>`;
+  const field = (key, label, value, min) => `<div class="run-time-field"><span>${label}</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease ${label}">−</button><input type="number" min="${min}" max="120" step="0.1" value="${value}" data-run-time-index="${index}" data-run-time-key="${key}" aria-label="${label}"><button type="button" data-run-time-step="1" aria-label="Increase ${label}">+</button><small>seconds</small></span></div>`;
   return `<div class="run-timing-row"><strong>${index === 0 ? "Start" : `Trick ${index}`} → ${index+1 === points.length-1 ? "Finish" : `Trick ${index+1}`}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small></div>`;
 }
 
@@ -10498,7 +10498,18 @@ function updateRunTiming(event) {
   const key = input.hasAttribute("data-run-limit") ? "timeLimitSeconds" : input.dataset.runTimeKey;
   const value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) || Number(input.min)));
   state.runBuilder.points[index] = { ...state.runBuilder.points[index], [key]: value };
-  void runBuilderRefreshView();
+  input.value = String(value);
+  // Keep the current input, focus and nested scroll containers intact.
+  stopRunPlayback();
+  const points = state.runBuilder.points;
+  const total = runPlaybackDefaultSeconds(points);
+  const limit = Number(points[0]?.timeLimitSeconds) || 60;
+  const summary = document.querySelector("#run-builder-live [data-run-total]");
+  if (summary) summary.textContent = `${total} seconds planned · ${total <= limit ? `${Math.round((limit-total)*10)/10} seconds remaining` : `${Math.round((total-limit)*10)/10} seconds over limit`}`;
+  document.querySelectorAll("#run-builder-live [data-run-map-preview]").forEach(preview => {
+    preview.dataset.runTiming = JSON.stringify(runTiming(points));
+  });
+  document.querySelectorAll("#run-builder-live [data-run-playback-controls]").forEach(controls => setRunPlaybackDuration(controls, total));
 }
 
 async function duplicateCurrentRun(event) {
@@ -10599,7 +10610,7 @@ function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
 }
 
 function runBuilderTrickEditorHtml(points = []) {
-  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>NAME EACH TRICK</strong><p class="run-phase-tip">Your route is locked while you add the tricks. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { if (index === 0 || index === points.length - 1) return ""; const pointNumber = index + 1; const role = `TRICK ${index} · DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Trick at dot ${pointNumber}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>${runTimingRowHtml(points, index)}`; }).join("")}</div></div>`;
+  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>ADD TRICKS & TIMING</strong><p class="run-phase-tip">Leave a trick blank to show NO TRICK in playback. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { if (index === 0 || index === points.length - 1) return ""; const pointNumber = index + 1; const role = `TRICK ${index} · DOT ${pointNumber}`; return `<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" placeholder="Optional trick · blank = NO TRICK" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>${runTimingRowHtml(points, index)}`; }).join("")}</div></div>`;
 }
 
 function runBuilderPlaybackEditorHtml(points = []) {
@@ -10616,7 +10627,7 @@ function runBuilderPanel(runs = [], options = {}) {
   const submitLabel = builder.id ? "Save run changes" : "Save run plan";
   const stageCopy = {
     route: "Step 1 of 3 · Draw the complete route first. Tap empty space, drag any dot to move it, and finish on any number.",
-    tricks: "Step 2 of 3 · Name the tricks between the black start and finish dots.",
+    tricks: "Step 2 of 3 · Add optional trick names and timing. Blank dots show NO TRICK in playback.",
     playback: "Step 3 of 3 · Watch the finished route and tricks back before saving.",
   }[stage];
   const builderImageSource = options.preserveExistingImage
@@ -12499,7 +12510,8 @@ function bindRunBuilderActions(root = document) {
     await runBuilderRefreshView();
   }));
   root.querySelectorAll("[data-run-time-index], [data-run-limit]").forEach(input => input.addEventListener("change", updateRunTiming));
-  root.querySelectorAll("[data-run-time-step]").forEach(button => button.addEventListener("click", () => {
+  root.querySelectorAll("[data-run-time-step]").forEach(button => button.addEventListener("click", event => {
+    event.preventDefault();
     const input = button.parentElement.querySelector("input");
     input.value = String(Number(input.value) + Number(button.dataset.runTimeStep));
     input.dispatchEvent(new Event("change"));
@@ -12556,7 +12568,7 @@ function updateRunBuilderTrick(event) {
   const marker = document.querySelector(`#run-map [data-run-point-number="${index + 1}"]`);
   if (marker) {
     marker.setAttribute("aria-label", `${index + 1}. ${label || `Point ${index + 1}`}`);
-    marker.dataset.runPointLabel = label || `Point ${index + 1}`;
+    marker.dataset.runPointLabel = label.trim() || "NO TRICK";
   }
 }
 
@@ -12759,7 +12771,7 @@ function updateSelectedRunPoint(event) {
   const marker = document.querySelector(`[data-run-point-index="${index}"]`);
   if (marker) {
     marker.setAttribute("aria-label", `${index + 1}. ${point.label || `Point ${index + 1}`}`);
-    marker.dataset.runPointLabel = point.label || `Point ${index + 1}`;
+    marker.dataset.runPointLabel = String(point.label || "").trim() || "NO TRICK";
   }
   updateRunBuilderMapDom(index);
 }
@@ -12824,7 +12836,7 @@ function paintRunPlayback(controls, progress = 0) {
   const activeMarker = markers[completedMarker] || markers[0];
   if (callout && activeMarker) {
     const pointNumber = Number(activeMarker.dataset.runPointNumber) || completedMarker + 1;
-    const label = activeMarker.dataset.runPointLabel || `Point ${pointNumber}`;
+    const label = String(activeMarker.dataset.runPointLabel || "").trim() || "NO TRICK";
     const number = callout.querySelector("[data-run-playback-number]");
     const caption = callout.querySelector("small");
     const trick = callout.querySelector("[data-run-playback-label]");
@@ -12939,13 +12951,6 @@ function bindRunPlaybackControls(root = document) {
 
 async function playFinishedRunBuilder() {
   if (!state.runBuilder?.points?.length) return notify("Add at least one numbered point first.", "error");
-  const missingTrickIndex = state.runBuilder.points.findIndex((point, index, points) => index > 0 && index < points.length - 1 && !String(point.label || "").trim());
-  if (missingTrickIndex >= 0) {
-    const input = document.querySelector(`[data-run-trick-index="${missingTrickIndex}"]`);
-    input?.scrollIntoView({ behavior: "smooth", block: "center" });
-    input?.focus({ preventScroll: true });
-    return notify(`Add a trick at dot ${missingTrickIndex + 1} before playback.`, "error");
-  }
   state.runBuilder = { ...currentRunFormState(), stage: "playback", selectedPointIndex: -1 };
   await runBuilderRefreshView();
   const controls = document.querySelector("#run-builder-live [data-run-playback-controls]");

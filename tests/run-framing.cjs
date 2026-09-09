@@ -3,7 +3,7 @@ const assert = require('assert/strict');
 const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
 const root = require('path').resolve(__dirname, '..');
 const app = fs.readFileSync(root+'/app.js','utf8');
-const names = ['fitFullscreenRunRoute','positionRunTrickLabel','runTiming','runTimedPosition','runTimingRowHtml','runPointColor','runPathBetween','runRouteSvg','runView','applyRunView','runMapHtml','cloneRunDialogPreview','fitRunDialogPreview','openRunCrop','openRunPlaybackFullscreen','runPlaybackDefaultSeconds','formatRunPlaybackTime','runPlaybackControlsHtml','runPlaybackSurface','paintRunPlayback','stopRunPlayback','toggleRunPlayback','scrubRunPlayback','setRunPlaybackDuration','updateRunPlaybackDuration','applyRunPlaybackDurationPreset','restartRunPlayback','bindRunPlaybackControls','runBuilderStage','runBuilderTrickEditorHtml','addRunBuilderPoint','dragRunPoint','updateRunBuilderMapDom','saveRunPlan'];
+const names = ['fitFullscreenRunRoute','positionRunTrickLabel','runTiming','runTimedPosition','runTimingRowHtml','runPointColor','runPathBetween','runRouteSvg','runView','applyRunView','runMapHtml','cloneRunDialogPreview','fitRunDialogPreview','openRunCrop','openRunPlaybackFullscreen','runPlaybackDefaultSeconds','formatRunPlaybackTime','runPlaybackControlsHtml','runPlaybackSurface','paintRunPlayback','stopRunPlayback','toggleRunPlayback','scrubRunPlayback','setRunPlaybackDuration','updateRunPlaybackDuration','applyRunPlaybackDurationPreset','restartRunPlayback','bindRunPlaybackControls','runBuilderStage','runBuilderTrickEditorHtml','addRunBuilderPoint','dragRunPoint','updateRunBuilderMapDom','saveRunPlan','playFinishedRunBuilder'];
 const functions = names.map(name => {
  const start = app.search(new RegExp('^(?:async )?function '+name+'\\(', 'm'));
  assert(start>=0,name);
@@ -29,7 +29,7 @@ const functions = names.map(name => {
  const image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="#154a43"/><path d="M0 100H600M0 200H600M0 300H600M0 400H600M0 500H600M100 0V600M200 0V600M300 0V600M400 0V600M500 0V600" stroke="#51aa98"/></svg>');
  state.runBuilder.imageDataUrl=image;
  state.runBuilder.points=Array.from({length:18},(_,i)=>({x:20+(i%6)*10,y:30+Math.floor(i/6)*15,label:i>0&&i<17?'Trick '+i:'',bend:0}));
- function render(){document.querySelector('#host').innerHTML='<div class="run-builder-live"><button id="crop-run-image" onclick="openRunCrop()">Crop image</button><div class="run-map-stage"><div id="run-map">'+runMapHtml(image,state.runBuilder?.points||[], 'Park',true,true,state.runBuilder?.view)+'</div>'+runPlaybackControlsHtml(state.runBuilder?.points||[])+'</div></div>';bindRunPlaybackControls();document.querySelector('#run-map').onclick=addRunBuilderPoint;}
+ function render(){document.querySelector('#host').innerHTML='<div id="run-builder-live" class="run-builder-live"><button id="crop-run-image" onclick="openRunCrop()">Crop image</button><div class="run-map-stage"><div id="run-map">'+runMapHtml(image,state.runBuilder?.points||[], 'Park',true,true,state.runBuilder?.view)+'</div>'+runPlaybackControlsHtml(state.runBuilder?.points||[])+'</div></div>';bindRunPlaybackControls();document.querySelector('#run-map').onclick=addRunBuilderPoint;}
  render();`});
 
 
@@ -72,6 +72,17 @@ const functions = names.map(name => {
  }
  }
  }
+ // An unnamed route point is playable and saveable, including in fullscreen.
+ await page.evaluate(async()=>{state.runBuilder.points[1].label='   ';state.runBuilder.stage='tricks';await playFinishedRunBuilder();stopRunPlayback();});
+ assert.equal(await page.evaluate(()=>state.runBuilder.stage),'playback');
+ await page.evaluate(()=>paintRunPlayback(document.querySelector('#run-builder-live [data-run-playback-controls]'),1/17));
+ assert.equal(await page.locator('#run-builder-live [data-run-playback-label]').innerText(),'NO TRICK');
+ await page.click('[data-run-expand]');await page.evaluate(()=>{stopRunPlayback();paintRunPlayback(document.querySelector('.run-fullscreen-controls'),1/17);});
+ assert.equal(await page.locator('.run-fullscreen-playback [data-run-playback-label]').innerText(),'NO TRICK');
+ await page.click('.run-fullscreen-close');
+ await page.evaluate(async()=>{state.runBuilder.points[1].label='';const form=document.createElement('form');form.innerHTML='<input name="title" value="Unfinished qualifying run">';await saveRunPlan({preventDefault(){},currentTarget:form});});
+ assert.equal(await page.evaluate(()=>saved.points[1].label),'');
+ assert.equal(await page.evaluate(()=>saved.points.length),18);
  assert.deepEqual(errors,[]);
  console.log(`PASS: all 18 dots retain photo coordinates in ${cases} phone/tablet, builder/saved-run, crop/full-photo cases, including rotation.`);
  await browser.close();
