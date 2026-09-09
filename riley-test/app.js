@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.66";
+const RELEASE_VERSION = "2.14.67";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.66" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.67" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10228,35 +10228,25 @@ function runMapHtml(imageDataUrl = "", points = [], title = "Run map", editable 
   return `<div class="run-map-preview" data-run-map-preview data-run-timing="${escapeHtml(JSON.stringify(runTiming(safePoints)))}" data-run-view="${escapeHtml(JSON.stringify(framing))}"><div class="run-map-content" style="--run-zoom:${framing.scale};transform:translate(${framing.x}%,${framing.y}%) scale(${framing.scale})"><img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(title)}" decoding="async" ${editable ? `fetchpriority="high"` : `loading="lazy"`} draggable="false">${runRouteSvg(safePoints)}${markers}<span class="run-playhead" data-run-playhead hidden aria-hidden="true"></span></div>${showPlayback && safePoints.length ? `<span class="run-playback-callout" data-run-playback-callout hidden><b data-run-playback-number></b><span><small></small><strong data-run-playback-label></strong></span></span>` : ""}${safePoints.length ? `<button type="button" class="run-expand" data-run-expand aria-label="Fullscreen run playback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></svg></button>` : ""}</div>`;
 }
 
+function syncRunPhotoFrame(preview) {
+  const image = preview?.querySelector(".run-map-content img");
+  if (!image?.naturalWidth || !image.naturalHeight) return;
+  // Coordinates always refer to the photo itself, never to letterbox space.
+  preview.style.setProperty("--run-photo-aspect", image.naturalWidth / image.naturalHeight);
+}
+
 function cloneRunDialogPreview(source) {
+  syncRunPhotoFrame(source);
   const preview = source.cloneNode(true);
-  const content = source.querySelector(".run-map-content");
-  const image = content?.querySelector("img");
-  const cloneImage = preview.querySelector("img");
-  if (!image || !cloneImage) return preview;
-  const frame = content.getBoundingClientRect();
-  const bounds = image.getBoundingClientRect();
-  if (!frame.width || !frame.height || !image.naturalWidth || !image.naturalHeight) return preview;
-  const style = getComputedStyle(image);
-  const scale = style.objectFit === "cover"
-    ? Math.max(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight)
-    : Math.min(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight);
-  const width = style.objectFit === "fill" ? bounds.width : image.naturalWidth * scale;
-  const height = style.objectFit === "fill" ? bounds.height : image.naturalHeight * scale;
-  const position = style.objectPosition.split(" ").map((value) => Number.parseFloat(value) / 100);
-  // Freeze the painted photo rectangle in the same coordinates as the dots.
-  // Re-running object-fit in a different layout can move the photo underneath them.
-  Object.assign(cloneImage.style, {
-    position: "absolute",
-    left: `${(bounds.left - frame.left + (bounds.width - width) * (position[0] ?? 0.5)) / frame.width * 100}%`,
-    top: `${(bounds.top - frame.top + (bounds.height - height) * (position[1] ?? 0.5)) / frame.height * 100}%`,
-    width: `${width / frame.width * 100}%`,
-    height: `${height / frame.height * 100}%`,
-    maxWidth: "none",
-    maxHeight: "none",
-    objectFit: "fill",
-    objectPosition: "50% 50%",
-  });
+  const image = preview.querySelector(".run-map-content img");
+  if (image) {
+    image.loading = "eager";
+    delete image.dataset.runFrameBound;
+    Object.assign(image.style, {
+      position: "absolute", left: "0", top: "0", width: "100%", height: "100%",
+      maxWidth: "none", maxHeight: "none", objectFit: "fill", objectPosition: "50% 50%",
+    });
+  }
   return preview;
 }
 
@@ -10334,7 +10324,9 @@ function openRunCrop() {
     dialog.close();
     runBuilderRefreshView();
   };
-  const resize = () => { fitRunDialogPreview(dialog, preview, ratio, 230); pointers.clear(); gesture = null; };
+  const photo = preview.querySelector("img");
+  const resize = () => { fitRunDialogPreview(dialog, preview, photo?.naturalWidth && photo.naturalHeight ? photo.naturalWidth / photo.naturalHeight : ratio, 230); pointers.clear(); gesture = null; };
+  photo?.addEventListener("load", resize, { once: true });
   dialog.addEventListener("close", () => { window.removeEventListener("resize", resize); dialog.remove(); document.querySelector("#crop-run-image")?.focus(); }, { once: true });
   document.body.append(dialog);
   dialog.showModal();
@@ -10408,8 +10400,11 @@ function openRunPlaybackFullscreen(event) {
   const duration = sourceControls?.dataset.runPlaybackSeconds || Math.max(1, JSON.parse(preview.dataset.runTiming || "[]").reduce((sum, point) => sum + point.hold + point.travel, 0));
   dialog.insertAdjacentHTML("beforeend", `<button type="button" class="run-fullscreen-close" aria-label="Close fullscreen playback">×</button><div class="run-fullscreen-controls" data-run-playback-controls data-run-playback-seconds="${Number(duration)}"><button type="button" data-run-play-toggle>▶ PLAY RUN</button><button type="button" data-run-play-restart aria-label="Restart run playback">↺</button><input type="hidden" data-run-scrub value="0"></div>`);
   const bounds = source.getBoundingClientRect();
+  const photo = preview.querySelector("img");
   const resize = () => {
-    fitRunDialogPreview(dialog, preview, bounds.width / Math.max(1, bounds.height), 70);
+    const ratio = photo?.naturalWidth && photo.naturalHeight ? photo.naturalWidth / photo.naturalHeight : bounds.width / Math.max(1, bounds.height);
+    syncRunPhotoFrame(preview);
+    fitRunDialogPreview(dialog, preview, ratio, 70);
     fitFullscreenRunRoute(preview);
     const controls = dialog.querySelector("[data-run-playback-controls]");
     if (controls) paintRunPlayback(controls, Number(controls.querySelector("[data-run-scrub]")?.value || 0) / 1000);
@@ -10425,6 +10420,7 @@ function openRunPlaybackFullscreen(event) {
     dialog.remove();
     origin.focus();
   }, { once: true });
+  photo?.addEventListener("load", resize, { once: true });
   document.body.append(dialog);
   dialog.showModal();
   window.addEventListener("resize", resize);
@@ -12938,6 +12934,14 @@ function restartRunPlayback(event) {
 }
 
 function bindRunPlaybackControls(root = document) {
+  root.querySelectorAll("[data-run-map-preview]").forEach(preview => {
+    const image = preview.querySelector(".run-map-content img");
+    syncRunPhotoFrame(preview);
+    if (image && !image.dataset.runFrameBound) {
+      image.dataset.runFrameBound = "true";
+      image.addEventListener("load", () => syncRunPhotoFrame(image.closest("[data-run-map-preview]")), { once: true });
+    }
+  });
   root.querySelectorAll("[data-run-expand]").forEach((button) => { button.onclick = openRunPlaybackFullscreen; });
   root.querySelectorAll("[data-run-play-toggle]").forEach((button) => button.addEventListener("click", toggleRunPlayback));
   root.querySelectorAll("[data-run-play-restart]").forEach((button) => button.addEventListener("click", restartRunPlayback));

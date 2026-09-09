@@ -3,7 +3,7 @@ const assert = require('assert/strict');
 const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
 const root = require('path').resolve(__dirname, '..');
 const app = fs.readFileSync(root+'/app.js','utf8');
-const names = ['fitFullscreenRunRoute','positionRunTrickLabel','runTiming','runTimedPosition','runTimingRowHtml','runPointColor','runPathBetween','runRouteSvg','runView','applyRunView','runMapHtml','cloneRunDialogPreview','fitRunDialogPreview','openRunCrop','openRunPlaybackFullscreen','runPlaybackDefaultSeconds','formatRunPlaybackTime','runPlaybackControlsHtml','runPlaybackSurface','paintRunPlayback','stopRunPlayback','toggleRunPlayback','scrubRunPlayback','setRunPlaybackDuration','updateRunPlaybackDuration','applyRunPlaybackDurationPreset','restartRunPlayback','bindRunPlaybackControls','runBuilderStage','runBuilderTrickEditorHtml','addRunBuilderPoint','dragRunPoint','updateRunBuilderMapDom','saveRunPlan','playFinishedRunBuilder'];
+const names = ['syncRunPhotoFrame','fitFullscreenRunRoute','positionRunTrickLabel','runTiming','runTimedPosition','runTimingRowHtml','runPointColor','runPathBetween','runRouteSvg','runView','applyRunView','runMapHtml','cloneRunDialogPreview','fitRunDialogPreview','openRunCrop','openRunPlaybackFullscreen','runPlaybackDefaultSeconds','formatRunPlaybackTime','runPlaybackControlsHtml','runPlaybackSurface','paintRunPlayback','stopRunPlayback','toggleRunPlayback','scrubRunPlayback','setRunPlaybackDuration','updateRunPlaybackDuration','applyRunPlaybackDurationPreset','restartRunPlayback','bindRunPlaybackControls','runBuilderStage','runBuilderTrickEditorHtml','addRunBuilderPoint','dragRunPoint','updateRunBuilderMapDom','saveRunPlan','playFinishedRunBuilder'];
 const functions = names.map(name => {
  const start = app.search(new RegExp('^(?:async )?function '+name+'\\(', 'm'));
  assert(start>=0,name);
@@ -26,7 +26,7 @@ const functions = names.map(name => {
  const setSyncStatus=()=>{}; const cacheClear=()=>{};
  let saved; const client={from:()=>({insert:p=>{saved=p;return Promise.resolve({});}})};
  ${functions}
- const image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="#154a43"/><path d="M0 100H600M0 200H600M0 300H600M0 400H600M0 500H600M100 0V600M200 0V600M300 0V600M400 0V600M500 0V600" stroke="#51aa98"/></svg>');
+ let image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="#154a43"/><path d="M0 100H600M0 200H600M0 300H600M0 400H600M0 500H600M100 0V600M200 0V600M300 0V600M400 0V600M500 0V600" stroke="#51aa98"/></svg>');
  state.runBuilder.imageDataUrl=image;
  state.runBuilder.points=Array.from({length:18},(_,i)=>({x:20+(i%6)*10,y:30+Math.floor(i/6)*15,label:i>0&&i<17?'Trick '+i:'',bend:0}));
  function render(){document.querySelector('#host').innerHTML='<div id="run-builder-live" class="run-builder-live"><button id="crop-run-image" onclick="openRunCrop()">Crop image</button><div class="run-map-stage"><div id="run-map">'+runMapHtml(image,state.runBuilder?.points||[], 'Park',true,true,state.runBuilder?.view)+'</div>'+runPlaybackControlsHtml(state.runBuilder?.points||[])+'</div></div>';bindRunPlaybackControls();document.querySelector('#run-map').onclick=addRunBuilderPoint;}
@@ -42,13 +42,25 @@ const functions = names.map(name => {
  });
  const matches=(before,after)=>before.forEach((point,i)=>point.forEach((v,j)=>assert(Math.abs(v-after[i][j])<0.002,`Dot ${i+1} shifted relative to the photo: ${v} -> ${after[i][j]}`)));
  let cases=0;
- for(const [width,height] of [[390,844],[768,1024],[1024,768]]){
+ for(const [photoWidth,photoHeight] of [[600,600],[964,1497],[1497,964]]){
+ await page.evaluate(([w,h])=>{image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"><rect width="100%" height="100%" fill="#154a43"/><path d="M0 100H1497M0 200H1497M0 300H1497M0 400H1497M100 0V1497M200 0V1497M300 0V1497M400 0V1497" stroke="#51aa98"/></svg>');state.runBuilder.imageDataUrl=image;},[photoWidth,photoHeight]);
+ for(const [width,height] of [[390,844],[768,1024],[1024,768],[1366,1024]]){
  for(const card of [false,true]){
  for(const crop of [false,true]){
  await page.setViewportSize({width,height});
  await page.evaluate(({card,crop})=>{state.runBuilder.view=crop?{scale:4,x:100,y:-100}:runView();state.runBuilder.points[0]={...state.runBuilder.points[0],x:0,y:0};state.runBuilder.points[1]={...state.runBuilder.points[1],x:100,y:100,label:'Long trick name underneath the highlighted dot'};state.runBuilder.points[17]={...state.runBuilder.points[17],x:100,y:0};render();if(card)document.querySelector('.run-builder-live').className='run-card';}, {card,crop});
  await page.waitForFunction(()=>document.querySelector('.run-map-content img').complete);
  const before=await geometry('#run-map .run-map-preview');
+ const expected=await page.evaluate(()=>state.runBuilder.points.map(p=>[p.x/100,p.y/100]));
+ matches(expected,before); // Test photo anchoring itself, not just preservation of an already broken view.
+ if(photoWidth===964&&width===1366&&!card&&!crop){
+   await page.click('#crop-run-image');
+   matches(expected,await geometry('.run-crop-dialog .run-map-preview'));
+   await page.locator('.run-crop-dialog input').evaluate(input=>{input.value='2';input.dispatchEvent(new Event('input'));});
+   matches(expected,await geometry('.run-crop-dialog .run-map-preview'));
+   await page.click('[data-crop-cancel]');
+ }
+
  await page.click('[data-run-expand]');
  await page.evaluate(()=>stopRunPlayback());
  matches(before,await geometry('.run-fullscreen-playback .run-map-preview'));
@@ -66,9 +78,11 @@ const functions = names.map(name => {
  });
  assert(labelGeometry.visible&&labelGeometry.below&&labelGeometry.inside,'Active trick label should appear below the dot and remain on screen');
  assert(labelGeometry.text.includes('Long trick name'));
+ if(process.env.JKCREW_SCREENSHOT&&photoWidth===964&&width===1366&&!card&&!crop){await page.setViewportSize({width:1366,height:1024});await page.screenshot({path:process.env.JKCREW_SCREENSHOT});}
  await page.click('.run-fullscreen-close');
  await page.waitForFunction(()=>!document.querySelector('dialog'));
  cases++;
+ }
  }
  }
  }
@@ -84,6 +98,6 @@ const functions = names.map(name => {
  assert.equal(await page.evaluate(()=>saved.points[1].label),'');
  assert.equal(await page.evaluate(()=>saved.points.length),18);
  assert.deepEqual(errors,[]);
- console.log(`PASS: all 18 dots retain photo coordinates in ${cases} phone/tablet, builder/saved-run, crop/full-photo cases, including rotation.`);
+ console.log(`PASS: all 18 dots retain photo coordinates in ${cases} square/portrait/landscape photo, phone/iPad, builder/saved-run and crop cases, including rotation; unnamed dots also play and save.`);
  await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

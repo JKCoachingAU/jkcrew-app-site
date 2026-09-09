@@ -11455,3 +11455,16 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-timing-editor input,
 .run-trick-entry input { font-size: max(16px, 1rem); }
 .run-time-stepper button { touch-action: manipulation; flex-shrink: 0; }
+/* Keep image pixels, route paths and dots in one aspect-correct frame. */
+.run-map-preview {
+  --run-photo-max-height: 520px;
+  max-width: min(100%, calc(var(--run-photo-max-height) * var(--run-photo-aspect, 1)));
+  margin-inline: auto;
+}
+.run-card .run-map-preview { --run-photo-max-height: 260px; }
+.run-map-preview .run-map-content > img { width: 100%; height: auto; max-height: none; object-fit: fill; }
+.run-view-dialog .run-map-preview { max-width: 100%; }
+.run-view-dialog .run-map-content > img { height: 100%; max-height: none; }
+@media (min-width: 700px) {
+  .run-builder-live .run-map-preview { --run-photo-max-height: 620px; }
+}
