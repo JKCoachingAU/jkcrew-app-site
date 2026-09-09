@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.70";
+const RELEASE_VERSION = "2.14.71";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.70" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.71" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7970,7 +7970,7 @@ function coachEventRunViewerHtml(runs = [], athleteName = "Rider", item = {}) {
     <header class="contest-event-modal-head"><div><div class="eyebrow">Private rider ${savedRuns.length === 1 ? "run" : "runs"}</div><h2 id="coach-event-run-title">${escapeHtml(athleteName)} · ${escapeHtml(item.title || "Event plan")}</h2><p>${savedRuns.length} saved private ${savedRuns.length === 1 ? "run" : "runs"} for this event</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close rider run">×</button></header>
     <div class="coach-event-run-viewer">
       <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private to coach and rider</strong><p>This park photo, route, tricks and notes are not visible to other riders.</p></div></div>
-      ${savedRuns.map((run) => { const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
+      ${savedRuns.map((run) => { const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${canEditRun(run) ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button></div>` : ""}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
     </div>
   </section>`;
 }
@@ -8098,6 +8098,7 @@ function openCoachEventRunModal(runs = [], athleteName = "Rider", item = {}) {
   state.contestEventEscapeHandler = (event) => { if (event.key === "Escape") close(); };
   document.addEventListener("keydown", state.contestEventEscapeHandler);
   bindRunPlaybackControls();
+  backdrop.querySelectorAll("[data-edit-run]").forEach(button => button.addEventListener("click", editRunPlan));
   backdrop.querySelector("[data-close-contest-event]")?.focus();
 }
 
@@ -10935,7 +10936,7 @@ function runPlaybackControlsHtml(points = [], id = "run") {
 
 function canEditRun(run = {}) {
   if (isCoachRole(state.profile?.role)) return run.coach_id === state.user.id;
-  return run.created_by === state.user?.id;
+  return state.profile?.role === "athlete" && run.athlete_id === state.user?.id;
 }
 
 function refreshMountedRunBuilder() {
@@ -13377,27 +13378,32 @@ async function clearRunBuilder() {
 }
 
 async function editRunPlan(event) {
-  runUndoStack = []; runRedoStack = [];
-  const runId = event.currentTarget.dataset.editRun;
-  const athleteId = isCoachRole(state.profile.role) ? state.selectedAthleteId : state.user.id;
-  const runs = await getRunPlans(athleteId);
-  const run = runs.find((item) => item.id === runId);
-  if (!run || !canEditRun(run)) return notify("You can only edit runs you created.", "error");
-  state.runBuilder = {
-    id: run.id,
-    title: run.title,
-    venue: run.venue,
-    planType: run.plan_type,
-    notes: run.notes,
-    contestItemId: run.contest_item_id || null,
-    imageDataUrl: run.image_data_url,
-    view: runView(run.points?.[0]?.view),
-    points: Array.isArray(run.points) ? run.points : [],
-    selectedPointIndex: Array.isArray(run.points) && run.points.length ? run.points.length - 1 : -1,
-    stage: "route",
-  };
-  await runBuilderRefreshView();
-  document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const button = event.currentTarget;
+  if (button.disabled) return;
+  if (liveRun && !await leaveLiveRun()) return;
+  const restore = setButtonBusy(button, "Opening run…");
+  const userId = state.user.id;
+  try {
+    const { data: run, error } = await withTimeout(client.from("run_plans").select("*").eq("id", button.dataset.editRun).single(), "Open saved run", 15000);
+    if (state.user?.id !== userId) return;
+    if (error) throw error;
+    if (!run || !canEditRun(run)) throw new Error("Only this rider and their linked coach can edit the run.");
+    runUndoStack = []; runRedoStack = [];
+    state.runBuilder = {
+      id: run.id, updatedAt: run.updated_at, athleteId: run.athlete_id, coachId: run.coach_id,
+      athleteName: button.dataset.runAthleteName || "",
+      title: run.title, venue: run.venue, planType: run.plan_type, notes: run.notes,
+      contestItemId: run.contest_item_id || null, imageDataUrl: run.image_data_url,
+      view: runView(run.points?.[0]?.view), points: Array.isArray(run.points) ? run.points : [],
+      selectedPointIndex: Array.isArray(run.points) && run.points.length ? run.points.length - 1 : -1,
+      stage: "route",
+    };
+    if (isCoachRole(state.profile?.role)) state.selectedAthleteId = run.athlete_id;
+    closeContestEventModal();
+    await navigate("contests");
+    document.querySelector("#run-builder-live")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) { notify(messageFrom(error), "error"); }
+  finally { restore(); }
 }
 
 async function archiveRunPlan(event) {
@@ -13425,7 +13431,7 @@ async function saveRunPlan(event) {
   const isCoach = isCoachRole(state.profile.role);
   const athleteId = isCoach ? (state.runBuilder?.athleteId || state.selectedAthleteId) : state.user.id;
   if (!athleteId) return notify("Choose the rider this run belongs to.", "error");
-  const coachId = isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
+  const coachId = state.runBuilder.id ? state.runBuilder.coachId : isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
   const payload = {
     coach_id: coachId,
     athlete_id: athleteId,
@@ -13440,7 +13446,7 @@ async function saveRunPlan(event) {
   };
   setSyncStatus("syncing");
   const query = state.runBuilder.id
-    ? client.from("run_plans").update(payload).eq("id", state.runBuilder.id)
+    ? client.rpc("save_shared_run_edits", { p_run_id: state.runBuilder.id, p_expected_updated_at: state.runBuilder.updatedAt, p_content: payload })
     : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
   const { error } = await query;
   if (error) { setSyncStatus("error"); return notify(messageFrom(error), "error"); }
