@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.63";
+const RELEASE_VERSION = "2.14.64";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.63" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.64" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2855,7 +2855,7 @@ async function getCoachCommandData(roster = []) {
   const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
-  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows] = await Promise.all([
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans] = await Promise.all([
     client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
     ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
@@ -2873,8 +2873,9 @@ async function getCoachCommandData(roster = []) {
     ids.length ? client.from("trick_help_requests").select("id, athlete_id, coach_id, question, status, created_at, video_file_name, video_storage_path").eq("coach_id", state.user.id).in("athlete_id", ids).eq("status", "open").order("created_at", { ascending: true }).limit(60) : { data: [], error: null },
     ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, contest_item_id, created_at, updated_at").in("athlete_id", ids).not("contest_item_id", "is", null).is("archived_at", null).order("created_at", { ascending: false }).limit(40) : { data: [], error: null },
     client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
+    ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, updated_at").eq("coach_id", state.user.id).in("athlete_id", ids).eq("run_status", "ready_for_review").is("archived_at", null).order("updated_at", { ascending: true }) : { data: [], error: null },
   ]);
-  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows].forEach((result) => { if (result.error) throw result.error; });
+  [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans].forEach((result) => { if (result.error) throw result.error; });
   return cacheSet(cacheKey, {
     calendar: calendar.data || [],
     statuses: statusRows.data || [],
@@ -2892,6 +2893,7 @@ async function getCoachCommandData(roster = []) {
     sheetProposals: sheetProposals.data || [],
     helpRequests: helpRequests.data || [],
     eventRunPlans: eventRunPlans.data || [],
+    reviewRunPlans: reviewRunPlans.data || [],
     battles: Array.isArray(battleRows.data) ? battleRows.data : [],
   });
 }
@@ -6226,6 +6228,89 @@ async function renderAthleteCoaching() {
   bindAthleteCoachingInbox(requests);
 }
 
+async function getMyProgressMilestones() {
+  const { data, error } = await client.rpc("get_my_progress_milestones");
+  if (error) throw error;
+  return data || { consistency: [], runs: [] };
+}
+
+function privateProgressMilestonesHtml(data = {}) {
+  const consistency = data.consistency || [];
+  const runs = data.runs || [];
+  if (!consistency.length && !runs.length) return "";
+  const today = dateForCountryCode(state.profile?.country_code || "AU");
+  return `<section class="panel private-progress"><div class="panel-head"><div><div class="eyebrow">Your progress</div><div class="panel-title">Small wins. Real progress.</div><div class="panel-meta">Private milestones · no extra leaderboard points</div></div></div><div class="private-progress-grid">${consistency.map((item) => {
+    const landedToday = [item.started_at, item.completed_at].every(value => value && dateForTimezone(countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane", new Date(value)) === today);
+    return `<article class="private-progress-card"><span class="eyebrow">Becoming consistent</span><strong>${escapeHtml(item.trick_name)}</strong><p>You landed <b>${Number(item.landed)}/10${landedToday ? " today" : ""}</b>. Your previous best was <b>${Number(item.previous_best)}/10</b>.</p><div class="consistency-comparison" aria-label="Previous best ${Number(item.previous_best)} out of 10. New best ${Number(item.landed)} out of 10."><span style="--progress:${Number(item.previous_best) * 10}%">Previous best</span><span style="--progress:${Number(item.landed) * 10}%">New best</span></div><small>${escapeHtml(item.venue || "Percentage training")} · ${dateLabel(item.completed_at)}</small></article>`;
+  }).join("")}${runs.map((run) => `<article class="private-progress-card preparation"><span class="eyebrow">Competition preparation</span><strong>${escapeHtml(run.title)}</strong><p>${run.run_status === "reviewed" ? "Your coach has reviewed this run." : "Your run is ready for a coach review."}</p><button class="secondary-btn compact-btn" type="button" data-open-progress-run="${escapeHtml(run.id)}">Watch run</button></article>`).join("")}</div></section>`;
+}
+
+function runReviewPanelHtml(run = {}) {
+  if (run.archived_at || run.plan_type !== "competition") return "";
+  const coach = isCoachRole(state.profile?.role) && run.coach_id === state.user?.id;
+  const owner = state.profile?.role === "athlete" && run.athlete_id === state.user?.id && run.created_by === state.user?.id;
+  const ready = run.run_status === "ready_for_review";
+  const reviewed = run.run_status === "reviewed";
+  const button = (status, label) => `<button class="secondary-btn compact-btn" type="button" data-run-review="${escapeHtml(run.id)}" data-review-status="${status}" data-run-updated="${escapeHtml(run.updated_at)}">${label}</button>`;
+  return `<div class="run-review-panel ${ready || reviewed ? "is-ready" : ""}" data-run-review-panel="${escapeHtml(run.id)}"><div><span class="eyebrow">Competition preparation</span><strong>${reviewed ? "✓ Coach reviewed" : ready ? "Ready for coach review" : "Draft run"}</strong><small>${reviewed ? "Edits will return this run to a draft for another review." : ready ? "Private to rider and coach. Editing returns this run to a draft." : "Save your route and trick names, then mark it ready."}</small></div><div class="actions">${coach && ready ? button("reviewed", "Mark reviewed") : ""}${(owner || coach) && !ready && !reviewed ? button("ready_for_review", "Ready for coach review") : ""}${(owner || coach) && ready ? button("planned", "Return to draft") : ""}</div></div>`;
+}
+
+async function updateRunReviewStatus(button) {
+  const restore = setButtonBusy(button, "Saving…");
+  setSyncStatus("syncing");
+  try {
+    const { data, error } = await client.rpc("set_run_review_status", {
+      p_run_id: button.dataset.runReview,
+      p_status: button.dataset.reviewStatus,
+      p_expected_updated_at: button.dataset.runUpdated,
+    });
+    if (error) throw error;
+    cacheClear("run-plans:");
+    cacheClear("coach-command:");
+    document.querySelectorAll("[data-run-review-panel]").forEach(panel => {
+      if (panel.dataset.runReviewPanel === data.id) panel.outerHTML = runReviewPanelHtml(data);
+    });
+    setSyncStatus("saved");
+    notify(data.run_status === "reviewed" ? "Run marked as coach reviewed." : data.run_status === "ready_for_review" ? "Your run is ready for a coach review." : "Run returned to draft.");
+    if (state.view === "command") void renderCoachCommand().catch(error => console.warn("Run review queue refresh failed", error));
+    if (state.view === "home") void getMyProgressMilestones().then(milestones => {
+      const panel = document.querySelector("#athlete-home-milestones");
+      if (state.view === "home" && panel) panel.innerHTML = privateProgressMilestonesHtml(milestones);
+    }).catch(error => console.warn("Private milestones refresh failed", error));
+  } catch (error) {
+    setSyncStatus("error");
+    notify(messageFrom(error), "error");
+  } finally { restore(); }
+}
+
+async function openProgressRun(button) {
+  const restore = setButtonBusy(button, "Opening…");
+  try {
+    const { data, error } = await client.from("run_plans").select("*").eq("id", button.dataset.openProgressRun).is("archived_at", null).single();
+    if (error) throw error;
+    openCoachEventRunModal([data], button.dataset.riderName || state.profile?.display_name || "Rider", { title: data.title });
+  } catch (error) { notify(messageFrom(error), "error"); }
+  finally { restore(); }
+}
+
+function coachRunReviewQueueHtml(runs = [], roster = []) {
+  return `<div class="notification-list">${runs.length ? runs.map(run => {
+    const rider = roster.find(item => item.id === run.athlete_id)?.display_name || "Rider";
+    return `<button class="notification-card" type="button" data-open-progress-run="${escapeHtml(run.id)}" data-rider-name="${escapeHtml(rider)}"><span>Ready for coach review</span><strong>${escapeHtml(rider)} — ${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Competition run")} · Watch and review</small></button>`;
+  }).join("") : `<div class="empty compact-empty">No runs waiting for review.</div>`}</div>`;
+}
+
+document.addEventListener("click", event => {
+  const review = event.target.closest?.("[data-run-review]");
+  const open = event.target.closest?.("[data-open-progress-run]");
+  if (!review && !open) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (review && !review.disabled) void updateRunReviewStatus(review);
+  else if (open && !open.disabled) void openProgressRun(open);
+}, true);
+
+
 async function renderAthleteHome() {
   const renderVersion = ++state.athleteHomeRenderVersion;
   const [leaderboard, riderBattles, activeSession] = await Promise.all([
@@ -6261,6 +6346,7 @@ async function renderAthleteHome() {
       </div>
       ${xpProgressHtml(xp)}
     </section>
+    <div id="athlete-home-milestones"></div>
     ${athleteRunBuilderCtaHtml()}
     <div id="athlete-home-coaching">${athleteCoachingCtaHtml([])}</div>
     ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
@@ -6296,10 +6382,15 @@ async function renderAthleteHome() {
       console.warn("Coaching reply summary unavailable", error);
       return [];
     }),
+    getMyProgressMilestones().catch((error) => {
+      console.warn("Private milestones unavailable", error);
+      return {};
+    }),
   ]);
-  void secondaryDataPromise.then(([schedule, trickRequests, sheetProposals, coachMessages, coachingRequests]) => {
+  void secondaryDataPromise.then(([schedule, trickRequests, sheetProposals, coachMessages, coachingRequests, milestones]) => {
     if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
     const { assignments = [], awards = [] } = schedule;
+    document.querySelector("#athlete-home-milestones").innerHTML = privateProgressMilestonesHtml(milestones);
     document.querySelector("#athlete-home-coach-messages").innerHTML = coachMessagesHtml(coachMessages);
     document.querySelector("#athlete-home-coaching").innerHTML = athleteCoachingCtaHtml(coachingRequests);
     document.querySelector("#athlete-home-week").innerHTML = weekSummaryHtml(assignments, awards);
@@ -7875,7 +7966,7 @@ function coachEventRunViewerHtml(runs = [], athleteName = "Rider", item = {}) {
     <header class="contest-event-modal-head"><div><div class="eyebrow">Private rider ${savedRuns.length === 1 ? "run" : "runs"}</div><h2 id="coach-event-run-title">${escapeHtml(athleteName)} · ${escapeHtml(item.title || "Event plan")}</h2><p>${savedRuns.length} saved private ${savedRuns.length === 1 ? "run" : "runs"} for this event</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close rider run">×</button></header>
     <div class="coach-event-run-viewer">
       <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private to coach and rider</strong><p>This park photo, route, tricks and notes are not visible to other riders.</p></div></div>
-      ${savedRuns.map((run) => { const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
+      ${savedRuns.map((run) => { const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
     </div>
   </section>`;
 }
@@ -8964,6 +9055,7 @@ async function renderCoachCommand() {
   const recentEventRuns = (commandData.eventRunPlans || []).filter((run) => new Date(run.created_at) >= new Date(weekStartIso()));
   const activeBattleCount = (commandData.battles || []).filter((battle) => battle.status === "accepted").length;
   const teamSections = [
+    commandAccordionSection("run-reviews-section", "Run Reviews", "Competition runs ready for your review", coachRunReviewQueueHtml(commandData.reviewRunPlans, roster)),
     commandAccordionSection("list-requests-section", "List Requests", "Complete weekly lists waiting for your approval", coachListRequestsHtml(commandData.sheetProposals, roster)),
     commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
     commandAccordionSection("event-runs-section", "New Event Run Plans", "Private rider runs created this week", coachEventRunPlansHtml(recentEventRuns, roster)),
@@ -8978,7 +9070,7 @@ async function renderCoachCommand() {
     <section class="command-metrics" aria-label="Coach overview">
       ${commandMetricCard("Students", roster.length, "In your crew", { view: "crew" })}
       ${commandMetricCard("Videos to Reply", videoReplyCount, "Coach Help queue", { view: "videoReviews" })}
-      ${commandMetricCard("New Event Runs", recentEventRuns.length, "Planned this week", { target: "event-runs-section" })}
+      ${commandData.reviewRunPlans?.length ? commandMetricCard("Runs to Review", commandData.reviewRunPlans.length, "Ready for your feedback", { target: "run-reviews-section" }) : commandMetricCard("New Event Runs", recentEventRuns.length, "Planned this week", { target: "event-runs-section" })}
       ${commandMetricCard("Active Battles", activeBattleCount, "Live rider battles", { view: "battleViewer" })}
       ${commandMetricCard("Upcoming", upcoming, "Events to manage", { view: "contests" })}
       ${commandMetricCard("List Requests", listRequestCount, "Student lists", { target: "list-requests-section" })}
@@ -10429,7 +10521,7 @@ function runPlansHtml(runs = []) {
   const archivedRuns = runs.filter((run) => run.archived_at);
   const card = (run) => {
     const points = Array.isArray(run.points) ? run.points : [];
-    return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}</div></article>`;
+    return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runReviewPanelHtml(run)}<div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}</div></article>`;
   };
   return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
 }

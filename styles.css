@@ -11426,3 +11426,19 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
   overflow-wrap: anywhere; text-align: center; font: 700 14px/1.25 var(--sans);
 }
 .run-fullscreen-playback { overflow: hidden; }
+/* Private progress stays separate from the public scoreboard. */
+.private-progress-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.private-progress-card { min-width: 0; padding: 18px; border: 1px solid rgba(0, 224, 208, .3); border-radius: 16px; background: rgba(0, 224, 208, .045); }
+.private-progress-card > strong { display: block; margin-top: 8px; font-size: 21px; overflow-wrap: anywhere; }
+.private-progress-card p { margin: 10px 0; line-height: 1.5; }
+.private-progress-card small { display: block; margin-top: 12px; color: var(--muted, #94a3a8); }
+.private-progress-card.preparation { border-color: rgba(151, 117, 255, .45); background: rgba(151, 117, 255, .055); }
+.consistency-comparison { display: grid; gap: 7px; margin-top: 16px; }
+.consistency-comparison span { padding: 5px 9px; border-radius: 5px; font-size: 12px; background: linear-gradient(to right, rgba(0, 224, 208, .22) var(--progress), rgba(255,255,255,.035) var(--progress)); }
+.consistency-comparison span:first-child { opacity: .65; }
+.run-review-panel { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 14px; margin: 12px 0; border: 1px solid rgba(255,255,255,.15); border-radius: 12px; }
+.run-review-panel > div:first-child { flex: 1 1 200px; min-width: 0; }
+.run-review-panel strong, .run-review-panel small { display: block; margin-top: 5px; }
+.run-review-panel small { color: var(--muted, #94a3a8); line-height: 1.4; }
+.run-review-panel.is-ready { border-color: rgba(0,224,208,.4); background: rgba(0,224,208,.05); }
+.run-review-panel .actions { margin: 0; flex-wrap: wrap; }
