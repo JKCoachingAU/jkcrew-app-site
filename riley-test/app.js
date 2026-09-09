@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.58";
+const RELEASE_VERSION = "2.14.59";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.58" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.59" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2361,6 +2361,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
       else if (state.view === "videoReviews" && isCoachRole(state.profile.role)) await renderVideoReviews();
       else if (state.view === "sessionViewer") await refreshSessionViewerLight();
       else if (state.view === "board") await renderBoard();
+      else if (state.view === "battleViewer") await refreshCoachBattleScores();
       else if (state.view === "challenges") await renderChallenges();
       else if (state.view === "contests") await renderContests();
       else if (state.view === "home") {
@@ -8351,7 +8352,7 @@ function coachBattleCardHtml(battle) {
   const coachAcceptActions = battle.status === "pending" && pendingRiders.length ? `<div class="coach-battle-pending-actions"><div><strong>Waiting for rider approval</strong><small>Accept for a rider who cannot access the app.</small></div><div>${pendingRiders.map((participant) => `<button class="secondary-btn compact-btn" type="button" data-coach-accept-battle="${battle.id}" data-coach-accept-athlete="${participant.athlete_id}">✓ Accept for ${escapeHtml(battleParticipantFirstName(participant))}</button>`).join("")}</div></div>` : "";
   const archiveAction = ["completed", "declined"].includes(battle.status) ? `<button class="secondary-btn compact-btn" type="button" data-archive-coach-battle="${battle.id}" data-battle-archived="${archived}">${archived ? "Restore battle" : "Archive battle"}</button>` : "";
   const searchableRiders = participants.map((participant) => participant.display_name || "").join(" ").toLowerCase();
-  return `<details class="coach-battle-view-card battle-hq-card ${escapeHtml(battle.status)}" data-battle-hq-status="${escapeHtml(archived ? "archived" : battle.status)}" data-battle-hq-riders="${escapeHtml(searchableRiders)}">
+  return `<details class="coach-battle-view-card battle-hq-card ${escapeHtml(battle.status)}" data-battle-id="${escapeHtml(battle.id)}" data-battle-hq-status="${escapeHtml(archived ? "archived" : battle.status)}" data-battle-hq-riders="${escapeHtml(searchableRiders)}">
     <summary class="coach-battle-card-summary">
       <span class="status-chip">${escapeHtml(statusLabel)}</span>
       <span class="coach-battle-summary-matchup"><strong>${teamNames.join(" <b>VS</b> ")}</strong><small>${teamScores.join("–")} pts · ${escapeHtml(timing)}</small></span>
@@ -8403,12 +8404,36 @@ function coachArchivedBattleSection(battles = []) {
   return `<details class="panel coach-battle-view-section coach-battle-archive tone-blue"><summary><span><strong>Archived battles</strong><small>Finished results kept safely out of the main view</small></span><span class="pill">${battles.length}</span></summary><div class="coach-battle-view-list">${battles.length ? battles.map(coachBattleCardHtml).join("") : `<div class="empty compact-empty">No archived battles yet.</div>`}</div></details>`;
 }
 
+let battleScoreRefreshRunning = false;
+async function refreshCoachBattleScores() {
+  if (battleScoreRefreshRunning || state.view !== "battleViewer" || !isCoachRole(state.profile?.role)
+    || document.visibilityState === "hidden" || document.querySelector(".battle-intro-backdrop")
+    || document.activeElement?.matches("input, select, textarea")) return;
+  battleScoreRefreshRunning = true;
+  const view = document.querySelector("#view");
+  const openCards = [...view.querySelectorAll("details[open]")].map(el => el.dataset.battleId).filter(Boolean);
+  const scrollY = window.scrollY;
+  const search = view.querySelector("#battle-hq-search")?.value || "";
+  const filter = view.querySelector("[data-battle-hq-filter].active")?.dataset.battleHqFilter || "all";
+  try {
+    await renderCoachBattleViewer();
+    if (state.view === "battleViewer") {
+      view.querySelectorAll("details[data-battle-id]").forEach(el => { el.open = openCards.includes(el.dataset.battleId); });
+      const searchInput = view.querySelector("#battle-hq-search");
+      if (searchInput) { searchInput.value = search; searchInput.dispatchEvent(new Event("input")); }
+      [...view.querySelectorAll("[data-battle-hq-filter]")].find(el => el.dataset.battleHqFilter === filter)?.click();
+      window.scrollTo(0, scrollY);
+    }
+  } finally { battleScoreRefreshRunning = false; }
+}
+
 async function renderCoachBattleViewer() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   const [{ data: battles, error }, roster] = await Promise.all([
     client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
     getCoachRoster(),
   ]);
+  if (state.view !== "battleViewer") return;
   if (error) throw error;
   const rows = Array.isArray(battles) ? battles : [];
   const current = rows.filter((battle) => !battle.archived_at);
@@ -14377,9 +14402,13 @@ if ("serviceWorker" in navigator) {
     window.location.replace(nextUrl.href);
   });
 }
+window.setInterval(() => { if (state.user?.id) refreshCoachBattleScores().catch(error => console.warn("Battle score refresh failed", error)); }, 20000);
 window.addEventListener("pageshow", () => refreshServiceWorkerRelease().catch(() => {}));
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") refreshServiceWorkerRelease().catch(() => {});
+  if (document.visibilityState === "visible") {
+    refreshServiceWorkerRelease().catch(() => {});
+    if (state.user?.id) refreshCoachBattleScores().catch(() => {});
+  }
 });
 window.addEventListener("load", async () => {
   updateInstallButton();
