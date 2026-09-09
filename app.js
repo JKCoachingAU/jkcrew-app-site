@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.71";
+const RELEASE_VERSION = "2.14.72";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.71" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.72" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -6290,6 +6290,47 @@ async function updateRunReviewStatus(button) {
   } finally { restore(); }
 }
 
+function riderSavedRunsHtml(runs = []) {
+  const own = runs.filter(run => run.athlete_id === state.user?.id && !run.archived_at);
+  return `<section class="panel rider-saved-runs"><div class="panel-head"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">Runs made by you and your coach</div></div><button class="secondary-btn compact-btn" type="button" data-rider-saved-runs="all">Refresh / view all</button></div>
+    <div class="notification-list">${own.length ? own.map(run => `<button class="notification-card" type="button" data-open-progress-run="${escapeHtml(run.id)}"><span>${run.created_by === state.user.id ? "Made by you" : "From your coach"}</span><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at)} · Open to watch or edit</small></button>`).join("") : `<p>No saved runs yet. Refresh to check for a new run from your coach.</p>`}</div></section>`;
+}
+
+async function openRiderSavedRuns(event) {
+  if (state.profile?.role !== "athlete") return;
+  const button = event.currentTarget;
+  if (button.disabled) return;
+  const restore = setButtonBusy(button, "Loading saved runs…");
+  const userId = state.user.id;
+  try {
+    // Read fresh metadata, even while an unsaved builder is open. Load a photo only when its run is opened.
+    let query = client.from("run_plans").select("id,athlete_id,title,venue,created_by,updated_at,contest_item_id")
+      .eq("athlete_id", userId).is("archived_at", null).order("updated_at", { ascending: false }).limit(100);
+    const eventId = button.dataset.riderSavedRuns;
+    if (eventId && eventId !== "all") query = query.eq("contest_item_id", eventId);
+    const { data, error } = await withTimeout(query, "Load saved runs", 15000);
+    if (error) throw error;
+    if (state.user?.id !== userId) return;
+    cacheClear("run-plans:");
+    closeContestEventModal();
+    const backdrop = document.createElement("div");
+    backdrop.id = "contest-event-backdrop"; backdrop.className = "contest-event-backdrop";
+    backdrop.innerHTML = `<section class="contest-event-modal" role="dialog" aria-modal="true" aria-labelledby="saved-runs-title"><header class="contest-event-modal-head"><div><h2 id="saved-runs-title">Your saved runs</h2><p>Private to you and your linked coach</p></div><button type="button" class="contest-event-modal-close" data-close-contest-event aria-label="Close saved runs">×</button></header>${riderSavedRunsHtml(data || [])}</section>`;
+    document.body.append(backdrop); document.documentElement.classList.add("contest-event-open");
+    backdrop.querySelector("[data-close-contest-event]").onclick = closeContestEventModal;
+    backdrop.addEventListener("click", event => { if (event.target === backdrop) closeContestEventModal(); });
+    state.contestEventEscapeHandler = event => { if (event.key === "Escape") closeContestEventModal(); };
+    document.addEventListener("keydown", state.contestEventEscapeHandler);
+    bindRiderSavedRuns(backdrop);
+    backdrop.querySelector("[data-close-contest-event]").focus();
+  } catch (error) { notify(messageFrom(error), "error"); }
+  finally { restore(); }
+}
+
+function bindRiderSavedRuns(root = document) {
+  root.querySelectorAll("[data-rider-saved-runs]").forEach(button => { button.onclick = openRiderSavedRuns; });
+}
+
 async function openProgressRun(button) {
   const restore = setButtonBusy(button, "Opening…");
   try {
@@ -7878,7 +7919,7 @@ function contestEventCardsHtml(events = [], runs = [], attendance = [], roster =
         <span class="contest-event-going">${contestEventFacesHtml(attendees)}</span>
         <span class="contest-event-chevron" aria-hidden="true">›</span>
       </button>
-      ${athleteView ? `<div class="contest-event-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ GOING" : "+ I'M GOING"}</button><button class="secondary-btn compact-btn contest-build-button" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>${linkedRuns ? "ADD PRIVATE RUN" : "BUILD PRIVATE RUN"}</button></div>` : ""}
+      ${athleteView ? `<div class="contest-event-actions"><button class="secondary-btn compact-btn" type="button" data-rider-saved-runs="${escapeHtml(item.id)}">VIEW MY SAVED RUNS${linkedRuns ? ` (${linkedRuns})` : ""}</button><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ GOING" : "+ I'M GOING"}</button><button class="secondary-btn compact-btn contest-build-button" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>${linkedRuns ? "ADD PRIVATE RUN" : "BUILD PRIVATE RUN"}</button></div>` : ""}
       ${coachView ? `<div class="contest-event-actions contest-event-coach-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"} compact-btn" type="button" data-toggle-coach-event-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M ATTENDING" : "+ I'LL BE THERE"}</button><button class="secondary-btn compact-btn" type="button" data-open-contest-event="${escapeHtml(item.id)}">MANAGE EVENT</button><button class="secondary-btn compact-btn contest-merge-button" type="button" data-select-event-merge="${escapeHtml(item.id)}">${mergeSelected ? "SELECTED · CHOOSE ANOTHER" : "MERGE DUPLICATE"}</button></div>` : ""}
     </article>`;
   }).join("")}</div>`;
@@ -7960,7 +8001,7 @@ function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []
     ${coachView ? coachContestEventEditorHtml(item) : ""}
     ${coachView ? coachEventAttendanceEditorHtml(item, attendees, roster) : ""}
     <div class="contest-private-note"><span aria-hidden="true">🔒</span><div><strong>${coachView ? "Rider run plans stay private" : parentView ? "Private run plans stay protected" : "Your run plan stays private"}</strong><p>${coachView ? "The shared course photo is separate. Each rider's route, trick list, notes and private run photo remain visible only to that rider and their linked coach." : parentView ? "You can view the shared event and clean course photo. Rider routes, numbered dots, trick notes and private run photos are never shown on this parent page." : `The shared course photo never includes another rider's plan. Other riders cannot see your route, tricks, notes or private run photo.${linkedRuns ? ` You have ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"} saved for this event.` : ""}`}</p></div></div>
-    ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
+    ${state.profile?.role === "athlete" ? `<div class="contest-event-modal-actions"><button class="secondary-btn" type="button" data-rider-saved-runs="${escapeHtml(item.id)}">VIEW MY SAVED RUNS</button><button class="${going ? "secondary-btn is-going" : "primary-btn"}" type="button" data-toggle-contest-attendance="${escapeHtml(item.id)}" data-attending="${going}">${going ? "✓ I'M GOING" : "+ I'M GOING"}</button><button class="primary-btn" type="button" data-build-event-run="${escapeHtml(item.id)}" ${contestEventDataAttributes(item)}>BUILD PRIVATE RUN</button></div>` : ""}
   </section>`;
 }
 
@@ -8080,6 +8121,7 @@ function openContestEventModal(item = {}, attendees = [], runs = [], roster = []
     const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === button.dataset.viewRiderEventRuns && !run.archived_at);
     if (riderRuns.length) openCoachEventRunModal(riderRuns, button.dataset.runAthleteName || "Rider", item);
   }));
+  bindRiderSavedRuns(backdrop);
   backdrop.querySelector("[data-close-contest-event]")?.focus();
 }
 
@@ -8401,6 +8443,7 @@ function bindCoachContestMergeActions(events = [], attendance = []) {
 }
 
 function bindContestEventActions(events = [], attendance = [], runs = [], roster = [], viewOptions = {}) {
+  bindRiderSavedRuns();
   const eventById = new Map(events.map((item) => [item.id, item]));
   document.querySelector("#contest-event-search")?.addEventListener("input", (event) => {
     const search = normalizeContestEventTitle(event.currentTarget.value);
@@ -8876,6 +8919,7 @@ async function renderContests() {
   document.querySelector("#view").innerHTML = `
     ${parentView ? parentChildSwitcherHtml(parentContext) : ""}
     <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : parentView ? "Family event view · Read only" : "Events & private planning"}</div><h1>${parentView ? "Upcoming" : "Events &"} <span>${parentView ? "events" : "runs"}</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : parentView ? `The same event list ${escapeHtml(firstName(viewedAthlete))} sees. Open an event to view who is going and the shared course photo.` : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
+    ${athleteView ? riderSavedRunsHtml(activeRuns) : ""}
     <section class="panel shared-events-panel athlete-event-palette">
       <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : parentView ? `Read-only event access for ${escapeHtml(firstName(viewedAthlete))}. Private rider run plans are not displayed.` : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
       ${contestEventCardsHtml(events, runs, attendance, roster, viewOptions)}
@@ -11027,7 +11071,7 @@ function runBuilderPanel(runs = [], options = {}) {
   const builderImageSource = options.preserveExistingImage
     ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
     : builder.imageDataUrl;
-  const body = `<div data-live-run-bar>${liveRunBarHtml()}</div><form id="run-builder-form" class="run-builder-form">
+  const body = `${state.profile?.role === "athlete" ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs · yours + coach’s</button></div>` : ""}<div data-live-run-bar>${liveRunBarHtml()}</div><form id="run-builder-form" class="run-builder-form">
       ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
@@ -12896,6 +12940,7 @@ async function copyParentUpdate() {
 }
 
 function bindRunBuilderActions(root = document) {
+  bindRiderSavedRuns(root);
   root.querySelector("#retry-run-course")?.addEventListener("click", () => loadRunBuilderCourse());
   root.querySelector("#skip-run-course")?.addEventListener("click", skipRunBuilderCourse);
   root.querySelectorAll("[data-run-history]").forEach(button => button.addEventListener("click", restoreRunEdit));
@@ -13380,6 +13425,7 @@ async function clearRunBuilder() {
 async function editRunPlan(event) {
   const button = event.currentTarget;
   if (button.disabled) return;
+  if (!liveRun && state.runBuilder?.points?.length && !window.confirm("Your current run has unsaved changes. Open this saved run instead?")) return;
   if (liveRun && !await leaveLiveRun()) return;
   const restore = setButtonBusy(button, "Opening run…");
   const userId = state.user.id;

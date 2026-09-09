@@ -11,6 +11,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
  await page.addScriptTag({content:`
  const bindLiveRunControls=()=>{};
+ const bindRiderSavedRuns=()=>{};
  const state={runBuilder:{points:Array.from({length:14},(_,i)=>({x:i*7,y:50,label:'Trick '+i,travelSeconds:7,holdSeconds:0})),selectedPointIndex:7}};
  const escapeHtml=s=>String(s);const rememberRunEdit=()=>{};const stopRunPlayback=()=>{},bindRunPlaybackControls=()=>{};
  ${[...new Set(handlers)].filter(n=>n!=='rememberRunEdit').map(n=>`const ${n}=()=>{};`).join('\n')}

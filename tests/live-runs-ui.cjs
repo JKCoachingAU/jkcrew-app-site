@@ -43,7 +43,8 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
   await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="view"></main>');
   await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
   await page.addScriptTag({content:`
-   const state={user:{id:${JSON.stringify(role==='coach'?'coach':'rider')}},profile:{role:${JSON.stringify(role)}},view:'contests',draggedRunPoint:null,runPointMapClickBlockUntil:0,runPointDragClickBlockUntil:0};
+   const bindRiderSavedRuns=()=>{};
+ const state={user:{id:${JSON.stringify(role==='coach'?'coach':'rider')}},profile:{role:${JSON.stringify(role)}},view:'contests',draggedRunPoint:null,runPointMapClickBlockUntil:0,runPointDragClickBlockUntil:0};
    let runUndoStack=[],runRedoStack=[];const RUN_PLAYBACK_MAX_SECONDS=3600;
    const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
    const isCoachRole=r=>r==='coach',messageFrom=e=>e.message||String(e),cacheClear=()=>{},getLinkedCoachIdForCurrentAthlete=async()=>'coach';
