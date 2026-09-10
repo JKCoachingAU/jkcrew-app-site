@@ -11600,3 +11600,12 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-segment-editor > small { color: var(--muted, #a7b6bb); }
 .run-segment-editor input { font-size: 18px; min-height: 44px; padding: 8px; border: 1px solid #20e3c370; border-radius: 9px; color: #fff; background: #031013; }
 .run-segment-editor [data-run-segment-total] { font-size: 14px; }
+
+.run-duplicate-dialog { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid #20e3c380; border-radius: 20px; background: #09191c; color: #fff; }
+.run-duplicate-dialog::backdrop { background: #000b; }
+.run-duplicate-dialog form { display: grid; gap: 16px; }
+.run-duplicate-dialog h2, .run-duplicate-dialog p { margin: 0; }
+.run-duplicate-dialog p, .run-duplicate-dialog small { color: #acbec2; }
+.run-duplicate-dialog label { display: grid; gap: 8px; }
+.run-duplicate-dialog input, .run-duplicate-dialog select { width: 100%; min-height: 48px; padding: 10px; border: 1px solid #20e3c370; border-radius: 9px; background: #031013; color: #fff; font-size: 16px; }
+.run-duplicate-dialog button { min-height: 44px; touch-action: manipulation; }

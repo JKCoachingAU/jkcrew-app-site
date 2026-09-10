@@ -2,7 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const app=fs.readFileSync(require('node:path').join(__dirname,'../app.js'),'utf8');
 const names=['runTiming','runTimedPosition','runPlaybackDefaultSeconds','rememberRunEdit','restoreRunEdit','duplicateCurrentRun','deleteSelectedRunPoint'];
 const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2)}).join('\n');
-const c={state:{runBuilder:{id:'original',athleteId:'rider',points:[{x:0,travelSeconds:10},{x:50,holdSeconds:7,travelSeconds:12},{x:100}],selectedPointIndex:1}},document:{querySelector:()=>null},runBuilderRefreshView:async()=>{},stopRunPlayback:()=>{},notify:()=>{}};
+const c={liveRun:null,structuredClone,state:{runBuilder:{id:'original',athleteId:'rider',points:[{x:0,travelSeconds:10},{x:50,holdSeconds:7,travelSeconds:12},{x:100}],selectedPointIndex:1}},document:{querySelector:()=>null},runBuilderRefreshView:async()=>{},stopRunPlayback:()=>{},notify:()=>{}};
 c.currentRunFormState=()=>({...c.state.runBuilder});vm.createContext(c);vm.runInContext('let runUndoStack=[],runRedoStack=[];'+code,c);
 (async()=>{
  const timing=c.runTiming(c.state.runBuilder.points);assert.equal(c.runPlaybackDefaultSeconds(c.state.runBuilder.points),29);

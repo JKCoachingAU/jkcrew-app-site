@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.75";
+const RELEASE_VERSION = "2.14.76";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.75" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.76" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8061,7 +8061,7 @@ function coachEventRunViewerHtml(runs = [], athleteName = "Rider", item = {}) {
     <header class="contest-event-modal-head"><div><div class="eyebrow">Private rider ${savedRuns.length === 1 ? "run" : "runs"}</div><h2 id="coach-event-run-title">${escapeHtml(athleteName)} · ${escapeHtml(item.title || "Event plan")}</h2><p>${savedRuns.length} saved private ${savedRuns.length === 1 ? "run" : "runs"} for this event</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close rider run">×</button></header>
     <div class="coach-event-run-viewer">
       <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private to coach and rider</strong><p>This park photo, route, tricks and notes are not visible to other riders.</p></div></div>
-      ${savedRuns.map((run) => { if (!("image_data_url" in run)) return runSummaryCardHtml(run, athleteName); const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${canEditRun(run) ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button></div>` : ""}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
+      ${savedRuns.map((run) => { if (!("image_data_url" in run)) return runSummaryCardHtml(run, athleteName); const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${canEditRun(run) ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}" data-run-athlete-name="${escapeHtml(athleteName)}">Duplicate run</button></div>` : ""}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
     </div>
   </section>`;
 }
@@ -8192,6 +8192,7 @@ function openCoachEventRunModal(runs = [], athleteName = "Rider", item = {}) {
   document.addEventListener("keydown", state.contestEventEscapeHandler);
   bindRunPlaybackControls();
   backdrop.querySelectorAll("[data-edit-run]").forEach(button => button.addEventListener("click", editRunPlan));
+  backdrop.querySelectorAll("[data-copy-saved-run]").forEach(button => button.addEventListener("click", openRunDuplicate));
   backdrop.querySelector("[data-close-contest-event]")?.focus();
 }
 
@@ -8857,7 +8858,7 @@ async function openLiveRunInvitation(id) {
 }
 
 async function refreshLiveRunInvites() {
-  if (liveRunDiscoveryBusy || !state.user?.id || !["athlete", "coach", "admin"].includes(state.profile?.role) ||
+  if (liveRunDiscoveryBusy || !state.user?.id || !(state.profile?.role === "athlete" || isCoachRole(state.profile?.role)) ||
     document.hidden) return;
   const userId = state.user.id, view = state.view, host = document.querySelector("#view");
   if (!host) return;
@@ -11130,9 +11131,41 @@ function updateRunTiming(event) {
   document.querySelectorAll("#run-builder-live [data-run-playback-controls]").forEach(controls => setRunPlaybackDuration(controls, total));
 }
 
+function openRunDuplicate(event) {
+  const source = event.currentTarget;
+  if (source.disabled || liveRun || !["athlete", "coach", "admin"].includes(state.profile?.role)) return;
+  const saved = Boolean(source.dataset.copySavedRun);
+  if (!saved && !state.runBuilder) return;
+  const title = saved ? source.dataset.runTitle || "" : document.querySelector("#run-title")?.value || state.runBuilder.title || "";
+  const suggested = /semi/i.test(title) ? "Final" : /qualif/i.test(title) ? "Semi-final" : "Qualifying";
+  document.querySelector(".run-duplicate-dialog")?.remove();
+  const dialog = document.createElement("dialog");
+  dialog.className = "run-duplicate-dialog";
+  dialog.setAttribute("aria-labelledby", "run-duplicate-heading");
+  dialog.innerHTML = `<form><h2 id="run-duplicate-heading">Duplicate run</h2><p>Copy the course, dots, tricks and timing into a separate run.</p><label>Competition round<select data-copy-round><option>Qualifying</option><option>Semi-final</option><option>Final</option></select></label><label>Run name<input data-copy-name required maxlength="120" autocomplete="off"></label><small>Edit the copy, then save it. The original stays as it is.</small><div class="actions"><button class="secondary-btn" type="button" data-cancel-copy>Cancel</button><button class="primary-btn" type="submit">Create editable copy</button></div></form>`;
+  const round = dialog.querySelector("[data-copy-round]"), name = dialog.querySelector("[data-copy-name]");
+  round.value = suggested; name.value = suggested;
+  round.addEventListener("change", () => { name.value = round.value; });
+  dialog.querySelector("[data-cancel-copy]").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
+  dialog.addEventListener("close", () => { dialog.remove(); if (source.isConnected) source.focus(); }, { once: true });
+  dialog.querySelector("form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const copyTitle = name.value.trim();
+    if (!copyTitle) { name.setCustomValidity("Enter a name for this copy."); name.reportValidity(); return; }
+    dialog.close();
+    if (saved) await editRunPlan({ currentTarget: source, duplicateTitle: copyTitle });
+    else await duplicateCurrentRun({ currentTarget: { dataset: { runCopy: copyTitle } } });
+  });
+  name.addEventListener("input", () => name.setCustomValidity(""));
+  document.body.append(dialog); dialog.showModal(); round.focus();
+}
+
 async function duplicateCurrentRun(event) {
+  if (!state.runBuilder || liveRun) return;
+  stopRunPlayback();
   runUndoStack = []; runRedoStack = [];
-  state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), id: null, title: event.currentTarget.dataset.runCopy, stage: "tricks" };
+  state.runBuilder = { ...structuredClone({ ...state.runBuilder, ...currentRunFormState() }), id: null, updatedAt: null, liveSessionId: null, title: event.currentTarget.dataset.runCopy, stage: "tricks" };
   await runBuilderRefreshView();
   document.querySelector("#run-title")?.focus();
   notify("Copy ready. Edit the name and save to keep this version.");
@@ -11196,7 +11229,7 @@ function runBuilderRefreshView() {
 }
 
 function runSummaryCardHtml(run, athleteName = "") {
-  return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at || run.created_at)}${run.archived_at ? " · Archived" : ""}</small></div><div class="actions"><button type="button" class="primary-btn compact-btn" data-open-progress-run="${escapeHtml(run.id)}" data-rider-name="${escapeHtml(athleteName)}" ${run.archived_at ? 'data-open-archived-run="true"' : ""}>Open to watch or edit</button>${canEditRun(run) ? `<button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button>` : ""}</div></article>`;
+  return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at || run.created_at)}${run.archived_at ? " · Archived" : ""}</small></div><div class="actions"><button type="button" class="primary-btn compact-btn" data-open-progress-run="${escapeHtml(run.id)}" data-rider-name="${escapeHtml(athleteName)}" ${run.archived_at ? 'data-open-archived-run="true"' : ""}>Open to watch or edit</button>${canEditRun(run) ? `<button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}" data-run-athlete-name="${escapeHtml(athleteName)}">Duplicate run</button>` : ""}</div></article>`;
 }
 
 function runPlansHtml(runs = []) {
@@ -11206,7 +11239,7 @@ function runPlansHtml(runs = []) {
   const card = (run) => {
     if (!("image_data_url" in run)) return runSummaryCardHtml(run);
     const points = Array.isArray(run.points) ? run.points : [];
-    return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runReviewPanelHtml(run)}<div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}</div></article>`;
+    return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runReviewPanelHtml(run)}<div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}">Duplicate run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}</div></article>`;
   };
   return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
 }
@@ -11261,9 +11294,9 @@ function runBuilderPanel(runs = [], options = {}) {
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
       <div class="run-save-actions"><button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
-      <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy="Qualifying">Copy as Qualifying</button><button type="button" data-run-copy="Finals">Copy as Finals</button></div>
+      <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy>Duplicate run</button></div>
       <div class="run-builder-details">
-        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Qualifying or Finals — tap to rename"></div>
+        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Qualifying, Semi-final or Final — tap to rename"></div>
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
@@ -13130,7 +13163,7 @@ function bindRunBuilderActions(root = document) {
   root.querySelector("#retry-run-course")?.addEventListener("click", () => loadRunBuilderCourse());
   root.querySelector("#skip-run-course")?.addEventListener("click", skipRunBuilderCourse);
   root.querySelectorAll("[data-run-history]").forEach(button => button.addEventListener("click", restoreRunEdit));
-  root.querySelectorAll("[data-run-copy]").forEach(button => button.addEventListener("click", duplicateCurrentRun));
+  root.querySelectorAll("[data-run-copy], [data-copy-saved-run]").forEach(button => button.addEventListener("click", openRunDuplicate));
   root.querySelectorAll("[data-run-mode]").forEach(button => button.addEventListener("click", async () => {
     state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), stage: button.dataset.runMode };
     await runBuilderRefreshView();
@@ -13627,15 +13660,15 @@ async function editRunPlan(event) {
   const restore = setButtonBusy(button, "Opening run…");
   const userId = state.user.id;
   try {
-    const { data: run, error } = await withTimeout(client.from("run_plans").select("*").eq("id", button.dataset.editRun).single(), "Open saved run", 15000);
+    const { data: run, error } = await withTimeout(client.from("run_plans").select("*").eq("id", button.dataset.editRun || button.dataset.copySavedRun).single(), "Open saved run", 15000);
     if (state.user?.id !== userId) return;
     if (error) throw error;
     if (!run || !canEditRun(run)) throw new Error("Only this rider and their linked coach can edit the run.");
     runUndoStack = []; runRedoStack = [];
     state.runBuilder = {
-      id: run.id, updatedAt: run.updated_at, athleteId: run.athlete_id, coachId: run.coach_id,
+      id: event.duplicateTitle ? null : run.id, updatedAt: event.duplicateTitle ? null : run.updated_at, athleteId: run.athlete_id, coachId: run.coach_id,
       athleteName: button.dataset.runAthleteName || "",
-      title: run.title, venue: run.venue, planType: run.plan_type, notes: run.notes,
+      title: event.duplicateTitle || run.title, venue: run.venue, planType: run.plan_type, notes: run.notes,
       contestItemId: run.contest_item_id || null, imageDataUrl: run.image_data_url,
       view: runView(run.points?.[0]?.view), points: Array.isArray(run.points) ? run.points : [],
       selectedPointIndex: Array.isArray(run.points) && run.points.length ? run.points.length - 1 : -1,
@@ -13674,7 +13707,7 @@ async function saveRunPlan(event) {
   const isCoach = isCoachRole(state.profile.role);
   const athleteId = isCoach ? (state.runBuilder?.athleteId || state.selectedAthleteId) : state.user.id;
   if (!athleteId) return notify("Choose the rider this run belongs to.", "error");
-  const coachId = state.runBuilder.id ? state.runBuilder.coachId : isCoach ? state.user.id : await getLinkedCoachIdForCurrentAthlete();
+  const coachId = state.runBuilder.id ? state.runBuilder.coachId : isCoach ? state.user.id : (state.runBuilder.coachId || await getLinkedCoachIdForCurrentAthlete());
   const payload = {
     coach_id: coachId,
     athlete_id: athleteId,
