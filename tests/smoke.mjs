@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.77";
+const version = "2.14.78";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1154,7 +1154,7 @@ assert(contestModalBody.includes("coachContestEventEditorHtml"), "The coach even
 assert(contestModalBody.includes("coachEventAttendeeRunActionHtml"), "Each linked rider attending an event must have a private run action");
 assert(contestModalBody.includes('" · Your child"'), "Parent event details must identify their selected child");
 assert(contestModalBody.includes("Rider routes, numbered dots, trick notes and private run photos are never shown"), "The parent event modal must preserve private run-plan boundaries");
-assert(functionBody("coachEventAttendeeRunActionHtml").includes("VIEW RIDER'S RUN"), "An existing rider run must show View Rider's Run");
+assert(functionBody("coachEventAttendeeRunActionHtml").includes("VIEW RUNS"), "An existing rider run must show View Runs");
 assert(functionBody("coachEventAttendeeRunActionHtml").includes("CREATE RUN"), "A rider without a plan must show Create Run");
 assert(functionBody("openCoachEventRunModal").includes("bindRunPlaybackControls"), "Coach event run viewing must include the saved playback controls");
 assert(functionBody("saveCoachContestEventEdit").includes('rpc("coach_update_contest_event"'), "Coach event edits must use the audited database endpoint");

@@ -11609,3 +11609,10 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-duplicate-dialog label { display: grid; gap: 8px; }
 .run-duplicate-dialog input, .run-duplicate-dialog select { width: 100%; min-height: 48px; padding: 10px; border: 1px solid #20e3c370; border-radius: 9px; background: #031013; color: #fff; font-size: 16px; }
 .run-duplicate-dialog button { min-height: 44px; touch-action: manipulation; }
+
+/* Paired coach event actions: readable labels and one compact row per rider. */
+.contest-rider-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.contest-rider-actions .contest-rider-run-button { grid-column: auto; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 44px; margin: 0; padding: 10px 8px; border: 1px solid #19d8c2; border-radius: 10px; background: #19d8c2; color: #03231e; -webkit-text-fill-color: currentColor; font-size: 13px; line-height: 1.2; letter-spacing: .02em; white-space: normal; text-align: center; box-shadow: none; touch-action: manipulation; }
+.contest-rider-actions .contest-rider-run-button.together { background: #092927; border-color: #258879; color: #b5fff2; }
+.contest-rider-actions .contest-rider-run-button:hover { filter: brightness(1.08); }
+.contest-rider-actions .contest-rider-run-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
