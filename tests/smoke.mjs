@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.76";
+const version = "2.14.77";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1397,7 +1397,7 @@ assert(coachCommandBody.includes('commandMetricCard("Upcoming", upcoming, "Event
 assert(commandLeaderboardPreviewBody.includes("rows.slice(0, 5)"), "Coach Command leaderboard preview must always stop at five riders");
 assert(!commandLeaderboardPreviewBody.includes("matchMedia"), "Desktop Coach Command must not expand the leaderboard beyond five riders");
 assert(coachCommandBody.includes('id="upcoming-events-section"'), "Coach Command must show its upcoming event panel directly on the dashboard");
-assert(coachCommandBody.indexOf("commandLeaderboardPreviewHtml") < coachCommandBody.indexOf("coachSharedEventsSummaryHtml"), "Coach Command upcoming events must render below the leaderboard");
+assert(coachCommandBody.indexOf("data-command-leaderboard") < coachCommandBody.indexOf("coachSharedEventsSummaryHtml"), "Coach Command upcoming events must render below the leaderboard");
 const coachSharedEventsSummaryBody = functionBody("coachSharedEventsSummaryHtml");
 assert(coachSharedEventsSummaryBody.includes("Coach attending"), "Coach Command must show coach attendance state for shared events");
 assert(coachSharedEventsSummaryBody.includes("events.slice(0, 4)"), "Desktop and iPad Coach Command must retain the existing four-event preview");

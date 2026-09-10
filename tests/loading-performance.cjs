@@ -41,14 +41,14 @@ async function workerChecks() {
  const worker=vm.createContext({self:{location:{origin:'https://jkcrew.test',href:origin+'sw.js'},addEventListener:(n,fn)=>handlers[n]=fn},caches:{open:async()=>cache},URL,Set,Promise,fetch:r=>{networkCalls.push(r);return network.promise}});
  vm.runInContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),worker);
  const dispatch=(url,mode='cors')=>{let result;const waits=[];handlers.fetch({request:{url,method:'GET',mode},respondWith:p=>result=p,waitUntil:p=>waits.push(p)});return {result,waits}};
- stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.76','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
+ stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.77','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
  const html=dispatch(origin+'?push=contests','navigate');assert.equal(await html.result,'cached-shell','Navigation must finish while network remains unresolved');
- const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.76').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
+ const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.77').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
  assert.equal(dispatch('https://soanwttlorlgdfrzbvtp.supabase.co/rest/v1/run_plans').result,undefined);
  assert.equal(dispatch(origin+'private-data.json').result,undefined);
  assert.equal(dispatch(origin+'riley-test/','navigate').result,undefined,'Nested app navigation must not receive the root app shell');
  network.reject(new Error('offline'));await Promise.all(html.waits);
- network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.76');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.76'));
+ network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.77');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.77'));
 }
 async function browserChecks() {
  const server=http.createServer((req,res)=>{let file=decodeURIComponent(new URL(req.url,'http://test').pathname);if(file==='/')file='/index.html';const filename=path.join(root,file);if(!filename.startsWith(root)||!fs.existsSync(filename)){res.writeHead(404);return res.end()};const type=file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':'application/octet-stream';res.setHeader('content-type',type);res.end(fs.readFileSync(filename))});
@@ -66,21 +66,20 @@ async function browserChecks() {
   fontGate.resolve();await page.getByRole('button',{name:'Forgot password?',exact:true}).click();await page.locator('#forgot-password-form').waitFor({timeout:3000});
   await page.close();
   const quick=await browser.newPage({viewport:{width:390,height:844}});quick.on('pageerror',e=>errors.push(e.message));
-  await quick.setContent('<div id="app"><main id="view"></main><button id="tab">Session tab</button></div>');
+  await quick.setContent('<base href="http://127.0.0.1:'+server.address().port+'/"><div id="app"><main id="view"></main><button id="tab">Session tab</button></div>');
+  await quick.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
   await quick.addScriptTag({content:`
-    const app=document.querySelector('#app');const state={view:'home',profile:{role:'athlete'},user:{id:'rider'},loadingOverlayToken:0};
+    const app=document.querySelector('#app');const state={view:'command',profile:{role:'coach'},user:{id:'coach'},loadingOverlayToken:0};
     const escapeHtml=s=>s;const isCoachRole=r=>r==='coach';const openRunBuilder=()=>{state.view='contests';document.querySelector('#view').innerHTML='<input id="draft" value="My draft">';};const navigate=v=>{state.view=v};
-    ${['loadingScreenCopy','cancelScreenLoading','beginScreenLoading','setLoading'].map(extract).join('\n')}
+    ${['loadingScreenCopy','cancelScreenLoading','beginScreenLoading','finishScreenLoading','setLoading'].map(extract).join('\n')}
     setLoading();document.querySelector('#tab').onclick=()=>{state.view='session';document.querySelector('#view').textContent='Session ready'};
   `});
-  assert(await quick.getByRole('button',{name:'Build a run',exact:true}).isEnabled());assert.equal(await quick.evaluate(()=>app.inert),false);
-  await quick.getByRole('button',{name:'Build a run',exact:true}).click();assert(await quick.locator('#draft').isVisible());
-  await quick.addScriptTag({content:`
-    let resolveRoster;const getCoachRoster=()=>new Promise(r=>resolveRoster=r);
-    ${extract('renderCoachCommand')}
-    state.view='command';window.pendingCommand=renderCoachCommand();
-  `});
-  await quick.locator('#tab').click();await quick.evaluate(()=>resolveRoster([]));await quick.evaluate(()=>pendingCommand);assert.equal(await quick.locator('#view').innerText(),'Session ready','A late coach dashboard must not replace the new tab');
+  await quick.locator('#screen-loading-overlay').waitFor();
+  assert(await quick.locator('.screen-loading-brand').isVisible());
+  await quick.screenshot({path:'/tmp/jkcrew-restored-loading.png'});
+  assert.equal(await quick.locator('.quick-page-loading').count(),0,'Restore the branded loader requested by the user');
+  await quick.evaluate(()=>finishScreenLoading(state.loadingOverlayToken));
+  assert.equal(await quick.evaluate(()=>app.inert),false);
   // Event lists render lightweight cards; opening one loads just that full run,
   // including archived plans, without dropping rider/coach editing controls.
   await quick.addScriptTag({content:`
@@ -100,4 +99,4 @@ async function browserChecks() {
   assert.deepEqual(errors,[]);await quick.close();
  } finally {await browser.close();await new Promise(r=>server.close(r));}
 }
-(async()=>{await dataChecks();await workerChecks();await browserChecks();console.log('PASS: small metadata-only run/roster queries, photo reuse and retry, auth initialization deduplication, immediate cached shell/SDK with a stalled network, uncached private responses, usable sign-in with unavailable external fonts/CDN, responsive quick actions and stale dashboard protection.');})().catch(e=>{console.error(e);process.exit(1)});
+(async()=>{await dataChecks();await workerChecks();await browserChecks();console.log('PASS: small metadata-only run/roster queries, photo reuse and retry, auth initialization deduplication, immediate cached shell/SDK with a stalled network, uncached private responses, usable sign-in with unavailable external fonts/CDN, restored branded loader and usable navigation after loading.');})().catch(e=>{console.error(e);process.exit(1)});
