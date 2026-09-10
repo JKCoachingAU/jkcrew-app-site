@@ -11616,3 +11616,99 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .contest-rider-actions .contest-rider-run-button.together { background: #092927; border-color: #258879; color: #b5fff2; }
 .contest-rider-actions .contest-rider-run-button:hover { filter: brightness(1.08); }
 .contest-rider-actions .contest-rider-run-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Coach button system. Scope follows the mounted coach shell, including body-level
+   dialogs, and disappears automatically on sign-out or a rider/parent switch. */
+body:has(#app .app-shell.coach-shell) {
+  --coach-button-face: #142127;
+  --coach-button-face-hover: #1c3036;
+  --coach-button-edge: #3b525a;
+  --coach-button-ink: #eaf5f5;
+  --coach-button-accent: #31ead0;
+  --coach-button-danger-bg: #351b20;
+  --coach-button-danger-ink: #ffb8aa;
+  --coach-button-danger-edge: #8d4d4e;
+  --coach-button-selected: #133e3b;
+}
+html[data-theme="light"] body:has(#app .app-shell.coach-shell) {
+  --coach-button-face: #ffffff;
+  --coach-button-face-hover: #edf5f3;
+  --coach-button-edge: #a6bcb8;
+  --coach-button-ink: #17332e;
+  --coach-button-accent: #007c6e;
+  --coach-button-danger-bg: #fff0ec;
+  --coach-button-danger-ink: #a42c22;
+  --coach-button-danger-edge: #d39e96;
+  --coach-button-selected: #d7f3e9;
+}
+body:has(#app .app-shell.coach-shell) button:not(.run-marker) { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+body:has(#app .app-shell.coach-shell) :is(button, summary):focus-visible { outline: 3px solid var(--coach-button-accent); outline-offset: 3px; }
+body:has(#app .app-shell.coach-shell) :is(.primary-btn, .start-session-btn, .finish-daily-btn, .battle-challenge-cta, .contest-build-button, .contest-hero-button, .secondary-btn, .danger-btn, .compact-save-btn, .battle-response-btn, .coach-review-send, .coach-review-complete, .coach-review-record-button, .coach-review-play, .coach-review-draw-toggle, .board-send-btn, .coach-broadcast-send, .video-analysis-send, .proposal-edit-trigger, .run-edit-toolbar button, .run-live-actions button, .run-live-bar > button, .run-playback-main, .run-playback-restart, .run-time-stepper button, .run-crop-actions button, .run-fullscreen-controls button, .notification-test-button) {
+  min-height: 46px; border-radius: 12px; padding: 11px 16px;
+  font: 700 13px/1.25 var(--body); letter-spacing: .025em;
+  text-shadow: none; -webkit-text-fill-color: currentColor;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, filter 140ms ease, transform 140ms ease;
+}
+body:has(#app .app-shell.coach-shell) :is(.secondary-btn, .coach-review-play, .coach-review-draw-toggle, .proposal-edit-trigger, .run-edit-toolbar button, .run-live-actions button, .run-live-bar > button, .run-playback-main, .run-playback-restart, .run-time-stepper button, .run-crop-actions button, .run-fullscreen-controls button, .notification-test-button) {
+  color: var(--coach-button-ink); border: 1px solid var(--coach-button-edge);
+  background: var(--coach-button-face); box-shadow: inset 0 1px 0 #ffffff08;
+}
+body:has(#app .app-shell.coach-shell) :is(.primary-btn, .start-session-btn, .finish-daily-btn, .battle-challenge-cta, .contest-build-button, .contest-hero-button, .compact-save-btn, .coach-review-send, .coach-review-complete, .board-send-btn, .coach-broadcast-send, .video-analysis-send, .command-start-button, #start-group-session, .battle-response-btn.accept, .contest-rider-run-button:not(.together)) {
+  color: #032923; -webkit-text-fill-color: currentColor;
+  border: 1px solid #73efd9;
+  background: linear-gradient(135deg, #55efcc, #23cfcb);
+  box-shadow: inset 0 1px 0 #ffffff70, 0 3px 10px #00000018;
+}
+body:has(#app .app-shell.coach-shell) .command-start-button small { color: #164a43; }
+body:has(#app .app-shell.coach-shell) :is(.danger-btn, .battle-response-btn.decline, .battle-forfeit-btn, .tricktionary-delete-btn, .board-delete-btn, .coach-review-record-button) {
+  color: var(--coach-button-danger-ink); -webkit-text-fill-color: currentColor;
+  background: var(--coach-button-danger-bg); border: 1px solid var(--coach-button-danger-edge);
+  box-shadow: none;
+}
+body:has(#app .app-shell.coach-shell) .coach-review-recorder.is-recording .coach-review-record-button { background: #a62b32; border-color: #ff9c97; color: #fff; }
+body:has(#app .app-shell.coach-shell) :is(.coaching-filter, .viewer-filter-tab, .viewer-group-tab, .viewer-venue-tab, .viewer-list-tab, .student-chip, .compact-student-chip, .run-mode-tabs button, .run-builder-steps button) {
+  min-height: 44px; border-radius: 11px; border: 1px solid var(--coach-button-edge);
+  background: var(--coach-button-face); color: var(--coach-button-ink);
+  font: 700 13px/1.3 var(--body); letter-spacing: .015em;
+  box-shadow: none;
+}
+body:has(#app .app-shell.coach-shell) :is(.coaching-filter, .viewer-filter-tab, .viewer-group-tab, .viewer-venue-tab, .viewer-list-tab, .student-chip, .compact-student-chip, .run-mode-tabs button, .run-builder-steps button):is(.active, .is-selected, [aria-pressed="true"], [aria-current="step"]) {
+  border-color: var(--coach-button-accent); background: var(--coach-button-selected);
+  color: var(--coach-button-accent); box-shadow: inset 0 -2px 0 var(--coach-button-accent);
+}
+body:has(#app .app-shell.coach-shell) .viewer-list-tab.active span { color: inherit; background: transparent; }
+body:has(#app .app-shell.coach-shell) :is(.icon-btn, .contest-event-modal-close, .coaching-viewer-close, .run-fullscreen-close, .run-expand, .dismiss-task-btn, .coach-message-dismiss, .notification-centre-bell, .points-receipt-dialog header button) {
+  min-width: 44px; min-height: 44px; border-radius: 12px;
+  border: 1px solid var(--coach-button-edge); color: var(--coach-button-ink);
+  background: var(--coach-button-face); box-shadow: none;
+}
+body:has(#app .app-shell.coach-shell) .run-fullscreen-close { color: #eaf5f5; background: #142127; border-color: #60777d; }
+body:has(#app .app-shell.coach-shell) .contest-rider-actions .contest-rider-run-button { min-height: 44px; padding: 10px 8px; border-radius: 11px; }
+body:has(#app .app-shell.coach-shell) .contest-rider-run-button.together { background: var(--coach-button-selected); color: var(--coach-button-accent); border-color: var(--coach-button-accent); }
+body:has(#app .app-shell.coach-shell) .run-time-stepper button { width: 44px; min-height: 44px; padding: 8px; font-size: 20px; }
+body:has(#app .app-shell.coach-shell) .run-playback-restart { padding-inline: 12px; }
+body:has(#app .app-shell.coach-shell) .compact-btn { min-height: 44px; padding: 10px 12px; }
+body:has(#app .app-shell.coach-shell) .sidebar .nav-sub-btn { min-height: 38px; border-radius: 9px; color: var(--coach-button-ink); }
+body:has(#app .app-shell.coach-shell) .sidebar .nav-sub-btn.active { background: var(--coach-button-selected); color: var(--coach-button-accent); }
+body:has(#app .app-shell.coach-shell) .bottom-nav .nav-btn { border-radius: 14px; box-shadow: none; }
+body:has(#app .app-shell.coach-shell) .bottom-nav .nav-btn.active { border-color: var(--coach-button-edge); background: var(--coach-button-selected); box-shadow: none; }
+body:has(#app .app-shell.coach-shell) .bottom-nav .nav-btn.active::after { display: none; }
+body:has(#app .app-shell.coach-shell) .bottom-nav .nav-btn.active .nav-icon { box-shadow: none; }
+body:has(#app .app-shell.coach-shell) button:disabled { cursor: not-allowed; opacity: .48; filter: saturate(.35); box-shadow: none; }
+body:has(#app .app-shell.coach-shell) button[aria-busy="true"] { cursor: progress; opacity: .75; }
+@media (hover: hover) and (pointer: fine) {
+  body:has(#app .app-shell.coach-shell) :is(.secondary-btn, .coach-review-play, .coach-review-draw-toggle, .proposal-edit-trigger, .run-edit-toolbar button, .run-live-actions button, .run-live-bar > button, .run-playback-main, .run-playback-restart, .run-time-stepper button, .run-crop-actions button, .run-fullscreen-controls button, .notification-test-button):not(:disabled):hover { background: var(--coach-button-face-hover); border-color: var(--coach-button-accent); }
+  body:has(#app .app-shell.coach-shell) :is(.primary-btn, .start-session-btn, .finish-daily-btn, .battle-challenge-cta, .contest-build-button, .contest-hero-button, .secondary-btn, .danger-btn, .compact-save-btn, .battle-response-btn, .coach-review-send, .coach-review-complete, .coach-review-record-button, .coach-review-play, .coach-review-draw-toggle, .board-send-btn, .coach-broadcast-send, .video-analysis-send, .proposal-edit-trigger, .run-edit-toolbar button, .run-live-actions button, .run-live-bar > button, .run-playback-main, .run-playback-restart, .run-time-stepper button, .run-crop-actions button, .run-fullscreen-controls button, .notification-test-button, .coach-hub-card, .coach-tool-card):not(:disabled):hover { transform: translateY(-1px); filter: brightness(1.06); }
+}
+body:has(#app .app-shell.coach-shell) :is(.primary-btn, .start-session-btn, .finish-daily-btn, .battle-challenge-cta, .contest-build-button, .contest-hero-button, .secondary-btn, .danger-btn, .compact-save-btn, .battle-response-btn, .coach-review-send, .coach-review-complete, .coach-review-record-button, .coach-review-play, .coach-review-draw-toggle, .board-send-btn, .coach-broadcast-send, .video-analysis-send, .proposal-edit-trigger, .run-edit-toolbar button, .run-live-actions button, .run-live-bar > button, .run-playback-main, .run-playback-restart, .run-time-stepper button, .run-crop-actions button, .run-fullscreen-controls button, .notification-test-button):not(:disabled):active { transform: translateY(1px); box-shadow: inset 0 2px 4px #00000025; }
+@media (pointer: coarse) { body:has(#app .app-shell.coach-shell) .sidebar .nav-sub-btn { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  body:has(#app .app-shell.coach-shell) button { transition: none; }
+  body:has(#app .app-shell.coach-shell) :is(.primary-btn, .start-session-btn, .finish-daily-btn, .battle-challenge-cta, .contest-build-button, .contest-hero-button, .secondary-btn, .danger-btn, .compact-save-btn, .battle-response-btn, .coach-review-send, .coach-review-complete, .coach-review-record-button, .coach-review-play, .coach-review-draw-toggle, .board-send-btn, .coach-broadcast-send, .video-analysis-send, .proposal-edit-trigger, .run-edit-toolbar button, .run-live-actions button, .run-live-bar > button, .run-playback-main, .run-playback-restart, .run-time-stepper button, .run-crop-actions button, .run-fullscreen-controls button, .notification-test-button, .coach-hub-card, .coach-tool-card):is(:hover, :active) { transform: none; }
+}
+body:has(#app .app-shell.coach-shell) .bottom-nav .nav-btn.active { color: var(--coach-button-accent); }
+body:has(#app .app-shell.coach-shell) .coach-review-draw-toggle[aria-pressed="true"] { color: var(--coach-button-accent); border-color: var(--coach-button-accent); background: var(--coach-button-selected); }
+
+@media (hover: none) {
+  body:has(#app .app-shell.coach-shell) :is(.primary-btn, .secondary-btn, .danger-btn, .run-edit-toolbar button, .run-time-stepper button):hover:not(:active) { transform: none; filter: none; }
+}

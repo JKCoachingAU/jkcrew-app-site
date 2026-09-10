@@ -42,7 +42,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    throw Error(a);
   });
   await page.route('https://jkcrew.test/**',route=>route.fulfill({contentType:'text/html',body:'<html></html>'}));await page.goto('https://jkcrew.test/');
-  await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="view"></main>');
+  await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><div id="app"><div class="app-shell '+(role==='coach'?'coach-shell':'rider-shell')+'" style="display:block"><main id="view"></main></div></div>');
   await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
   await page.addScriptTag({content:`
    const bindRiderSavedRuns=()=>{};
