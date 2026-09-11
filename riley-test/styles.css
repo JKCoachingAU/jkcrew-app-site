@@ -6565,6 +6565,7 @@ html.contest-merge-open body { overflow: hidden; }
 }
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast.error { border-color: rgba(255,69,103,0.5); color: #ff9aad; }
+html.contest-event-open .toast { z-index: 1450; }
 .install-app {
   position: fixed;
   bottom: max(18px, env(safe-area-inset-bottom));
@@ -12143,3 +12144,14 @@ html[data-theme="light"] #coach-battle-builder-modal .coach-battle-team-builder 
 .battle-team-avatars:is([data-team-size="4"], [data-team-size="5"], [data-team-size="6"]) .avatar { width: 40px; height: 40px; min-width: 0; margin: 0; font-size: 16px; }
 /* Rider matchup tiles keep their dark surface in light mode. */
 html[data-theme="light"] .battle-card .battle-team > strong { color: #eef7f8; }
+
+/* Saved-run removal stays compact and recovery stays closed until requested. */
+[data-saved-run-id] > div:first-child > small { display:block; margin:4px 0 10px; color:var(--muted); line-height:1.4; }
+.saved-run-list-entry { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; }
+.saved-run-list-entry .notification-card { width:100%; min-width:0; }
+.saved-run-list-entry > button { min-height:44px; }
+.run-removed-history { margin-top:16px; border:1px solid var(--line); border-radius:12px; }
+.run-removed-history > summary { min-height:44px; padding:12px 14px; color:var(--muted); font-weight:700; cursor:pointer; }
+.run-removed-history > .run-list { padding:0 12px 12px; }
+[data-saved-run-id][hidden] { display:none !important; }
+@media(max-width:520px) { .saved-run-list-entry { grid-template-columns:minmax(0,1fr); gap:6px; } .saved-run-list-entry > button { justify-self:end; } }

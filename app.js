@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.91";
+const RELEASE_VERSION = "2.14.92";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -421,7 +421,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.91" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.92" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2945,20 +2945,21 @@ async function getCoachCommandData(roster = [], { overview = false } = {}) {
 }
 
 async function getStudentPrivateData(athleteId) {
-  const [record, documents, injuries, attendance, runs] = await Promise.all([
+  const [record, documents, injuries, attendance, runs, removedRuns] = await Promise.all([
     client.from("athlete_private_records").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).maybeSingle(),
     client.from("athlete_documents").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }),
     client.from("injury_reports").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("injured_at", { ascending: false }).limit(8),
     client.from("attendance_records").select("*, attendance_sessions(*)").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(8),
-    client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(8),
+    client.from("run_plans").select("*").eq("athlete_id", athleteId).is("archived_at", null).order("updated_at", { ascending: false }).limit(8),
+    client.from("run_plans").select(RUN_SUMMARY_SELECT).eq("athlete_id", athleteId).not("archived_at", "is", null).order("updated_at", { ascending: false }).limit(100),
   ]);
-  [record, documents, injuries, attendance, runs].forEach((result) => { if (result.error) throw result.error; });
+  [record, documents, injuries, attendance, runs, removedRuns].forEach((result) => { if (result.error) throw result.error; });
   return {
     record: record.data || {},
     documents: documents.data || [],
     injuries: injuries.data || [],
     attendance: attendance.data || [],
-    runs: runs.data || [],
+    runs: [...(runs.data || []), ...(removedRuns.data || [])],
   };
 }
 
@@ -2969,9 +2970,12 @@ async function getRunPlans(athleteId) {
   const existingRequest = state.inFlight.get(cacheKey);
   if (existingRequest) return existingRequest;
   const request = (async () => {
-    const { data, error } = await client.from("run_plans").select("*").eq("athlete_id", athleteId).order("updated_at", { ascending: false }).limit(12);
-    if (error) throw error;
-    return cacheSet(cacheKey, data || []);
+    const [runs, removedRuns] = await Promise.all([
+      client.from("run_plans").select("*").eq("athlete_id", athleteId).is("archived_at", null).order("updated_at", { ascending: false }).limit(12),
+      client.from("run_plans").select(RUN_SUMMARY_SELECT).eq("athlete_id", athleteId).not("archived_at", "is", null).order("updated_at", { ascending: false }).limit(100),
+    ]);
+    [runs, removedRuns].forEach((result) => { if (result.error) throw result.error; });
+    return cacheSet(cacheKey, [...(runs.data || []), ...(removedRuns.data || [])]);
   })().finally(() => state.inFlight.delete(cacheKey));
   state.inFlight.set(cacheKey, request);
   return request;
@@ -6454,8 +6458,9 @@ async function updateRunReviewStatus(button) {
 
 function riderSavedRunsHtml(runs = []) {
   const own = runs.filter(run => run.athlete_id === state.user?.id && !run.archived_at);
+  const removed = runs.filter(run => run.athlete_id === state.user?.id && run.archived_at);
   return `<section class="panel rider-saved-runs"><div class="panel-head"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">Runs made by you and your coach</div></div><button class="secondary-btn compact-btn" type="button" data-rider-saved-runs="all">Refresh / view all</button></div>
-    <div class="notification-list">${own.length ? own.map(run => `<button class="notification-card" type="button" data-open-progress-run="${escapeHtml(run.id)}"><span>${run.created_by === state.user.id ? "Made by you" : "From your coach"}</span><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at)} · Open to watch or edit</small></button>`).join("") : `<p>No saved runs yet. Refresh to check for a new run from your coach.</p>`}</div></section>`;
+    <div class="notification-list">${own.length ? own.map(run => `<div class="saved-run-list-entry" data-saved-run-id="${escapeHtml(run.id)}"><button class="notification-card" type="button" data-open-progress-run="${escapeHtml(run.id)}"><span>${run.created_by === state.user.id ? "Made by you" : "From your coach"}</span><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at)} · Open to watch or edit</small></button>${runRemovalButtonHtml(run)}</div>`).join("") : `<p>No saved runs yet. Refresh to check for a new run from your coach.</p>`}</div>${removed.length ? `<details class="run-removed-history"><summary>Removed runs · ${removed.length}</summary><div class="run-list">${removed.map(run => `<article class="run-card" data-saved-run-id="${escapeHtml(run.id)}"><strong>${escapeHtml(run.title || "Saved run")}</strong><div class="actions">${runRemovalButtonHtml(run)}</div></article>`).join("")}</div></details>` : ""}</section>`;
 }
 
 async function openRiderSavedRuns(event) {
@@ -6466,8 +6471,8 @@ async function openRiderSavedRuns(event) {
   const userId = state.user.id;
   try {
     // Read fresh metadata, even while an unsaved builder is open. Load a photo only when its run is opened.
-    let query = client.from("run_plans").select("id,athlete_id,title,venue,created_by,updated_at,contest_item_id")
-      .eq("athlete_id", userId).is("archived_at", null).order("updated_at", { ascending: false }).limit(100);
+    let query = client.from("run_plans").select(RUN_SUMMARY_SELECT)
+      .eq("athlete_id", userId).order("archived_at", { ascending: false, nullsFirst: true }).order("updated_at", { ascending: false }).limit(100);
     const eventId = button.dataset.riderSavedRuns;
     if (eventId && eventId !== "all") query = query.eq("contest_item_id", eventId);
     const { data, error } = await withTimeout(query, "Load saved runs", 15000);
@@ -6483,7 +6488,23 @@ async function openRiderSavedRuns(event) {
     backdrop.addEventListener("click", event => { if (event.target === backdrop) closeContestEventModal(); });
     state.contestEventEscapeHandler = event => { if (event.key === "Escape") closeContestEventModal(); };
     document.addEventListener("keydown", state.contestEventEscapeHandler);
-    bindRiderSavedRuns(backdrop);
+    const bindList = () => {
+      bindRiderSavedRuns(backdrop);
+      bindRunRemovalActions(backdrop, updated => {
+        const run = (data || []).find(run => run.id === updated.id);
+        if (run) Object.assign(run, updated);
+        if (!backdrop.isConnected) return;
+        const modal = backdrop.querySelector(".contest-event-modal");
+        const top = modal.scrollTop;
+        const historyOpen = Boolean(backdrop.querySelector(".run-removed-history")?.open);
+        backdrop.querySelector(".rider-saved-runs").outerHTML = riderSavedRunsHtml(data || []);
+        bindList();
+        const history = backdrop.querySelector(".run-removed-history");
+        if (history) history.open = historyOpen;
+        modal.scrollTop = top;
+      });
+    };
+    bindList();
     backdrop.querySelector("[data-close-contest-event]").focus();
   } catch (error) { notify(messageFrom(error), "error"); }
   finally { restore(); }
@@ -6491,6 +6512,7 @@ async function openRiderSavedRuns(event) {
 
 function bindRiderSavedRuns(root = document) {
   root.querySelectorAll("[data-rider-saved-runs]").forEach(button => { button.onclick = openRiderSavedRuns; });
+  bindRunRemovalActions(root);
 }
 
 async function openProgressRun(button) {
@@ -8130,12 +8152,14 @@ function coachContestEventEditorHtml(item = {}) {
 
 function coachEventAttendeeRunActionHtml(item = {}, attendee = {}, runs = [], roster = []) {
   if (!isCoachRole(state.profile?.role) || attendee.athlete_id === state.user?.id || !roster.some((athlete) => athlete.id === attendee.athlete_id)) return "";
-  const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === attendee.athlete_id && !run.archived_at);
+  const allRiderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === attendee.athlete_id);
+  const riderRuns = allRiderRuns.filter(run => !run.archived_at);
   const riderName = attendee.profile?.display_name || "JKCREW rider";
   const runAction = riderRuns.length
     ? `<button class="secondary-btn compact-btn contest-rider-run-button" type="button" data-view-rider-event-runs="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}">VIEW RUNS · ${riderRuns.length}</button>`
     : `<button class="secondary-btn compact-btn contest-rider-run-button create" type="button" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>CREATE RUN</button>`;
-  return `<div class="contest-rider-actions">${runAction}<button type="button" class="secondary-btn compact-btn contest-rider-run-button together" data-build-together="true" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>BUILD TOGETHER</button></div>`;
+  const removedAction = !riderRuns.length && allRiderRuns.length ? `<button class="secondary-btn compact-btn contest-rider-run-button" type="button" data-view-rider-event-runs="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}">REMOVED RUNS · ${allRiderRuns.length}</button>` : "";
+  return `<div class="contest-rider-actions">${runAction}${removedAction}<button type="button" class="secondary-btn compact-btn contest-rider-run-button together" data-build-together="true" data-create-rider-event-run="${escapeHtml(attendee.athlete_id)}" data-run-athlete-name="${escapeHtml(riderName)}" ${contestEventDataAttributes(item)}>BUILD TOGETHER</button></div>`;
 }
 function contestEventCourseHtml(item = {}, viewOptions = {}) {
   const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
@@ -8175,7 +8199,9 @@ function coachEventRunViewerHtml(runs = [], athleteName = "Rider", item = {}) {
     <header class="contest-event-modal-head"><div><div class="eyebrow">Private rider ${savedRuns.length === 1 ? "run" : "runs"}</div><h2 id="coach-event-run-title">${escapeHtml(athleteName)} · ${escapeHtml(item.title || "Event plan")}</h2><p>${savedRuns.length} saved private ${savedRuns.length === 1 ? "run" : "runs"} for this event</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close rider run">×</button></header>
     <div class="coach-event-run-viewer">
       <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private to coach and rider</strong><p>This park photo, route, tricks and notes are not visible to other riders.</p></div></div>
-      ${savedRuns.map((run) => { if (!("image_data_url" in run)) return runSummaryCardHtml(run, athleteName); const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${canEditRun(run) ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}" data-run-athlete-name="${escapeHtml(athleteName)}">Duplicate run</button></div>` : ""}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
+      ${!savedRuns.length ? `<div class="empty compact-empty">No saved runs here. You can restore a removed run below.</div>` : ""}
+      ${savedRuns.map((run) => { if (!("image_data_url" in run)) return runSummaryCardHtml(run, athleteName); const points = Array.isArray(run.points) ? run.points : []; return `<article class="coach-event-saved-run" data-saved-run-id="${escapeHtml(run.id)}"><header><div><strong>${escapeHtml(run.title || "Event run")}</strong><small>${escapeHtml(run.venue || item.details || "Venue not set")} · saved ${dateLabel(run.updated_at || run.created_at)}</small></div><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span></header><div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title || "Rider run")}${points.length ? runPlaybackControlsHtml(points, `event-${run.id}`) : ""}</div>${points.length ? `<ol class="coach-event-run-points">${points.map((point, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(point.label || `Point ${index + 1}`)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</div></li>`).join("")}</ol>` : `<div class="contest-empty"><strong>No route points saved</strong><span>The rider can edit this plan from their Events & Runs page.</span></div>`}${canEditRun(run) ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}" data-run-athlete-name="${escapeHtml(athleteName)}">Duplicate run</button>${runRemovalButtonHtml(run)}</div>` : ""}${runReviewPanelHtml(run)}${run.notes ? `<div class="coach-event-run-notes"><strong>RUN NOTES</strong><p>${escapeHtml(run.notes)}</p></div>` : ""}</article>`; }).join("")}
+      ${!item.includeArchived && runs.some(run => run.archived_at) ? `<details class="run-removed-history"><summary>Removed runs · ${runs.filter(run => run.archived_at).length}</summary><div class="run-list">${runs.filter(run => run.archived_at).map(run => runSummaryCardHtml(run, athleteName)).join("")}</div></details>` : ""}
     </div>
   </section>`;
 }
@@ -8283,7 +8309,7 @@ function openContestEventModal(item = {}, attendees = [], runs = [], roster = []
   backdrop.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
   backdrop.querySelectorAll("[data-create-rider-event-run]").forEach((button) => button.addEventListener("click", (event) => { close(); openRunBuilder(event); }));
   backdrop.querySelectorAll("[data-view-rider-event-runs]").forEach((button) => button.addEventListener("click", () => {
-    const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === button.dataset.viewRiderEventRuns && !run.archived_at);
+    const riderRuns = runs.filter((run) => run.contest_item_id === item.id && run.athlete_id === button.dataset.viewRiderEventRuns);
     if (riderRuns.length) openCoachEventRunModal(riderRuns, button.dataset.runAthleteName || "Rider", item);
   }));
   bindRiderSavedRuns(backdrop);
@@ -8296,17 +8322,30 @@ function openCoachEventRunModal(runs = [], athleteName = "Rider", item = {}) {
   const backdrop = document.createElement("div");
   backdrop.id = "contest-event-backdrop";
   backdrop.className = "contest-event-backdrop";
-  backdrop.innerHTML = coachEventRunViewerHtml(runs, athleteName, item);
+  const render = () => {
+    const scrollTop = backdrop.querySelector(".contest-event-modal")?.scrollTop || 0;
+    const historyOpen = Boolean(backdrop.querySelector(".run-removed-history")?.open);
+    backdrop.innerHTML = coachEventRunViewerHtml(runs, athleteName, item);
+    backdrop.querySelector("[data-close-contest-event]")?.addEventListener("click", close);
+    bindRunPlaybackControls(backdrop);
+    backdrop.querySelectorAll("[data-edit-run]").forEach(button => button.addEventListener("click", editRunPlan));
+    backdrop.querySelectorAll("[data-copy-saved-run]").forEach(button => button.addEventListener("click", openRunDuplicate));
+    bindRunRemovalActions(backdrop, updated => {
+      const run = runs.find(run => run.id === updated.id);
+      if (run) Object.assign(run, updated);
+      if (backdrop.isConnected) { stopRunPlayback(); render(); }
+    });
+    const history = backdrop.querySelector(".run-removed-history");
+    if (history) history.open = historyOpen;
+    backdrop.querySelector(".contest-event-modal").scrollTop = scrollTop;
+  };
+  const close = () => { stopRunPlayback(); closeContestEventModal(); };
   document.body.append(backdrop);
   document.documentElement.classList.add("contest-event-open");
-  const close = () => { stopRunPlayback(); closeContestEventModal(); };
-  backdrop.querySelector("[data-close-contest-event]")?.addEventListener("click", close);
-  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
-  state.contestEventEscapeHandler = (event) => { if (event.key === "Escape") close(); };
+  backdrop.addEventListener("click", event => { if (event.target === backdrop) close(); });
+  state.contestEventEscapeHandler = event => { if (event.key === "Escape") close(); };
   document.addEventListener("keydown", state.contestEventEscapeHandler);
-  bindRunPlaybackControls();
-  backdrop.querySelectorAll("[data-edit-run]").forEach(button => button.addEventListener("click", editRunPlan));
-  backdrop.querySelectorAll("[data-copy-saved-run]").forEach(button => button.addEventListener("click", openRunDuplicate));
+  render();
   backdrop.querySelector("[data-close-contest-event]")?.focus();
 }
 
@@ -11541,8 +11580,21 @@ function runBuilderRefreshView() {
   return renderProfile();
 }
 
+function runRemovalButtonHtml(run = {}) {
+  if (!canEditRun(run)) return "";
+  return `<button class="${run.archived_at ? "secondary-btn" : "danger-btn"} compact-btn" type="button" ${run.archived_at ? "data-restore-run" : "data-archive-run"}="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "Saved run")}" data-run-updated-at="${escapeHtml(run.updated_at || "")}" data-run-archived-at="${escapeHtml(run.archived_at || "")}">${run.archived_at ? "Restore run" : "Remove run"}</button>`;
+}
+
+function bindRunRemovalActions(root = document, onChanged = refreshRunRemovalView) {
+  root.querySelectorAll("[data-archive-run], [data-restore-run]").forEach(button => {
+    if (button.dataset.runRemovalBound && onChanged === refreshRunRemovalView) return;
+    button.dataset.runRemovalBound = "true";
+    button.onclick = event => archiveRunPlan(event, onChanged);
+  });
+}
+
 function runSummaryCardHtml(run, athleteName = "") {
-  return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at || run.created_at)}${run.archived_at ? " · Archived" : ""}</small></div><div class="actions"><button type="button" class="primary-btn compact-btn" data-open-progress-run="${escapeHtml(run.id)}" data-rider-name="${escapeHtml(athleteName)}" ${run.archived_at ? 'data-open-archived-run="true"' : ""}>Open to watch or edit</button>${canEditRun(run) ? `<button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}" data-run-athlete-name="${escapeHtml(athleteName)}">Duplicate run</button>` : ""}</div></article>`;
+  return `<article class="run-card ${run.archived_at ? "archived" : ""}" data-saved-run-id="${escapeHtml(run.id)}"><div><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at || run.created_at)}${run.archived_at ? " · Removed" : ""}</small></div><div class="actions"><button type="button" class="primary-btn compact-btn" data-open-progress-run="${escapeHtml(run.id)}" data-rider-name="${escapeHtml(athleteName)}" ${run.archived_at ? 'data-open-archived-run="true"' : ""}>Open to watch or edit</button>${canEditRun(run) ? `<button type="button" class="secondary-btn compact-btn" data-edit-run="${escapeHtml(run.id)}" data-run-athlete-name="${escapeHtml(athleteName)}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}" data-run-athlete-name="${escapeHtml(athleteName)}">Duplicate run</button>${runRemovalButtonHtml(run)}` : ""}</div></article>`;
 }
 
 function runPlansHtml(runs = []) {
@@ -11552,9 +11604,9 @@ function runPlansHtml(runs = []) {
   const card = (run) => {
     if (!("image_data_url" in run)) return runSummaryCardHtml(run);
     const points = Array.isArray(run.points) ? run.points : [];
-    return `<article class="run-card ${run.archived_at ? "archived" : ""}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Archived ${dateLabel(run.archived_at)}` : ""}</small></div>${runReviewPanelHtml(run)}<div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}">Duplicate run</button>` : ""}${isCoachRole(state.profile?.role) && !run.archived_at ? `<button class="danger-btn compact-btn" type="button" data-archive-run="${run.id}">Archive</button>` : ""}</div></article>`;
+    return `<article class="run-card ${run.archived_at ? "archived" : ""}" data-saved-run-id="${escapeHtml(run.id)}"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${escapeHtml(run.plan_type)} · ${dateLabel(run.updated_at || run.created_at)} · ${run.created_by === run.athlete_id ? "Rider-made" : "Coach-made"}${run.archived_at ? ` · Removed ${dateLabel(run.archived_at)}` : ""}</small></div>${runReviewPanelHtml(run)}<div class="run-playback-surface">${runMapHtml(run.image_data_url, points, run.title)}${points.length ? runPlaybackControlsHtml(points, run.id) : ""}</div><ol>${points.map((point) => `<li>${escapeHtml(point.label || "Point")}${point.note ? ` · ${escapeHtml(point.note)}` : ""}</li>`).join("")}</ol><div class="actions">${canEditRun(run) ? `<button class="secondary-btn compact-btn" type="button" data-edit-run="${run.id}">Edit this run</button><button type="button" class="secondary-btn compact-btn" data-copy-saved-run="${escapeHtml(run.id)}" data-run-title="${escapeHtml(run.title || "")}">Duplicate run</button>` : ""}${runRemovalButtonHtml(run)}</div></article>`;
   };
-  return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<div class="settings-divider"></div><div class="panel-title">Archived runs</div>${archivedRuns.map(card).join("")}` : ""}`;
+  return `${activeRuns.length ? activeRuns.map(card).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`}${archivedRuns.length ? `<details class="run-removed-history"><summary>Removed runs · ${archivedRuns.length}</summary><div class="run-list">${archivedRuns.map(card).join("")}</div></details>` : ""}`;
 }
 
 function runBuilderStage(builder = state.runBuilder) {
@@ -13516,7 +13568,6 @@ function bindRunBuilderActions(root = document) {
     control.addEventListener("change", updateSelectedRunPoint);
   });
   root.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
-  root.querySelectorAll("[data-archive-run]").forEach((button) => button.addEventListener("click", archiveRunPlan));
   bindRunPlaybackControls(root);
   bindLiveRunControls(root);
 }
@@ -13995,20 +14046,86 @@ async function editRunPlan(event) {
   finally { restore(); }
 }
 
-async function archiveRunPlan(event) {
-  const runId = event.currentTarget.dataset.archiveRun;
-  const archivedAt = new Date().toISOString();
-  const { error } = await client.from("run_plans").update({ archived_at: archivedAt, updated_at: archivedAt }).eq("id", runId).eq("coach_id", state.user.id);
-  if (error) return notify(messageFrom(error), "error");
-  cacheClear("run-plans:");
-  showUndoToast("Run archived.", async () => {
-    const { error: restoreError } = await client.from("run_plans").update({ archived_at: null, updated_at: new Date().toISOString() }).eq("id", runId).eq("coach_id", state.user.id);
-    if (restoreError) return notify(messageFrom(restoreError), "error");
-    cacheClear("run-plans:");
-    notify("Run restored.");
-    await runBuilderRefreshView();
-  });
-  await runBuilderRefreshView();
+async function refreshRunRemovalView(updated) {
+  // Removing a saved version must not replace a different, unfinished draft.
+  if (state.runBuilder) {
+    document.querySelectorAll("[data-saved-run-id]").forEach(card => {
+      if (card.dataset.savedRunId !== updated.id) return;
+      card.hidden = Boolean(updated.archived_at);
+      card.querySelectorAll("[data-archive-run], [data-restore-run]").forEach(button => {
+        button.outerHTML = runRemovalButtonHtml(updated);
+      });
+      if (!updated.archived_at) {
+        card.classList.remove("archived");
+        card.querySelectorAll("[data-open-archived-run]").forEach(button => button.removeAttribute("data-open-archived-run"));
+        const history = card.closest(".run-removed-history");
+        if (history) {
+          const metadata = card.querySelector("small");
+          if (metadata) metadata.textContent = `${updated.venue || "Private run"} · ${dateLabel(updated.updated_at)}`;
+          history.before(card);
+          const remaining = history.querySelectorAll("[data-saved-run-id]").length;
+          if (remaining) history.querySelector("summary").textContent = `Removed runs · ${remaining}`;
+          else history.remove();
+        }
+      }
+      bindRunRemovalActions(card);
+    });
+    return;
+  }
+  const view = document.querySelector("#view"), top = window.scrollY;
+  const openIds = [...(view?.querySelectorAll("details[open][id]") || [])].map(details => details.id);
+  if (state.view === "home") await renderAthleteHome();
+  else await runBuilderRefreshView();
+  openIds.forEach(id => { const details = document.getElementById(id); if (details?.tagName === "DETAILS") details.open = true; });
+  window.scrollTo(0, top);
+}
+
+async function archiveRunPlan(event, onChanged = refreshRunRemovalView) {
+  event.preventDefault();
+  const button = event.currentTarget;
+  if (button.disabled || !state.user?.id || !["athlete", "coach", "admin"].includes(state.profile?.role)) return;
+  const runId = button.dataset.archiveRun || button.dataset.restoreRun;
+  if (!runId) return;
+  const restoring = Boolean(button.dataset.restoreRun);
+  const userId = state.user.id;
+  const originView = state.view;
+  const ownerColumn = isCoachRole(state.profile.role) ? "coach_id" : "athlete_id";
+  const title = button.dataset.runTitle || "Run";
+  const restoreButton = setButtonBusy(button, restoring ? "Restoring…" : "Removing…");
+  const updateArchive = async (archivedAt, expectedArchivedAt, expectedUpdatedAt) => {
+    if (state.user?.id !== userId) throw new Error("Sign in to the same account to change this run.");
+    let query = client.from("run_plans").update({ archived_at: archivedAt }).eq("id", runId).eq(ownerColumn, userId);
+    query = expectedArchivedAt ? query.eq("archived_at", expectedArchivedAt) : query.is("archived_at", null);
+    if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
+    const { data, error } = await query.select(RUN_SUMMARY_SELECT).single();
+    if (error?.code === "PGRST116") throw new Error("This run changed or is no longer available. Refresh your saved runs and try again.");
+    if (error) throw error;
+    if (!data?.id) throw new Error("This run changed or is no longer available. Refresh your saved runs and try again.");
+    cacheClear("run-plans:"); cacheClear("coach-command:");
+    return data;
+  };
+  const paint = async updated => {
+    if (state.user?.id !== userId) return;
+    setSyncStatus("saved");
+    try { if (onChanged !== refreshRunRemovalView || state.view === originView) await onChanged(updated); }
+    catch (error) { console.warn("Run list refresh failed", error); }
+  };
+  try {
+    setSyncStatus("syncing");
+    const updated = await updateArchive(restoring ? null : new Date().toISOString(), button.dataset.runArchivedAt || null, button.dataset.runUpdatedAt);
+    await paint(updated);
+    if (state.user?.id !== userId) return;
+    if (restoring) { notify(`${title} restored.`); return; }
+    showUndoToast(`${title} removed.`, async () => {
+      try {
+        setSyncStatus("syncing");
+        const restored = await updateArchive(null, updated.archived_at, updated.updated_at);
+        await paint(restored);
+        if (state.user?.id === userId) notify(`${title} restored.`);
+      } catch (error) { setSyncStatus("error"); notify(messageFrom(error), "error"); }
+    });
+  } catch (error) { setSyncStatus("error"); notify(messageFrom(error), "error"); }
+  finally { restoreButton(); }
 }
 
 async function saveRunPlan(event) {

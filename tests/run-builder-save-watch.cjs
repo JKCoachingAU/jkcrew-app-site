@@ -25,6 +25,7 @@ const names = [...new Set([
   'focusRunBuilderTrick', 'advanceRunBuilderTrick', 'deleteSelectedRunPoint', 'clearRunBuilder',
   'liveRunOwnsEditor', 'liveRunCanEdit', 'liveRunBarHtml', 'paintLiveRunControls',
   'bindLiveRunControls', 'withTimeout', 'setButtonBusy',
+  ...['bindRunRemovalActions', 'refreshRunRemovalView', 'archiveRunPlan'].filter(name => app.includes('function ' + name + '(')),
 ]))];
 // Unrelated photo/upload/archive actions are never exercised. Save, Watch,
 // remount, form reading, live read-only rules and all playback code are real.

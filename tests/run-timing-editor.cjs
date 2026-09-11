@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['runBuilderStage','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTiming','runPlaybackDefaultSeconds','runTimingRowHtml','runTimingEditorHtml','runBuilderTrickEditorHtml','runPointColor','updateRunTiming','updateRunFinalType','updateRunBuilderTrick','runMapHtml','runView','runRouteSvg','runPathBetween','bindRunBuilderActions'];
+const names=['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','runBuilderStage','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTiming','runPlaybackDefaultSeconds','runTimingRowHtml','runTimingEditorHtml','runBuilderTrickEditorHtml','runPointColor','updateRunTiming','updateRunFinalType','updateRunBuilderTrick','runMapHtml','runView','runRouteSvg','runPathBetween','bindRunBuilderActions'];
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 (async()=>{

@@ -45,7 +45,7 @@ const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
  const run={id:id(11),athlete_id:rider,coach_id:coach,created_by:coach,updated_at:'2026-09-10T00:00:00.123456Z',title:'Finals',points:content.points,image_data_url:'photo'};
  const state={user:{id:rider},profile:{role:'athlete'},selectedAthleteId:stranger};let rpcCall=null,queryId=null,saveError=null;
  const ctx=vm.createContext({escapeHtml:String,dateLabel:()=>"",runMapHtml:()=>"",runReviewPanelHtml:()=>"",runPlaybackControlsHtml:()=>"",state,liveRun:null,runUndoStack:[],runRedoStack:[],isCoachRole:r=>r==='coach',setButtonBusy:()=>()=>{},withTimeout:async p=>p,runView:v=>v||{},closeContestEventModal:()=>{},navigate:async()=>{},document:{querySelector:()=>null},notify:()=>{},messageFrom:e=>e.message,runBuilderRefreshView:async()=>{},cacheClear:()=>{},setSyncStatus:()=>{},runBuilderStage:()=> 'playback',FormData:class{get(k){return k==='title'?'Edited':'Notes';}},client:{from:()=>({select(){return this},eq(k,v){queryId=v;return this},single:async()=>({data:run})}),rpc:async(name,args)=>{rpcCall={name,args};return {error:saveError};}}});
- vm.runInContext(['coachEventRunViewerHtml','canEditRun','editRunPlan','saveRunPlan'].map(extract).join('\n'),ctx);
+ vm.runInContext(['coachEventRunViewerHtml','canEditRun','runRemovalButtonHtml','editRunPlan','saveRunPlan'].map(extract).join('\n'),ctx);
  assert(vm.runInContext(`canEditRun(${JSON.stringify(run)})`,ctx),'Rider can edit coach-created run');
  assert(ctx.coachEventRunViewerHtml([run]).includes('data-edit-run='));
  state.profile.role='parent';assert(!ctx.coachEventRunViewerHtml([run]).includes('data-edit-run='));assert.equal(vm.runInContext(`canEditRun(${JSON.stringify(run)})`,ctx),false);

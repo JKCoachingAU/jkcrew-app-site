@@ -1,20 +1,20 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.91";
+const RELEASE_VERSION = "2.14.92";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.91",
-  "./app.js?v=2.14.91",
-  "./manifest.webmanifest?v=2.14.91",
+  "./styles.css?v=2.14.92",
+  "./app.js?v=2.14.92",
+  "./manifest.webmanifest?v=2.14.92",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.91",
+  "./icons/badges/prestige-01.png?v=2.14.92",
 ];
 
 self.addEventListener("install", (event) => {
