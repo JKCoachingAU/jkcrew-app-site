@@ -1,26 +1,29 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.93";
+const RELEASE_VERSION = "2.14.94";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.93",
-  "./app.js?v=2.14.93",
-  "./daily-completion.js?v=2.14.93",
-  "./daily-completion.css?v=2.14.93",
-  "./progress-sharing.js?v=2.14.93",
-  "./progress-sharing.css?v=2.14.93",
-  "./battle-rematches.js?v=2.14.93",
-  "./battle-rematches.css?v=2.14.93",
-  "./manifest.webmanifest?v=2.14.93",
+  "./styles.css?v=2.14.94",
+  "./app.js?v=2.14.94",
+  "./daily-completion.js?v=2.14.94",
+  "./daily-completion.css?v=2.14.94",
+  "./progress-sharing.js?v=2.14.94",
+  "./progress-sharing.css?v=2.14.94",
+  "./battle-rematches.js?v=2.14.94",
+  "./battle-rematches.css?v=2.14.94",
+  "./bike-renderer.js?v=2.14.94",
+  "./bike-garage.js?v=2.14.94",
+  "./bike-garage.css?v=2.14.94",
+  "./manifest.webmanifest?v=2.14.94",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.93",
+  "./icons/badges/prestige-01.png?v=2.14.94",
 ];
 
 self.addEventListener("install", (event) => {

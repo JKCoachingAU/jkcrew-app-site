@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.93";
+const RELEASE_VERSION = "2.14.94";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -172,7 +172,7 @@ const coachNavGroups = [
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Battles & Challenges"]] },
   { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"]] },
-  { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
+  { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["bikeGarage", "Bike Garage"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
   ["home", "Home"],
@@ -188,16 +188,17 @@ function coachPrimaryView(view = "") {
   if (view === "battleViewer") return "battleViewer";
   if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
   if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
-  if (["more", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
+  if (["more", "bikeGarage", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
 
 function parentPrimaryView(view = "") {
-  if (["profile", "tricktionary"].includes(view)) return "parentMore";
+  if (["profile", "tricktionary", "bikeGarage"].includes(view)) return "parentMore";
   return view;
 }
 
 function athletePrimaryView(view = "") {
+  if (view === "bikeGarage") return "profile";
   return view === "coaching" ? "home" : view;
 }
 
@@ -421,7 +422,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.93" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.94" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1289,6 +1290,7 @@ async function handleSession(session) {
   if ((state.user?.id || "") !== nextUserId) {
     dismissDailyFinishForNavigation();
     closeTrainingProgressViews();
+    if (typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
     state.runBuilder = null;
     runUndoStack = []; runRedoStack = [];
     closeAthleteReviewViewer();
@@ -2143,6 +2145,7 @@ async function navigate(view, options = {}) {
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
   clearInterval(state.timer);
+  if (previousView === "bikeGarage" && view !== previousView && typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
   stopRunPlayback();
   if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
   if (previousView === "contests" && view !== "contests") {
@@ -2193,6 +2196,7 @@ async function navigate(view, options = {}) {
     battleViewer: renderCoachBattleViewer,
     coachTools: renderCoachTools,
     more: renderCoachMore,
+    bikeGarage: renderBikeGarage,
     adminRecords: renderCoachAdminRecords,
     planner: renderPlanner,
     parents: renderParents,
@@ -9658,11 +9662,22 @@ async function renderCoachTools() {
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
 }
 
+function renderBikeGarage() {
+  const userId = state.user?.id;
+  if (!userId) return navigate("home");
+  JKCrewBikeGarage.mount({
+    root: document.querySelector("#view"), client, userId,
+    isCurrent: () => state.view === "bikeGarage" && state.user?.id === userId,
+    onBack: () => navigate(isCoachRole(state.profile?.role) ? "more" : "profile"),
+  });
+}
+
 async function renderCoachMore() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">More</div><h1>Coach <span>admin</span></h1><p>Parent management, leaderboard, profile, account settings, app updates and sign out live here so the main nav stays clean.</p></div></div>
     <section class="coach-hub-grid">
+      ${coachHubCard("bikeGarage", "Bike Garage", "Design a custom BMX and save your favourites", "✳")}
       ${coachHubCard("adminRecords", "Admin & Records", "Attendance, payments, injuries and rider records", "▦")}
       ${coachHubCard("parents", "Parents", "Linked parent viewer accounts", "P")}
       ${coachHubCard("board", "Board", "Full weekly and all-time leaderboard", "#")}
@@ -15698,6 +15713,7 @@ async function renderProfile() {
   }
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
+    ${typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}
     <div class="profile-grid">
       <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
       <section class="panel">
@@ -15760,6 +15776,7 @@ async function renderProfile() {
     ${trainingHistorySection}
     ${state.profile.role === "athlete" ? `<section class="panel profile-library-card"><div class="panel-head"><div><div class="panel-title">My Tricktionary</div><div class="panel-meta">Your landed trick library and weekly attempt history now live under Profile & Settings.</div></div></div><button class="secondary-btn" type="button" id="open-tricktionary-from-profile">Open My Tricktionary</button></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
+  document.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => navigate("bikeGarage"));
   document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);
   document.querySelector("#remove-own-avatar").addEventListener("click", () => saveOwnAvatar(null));
   document.querySelector("#open-tricktionary-from-profile")?.addEventListener("click", () => navigate("tricktionary"));
