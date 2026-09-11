@@ -4,7 +4,7 @@ Release candidate **2.14.93**, prepared on branch `review/daily-progress-rematch
 
 **Release scope updated:** the user approved publishing the Daily and battle features, excluding share cards. `TRAINING_SHARE_CARDS_ENABLED` is fixed to `false`: the release has no new share, image-save or card-preview controls, and the preview/export entry points do nothing. Sharing descriptions and images below document the retained, unreleased review work.
 
-**Nothing has been deployed.** This is an isolated copy of JKCREW. The live 2.14.92 app, original checkout and real rider results are unchanged. No real battle invitations, posts or notifications were sent.
+This document records the initial isolated review. The user subsequently approved release **2.14.93**, excluding share cards. Both migrations have now been applied, and the client release is being published. No test invitations, posts, notifications or rider results were created in production.
 
 ## What changed
 
@@ -60,11 +60,11 @@ The integration also mirrors the shared assets on the existing Riley test path a
 - If an older XP ledger row changes today without a recorded delta, the summary marks today's XP as unavailable rather than inventing an earned total. Legacy unattributable rewards are also shown as unavailable.
 - Shared images use only approved result fields and trick names. They exclude coaching notes, even when notes contain part of a legacy Line, plus contact details and private run plans. The private summary can still reconstruct legacy Lines. Long images show a balanced selection and an explicit remaining count; the private summary lists all returned completions.
 - Native sharing was tested with browser API fixtures, and real PNG downloads were verified. A physical iPhone/iPad share sheet has not been tested.
-- PGlite serializes database requests. Transaction rollback, repeat requests, unique constraints and lock ordering were checked; simultaneous contention across separate PostgreSQL connections remains a staging check.
+- In addition to PGlite, real PostgreSQL 17.11 tests passed across nine independent connections with verified lock waits: duplicate coach/rider confirmation, a single group-first bonus, and corrections both before and after confirmation.
 
 ## Handoff
 
-Review the two new SQL migrations together with the client changes. They have **not** been applied to Supabase. Publishing requires the new RPCs/nullable `daily_venue` column and the 2.14.93 client as one coordinated release: old direct Daily finish paths deliberately cannot bypass confirmation.
+Review the two new SQL migrations together with the client changes. Both have been applied to Supabase for the approved release. The client requires the new RPCs/nullable `daily_venue` column and the 2.14.93 client as one coordinated release: old direct Daily finish paths deliberately cannot bypass confirmation.
 
 - [Daily database/API contract](daily-progress-api.md)
 - [Progress and sharing integration](progress-sharing-integration.md)

@@ -1,6 +1,6 @@
 # Daily Tricks / Today Progress review API
 
-Review copy only. No migration has been applied to production.
+Release 2.14.93 API. The migration has been applied to production as authorized; share cards are excluded from the client release.
 
 All RPC names live in public, accept authenticated rider or their linked coach/admin. Today read also allows linked parent. Snake_case JSON. Each mutation is one database transaction.
 
@@ -44,6 +44,6 @@ Local day uses existing rider-country timezone mapping (same as scoring), not vi
 ## Local validation
 
 Run: JKCREW_PGLITE_PATH=/path/to/@electric-sql/pglite node tests/daily-completion-db.cjs
-The test starts from read-only retrieved production function definitions and reproduces the old auto-awards before applying this isolated migration. It checks actual transaction rollback, repeat coach/rider confirms, corrections, timing/PB compatibility, per-venue scoring, first-confirmed group awards, Daily-only XP/push behavior, untouched untimed scoring, day boundaries and authorization. PGlite serializes its requests; independent PostgreSQL connections under simultaneous locking are not exercised by this local harness. No live migration or data writes were performed.
+The test starts from read-only retrieved production function definitions and reproduces the old auto-awards before applying this isolated migration. It checks actual transaction rollback, repeat coach/rider confirms, corrections, timing/PB compatibility, per-venue scoring, first-confirmed group awards, Daily-only XP/push behavior, untouched untimed scoring, day boundaries and authorization. The PGlite harness serializes requests. Separately, tests/daily-concurrency-postgres.cjs passed on PostgreSQL 17.11 with nine independent psql connections and verified lock waits. It covers duplicate coach/rider confirmations, competing group bonuses and both correction/confirmation orderings. That test database was removed and its temporary server stopped. No real rider data was changed by testing.
 
 XP attribution: when a ledger entry created before today was revised today, the existing table has no durable delta. Today returns today_xp:null, attributable_today_xp for safely dated entries, xp_attribution:'partial', and xp_attribution_note. It never reports the whole revised historical balance as newly earned today. Untouched/entirely today entries return a numeric today_xp with xp_attribution:'complete'. Existing removed historical ledger entries cannot be reconstructed; this is attributable earned XP, not an inferred balance change.
