@@ -1,29 +1,37 @@
 const CACHE_PREFIX = "jkcrew-riley-shell-";
-const RELEASE_VERSION = "2.14.95";
+const RELEASE_VERSION = "2.14.96";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.95",
-  "./app.js?v=2.14.95",
-  "./daily-completion.js?v=2.14.95",
-  "./daily-completion.css?v=2.14.95",
-  "./progress-sharing.js?v=2.14.95",
-  "./progress-sharing.css?v=2.14.95",
-  "./battle-rematches.js?v=2.14.95",
-  "./battle-rematches.css?v=2.14.95",
-  "./bike-renderer.js?v=2.14.95",
-  "./bike-garage.js?v=2.14.95",
-  "./bike-garage.css?v=2.14.95",
-  "./manifest.webmanifest?v=2.14.95",
+  "./styles.css?v=2.14.96",
+  "./app.js?v=2.14.96",
+  "./daily-completion.js?v=2.14.96",
+  "./daily-completion.css?v=2.14.96",
+  "./progress-sharing.js?v=2.14.96",
+  "./progress-sharing.css?v=2.14.96",
+  "./battle-rematches.js?v=2.14.96",
+  "./battle-rematches.css?v=2.14.96",
+  "./bike-photo-masks.js?v=2.14.96",
+  "./bike-renderer.js?v=2.14.96",
+  "./bike-garage.js?v=2.14.96",
+  "./bike-garage.css?v=2.14.96",
+  "./manifest.webmanifest?v=2.14.96",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.95",
+  "./icons/badges/prestige-01.png?v=2.14.96",
+];
+
+// Public bike photos are fetched only when the garage needs them, then cached.
+// They do not delay sign-in or service-worker installation.
+const BIKE_PHOTO_ASSETS = [
+  "./images/bike-garage/studio-white-v1.webp",
+  "./images/bike-garage/studio-options-v1.webp",
 ];
 
 self.addEventListener("install", (event) => {
@@ -83,8 +91,8 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Versioned public assets can be reused immediately, even on a weak signal.
-  // Never cache API responses, account data, or files outside the app shell.
-  const shellUrls = new Set(APP_SHELL.map(path => new URL(path, self.location.href).href));
+  // Never cache API/account data or assets outside the explicit public lists.
+  const shellUrls = new Set([...APP_SHELL, ...BIKE_PHOTO_ASSETS].map(path => new URL(path, self.location.href).href));
   if (!shellUrls.has(requestUrl.href)) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);

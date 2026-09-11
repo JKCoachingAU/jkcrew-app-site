@@ -1,0 +1,20 @@
+# Bike Garage photographic artwork
+
+Created with the built-in image-generation tool on 11 September 2026 for JKCREW, using the app's previous original drawing as a geometry guide. No third-party product photos, brands or storefront assets are embedded.
+
+Production assets:
+
+- `images/bike-garage/studio-white-v1.webp` — neutral photographic base, 1536 × 1024, 109,116 bytes.
+- `images/bike-garage/studio-options-v1.webp` — aligned alternate bars, padded saddle and pegs, 1536 × 1024, 108,320 bytes.
+- Original generated PNG files are retained beside the WebP assets. WebP conversion only compresses the files; it does not change the design or dimensions.
+- The two production WebP assets are mirrored in `riley-test/images/bike-garage/`.
+
+The app composites photo regions for structural options and applies colour transfer only inside traced material masks. The neutral base, coloured versions, component boundaries, mobile view and fullscreen are visually checked. Existing saved configurations use the same schema and remain editable.
+
+## Final base prompt
+
+Use case: sketch-to-render. Project asset for an interactive BMX bicycle colour customiser. The supplied image is ONLY a geometry/composition guide: transform the illustrated white BMX into a genuinely photorealistic studio product photograph of a real professional freestyle BMX. It must look photographed with a full-frame camera and studio softboxes: real powder-coated steel tubing with weld beads and subtle uneven reflections, real stitched white saddle, white rubber grips with fine ribbed texture, white rubber tyres with crisp real tread, intricate real crossed spokes, correctly assembled hubs, chain links, machined white sprocket, realistic pedals and bolts. No cartoon, no drawn outlines, no illustration, no simplified 3D toy look. Keep the exact same slight drive-side viewing angle and bike silhouette/part arrangement from the guide: rear wheel left, front wheel right, rising straight top tube, low saddle, tall narrow bars viewed at a slight angle, cranks almost horizontal. ALL paintable bike parts are neutral white/light gray, including both tyres. White tyres must still clearly show rubber texture. Bare metal spokes/chain and tiny bolts can be subtle silver. No pegs, no decals or logos. Remove all page UI, title, close button and text. Deliver a single whole bike centred, generous clean margin, both tyres fully visible, white seamless studio floor/background with a gentle real contact shadow, soft natural contrast that shows contours clearly. Landscape 3:2 canvas, bike fills roughly 85% of width and 85% of height. This is a production photographic base asset that will be recoloured, so preserve neutral untinted lighting and sharp part boundaries. Do not add extra objects, text, logos or watermark.
+
+## Final options prompt
+
+Use case precise-object-edit, production asset variants for a bicycle customiser. The provided BMX studio photograph is the master. Create ONE edited photograph on EXACT SAME 1536x1024 canvas, pixel-aligned camera/framing/background/bike position: keep every wheel spoke, tyre, frame tube, chain, crank, fork, stem and all illumination unchanged. Only change THREE areas: (1) replace the tall two-piece handlebars with realistic tall four-piece BMX handlebars, retaining exactly same white grips, bar height and stem mount position; four-piece bars have straight upright welded tube segments rather than a rounded one-piece bend at the bottom. (2) slightly thicken the same white saddle into a padded BMX saddle, same mounting post and overall position. (3) add realistic clean satin-white cylindrical BMX axle pegs at BOTH visible front and rear wheel hubs, projecting to the viewer/right; each roughly 70px long, attached exactly to existing axle bolt, with visible hollow end and rounded rim. Keep image fully photorealistic, no drawing/vector/illustration, no text or logos. These edited regions will be used as aligned replacement patches over the original photo. Crucial: do not move the bike, wheel centers, camera, source light or background; no zoom, no crop, no added margin. Keep all unedited pixels and parts identical.

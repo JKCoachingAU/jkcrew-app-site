@@ -35,6 +35,7 @@ const JKCrewBikeGarage = (() => {
     const key = `jkcrew-bike-draft-v1:${userId}`;
     let alive = true, config = copy(defaults), name = 'My dream bike', slot = null, revision = 0, savedFingerprint = '', pendingSave = null, history = [], future = [], group = 'Frame', part = 'frame';
     let builds = [], loaded = false, loading = false, busy = false, loadSequence = 0, status = '', statusKind = '', draftAvailable = true, fullscreen = null;
+    let photoSequence = 0, photoReady = false;
     const valid = () => alive && root.isConnected && isCurrent();
     const snapshot = () => ({ name, configuration: copy(config) });
     const fingerprint = (value = snapshot()) => JSON.stringify(value);
@@ -80,13 +81,21 @@ const JKCrewBikeGarage = (() => {
       root.querySelector('[data-bike-name]').disabled = busy;
       root.querySelector('[data-bike-shuffle]').disabled = busy;
       root.querySelector('[data-bike-new]').disabled = busy;
-      root.querySelectorAll('[data-bike-colour],[data-bike-style],input[type="color"]').forEach(button => button.disabled = busy);
+      root.querySelector('[data-bike-preview]').disabled = !photoReady;
+      root.querySelectorAll('[data-bike-colour],[data-bike-style],input[type="color"]').forEach(button => button.disabled = busy || !photoReady);
       root.querySelectorAll('[data-bike-load],[data-bike-remove]').forEach(button => button.disabled = busy || !loaded);
       root.querySelectorAll('[data-bike-reload],[data-bike-retry]').forEach(button => button.disabled = busy || loading);
       root.querySelector('[data-bike-retry]').hidden = loaded || loading;
     }
     function paint() {
       if (!valid()) return;
+      const sequence = ++photoSequence;
+      photoReady = JKCrewBikeArt.isReady(config);
+      const artwork = root.querySelector('[data-bike-art]');
+      const photoStatus = root.querySelector('[data-bike-photo-status]');
+      artwork.setAttribute('aria-busy', String(!photoReady));
+      photoStatus.hidden = photoReady;
+      photoStatus.innerHTML = '<span>Loading your bike…</span>';
       const focusedPart = root.querySelector('[data-bike-art]')?.contains(document.activeElement) ? document.activeElement?.dataset.bikePart : '';
       root.querySelector('[data-bike-art]').innerHTML = JKCrewBikeArt.render(config,{idPrefix:'garage-main',selectedPart:part,interactive:true});
       if (focusedPart) root.querySelector(`[data-bike-art] [data-bike-part="${CSS.escape(focusedPart)}"]`)?.focus({preventScroll:true});
@@ -94,6 +103,15 @@ const JKCrewBikeGarage = (() => {
       root.querySelector('[data-bike-frame-colour]').style.backgroundColor = config.colors.frame;
       root.querySelector('[data-bike-part-hint]').textContent = `Editing ${labels[part].toLowerCase()}`;
       updateStatus();
+      if (!photoReady) JKCrewBikeArt.prepare(config).then(() => {
+        if (!valid() || sequence !== photoSequence) return;
+        photoReady = true; artwork.setAttribute('aria-busy', 'false'); photoStatus.hidden = true; updateStatus();
+      }).catch(() => {
+        if (!valid() || sequence !== photoSequence) return;
+        artwork.setAttribute('aria-busy', 'false');
+        photoStatus.innerHTML = '<span>The bike photo could not load.</span><button type="button" data-bike-photo-retry>Retry photo</button>';
+        updateStatus();
+      });
     }
     function controls() {
       if (!valid()) return;
@@ -204,7 +222,7 @@ const JKCrewBikeGarage = (() => {
     }
     root.innerHTML=`<section class="bike-garage" data-bike-workshop>
       <header class="bike-garage-header"><div><span class="bike-eyebrow">JKCREW GARAGE / 01</span><h1>Your bike.<br><em>Your style.</em></h1><p>Build something only you would ride.</p></div><button type="button" class="bike-back" data-bike-back>← Back</button></header>
-      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Expand bike preview">⛶</button></div></div>
+      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art aria-busy="true"></div><div class="bike-photo-status" data-bike-photo-status role="status"><span>Loading your bike…</span></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Expand bike preview">⛶</button></div></div>
       <section class="bike-controls" aria-label="Customise your bike"><div data-bike-controls></div><div class="bike-edit-tools"><button type="button" data-bike-undo aria-label="Undo last change">↶ Undo</button><button type="button" data-bike-redo aria-label="Redo change">↷ Redo</button><button type="button" data-bike-shuffle>✳ Surprise me</button></div></section></div>
       <div class="bike-save-bar"><label class="bike-name-field"><span>NAME YOUR BUILD</span><input type="text" maxlength="40" data-bike-name value="${html(name)}" autocomplete="off"></label><div class="bike-save-actions"><button type="button" class="bike-save-copy" data-bike-retry hidden>Refresh garage</button><button type="button" class="bike-save-copy" data-bike-save-copy hidden>Save as new</button><button type="button" class="bike-primary" data-bike-save>Save to garage</button></div><p class="bike-save-status" data-bike-status role="status" aria-live="polite"></p></div>
       <details class="bike-garage-shelf" data-bike-garage><summary><span><span class="bike-eyebrow">YOUR COLLECTION</span><strong>My garage <small data-bike-count>0 / 3</small></strong></span><b aria-hidden="true">+</b></summary><div class="bike-garage-toolbar"><p>Three spaces. Endless ideas.</p><button type="button" data-bike-reload>Retry loading garage</button></div><div class="bike-saved-grid" data-bike-saved-list></div></details>
@@ -213,6 +231,7 @@ const JKCrewBikeGarage = (() => {
     root.addEventListener('click',event=>{
       const button=event.target.closest('button,[data-bike-part]');if(!button||!root.contains(button)||button.disabled||!valid())return;
       if(button.hasAttribute('data-bike-back'))return onBack();
+      if(button.hasAttribute('data-bike-photo-retry'))return paint();
       if(button.dataset.bikePart)return select(button.dataset.bikePart);
       if(button.dataset.bikeGroup){group=button.dataset.bikeGroup;return select(groups[group][0]);}
       if(button.dataset.bikeSelect)return select(button.dataset.bikeSelect);

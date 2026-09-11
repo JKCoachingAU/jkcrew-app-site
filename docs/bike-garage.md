@@ -1,8 +1,8 @@
-# JKCREW Bike Garage — 2.14.95
+# JKCREW Bike Garage — 2.14.96
 
-A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses an original SVG illustration with instant part/colour changes and a full-bike preview.
+A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses original generated studio photographs with masked material recolouring, instant part/colour changes and a full-bike preview.
 
-New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. The original SVG depicts the bike at a slight angle on a light studio background, with separately paintable parts.
+New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. Photographic artwork depicts the bike at a slight angle on a light studio background. Paint colours retain photographed material textures, shading and reflections.
 
 Ten parts can be recoloured. Riders can also change two/four-piece bars, all-white/black tyres or contrasting tyre walls, seat shape, pegs and the frame graphic. Undo/redo restores design changes; Surprise me tries another colour combination. Bike names are limited to 40 characters.
 
@@ -14,7 +14,10 @@ The garage is visual play, not a real component catalogue, compatibility calcula
 
 ## Integration
 
-- `bike-renderer.js`: pure, sanitised SVG renderer with keyboard-accessible part controls.
+- `bike-renderer.js`: sanitised photographic SVG compositor, bounded public-image loading and keyboard-accessible part controls.
+- `bike-photo-masks.js`: material masks and alternate-part silhouettes in the photographs’ fixed 1536 × 1024 coordinates.
+- `images/bike-garage/studio-white-v1.webp` and `studio-options-v1.webp`: original photographic assets, about 109 KB each. Photos load only on demand, then use the public-asset service-worker cache. They do not block sign-in or worker installation. Original PNG sources are retained beside them.
+- [Generation prompts and provenance](bike-garage-artwork.md).
 - `bike-garage.js` / `bike-garage.css`: scoped UI, draft state, explicit save/remove and lifecycle cleanup.
 - `get_bike_garage`, `save_bike_build`, `delete_bike_build`: authenticated security-invoker RPCs, protected by ownership RLS and strict configuration validation.
 - `supabase/migrations/20260911102828_add_private_bike_garage.sql`: additive schema. Removed slots keep a revision tombstone with no bike name/configuration, so a stale device cannot overwrite a later replacement.
