@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.81";
+const RELEASE_VERSION = "2.14.82";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -49,7 +49,7 @@ const state = {
   sessionViewerVenue: "",
   sessionViewerSearch: "",
   sessionViewerOpenAthleteId: "",
-  sessionViewerActiveList: "daily",
+  sessionViewerActiveList: "",
   sessionViewerTimer: null,
   sessionViewerClock: null,
   sessionViewerRosterCache: [],
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.81" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.82" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -455,7 +455,7 @@ function levelBadgesAccordionHtml(summary, options = {}) {
   const unlocked = Math.min(XP_LEVEL_CAP, Math.max(0, xp.level || 0));
   const title = options.title || "Badges";
   const meta = options.meta || `${unlocked}/${XP_LEVEL_CAP} unlocked · current Level ${xp.level}`;
-  return `<details class="badges-accordion" ${options.open ? "open" : ""}>
+  return `<details class="badges-accordion">
     <summary>
       <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span>
       <span class="badges-summary-current">${levelBadgeHtml(xp.current_badge, true)}<b>Open</b></span>
@@ -1672,7 +1672,13 @@ function renderShell() {
       </div>
       <nav class="bottom-nav">${bottomNavHtml}</nav>
   </div>`;
-  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", (event) => {
+    if (button.matches("summary[data-view]")) {
+      event.preventDefault();
+      const group = button.closest(".sidebar-nav-group");
+      navigate(button.dataset.view, { expandedNavGroup: group?.open ? "" : group?.dataset.navGroup });
+      return;
+    }
     if (button.dataset.view === "student" && button.classList.contains("nav-sub-btn")) state.selectedAthleteId = "";
     navigate(button.dataset.view);
   }));
@@ -2102,7 +2108,19 @@ async function mountPushSetupPrompt() {
   prompt.querySelector("#push-setup-later")?.addEventListener("click", closePrompt);
 }
 
-async function navigate(view) {
+function resetPageExpansions({ expandedNavGroup = "" } = {}) {
+  // Fresh navigation starts collapsed; in-page saves and live refreshes keep the
+  // sections the user explicitly opened, so recording an attempt does not hide it.
+  state.sessionOpenDailyVenues.clear();
+  state.sessionOpenAssignmentSections.clear();
+  state.sessionViewerOpenAthleteId = "";
+  state.sessionViewerActiveList = "";
+  document.querySelectorAll(".sidebar-nav-group").forEach((group) => {
+    group.open = Boolean(expandedNavGroup && group.dataset.navGroup === expandedNavGroup);
+  });
+}
+
+async function navigate(view, options = {}) {
   const previousView = state.view;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
   if (view === previousView && view === "videoReviews" && (state.videoReviewRecording || state.videoReviewRecordingStarting)) return;
@@ -2136,11 +2154,7 @@ async function navigate(view) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
-  if (view === "session") {
-    state.sessionOpenDailyVenues.clear();
-    state.sessionOpenAssignmentSections.clear();
-  }
-  if (view === "sessionViewer" && previousView !== "sessionViewer") state.sessionViewerOpenAthleteId = "";
+  resetPageExpansions(options);
   state.view = view;
   const viewElement = document.querySelector("#view");
   if (viewElement) {
@@ -3943,7 +3957,7 @@ function dailyVenueGroups(assignments, interactive = false, profile = null, sele
   const body = visibleVenues.length ? visibleVenues.map((venue) => {
     const items = assignmentsForVenue(dailyAssignments, venue);
     const venueComplete = items.filter(isAssignmentComplete).length;
-    const open = interactive || state.sessionOpenDailyVenues.has(venue);
+    const open = state.sessionOpenDailyVenues.has(venue);
     return `<details class="daily-venue-accordion" data-daily-venue="${escapeHtml(venue)}" ${open ? "open" : ""}>
       <summary><span><strong>${escapeHtml(`${venueLabel(venue)} ${info.label}`)}</strong><small>${venueComplete}/${items.length} complete today</small></span><span class="category-count">${venueComplete}/${items.length}</span></summary>
       <div class="assignment-list" data-daily-venue-list>${assignmentList(items, `No ${info.label.toLowerCase()} assigned for ${venueLabel(venue)} yet.`, interactive)}</div>
@@ -4424,8 +4438,8 @@ function attendanceHistoryHtml(sessions = []) {
   }).join("");
 }
 
-function commandAccordionSection(id, title, meta, body, open = false) {
-  return `<details id="${escapeHtml(id)}" class="command-accordion" ${open ? "open" : ""}>
+function commandAccordionSection(id, title, meta, body) {
+  return `<details id="${escapeHtml(id)}" class="command-accordion">
     <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret">Open</span></summary>
     <div class="command-accordion-body">${body}</div>
   </details>`;
@@ -9861,7 +9875,7 @@ function updateGroupSessionTimerDom() {
 }
 
 function activeSessionViewerList() {
-  return sessionViewerListTabs.some((tab) => tab.id === state.sessionViewerActiveList) ? state.sessionViewerActiveList : "daily";
+  return sessionViewerListTabs.some((tab) => tab.id === state.sessionViewerActiveList) ? state.sessionViewerActiveList : "";
 }
 
 function sessionViewerAssignmentsForList(entry, listId) {
@@ -9873,11 +9887,11 @@ function sessionViewerPlanList(entry, activeGroupSession) {
   const activeList = activeSessionViewerList();
   const tabs = sessionViewerTabsForEntry(entry).map((tab) => {
     const count = sessionViewerListCount(entry, tab.id);
-    return `<button class="viewer-list-tab viewer-list-tone-${tab.id} ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
+    return `<button class="viewer-list-tab viewer-list-tone-${tab.id} ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}" aria-expanded="${tab.id === activeList}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
   }).join("");
   return `<div class="viewer-inline-list viewer-list-tone-${activeList}">
-    <div class="viewer-list-tabs" role="tablist" aria-label="Rider trick lists">${tabs}</div>
-    ${sessionViewerListContent(entry, activeGroupSession, activeList)}
+    <div class="viewer-list-tabs" role="group" aria-label="Rider trick lists">${tabs}</div>
+    ${activeList ? sessionViewerListContent(entry, activeGroupSession, activeList) : `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>`}
   </div>`;
 }
 
@@ -9983,13 +9997,13 @@ function bindSessionViewerActions() {
     state.sessionViewerGroup = nextGroup;
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
-    state.sessionViewerActiveList = "daily";
+    state.sessionViewerActiveList = "";
     renderSessionViewer();
   }));
   document.querySelectorAll("[data-viewer-venue]").forEach((button) => button.addEventListener("click", (event) => {
     state.sessionViewerVenue = event.currentTarget.dataset.viewerVenue;
     state.sessionViewerOpenAthleteId = "";
-    state.sessionViewerActiveList = "daily";
+    state.sessionViewerActiveList = "";
     const currentCard = state.sessionViewerGroup === contestPrepGroupId ? null : document.querySelector("#session-viewer-park-king");
     if (currentCard) {
       const wrapper = document.createElement("div");
@@ -10005,6 +10019,7 @@ function bindSessionViewerActions() {
   });
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
+    state.sessionViewerActiveList = "";
     refreshSessionViewerLight();
   }));
   document.querySelector("#start-group-session")?.addEventListener("click", startViewerGroupSession);
@@ -10240,7 +10255,8 @@ async function recordViewerPercentageAttempt(event) {
 }
 
 function selectViewerListTab(event) {
-  state.sessionViewerActiveList = event.currentTarget.dataset.viewerListTab || "daily";
+  const selectedList = event.currentTarget.dataset.viewerListTab || "";
+  state.sessionViewerActiveList = state.sessionViewerActiveList === selectedList ? "" : selectedList;
   refreshSessionViewerLight();
 }
 
@@ -10368,6 +10384,7 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
 function bindSessionViewerFastActions() {
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
+    state.sessionViewerActiveList = "";
     refreshSessionViewerLight();
   }));
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
@@ -12659,13 +12676,13 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       </div>
       <div class="venue-edit-panels">${dailyVenueEditors}</div>
       ${customVenueEditor}
-    </div>`, options.dailyOpen ?? false)}
+    </div>`)}
     ${otherCategoryEditor}
   </div>`;
 }
 
-function planAccordionSection(title, meta, body, open = false) {
-  return `<details class="plan-accordion" ${open ? "open" : ""}>
+function planAccordionSection(title, meta, body) {
+  return `<details class="plan-accordion">
     <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="accordion-caret">Open</span></summary>
     <div class="plan-accordion-body">${body}</div>
   </details>`;

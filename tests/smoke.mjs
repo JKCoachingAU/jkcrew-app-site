@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.81";
+const version = "2.14.82";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -314,8 +314,8 @@ assert((functionBody("renderSession").match(/bindSessionAssignmentAccordions\(\)
 assert(functionBody("recordAssignmentAction").includes("sessionOpenAssignmentSections.add(openSection)"), "Ticking a standard trick must preserve its open list");
 assert(functionBody("recordPercentageAttempt").includes("sessionOpenAssignmentSections.add(openSection)"), "Updating a percentage trick must preserve its open list");
 const navigateBody = functionBody("navigate");
-assert(navigateBody.includes('if (view === "session")'), "Every fresh rider Session navigation must reset its accordion layout");
-assert(!navigateBody.includes('view === "session" && previousView !== "session"'), "Re-tapping Session must restore the clean Daily-first layout");
+assert(navigateBody.includes("resetPageExpansions(options)"), "Every fresh navigation must reset accordion and training-tab layout for all roles");
+assert(!navigateBody.includes('view === "session" && previousView !== "session"'), "Re-tapping Session must restore the closed layout");
 const assignmentPresentationForTest = new Function(`${functionBody("assignmentPresentation")}; return assignmentPresentation;`)();
 assert.deepEqual(
   assignmentPresentationForTest({ category: "lines", trick_name: "Manual", notes: "Barspin - 180" }),
@@ -471,7 +471,7 @@ assert(beenleighMigration.includes("private.retired_coach_venue_backups"), "The 
 assert(!beenleighMigration.includes("delete from public.weekly_trick_assignments"), "Merging Beenleigh must not delete historical rider tricks or linked progress");
 const dailyVenueGroupsBody = functionBody("dailyVenueGroups");
 assert(dailyVenueGroupsBody.includes("interactive ? (matchingVenues.length ? matchingVenues : venues.slice(0, 1)) : venues"), "Rider Session must show only the selected Daily location");
-assert(dailyVenueGroupsBody.includes("const open = interactive ||"), "The selected rider Daily location must open automatically");
+assert(!dailyVenueGroupsBody.includes("const open = interactive ||"), "Starting training must not automatically expand Daily Tricks");
 assert(dailyVenueGroupsBody.includes("complete}/${visibleAssignments.length}"), "Rider Daily counts must describe the visible selected location only");
 assert(functionBody("renderSession").includes("assignmentGroups(assignments, true, state.profile, selectedVenue)"), "Rider Session must pass the chosen location into the Daily list");
 
