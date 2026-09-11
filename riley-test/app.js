@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.90";
+const RELEASE_VERSION = "2.14.91";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -421,7 +421,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.90" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.91" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8681,7 +8681,7 @@ function paintLiveRunControls() {
   const locked = !liveRunCanEdit();
   root.classList.toggle("run-live-readonly", Boolean(liveRun && locked));
   root.querySelectorAll("#run-builder-form input:not([data-run-scrub]), #run-builder-form textarea, #run-builder-form select, #run-builder-form button").forEach(el => {
-    const viewControl = el.matches("[data-run-mode], [data-run-builder-stage], [data-run-play-toggle], [data-run-play-restart], [data-run-expand], #close-run-builder");
+    const viewControl = el.matches("[data-run-mode], [data-run-builder-stage], #finish-run-builder, [data-run-play-toggle], [data-run-play-restart], [data-run-expand], #close-run-builder");
     if (viewControl) return;
     if (liveRun && (locked || el.matches("[data-run-copy]") || (el.type === "submit" && state.user.id !== liveRun.session.athlete_id))) {
       if (!el.disabled) { el.dataset.liveDisabled = "true"; el.disabled = true; }
@@ -8697,7 +8697,7 @@ function bindLiveRunControls(root = document) {
     const action = event.target.closest("[data-live-run-action]");
     if (action) { event.preventDefault(); void handleLiveRunAction(action.dataset.liveRunAction); return; }
     if (!liveRun || liveRunCanEdit()) return;
-    if (event.target.closest("[data-run-mode], [data-run-builder-stage], [data-run-play-toggle], [data-run-play-restart], [data-run-expand], [data-run-scrub], #close-run-builder, #close-run-builder-top")) return;
+    if (event.target.closest("[data-run-mode], [data-run-builder-stage], #finish-run-builder, [data-run-play-toggle], [data-run-play-restart], [data-run-expand], [data-run-scrub], #close-run-builder, #close-run-builder-top")) return;
     if (event.target.closest("#run-builder-form")) { event.preventDefault(); event.stopImmediatePropagation(); }
   }, true);
   panel.addEventListener("pointerdown", event => {
@@ -11314,7 +11314,7 @@ async function restoreRunEdit(event) {
 function runTimingRowHtml(points, index) {
   const timing = runTiming(points)[index];
   if (!timing || (index === points.length - 1 && !points[index]?.isTrick)) return "";
-  const field = (key, label, value, min) => `<div class="run-time-field"><span>${label}</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease ${label}">−</button><input type="number" min="${min}" max="120" step="0.1" value="${value}" data-run-time-index="${index}" data-run-time-key="${key}" aria-label="${label}"><button type="button" data-run-time-step="1" aria-label="Increase ${label}">+</button><small>seconds</small></span></div>`;
+  const field = (key, label, value, min) => `<div class="run-time-field"><span>${label}</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease ${label}">−</button><input type="number" inputmode="decimal" min="${min}" max="120" step="any" value="${value}" data-run-time-index="${index}" data-run-time-key="${key}" aria-label="${label}"><button type="button" data-run-time-step="1" aria-label="Increase ${label}">+</button><small>seconds</small></span></div>`;
   return `<div class="run-timing-row"><strong>Dot ${index + 1}${index < points.length - 1 ? ` → Dot ${index + 2}` : " · Final trick"}</strong>${index > 0 ? field("holdSeconds","Time performing this trick",timing.hold,0) : ""}${index < points.length - 1 ? `${field("travelSeconds","Travel time to next trick",Math.round(timing.travel*10)/10,0.1)}<small>How long until you reach the next trick?</small>` : ""}</div>`;
 }
 
@@ -11345,7 +11345,7 @@ function runSegmentEditorHtml(points, index) {
   return `<section class="run-segment-editor" data-run-segment-editor aria-label="Selected line timing">
     <div class="run-segment-heading"><strong>Dot ${index + 1} → Dot ${index + 2}</strong><button type="button" class="secondary-btn compact-btn" data-close-run-segment>Done</button></div>
     <p>${escapeHtml(name(index))} → ${escapeHtml(name(index + 1))}</p>
-    <div class="run-time-field"><span>Travel time to next trick</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease travel time">−</button><input type="number" inputmode="decimal" min="0.1" max="120" step="0.1" value="${seconds}" data-run-time-index="${index}" data-run-time-key="travelSeconds" aria-label="Seconds from dot ${index + 1} to dot ${index + 2}"><button type="button" data-run-time-step="1" aria-label="Increase travel time">+</button><small>seconds</small></span></div>
+    <div class="run-time-field"><span>Travel time to next trick</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease travel time">−</button><input type="number" inputmode="decimal" min="0.1" max="120" step="any" value="${seconds}" data-run-time-index="${index}" data-run-time-key="travelSeconds" aria-label="Seconds from dot ${index + 1} to dot ${index + 2}"><button type="button" data-run-time-step="1" aria-label="Increase travel time">+</button><small>seconds</small></span></div>
     <small>Travel only · trick time is separate</small>
     <strong data-run-segment-total>${runTimeBudget(points).total}s planned · ${runTimeBudget(points).message}</strong>
   </section>`;
@@ -11411,7 +11411,7 @@ function paintRunTimeBudget(points = []) {
 function runTimingEditorHtml(points) {
   const total = runPlaybackDefaultSeconds(points);
   const limit = Number(points[0]?.timeLimitSeconds) || 60;
-  return `<section class="run-timing-editor"><h3>Run timing</h3><label>Competition time limit <input type="number" min="1" max="3600" value="${limit}" data-run-limit> seconds</label><p data-run-total>${total} seconds planned · ${total <= limit ? `${Math.round((limit-total)*10)/10} seconds remaining` : `${Math.round((total-limit)*10)/10} seconds over limit`}</p></section>`;
+  return `<section class="run-timing-editor"><h3>Run timing</h3><label>Competition time limit <input type="number" inputmode="decimal" min="1" max="3600" step="any" value="${limit}" data-run-limit> seconds</label><p data-run-total>${total} seconds planned · ${total <= limit ? `${Math.round((limit-total)*10)/10} seconds remaining` : `${Math.round((total-limit)*10)/10} seconds over limit`}</p></section>`;
 }
 
 function updateRunTiming(event) {
@@ -11624,7 +11624,7 @@ function runBuilderPanel(runs = [], options = {}) {
           <div class="run-sidebar-divider"></div>
           ${stage === "route" ? runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points) : stage === "tricks" ? runBuilderTrickEditorHtml(points) : runBuilderPlaybackEditorHtml(points)}
           <div class="run-sidebar-divider"></div>
-          ${stage === "route" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>CLEAR ALL DOTS</button><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length ? "" : "disabled"}>ROUTE DONE · ADD TRICKS →</button></div>` : stage === "tricks" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" type="button" data-run-builder-stage="route">← EDIT ROUTE</button><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>TRICKS DONE · WATCH RUN →</button></div>` : ""}
+          ${stage === "route" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>CLEAR ALL DOTS</button><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length ? "" : "disabled"}>ROUTE DONE · ADD TRICKS →</button></div>` : stage === "tricks" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" type="button" data-run-builder-stage="route">← EDIT ROUTE</button><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>TRICKS DONE · WATCH RUN →</button><button class="secondary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${submitLabel}</button></div>` : ""}
         </aside>
       </div>
       ${stage === "tricks" ? runTimingEditorHtml(points) : ""}
@@ -14014,39 +14014,57 @@ async function archiveRunPlan(event) {
 async function saveRunPlan(event) {
   event.preventDefault();
   if (liveRun) return saveLiveRun();
+  if (state.runPlanSaving) return;
   if ((state.runBuilder?.points?.length || 0) < 2) return notify("Add at least two route dots before saving.", "error");
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
   const isCoach = isCoachRole(state.profile.role);
   const athleteId = isCoach ? (state.runBuilder?.athleteId || state.selectedAthleteId) : state.user.id;
   if (!athleteId) return notify("Choose the rider this run belongs to.", "error");
-  const coachId = state.runBuilder.id ? state.runBuilder.coachId : isCoach ? state.user.id : (state.runBuilder.coachId || await getLinkedCoachIdForCurrentAthlete());
-  const payload = {
-    coach_id: coachId,
-    athlete_id: athleteId,
-    title: String(form.get("title") || "").trim(),
-    venue: String(state.runBuilder?.venue || "").trim(),
-    plan_type: state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training"),
-    image_data_url: state.runBuilder.imageDataUrl,
-    points: (state.runBuilder.points || []).map((point, index) => ({ ...point, ...(index === 0 ? { view: runView(state.runBuilder.view || state.runBuilder.points[0]?.view) } : {}) })),
-    notes: String(form.get("notes") ?? state.runBuilder?.notes ?? "").trim(),
-    contest_item_id: state.runBuilder.contestItemId || null,
-    updated_at: new Date().toISOString(),
-  };
-  setSyncStatus("syncing");
-  const query = state.runBuilder.id
-    ? client.rpc("save_shared_run_edits", { p_run_id: state.runBuilder.id, p_expected_updated_at: state.runBuilder.updatedAt, p_content: payload })
-    : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
-  const { error } = await query;
-  if (error) { setSyncStatus("error"); return notify(messageFrom(error), "error"); }
-  setSyncStatus("saved");
-  const savedFor = state.runBuilder?.athleteName;
-  runUndoStack = []; runRedoStack = [];
-  state.runBuilder = null;
-  cacheClear("run-plans:");
-  cacheClear("coach-command:");
-  notify(savedFor ? `Private run saved for ${savedFor}.` : "Run plan saved.");
-  await runBuilderRefreshView();
+  let saved = false;
+  state.runPlanSaving = true;
+  const restoreButtons = [...(event.currentTarget.querySelectorAll?.('button[type="submit"]') || [])].map(button => setButtonBusy(button, "Saving…"));
+  try {
+    setSyncStatus("syncing");
+    const coachId = state.runBuilder.id ? state.runBuilder.coachId : isCoach ? state.user.id : (state.runBuilder.coachId || await getLinkedCoachIdForCurrentAthlete());
+    const payload = {
+      coach_id: coachId,
+      athlete_id: athleteId,
+      title: String(form.get("title") || "").trim(),
+      venue: String(state.runBuilder?.venue || "").trim(),
+      plan_type: state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training"),
+      image_data_url: state.runBuilder.imageDataUrl,
+      points: (state.runBuilder.points || []).map((point, index) => ({ ...point, ...(index === 0 ? { view: runView(state.runBuilder.view || state.runBuilder.points[0]?.view) } : {}) })),
+      notes: String(form.get("notes") ?? state.runBuilder?.notes ?? "").trim(),
+      contest_item_id: state.runBuilder.contestItemId || null,
+      updated_at: new Date().toISOString(),
+    };
+    const query = state.runBuilder.id
+      ? client.rpc("save_shared_run_edits", { p_run_id: state.runBuilder.id, p_expected_updated_at: state.runBuilder.updatedAt, p_content: payload })
+      : client.from("run_plans").insert({ ...payload, created_by: state.user.id });
+    const { error } = await query;
+    if (error) throw error;
+    saved = true;
+    setSyncStatus("saved");
+    const savedFor = state.runBuilder?.athleteName;
+    runUndoStack = []; runRedoStack = [];
+    state.runBuilder = null;
+    cacheClear("run-plans:");
+    cacheClear("coach-command:");
+    notify(savedFor ? `Private run saved for ${savedFor}.` : "Run plan saved.");
+    await runBuilderRefreshView();
+  } catch (error) {
+    if (saved) {
+      setSyncStatus("saved");
+      notify("Your run was saved. Reopen Events & runs to view it.");
+    } else {
+      setSyncStatus("error");
+      notify(`${messageFrom(error)} Your run edits are still here.`, "error");
+    }
+  } finally {
+    state.runPlanSaving = false;
+    restoreButtons.forEach(restore => restore());
+  }
 }
 
 async function getLinkedCoachIdForCurrentAthlete() {
