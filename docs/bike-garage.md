@@ -1,4 +1,4 @@
-# JKCREW Bike Garage — 2.14.97
+# JKCREW Bike Garage — 2.14.98
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses original generated studio photographs with masked material recolouring, instant part/colour changes and a full-bike preview.
 
@@ -26,6 +26,7 @@ A closed inspiration section links to 13 verified real seat and component refere
 - `supabase/migrations/20260911111023_allow_solid_white_bike_tyres.sql`: permits the new solid white tyre choice without changing saved builds, revisions or access permissions.
 - `supabase/migrations/20260911122927_support_bike_garage_parts_v2.sql`: accepts strict v2 configurations alongside unchanged legacy v1 configurations. Existing rows, ownership and revision protection are retained.
 - `studio-hardware-v2.webp` and `studio-metal-v2.webp` supply aligned platform pedals, stem variants, pegs and brake hardware. All public bike photos load only on demand and are cached independently of private garage data.
+- Six `studio-*-v3.webp` material photographs add tube-following chrome and jet-fuel reflections, including four-piece bars and both stem shapes. Raw metal remains more diffuse than chrome; paint, rubber and all 50 seat patterns use the original photographed surface shading. Each material asset loads only when required.
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation

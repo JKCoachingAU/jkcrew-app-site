@@ -1,32 +1,32 @@
 const CACHE_PREFIX = "jkcrew-riley-shell-";
-const RELEASE_VERSION = "2.14.97";
+const RELEASE_VERSION = "2.14.98";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.97",
-  "./app.js?v=2.14.97",
-  "./daily-completion.js?v=2.14.97",
-  "./daily-completion.css?v=2.14.97",
-  "./progress-sharing.js?v=2.14.97",
-  "./progress-sharing.css?v=2.14.97",
-  "./battle-rematches.js?v=2.14.97",
-  "./battle-rematches.css?v=2.14.97",
-  "./bike-config.js?v=2.14.97",
-  "./bike-seat-designs.js?v=2.14.97",
-  "./bike-photo-masks.js?v=2.14.97",
-  "./bike-renderer.js?v=2.14.97",
-  "./bike-garage.js?v=2.14.97",
-  "./bike-garage.css?v=2.14.97",
-  "./manifest.webmanifest?v=2.14.97",
+  "./styles.css?v=2.14.98",
+  "./app.js?v=2.14.98",
+  "./daily-completion.js?v=2.14.98",
+  "./daily-completion.css?v=2.14.98",
+  "./progress-sharing.js?v=2.14.98",
+  "./progress-sharing.css?v=2.14.98",
+  "./battle-rematches.js?v=2.14.98",
+  "./battle-rematches.css?v=2.14.98",
+  "./bike-config.js?v=2.14.98",
+  "./bike-seat-designs.js?v=2.14.98",
+  "./bike-photo-masks.js?v=2.14.98",
+  "./bike-renderer.js?v=2.14.98",
+  "./bike-garage.js?v=2.14.98",
+  "./bike-garage.css?v=2.14.98",
+  "./manifest.webmanifest?v=2.14.98",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.97",
+  "./icons/badges/prestige-01.png?v=2.14.98",
 ];
 
 // Public bike photos are fetched only when the garage needs them, then cached.
@@ -36,6 +36,12 @@ const BIKE_PHOTO_ASSETS = [
   "./images/bike-garage/studio-options-v1.webp",
   "./images/bike-garage/studio-hardware-v2.webp",
   "./images/bike-garage/studio-metal-v2.webp",
+  "./images/bike-garage/studio-chrome-v3.webp",
+  "./images/bike-garage/studio-chrome-options-v3.webp",
+  "./images/bike-garage/studio-jetfuel-v3.webp",
+  "./images/bike-garage/studio-jetfuel-options-v3.webp",
+  "./images/bike-garage/studio-chrome-top-stem-v3.webp",
+  "./images/bike-garage/studio-chrome-front-stem-v3.webp",
 ];
 
 self.addEventListener("install", (event) => {

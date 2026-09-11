@@ -3,12 +3,18 @@
 const JKCrewBikeArt=(()=>{
   'use strict';
   const names={frame:'Frame',fork:'Fork',bars:'Handlebars',grips:'Grips',rims:'Wheel rims',hubs:'Wheel hubs',seat:'Seat',pedals:'Pedals',cranks:'Cranks',sprocket:'Sprocket',tyres:'Tyres',pegs:'Pegs',decal:'Frame decal',seatpost:'Seatpost',stem:'Stem',headset:'Headset',spokes:'Spokes',nipples:'Spoke nipples',brakes:'Brakes'};
-  const assetUrls=Object.freeze({base:'./images/bike-garage/studio-white-v1.webp',options:'./images/bike-garage/studio-options-v1.webp',hardware:'./images/bike-garage/studio-hardware-v2.webp',metal:'./images/bike-garage/studio-metal-v2.webp'});
+  const assetUrls=Object.freeze({base:'./images/bike-garage/studio-white-v1.webp',options:'./images/bike-garage/studio-options-v1.webp',hardware:'./images/bike-garage/studio-hardware-v2.webp',metal:'./images/bike-garage/studio-metal-v2.webp',chrome:'./images/bike-garage/studio-chrome-v3.webp',chromeOptions:'./images/bike-garage/studio-chrome-options-v3.webp',jetfuel:'./images/bike-garage/studio-jetfuel-v3.webp',jetfuelOptions:'./images/bike-garage/studio-jetfuel-options-v3.webp',chromeTopStem:'./images/bike-garage/studio-chrome-top-stem-v3.webp',chromeFrontStem:'./images/bike-garage/studio-chrome-front-stem-v3.webp'});
   const images=new Map(),finishes=['gloss','matte','chrome','raw','jetfuel'];
   const choice=(v,values,fallback)=>values.includes(v)?v:fallback;
   const colour=v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)?v.toUpperCase():'#F1F4F8';
   const styles=c=>({bars:choice(c?.barStyle,['two-piece','four-piece'],'two-piece'),seat:choice(c?.seatStyle,['slim','padded'],'slim'),pegs:choice(c?.pegs,['none','rear','both','four'],'none'),tyres:choice(c?.tyreStyle,['white','black','tan-wall','white-wall'],'white'),decal:choice(c?.decal,['none','jkcrew','lightning'],'none'),brakes:choice(c?.brakeStyle,['none','rear','dual'],'none'),stem:choice(c?.stemStyle,['top-load','front-load'],'top-load'),pedal:choice(c?.pedalMaterial,['plastic','metal'],'plastic'),spokes:choice(c?.spokeStyle,['standard','rainbow'],'standard'),modern:Number(c?.version)>=2||['pedalMaterial','stemStyle','brakeStyle'].some(k=>Object.hasOwn(c||{},k))});
-  const urls=c=>{const s=styles(c),list=[assetUrls.base];if(s.bars==='four-piece'||s.seat==='padded')list.push(assetUrls.options);if(s.pegs!=='none'||s.brakes!=='none'||s.modern&&(s.pedal==='plastic'||s.stem==='top-load'))list.push(assetUrls.hardware);if(s.pedal==='metal'||s.stem==='front-load')list.push(assetUrls.metal);return list;};
+  const reflectionParts=['frame','fork','bars','rims','hubs','cranks','sprocket','seatpost','headset'];
+  const needsChrome=c=>reflectionParts.some(k=>['chrome','raw'].includes(c?.finishes?.[k])&&!(k==='bars'&&styles(c).bars==='four-piece'));
+  const needsJetfuel=c=>reflectionParts.some(k=>c?.finishes?.[k]==='jetfuel'&&!(k==='bars'&&styles(c).bars==='four-piece'));
+  const needsChromeOptions=c=>styles(c).bars==='four-piece'&&['chrome','raw'].includes(c?.finishes?.bars);
+  const needsJetfuelOptions=c=>styles(c).bars==='four-piece'&&c?.finishes?.bars==='jetfuel';
+  const stemReflectionUrl=c=>{if(!['chrome','raw','jetfuel'].includes(c?.finishes?.stem))return '';const s=styles(c);return s.stem==='front-load'?assetUrls.chromeFrontStem:s.modern?assetUrls.chromeTopStem:c.finishes.stem==='jetfuel'?assetUrls.jetfuel:assetUrls.chrome;};
+  const urls=c=>{const s=styles(c),list=[assetUrls.base];if(s.bars==='four-piece'||s.seat==='padded')list.push(assetUrls.options);if(s.pegs!=='none'||s.brakes!=='none'||s.modern&&(s.pedal==='plastic'||s.stem==='top-load'))list.push(assetUrls.hardware);if(s.pedal==='metal'||s.stem==='front-load')list.push(assetUrls.metal);if(needsChrome(c))list.push(assetUrls.chrome);if(needsChromeOptions(c))list.push(assetUrls.chromeOptions);if(needsJetfuel(c))list.push(assetUrls.jetfuel);if(needsJetfuelOptions(c))list.push(assetUrls.jetfuelOptions);if(stemReflectionUrl(c))list.push(stemReflectionUrl(c));return [...new Set(list)];};
   function prepare(config={}){return Promise.all(urls(config).map(url=>{if(images.has(url))return images.get(url).promise;const entry={ready:false,promise:null};entry.promise=new Promise((resolve,reject)=>{const img=new Image();let settled=false;const finish=error=>{if(settled)return;settled=true;clearTimeout(timer);img.onload=null;img.onerror=null;if(error){if(images.get(url)===entry)images.delete(url);reject(error);}else{entry.ready=true;resolve();}};const timer=setTimeout(()=>{finish(new Error('The bike photo took too long to load.'));img.src='';},12000);img.onload=async()=>{try{if(img.decode)await img.decode();finish();}catch(error){finish(error);}};img.onerror=()=>finish(new Error('The bike photo could not load.'));img.src=url;});images.set(url,entry);return entry.promise;}));}
   const isReady=c=>urls(c).every(url=>images.get(url)?.ready);
   const table=(fn)=>Array.from({length:41},(_,i)=>Math.max(0,Math.min(1,fn(i/40))).toFixed(4)).join(' ');
@@ -37,26 +43,28 @@ const JKCrewBikeArt=(()=>{
     }
     if(activePegs.length){defs.push(`<clipPath id="${id('pegs-patch')}">${path(pegShape,'white')}</clipPath>`);composite+=`<g clip-path="url(#${id('pegs-patch')})">${photo(assetUrls.hardware)}</g>`;}
     defs.push(`<g id="${id('photograph')}">${composite}</g>`);
+    if(needsChrome(config))defs.push(`<g id="${id('chrome-photograph')}">${photo(assetUrls.chrome)}</g>`);
+    if(needsChromeOptions(config))defs.push(`<g id="${id('chrome-options-photograph')}">${photo(assetUrls.chromeOptions)}</g>`);
+    if(needsJetfuel(config))defs.push(`<g id="${id('jetfuel-photograph')}">${photo(assetUrls.jetfuel)}</g>`);
+    if(needsJetfuelOptions(config))defs.push(`<g id="${id('jetfuel-options-photograph')}">${photo(assetUrls.jetfuelOptions)}</g>`);
+    if(stemReflectionUrl(config))defs.push(`<g id="${id('stem-reflection-photograph')}">${photo(stemReflectionUrl(config))}</g>`);
+    const materialFor=key=>id(key==='stem'?'stem-reflection-photograph':key==='bars'&&s.bars==='four-piece'?'chrome-options-photograph':reflectionParts.includes(key)?'chrome-photograph':'photograph');
     function maskFor(key,shape,detail=shape.detail){
       const [x,y,w,h]=shape.bounds;
-      const exclusions=[shape.excludePath,key!=='pegs'?activePegs.map(m=>m.path).join(' '):''].filter(Boolean).join(' ');
+      const exclusions=[shape.excludePath,key==='stem'?shapeFor('bars').path:'',key!=='pegs'?activePegs.map(m=>m.path).join(' '):''].filter(Boolean).join(' ');
       defs.push(`<mask id="${id(key+'-mask')}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="${x-3}" y="${y-3}" width="${w+6}" height="${h+6}">${path(shape,'white')}${exclusions?`<path d="${exclusions}" fill="black"/>`:''}</mask>`);
       if(detail){
         defs.push(`<filter id="${id(key+'-detail-filter')}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 -.2126 -.7152 -.0722 0 1"/><feComponentTransfer><feFuncA type="table" tableValues="${table(a=>a<.11?0:Math.min(1,(a-.11)/.32))}"/></feComponentTransfer></filter><mask id="${id(key+'-detail')}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><use href="#${id('photograph')}" filter="url(#${id(key+'-detail-filter')})"/></mask>`);
       }
     }
-    function paintGradient(key,shape,finish,value){
-      const [x,y,w,h]=shape.bounds,stops=[];
-      const fade=key==='frame'&&config.framePaint==='fade'&&['gloss','matte'].includes(finish);
-      const rgb=[1,3,5].map(p=>parseInt(value.slice(p,p+2),16)),neutral=Math.max(...rgb)-Math.min(...rgb)<30;
-      const mix=(v)=>key!=='pedals'||neutral?`rgb(${v},${v},${v})`:`rgb(${rgb.map(c=>Math.round(c*(v/255)*.75+v*.25)).join(',')})`;
-      if(fade)stops.push([0,value],[1,colour(config.frameFadeColor)]);
-      else if(key==='spokes'&&s.spokes==='rainbow'||finish==='jetfuel')stops.push([0,'#9260E5'],[.18,'#337DDB'],[.35,'#48C6C0'],[.5,'#C7CF5A'],[.63,'#D78A56'],[.8,'#C257A0'],[1,'#6751BA']);
-      else if(finish==='chrome')stops.push([0,mix(232)],[.23,mix(247)],[.39,mix(133)],[.48,mix(242)],[.54,mix(255)],[.59,mix(103)],[.72,mix(187)],[.87,mix(250)],[1,mix(186)]);
-      else if(finish==='raw')stops.push([0,mix(208)],[.4,mix(226)],[.62,mix(177)],[1,mix(205)]);
+    // Only intentional paint transitions use image-space gradients. Metal
+    // finishes are derived from registered photographic reflections below.
+    function paintGradient(key,shape,value){
+      const [x,y,w]=shape.bounds,stops=[];
+      if(key==='frame'&&config.framePaint==='fade')stops.push([0,value],[1,colour(config.frameFadeColor)]);
+      else if(key==='spokes'&&s.spokes==='rainbow')stops.push([0,'#7949BE'],[.18,'#266EBB'],[.35,'#24968D'],[.5,'#A79931'],[.63,'#C07732'],[.8,'#AD3F85'],[1,'#604398']);
       else return value;
-      const horizontal=fade||key==='spokes';
-      defs.push(`<linearGradient id="${id(key+'-surface')}" gradientUnits="userSpaceOnUse" x1="${x}" y1="${y}" x2="${horizontal?x+w:x+w*.2}" y2="${horizontal?y:y+h}">${stops.map(([offset,color])=>`<stop offset="${offset}" stop-color="${color}"/>`).join('')}</linearGradient>`);
+      defs.push(`<linearGradient id="${id(key+'-surface')}" gradientUnits="userSpaceOnUse" x1="${x}" y1="${y}" x2="${x+w}" y2="${y}">${stops.map(([offset,color])=>`<stop offset="${offset}" stop-color="${color}"/>`).join('')}</linearGradient>`);
       return `url(#${id(key+'-surface')})`;
     }
     function coated(key,shape,value,finish='gloss',customFill=''){
@@ -64,12 +72,42 @@ const JKCrewBikeArt=(()=>{
       const special=customFill||finish!=='gloss'||key==='frame'&&config.framePaint==='fade'||key==='spokes'&&s.spokes==='rainbow';
       if(value==='#F1F4F8'&&!special)return '';
       maskFor(key,shape);
-      const [x,y,w,h]=shape.bounds,fill=customFill||paintGradient(key,shape,finish,value),matte=finish==='matte',raw=finish==='raw';
-      const lightTable=table(l=>matte?.39+.61*Math.pow(Math.min(1,l/.92),1.15):Math.pow(Math.min(1,l/.92),1.45));
-      const specTable=table(l=>Math.pow(Math.max(0,(l-.88)/.12),2.4));
-      defs.push(`<filter id="${id(key+'-lighting')}" filterUnits="userSpaceOnUse" x="${x-3}" y="${y-3}" width="${w+6}" height="${h+6}" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer>${['R','G','B'].map(c=>`<feFunc${c} type="table" tableValues="${lightTable}"/>`).join('')}</feComponentTransfer></filter><filter id="${id(key+'-shine')}" filterUnits="userSpaceOnUse" x="${x-3}" y="${y-3}" width="${w+6}" height="${h+6}" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer>${['R','G','B'].map(c=>`<feFunc${c} type="table" tableValues="${specTable}"/>`).join('')}</feComponentTransfer></filter>`);
-      if(raw)defs.push(`<pattern id="${id(key+'-grain')}" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(-28)"><path d="M0 0H3" stroke="#36404B" stroke-width=".4" opacity=".035"/><path d="M0 1.6H3" stroke="#FFF" stroke-width=".45" opacity=".075"/></pattern>`);
-      return `<g mask="url(#${id(key+'-mask')})" pointer-events="none">${shape.detail?`<g mask="url(#${id(key+'-detail')})">`:''}<g style="isolation:isolate"><rect x="${x-3}" y="${y-3}" width="${w+6}" height="${h+6}" fill="${fill}"/><use href="#${id('photograph')}" filter="url(#${id(key+'-lighting')})" style="mix-blend-mode:multiply"/><use href="#${id('photograph')}" filter="url(#${id(key+'-shine')})" style="mix-blend-mode:screen" opacity="${matte?.035:raw?.12:finish==='chrome'?.76:.52}"/>${raw?`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#${id(key+'-grain')})"/>`:''}</g>${shape.detail?'</g>':''}</g>`;
+      const [x,y,w,h]=shape.bounds,metal=['chrome','raw','jetfuel'].includes(finish),raw=finish==='raw';
+      const soft=['seat','grips','tyres','sidewalls'].includes(key)||key==='pedals'&&s.pedal!=='metal';
+      const matte=finish==='matte'||soft;
+      const attributes=`filterUnits="userSpaceOnUse" x="${x-3}" y="${y-3}" width="${w+6}" height="${h+6}" color-interpolation-filters="sRGB"`;
+      const transfer=fn=>`<feComponentTransfer>${['R','G','B'].map((c,i)=>`<feFunc${c} type="table" tableValues="${table(l=>fn(l,i))}"/>`).join('')}</feComponentTransfer>`;
+      let surface='';
+      if(metal){
+        // The luminance of the photographed tube supplies both its reflected
+        // environment and its curvature. No stripe can run across two tubes.
+        const spectral=[[0,[8,10,16]],[.18,[27,25,43]],[.4,[72,51,114]],[.6,[48,119,122]],[.79,[141,102,145]],[.94,[216,224,235]],[1,[255,255,255]]];
+        const iridescent=(l,ch)=>{let i=1;while(i<spectral.length-1&&l>spectral[i][0])i++;const[a,from]=spectral[i-1],[b,to]=spectral[i],t=(l-a)/(b-a);return (from[ch]+(to[ch]-from[ch])*t)/255;};
+        const rgb=[1,3,5].map(p=>parseInt(value.slice(p,p+2),16)/255);
+        const colouredPedal=key==='pedals'&&Math.max(...rgb)-Math.min(...rgb)>.08;
+        const tone=(l,ch)=>{
+          if(finish==='jetfuel')return iridescent(l,ch);
+          if(raw)return .055+.77*Math.pow(l,1.25);
+          const reflection=.012+.988*Math.pow(l,1.05);
+          const pinHighlight=.7*Math.pow(Math.max(0,(l-.76)/.24),2);
+          return colouredPedal?reflection*(.16+.84*rgb[ch])*(1-pinHighlight)+pinHighlight:reflection;
+        };
+        defs.push(`<filter id="${id(key+'-metal')}" ${attributes}><feColorMatrix type="saturate" values="0"/>${transfer(tone)}</filter>`);
+        const trueIridescence=finish==='jetfuel'&&(reflectionParts.includes(key)||key==='stem'&&!s.modern&&s.stem==='top-load');
+        const iridescentPhoto=key==='stem'?'stem-reflection-photograph':key==='bars'&&s.bars==='four-piece'?'jetfuel-options-photograph':'jetfuel-photograph';
+        surface=trueIridescence?`<use href="#${id(iridescentPhoto)}"/>`:raw?`<use href="#${id('photograph')}" filter="url(#${id(key+'-metal')})"/><use href="#${materialFor(key)}" filter="url(#${id(key+'-metal')})" opacity=".2"/>`:`<use href="#${materialFor(key)}" filter="url(#${id(key+'-metal')})"/>`;
+      }else{
+        const fill=customFill||paintGradient(key,shape,value);
+        const darkPaint=!matte&&[1,3,5].reduce((sum,p)=>sum+parseInt(value.slice(p,p+2),16),0)<210;
+        // Soft material retains seams/tread but has broad, weak reflections.
+        // Paint has deeper contour shadows and a compact clear-coat highlight.
+        const light=l=>soft?.14+.86*Math.pow(Math.min(1,l/.965),1.9):matte?.1+.9*Math.pow(Math.min(1,l/.96),1.9):.045+.955*Math.pow(Math.min(1,l/.975),2.25);
+        const highlightStart=soft?.91:darkPaint?.84:.925;
+        const spec=l=>Math.pow(Math.max(0,(l-highlightStart)/(1-highlightStart)),2.8);
+        defs.push(`<filter id="${id(key+'-lighting')}" ${attributes}><feColorMatrix type="saturate" values="0"/>${transfer(light)}</filter><filter id="${id(key+'-shine')}" ${attributes}><feColorMatrix type="saturate" values="0"/>${transfer(spec)}</filter>`);
+        surface=`<g style="isolation:isolate"><rect x="${x-3}" y="${y-3}" width="${w+6}" height="${h+6}" fill="${fill}"/><use href="#${id('photograph')}" filter="url(#${id(key+'-lighting')})" style="mix-blend-mode:multiply"/><use href="#${id('photograph')}" filter="url(#${id(key+'-shine')})" style="mix-blend-mode:screen" opacity="${soft?.11:matte?.055:darkPaint?.3:.26}"/></g>`;
+      }
+      return `<g mask="url(#${id(key+'-mask')})" pointer-events="none">${shape.detail?`<g mask="url(#${id(key+'-detail')})">`:''}${surface}${shape.detail?'</g>':''}</g>`;
     }
     const seatDesign=typeof config.seatDesign==='string'&&/^design-(?:0[1-9]|[1-4][0-9]|50)$/.test(config.seatDesign)?config.seatDesign:'solid';
     const seatArt=globalThis.JKCrewBikeSeats;
@@ -83,7 +121,9 @@ const JKCrewBikeArt=(()=>{
     }
     if(s.decal!=='none'){
       const tone=colour(config.colors?.frame),bright=[1,3,5].reduce((a,i)=>a+parseInt(tone.slice(i,i+2),16),0)/3,ink=bright<90?'#F1F2F2':'#29303A';
-      layers.push(`<g transform="translate(887 518) rotate(-31.4)" opacity=".8" pointer-events="none">${s.decal==='jkcrew'?`<text x="0" y="7" text-anchor="middle" fill="${ink}" font-family="Arial,Helvetica,sans-serif" font-size="21" font-weight="800" letter-spacing="2">JKCREW</text>`:`<path d="M-9 -15 H14 L0 -2 H20 L-16 19 L-4 3 H-22 L-9 -9 H-26Z" fill="${ink}"/>`}</g>`);
+      const lettering=`<g transform="translate(887 518) rotate(-31.4)">${s.decal==='jkcrew'?`<text x="0" y="7" text-anchor="middle" fill="white" font-family="Arial,Helvetica,sans-serif" font-size="21" font-weight="800" letter-spacing="2">JKCREW</text>`:`<path d="M-9 -15 H14 L0 -2 H20 L-16 19 L-4 3 H-22 L-9 -9 H-26Z" fill="white"/>`}</g>`;
+      defs.push(`<mask id="${id('decal-ink')}" maskUnits="userSpaceOnUse" x="790" y="440" width="200" height="145">${lettering}</mask><filter id="${id('decal-light')}" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer>${['R','G','B'].map(c=>`<feFunc${c} type="table" tableValues="${table(l=>.18+.82*Math.pow(l,1.2))}"/>`).join('')}</feComponentTransfer></filter>`);
+      layers.push(`<g mask="url(#${id('decal-ink')})" opacity=".88" pointer-events="none" style="isolation:isolate"><rect x="790" y="440" width="200" height="145" fill="${ink}"/><use href="#${id('photograph')}" filter="url(#${id('decal-light')})" style="mix-blend-mode:multiply"/></g>`);
     }
     for(const [index,shape]of activeBrakes.entries()){
       const key='brake-photo-'+index;

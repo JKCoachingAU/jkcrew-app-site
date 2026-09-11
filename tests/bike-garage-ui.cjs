@@ -101,6 +101,53 @@ async function boot(page,{waitForPhotos=true}={}) {
   await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   if(waitForPhotos)await waitForArtwork(page);
 }
+// Check the actual bike texture, not just gallery thumbnails. A seat choice must
+// never recolour the frame, seatpost, wheels or backdrop around its silhouette.
+async function checkSeatArtwork(browser) {
+  const page=await browser.newPage({viewport:{width:1536,height:1024},deviceScaleFactor:1});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/*',route=>serveFixture(route,[]));
+  try {
+    await page.goto('https://jkcrew.fixture/garage');
+    await page.addStyleTag({content:'html,body{margin:0;width:1536px;height:1024px}#art{width:1536px}'});
+    await page.evaluate(()=>{document.body.innerHTML='<div id="art"></div>';});
+    for(const file of ['bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+    const ids=await page.evaluate(()=>JKCrewBikeSeats.designs.map(design=>design.id));
+    const render=async(id,seatStyle='slim')=>{
+      const untouched=await page.evaluate(async({id,seatStyle})=>{
+        const configuration=JKCrewBikeConfig.normalize({...JKCrewBikeConfig.defaults,seatDesign:id,seatStyle});
+        const before=JSON.stringify(configuration);
+        await JKCrewBikeArt.prepare(configuration);
+        document.querySelector('#art').innerHTML=JKCrewBikeArt.render(configuration,{idPrefix:'seat-material-test'});
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        return JSON.stringify(configuration)===before;
+      },{id,seatStyle});
+      assert(untouched,'Rendering a seat never mutates the saved configuration');
+      return PNG.sync.read(await page.locator('#art').screenshot({animations:'disabled'}));
+    };
+    const solid=await render('solid'),hashes=new Set();
+    const seatBox={x:438,y:302,right:682,bottom:414}; // includes both photographed seat silhouettes, not the seatpost
+    function inspectSeat(pixels,baseline,label){
+      assert.equal(pixels.width,1536);assert.equal(pixels.height,1024);
+      const painted=[];let changed=0,outside=0;
+      for(let y=0;y<pixels.height;y++)for(let x=0;x<pixels.width;x++){
+        const i=(y*pixels.width+x)*4,inSeat=x>=seatBox.x&&x<=seatBox.right&&y>=seatBox.y&&y<=seatBox.bottom;
+        const diff=[0,1,2].some(c=>Math.abs(pixels.data[i+c]-baseline.data[i+c])>1);
+        if(inSeat){painted.push(pixels.data[i],pixels.data[i+1],pixels.data[i+2]);if(diff)changed++;}
+        else if(diff)outside++;
+      }
+      assert(changed>100,`${label}: its material appears on the actual bike seat`);
+      assert.equal(outside,0,`${label}: material stays on the seat without altering nearby parts/background`);
+      return createHash('sha256').update(Buffer.from(painted)).digest('hex');
+    }
+    for(const id of ids)hashes.add(inspectSeat(await render(id),solid,id));
+    assert.equal(ids.length,50);assert.equal(hashes.size,50,'Every design is visually distinct on the actual slim bike seat');
+    const padded=await render('solid','padded');
+    for(const id of ['design-01','design-23','design-50'])inspectSeat(await render(id,'padded'),padded,`${id}/padded`);
+    assert.deepEqual(errors,[]);
+    console.log('PASS: all fifty actual seat materials are distinct, slim/padded silhouettes contain their paint, and rendering preserves saved configuration.');
+  } finally {await page.close();}
+}
 async function checkLegacyDraftUpgrade(page) {
   await page.evaluate(()=>{
     const parts=['frame','fork','bars','grips','rims','hubs','seat','pedals','cranks','sprocket'];
@@ -524,6 +571,7 @@ async function run(page) {
   const browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH});
   try {
     if(process.env.JKCREW_BIKE_PHOTOS_ONLY){await checkPhotoLoading(browser);return;}
+    if(process.env.JKCREW_BIKE_SEATS_ONLY){await checkSeatArtwork(browser);return;}
     const page=await browser.newPage({viewport:{width:390,height:900}});
     page.setDefaultTimeout(6000);
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -532,7 +580,7 @@ async function run(page) {
     if(process.env.JKCREW_BIKE_PARTS_ONLY){await checkLegacyDraftUpgrade(page);await checkExpandedParts(page);assert.deepEqual(errors,[]);return;}
     await run(page);assert.deepEqual(errors,[]);
     assert(servedAssets.some(asset=>/\.(png|webp|jpe?g|avif)$/i.test(asset)),'Photographic artwork is loaded from local fixture assets');
-    if(!process.env.JKCREW_BIKE_SCREENSHOTS_ONLY&&!process.env.JKCREW_BIKE_STICKY_ONLY){await boot(page);await checkLegacyDraftUpgrade(page);await checkExpandedParts(page);await checkPhotoLoading(browser);}
+    if(!process.env.JKCREW_BIKE_SCREENSHOTS_ONLY&&!process.env.JKCREW_BIKE_STICKY_ONLY){await boot(page);await checkLegacyDraftUpgrade(page);await checkExpandedParts(page);await checkSeatArtwork(browser);await checkPhotoLoading(browser);}
     console.log('PASS: isolated Bike Garage UI; no production requests or writes.');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack || error);process.exitCode=1;});
