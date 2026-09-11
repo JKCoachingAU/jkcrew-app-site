@@ -11712,3 +11712,131 @@ body:has(#app .app-shell:is(.coach-shell, .rider-shell)) .coach-review-draw-togg
 @media (hover: none) {
   body:has(#app .app-shell:is(.coach-shell, .rider-shell)) :is(.primary-btn, .secondary-btn, .danger-btn, .run-edit-toolbar button, .run-time-stepper button):hover:not(:active) { transform: none; filter: none; }
 }
+
+/* Coach live session: one clear clock, quiet setup, individual rider progress. */
+.coach-shell #view[data-view="sessionViewer"] {
+  --session-surface: #111b25; --session-edge: #304151;
+  --session-ink: #eff4f9; --session-muted: #a5b5c5;
+  --session-progress: #7eb5ff; --session-complete: #65e5b2;
+}
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] {
+  --session-surface: #fff; --session-edge: #ccd8e1;
+  --session-ink: #142e3f; --session-muted: #526678;
+  --session-progress: #235bc7; --session-complete: #126848;
+}
+.coach-shell #view[data-view="sessionViewer"] .session-page-head { display: flex; flex-direction: row; align-items: center; gap: 16px; margin-bottom: 22px; }
+.coach-shell #view[data-view="sessionViewer"] .session-page-head h1 { font-size: clamp(2.5rem, 5vw, 4.2rem); line-height: 1; margin: 8px 0; }
+.coach-shell #view[data-view="sessionViewer"] .session-page-head p { margin: 0; }
+.coach-shell #view[data-view="sessionViewer"] .session-page-head > button { flex-shrink: 0; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-control {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px; padding: clamp(22px, 3vw, 36px); margin-bottom: 16px;
+  overflow: hidden; border: 1px solid #3d6670; border-radius: 24px;
+  color: #f5fbff;
+  background: radial-gradient(ellipse at 100% 0, #1a4456 0, transparent 60%), linear-gradient(120deg, #0b1822, #102639);
+  box-shadow: inset 4px 0 0 #53e9bd, 0 18px 42px #00000020;
+}
+.coach-shell #view[data-view="sessionViewer"] .group-session-control::before { display: none; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-control.paused { box-shadow: inset 4px 0 0 #ffd17e, 0 18px 42px #00000020; border-color: #796441; }
+.coach-shell #view[data-view="sessionViewer"] .session-timer-heading { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.coach-shell #view[data-view="sessionViewer"] .session-state-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #4ac99f65; border-radius: 7px; background: #153c38; color: #84f2ca; font: 800 11px/1.2 var(--body); letter-spacing: .09em; text-transform: uppercase; }
+.coach-shell #view[data-view="sessionViewer"] .session-state-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.coach-shell #view[data-view="sessionViewer"] .paused .session-state-badge { color: #ffdc9b; background: #42351f; border-color: #9a7a46; }
+.coach-shell #view[data-view="sessionViewer"] .ready .session-state-badge { color: #c0d0e0; background: #203547; border-color: #486072; }
+.coach-shell #view[data-view="sessionViewer"] .session-timer-caption { color: #aabfce; font: 700 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.coach-shell #view[data-view="sessionViewer"] .group-timer-block { min-width: 0; }
+.coach-shell #view[data-view="sessionViewer"] .timer-label { color: #f4f8fc; font: 700 15px/1.5 var(--body); letter-spacing: .01em; text-transform: none; }
+.coach-shell #view[data-view="sessionViewer"] .timer-label > span { color: #aabfce; font-weight: 500; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-timer { color: #f4f8fc; font: 800 clamp(3.7rem, 8vw, 6.8rem)/1.1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: -.055em; text-shadow: none; margin: 6px 0 10px; }
+.coach-shell #view[data-view="sessionViewer"] .group-timer-block > small { color: #b7c7d5; font: 500 12px/1.5 var(--body); letter-spacing: 0; text-transform: none; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-actions { flex-direction: column; align-self: center; gap: 10px; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-actions button { min-width: 148px; min-height: 46px; }
+.coach-shell #view[data-view="sessionViewer"] #pause-group-session { background: #eaf4ff; border-color: #fff; color: #102b40; }
+.coach-shell #view[data-view="sessionViewer"] #end-group-session { background: transparent; border-color: #627283; color: #ffb6ac; box-shadow: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #8eb3c530; padding-top: 20px; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot > div { display: flex; flex-direction: column; gap: 6px; padding-inline: 20px; border-left: 1px solid #8eb3c530; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot > div:first-child { padding-left: 0; border: 0; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot strong { color: #f4f8fc; font: 700 clamp(1.4rem, 3vw, 2rem)/1 var(--body); font-variant-numeric: tabular-nums; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot strong small { color: #a5bdd0; font-size: .6em; font-weight: 500; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot span { color: #b7c7d5; font: 600 11px/1.3 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .session-viewer-controls { display: block; padding: 0; overflow: hidden; border: 1px solid var(--session-edge); border-radius: 14px; background: var(--session-surface); box-shadow: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-viewer-controls::before { display: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; cursor: pointer; list-style: none; color: var(--session-ink); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-summary::-webkit-details-marker { display: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-summary strong { display: block; font: 700 14px/1.4 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-summary small { display: block; color: var(--session-muted); font: 500 12px/1.4 var(--body); margin-top: 3px; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-caret { color: var(--session-progress); font: 500 24px var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .session-viewer-controls[open] .session-setup-caret { transform: rotate(45deg); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-fields { display: grid; gap: 18px; padding: 0 20px 20px; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-note { color: var(--session-muted); font: 500 12px/1.5 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .session-viewer-layout { margin-top: 28px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-roster-head { align-items: center; margin-bottom: 18px; gap: 18px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-roster-head h2 { margin: 5px 0; font: 800 clamp(1.5rem, 3vw, 2rem)/1.1 var(--body); letter-spacing: -.02em; color: var(--session-ink); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-roster-head .eyebrow { color: var(--session-muted); font-size: 10px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-search-filter { width: min(100%, 245px); flex-shrink: 0; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-search-filter input { min-height: 44px; border-radius: 10px; border-color: var(--session-edge); background: var(--session-surface); color: var(--session-ink); font-size: 16px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-search-filter label { color: var(--session-muted); font: 600 11px var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-grid { gap: 14px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-accordion { --rider-status-color: var(--session-muted); border: 1px solid var(--session-edge); border-left: 3px solid var(--rider-status-color); background: var(--session-surface); border-radius: 14px; box-shadow: none; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-accordion.status-progress { --rider-status-color: var(--session-progress); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-accordion.status-complete { --rider-status-color: var(--session-complete); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-accordion.open { border-color: var(--rider-status-color); box-shadow: 0 0 0 1px var(--rider-status-color); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-card { padding: 18px; gap: 15px 12px; min-height: 145px; grid-template-rows: auto auto auto; color: var(--session-ink); background: transparent; box-shadow: none; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-head { align-items: center; gap: 12px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-head > span { min-width: 0; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-head strong { font: 750 16px/1.2 var(--body); text-transform: none; overflow-wrap: anywhere; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-head small { display: block; margin-top: 5px; font: 500 11px/1.4 var(--body); color: var(--session-muted); }
+.coach-shell #view[data-view="sessionViewer"] .student-chip-avatar { width: 42px; height: 42px; min-width: 42px; border-radius: 12px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-score { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-score strong { font: 750 26px/1 var(--body); font-variant-numeric: tabular-nums; color: var(--session-ink); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-score strong small { font-size: 14px; color: var(--session-muted); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-score > span { font: 600 9px/1.2 var(--body); color: var(--session-muted); text-transform: uppercase; letter-spacing: .04em; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-footer { display: flex; grid-column: 1 / -1; grid-row: 2; justify-content: space-between; align-items: center; gap: 10px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-status { display: flex; align-items: center; gap: 6px; color: var(--rider-status-color); font: 650 11px/1.3 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-status i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-footer .accordion-caret { border: 0; padding: 0; min-height: 20px; margin: 0; background: none; color: var(--session-muted); font: 650 11px var(--body); text-transform: none; letter-spacing: 0; gap: 9px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-footer .accordion-caret b { font-size: 16px; color: var(--session-ink); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-progress { grid-row: 3; height: 4px; margin: 0; background: color-mix(in srgb, var(--session-muted) 18%, transparent); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-progress > span { background: var(--rider-status-color); }
+#app .coach-shell #view[data-view="sessionViewer"] .viewer-rider-accordion > .finish-daily-btn { width: 100%; min-height: 44px; padding: 10px; border: 0; border-top: 1px solid var(--session-edge); border-radius: 0; background: transparent; color: var(--session-ink); box-shadow: none; font-size: 11px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-inline-list { border-top: 1px solid var(--session-edge); background: color-mix(in srgb, var(--session-progress) 4%, var(--session-surface)); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-list-tab::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--viewer-list-tone); }
+#app .coach-shell #view[data-view="sessionViewer"] .viewer-list-tab.active { color: var(--session-ink); background: color-mix(in srgb, var(--viewer-list-tone) 12%, var(--session-surface)); border-color: var(--viewer-list-tone); box-shadow: inset 0 -2px var(--viewer-list-tone); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-inline-list .viewer-list-meta { color: var(--session-muted); }
+.coach-shell #view[data-view="sessionViewer"] .park-king-card { margin-block: 16px; padding: 14px 18px; border-radius: 10px; border-width: 0 0 0 3px; box-shadow: none; min-height: 64px; }
+@media (max-width: 640px) {
+  .coach-shell #view[data-view="sessionViewer"] .group-session-control { grid-template-columns: minmax(0, 1fr); gap: 20px; border-radius: 20px; }
+  .coach-shell #view[data-view="sessionViewer"] .group-session-actions { flex-direction: row; width: 100%; }
+  .coach-shell #view[data-view="sessionViewer"] .group-session-actions button { flex: 1; min-width: 0; }
+  .coach-shell #view[data-view="sessionViewer"] .session-snapshot > div { padding-inline: 12px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-snapshot span { font-size: 10px; }
+  .coach-shell #view[data-view="sessionViewer"] .viewer-roster-head { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .coach-shell #view[data-view="sessionViewer"] .viewer-search-filter { width: 100%; }
+  .coach-shell #view[data-view="sessionViewer"] .viewer-rider-grid { grid-template-columns: minmax(0, 1fr); }
+  .coach-shell #view[data-view="sessionViewer"] .session-page-head { align-items: flex-start; }
+  .coach-shell #view[data-view="sessionViewer"] .session-page-head h1 { font-size: 2.6rem; }
+  .coach-shell #view[data-view="sessionViewer"] .session-page-head p { font-size: 12px; }
+}
+
+.coach-shell #view[data-view="sessionViewer"] #viewer-refresh { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+@media (max-width: 640px) {
+  .coach-shell #view[data-view="sessionViewer"] #viewer-refresh { min-width: 44px; min-height: 44px; padding: 0; font-size: 20px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-refresh-label { display: none; }
+}
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] {
+  --text: var(--session-ink); --muted: var(--session-muted); --line: var(--session-edge);
+  --aqua: #00776e; --gold: #86610a;
+  background: linear-gradient(160deg, #f3f6fa, #e9eff4); border-radius: 22px;
+}
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .eyebrow { color: #00776e; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .session-page-head h1 { text-shadow: none; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .session-page-head h1 span { background-image: linear-gradient(105deg, #00776e, #235bc7); }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .park-king-card { background: #fbf2d8; border-color: #b88d27; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .park-king-label span { color: #835e0b; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-daily { --viewer-list-tone: #00776e; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-one_bang { --viewer-list-tone: #7040c4; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-dialled { --viewer-list-tone: #235bc7; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-lines { --viewer-list-tone: #b94229; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-percentage { --viewer-list-tone: #7642b7; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-foam_pit { --viewer-list-tone: #006e9e; }
+html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-bonus { --viewer-list-tone: #86610a; }

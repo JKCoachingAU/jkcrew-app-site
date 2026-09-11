@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.82";
+const RELEASE_VERSION = "2.14.83";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.82" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.83" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9706,6 +9706,40 @@ async function renderCoachCommand() {
   }));
 }
 
+function sessionViewerSnapshotHtml(schedules = []) {
+  const assigned = schedules.filter((entry) => entry.daily.length);
+  const finished = assigned.filter((entry) => entry.daily.every(isAssignmentComplete)).length;
+  const tricks = schedules.flatMap((entry) => entry.daily);
+  const landed = tricks.filter(isAssignmentComplete).length;
+  return `<div><strong>${schedules.length}</strong><span>Riders shown</span></div><div><strong>${finished}<small>/${assigned.length}</small></strong><span>Daily lists done</span></div><div><strong>${landed}<small>/${tricks.length}</small></strong><span>Tricks landed</span></div>`;
+}
+
+function paintSessionViewerSnapshot(schedules = []) {
+  const snapshot = document.querySelector("#view[data-view='sessionViewer'] [data-session-snapshot]");
+  if (snapshot) snapshot.innerHTML = sessionViewerSnapshotHtml(schedules);
+}
+
+function sessionViewerRiderCardHtml(entry, activeGroupSession) {
+  const { athlete, daily, venue, participant } = entry;
+  const complete = daily.filter(isAssignmentComplete).length;
+  const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
+  const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
+  const status = daily.length && complete === daily.length ? "complete" : complete > 0 ? "progress" : "ready";
+  const statusLabel = status === "complete" ? "Daily complete" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
+  const finish = participant?.daily_finish_seconds ? ` · Timer finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
+  const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
+  return `<article class="viewer-rider-accordion status-${status} ${isOpen ? "open" : ""}">
+    <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
+      <span class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))}${finish}</small></span></span>
+      <span class="viewer-rider-score"><strong>${complete}<small>/${daily.length}</small></strong><span>Daily tricks</span></span>
+      <span class="viewer-card-footer"><span class="viewer-rider-status"><i aria-hidden="true"></i>${statusLabel}</span><span class="accordion-caret">${isOpen ? "Close" : "Open"}<b aria-hidden="true">${isOpen ? "−" : "+"}</b></span></span>
+      <span class="viewer-progress"><span style="width:${percent}%"></span></span>
+    </button>
+    ${finishButton}
+    ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
+  </article>`;
+}
+
 async function renderSessionViewer({ forceParkKing = false } = {}) {
   const renderVersion = ++state.sessionViewerRenderVersion;
   if (state.sessionViewerTimer) {
@@ -9770,24 +9804,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   const requestedVenueKey = venueIdentityKey(requestedVenue);
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
   const started = Boolean(activeGroupSession);
-  const cards = schedules.length ? schedules.map((entry) => {
-    const { athlete, daily, venue, participant } = entry;
-    const complete = daily.filter(isAssignmentComplete).length;
-    const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
-    const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
-    const finish = participant?.daily_finish_seconds ? ` · Finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
-    const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
-    return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
-      <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
-        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete${finish}</small></div></div>
-        <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
-        <div class="viewer-progress"><span style="width:${percent}%"></span></div>
-      </button>
-      ${finishButton}
-      ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
-    </article>`;
-  }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
-  const idleCount = schedules.filter((entry) => !entry.participant?.last_activity_at).length;
+  const cards = schedules.length ? schedules.map((entry) => sessionViewerRiderCardHtml(entry, activeGroupSession)).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   const availableExtras = started ? roster.filter((athlete) => !activeParticipantIds.has(athlete.id)) : [];
   const extraOptions = availableExtras.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · ${escapeHtml(groupLabelList(athlete.groupNames || [athlete.groupName]))}</option>`).join("");
   const extraRiderForm = started && availableExtras.length ? `
@@ -9798,22 +9815,27 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       </form>
     </section>` : "";
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Live coach tool</div><h1>Group <span>Session</span></h1><p>Select a group and venue, start the timer, then riders tap their own name to tick their own Daily Tricks.</p></div><button class="secondary-btn" type="button" id="viewer-refresh">Refresh</button></div>
+    <div class="page-head session-page-head"><div><div class="eyebrow">Coach workspace</div><h1>Live <span>session</span></h1><p>Your group, their progress, one place.</p></div><button class="secondary-btn compact-btn" type="button" id="viewer-refresh" aria-label="Refresh session"><span aria-hidden="true">↻</span><span class="session-refresh-label">Refresh</span></button></div>
     <section class="panel group-session-control coach-tone-aqua ${activeGroupSession?.status || "ready"}">
-      <div class="group-timer-block"><div class="timer-label">${started ? `${escapeHtml(coachGroupLabel(activeGroupSession.group_name))} · ${escapeHtml(venueLabel(activeGroupSession.venue))}` : "Ready for group session"}</div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? `${escapeHtml(activeGroupSession.status)} · ${schedules.length} riders · ${idleCount} not logged yet` : "Only coach/admin can start, pause, resume or end."}</small></div>
+      <div class="session-timer-heading"><span class="session-state-badge"><i aria-hidden="true"></i>${started ? (activeGroupSession.status === "paused" ? "Paused" : "Live session") : "Ready to ride"}</span><span class="session-timer-caption">Session clock</span></div>
+      <div class="group-timer-block"><div class="timer-label">${escapeHtml(coachGroupLabel(activeGroupSession?.group_name || state.sessionViewerGroup))}<span> / ${escapeHtml(venueLabel(activeGroupSession?.venue || state.sessionViewerVenue))}</span></div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? (activeGroupSession.status === "paused" ? "Clock paused · resume when everyone is ready" : "Clock running · open a rider to log their tricks") : "Choose your group and location, then start the clock"}</small></div>
       <div class="group-session-actions">
-        ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session</button>`}
+        ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session →</button>`}
       </div>
+      <div class="session-snapshot" data-session-snapshot>${sessionViewerSnapshotHtml(schedules)}</div>
     </section>
-    <section class="panel session-viewer-controls coach-tone-blue">
-      <div class="field viewer-group-filter"><label>Group filter</label><div class="viewer-filter-tabs viewer-group-tabs" role="group" aria-label="Group filter">${sessionViewerGroupTabs(started)}</div></div>
-      <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-filter-tabs viewer-venue-tabs" role="group" aria-label="Location filter">${sessionViewerVenueTabs(groupRoster, schedules, started)}</div></div>
-      <div class="field viewer-search-filter"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div>
-    </section>
+    <details class="panel session-viewer-controls coach-tone-blue">
+      <summary class="session-setup-summary"><span><strong>Group & location</strong><small>${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</small></span><span class="session-setup-caret" aria-hidden="true">+</span></summary>
+      <div class="session-setup-fields">
+        <div class="field viewer-group-filter"><label>Group filter</label><div class="viewer-filter-tabs viewer-group-tabs" role="group" aria-label="Group filter">${sessionViewerGroupTabs(started)}</div></div>
+        <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-filter-tabs viewer-venue-tabs" role="group" aria-label="Location filter">${sessionViewerVenueTabs(groupRoster, schedules, started)}</div></div>
+        ${started ? `<small class="session-setup-note">Group and location stay fixed until this session ends.</small>` : ""}
+      </div>
+    </details>
     ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}
     ${extraRiderForm}
     <section class="session-viewer-layout">
-      <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div class="panel-title">Riders in session</div><div class="panel-meta">${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
+      <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div><div class="eyebrow">The crew</div><h2>Riders in session</h2><div class="panel-meta">Tap a rider to open their training lists.</div></div><div class="field viewer-search-filter"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>
     ${sessionGroupBattlesHtml(groupBattles, coachGroupLabel(state.sessionViewerGroup))}`;
   bindSessionViewerActions();
@@ -10342,6 +10364,10 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
   if (state.view !== "sessionViewer") return;
   const rosterGrid = document.querySelector(".viewer-rider-grid");
   if (!rosterGrid) return renderSessionViewer();
+  const renderVersion = ++state.sessionViewerRenderVersion;
+  const requestedGroup = state.sessionViewerGroup;
+  const requestedVenue = state.sessionViewerVenue;
+  const requestedSearch = state.sessionViewerSearch;
   const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
   const activeGroupSession = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
   const search = state.sessionViewerSearch.toLowerCase().trim();
@@ -10350,6 +10376,8 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
     .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
     .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
   const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, { force });
+  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || !rosterGrid.isConnected
+    || state.sessionViewerGroup !== requestedGroup || state.sessionViewerVenue !== requestedVenue || state.sessionViewerSearch !== requestedSearch) return;
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
       const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
@@ -10360,23 +10388,8 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
     const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
     return { athlete, assignments: allAssignments, allDaily, daily, venue: state.sessionViewerVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
   });
-  rosterGrid.innerHTML = schedules.length ? schedules.map((entry) => {
-    const { athlete, daily, venue, participant } = entry;
-    const complete = daily.filter(isAssignmentComplete).length;
-    const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
-    const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
-    const finish = participant?.daily_finish_seconds ? ` · Finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
-    const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
-    return `<article class="viewer-rider-accordion ${isOpen ? "open" : ""}">
-      <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
-        <div class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<div><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))} · ${complete}/${daily.length} complete${finish}</small></div></div>
-        <span class="accordion-caret">${isOpen ? "Close" : "Open"}</span>
-        <div class="viewer-progress"><span style="width:${percent}%"></span></div>
-      </button>
-      ${finishButton}
-      ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
-    </article>`;
-  }).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
+  rosterGrid.innerHTML = schedules.length ? schedules.map((entry) => sessionViewerRiderCardHtml(entry, activeGroupSession)).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
+  paintSessionViewerSnapshot(schedules);
   bindSessionViewerFastActions();
   if (forceParkKing && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true, true);
 }
