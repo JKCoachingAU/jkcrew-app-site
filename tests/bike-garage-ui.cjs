@@ -86,7 +86,9 @@ async function displayedBike(page) {
   // and compare real rendered pixels rather than SVG tubes or mask internals.
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});await page.mouse.move(0,0);
   await waitForArtwork(page);
-  return page.locator('[data-bike-art]').screenshot({animations:'disabled',caret:'hide'});
+  // The bike now fills the stage beneath the toolbar. Exclude only those UI
+  // overlays: an enabled Redo button is not a changed bike material.
+  return page.locator('[data-bike-art]').screenshot({animations:'disabled',caret:'hide',style:'.bike-stage-top,.bike-stage-bottom,.bike-edit-tools{visibility:hidden!important}'});
 }
 const feedback = (page,text,options={}) => page.locator('.bike-collection-dialog[open] [data-bike-collection-status], .bike-garage:not(:has(.bike-collection-dialog[open])) [data-bike-status]').filter({hasText:options.exact&&typeof text==='string'?new RegExp('^'+text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$'):text,visible:true});
 async function openGarageCollection(page) {
@@ -96,7 +98,17 @@ async function openGarageCollection(page) {
 async function closeGarageCollection(page) {
   if(await page.locator('.bike-collection-dialog').evaluate(el=>el.open))await page.locator('[data-bike-collection-close]').click();
 }
+async function openWorkshopGroup(page,group) {
+  const button=page.locator(`[data-bike-group="${group}"]`);
+  // Re-tapping the open category intentionally closes the new options sheet.
+  if(await button.getAttribute('aria-expanded')!=='true')await button.click();
+  assert(await page.locator('[data-bike-sheet]').isVisible(),`${group}: choosing a category opens its options`);
+}
 async function chooseWorkshopPart(page,part) {
+  const groups={Frame:['frame'],'Front end':['fork','bars','grips','stem','headset','brakes'],Wheels:['rims','hubs','spokes','nipples','tyres','pegs'],Details:['seat','seatpost','pedals','cranks','sprocket','drivetrain','decal']};
+  const group=Object.keys(groups).find(key=>groups[key].includes(part));
+  assert(group,`Known workshop part: ${part}`);await openWorkshopGroup(page,group);
+  if(part==='frame')return;
   const menu=page.locator('.bike-part-menu');
   if(await menu.count()&&!await menu.evaluate(el=>el.open))await menu.locator('summary').click();
   await page.locator(`[data-bike-select="${part}"]`).click();
@@ -210,7 +222,7 @@ async function checkV2DraftUpgrade(page) {
   const loaded=await page.evaluate(()=>JSON.parse(localStorage.getItem('jkcrew-bike-draft-v1:legacy-v2-clean')));
   // Merely opening an old draft does not rewrite its stored/cloud version.
   assert.equal(loaded.configuration.version,2);assert.equal(await page.evaluate(()=>cloud['legacy-v2-clean'][0].configuration.version),2);
-  await page.locator('[data-bike-group="Details"]').click();await chooseWorkshopPart(page,'drivetrain');
+  await chooseWorkshopPart(page,'drivetrain');
   assert.equal(await page.locator('[data-bike-style="rhd"]').getAttribute('aria-pressed'),'true');
   await page.locator('[data-bike-style="lhd"]').click();await waitForArtwork(page);
   await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
@@ -283,7 +295,7 @@ async function checkExpandedParts(page) {
   await page.locator('[data-bike-brake="front"]').uncheck();await waitForArtwork(page);assert.equal((await config()).brakeStyle,'none');
   await page.locator('[data-bike-brake="front"]').check();await waitForArtwork(page);assert.equal((await config()).brakeStyle,'front','Brake controls remain directly tappable in landscape');
   await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>document.documentElement.dataset.theme='dark');
-  await page.locator('[data-bike-group="Details"]').click();await chooseWorkshopPart(page,'drivetrain');
+  await chooseWorkshopPart(page,'drivetrain');
   for(const side of ['lhd','rhd','lhd']){
     const before=await displayedBike(page);await click(`[data-bike-style="${side}"]`);assert.equal((await config()).driveSide,side);
     assert(visiblePixelChanges(before,await displayedBike(page))>20,`${side} visibly moves the actual drivetrain`);
@@ -353,7 +365,7 @@ async function checkPreviewWorkflow(page) {
   await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
   const initial=await page.evaluate(()=>JSON.stringify(cloud['preview-owner'][0].configuration));
   const writes=await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build').length);
-  await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();
+  await page.getByRole('button',{name:'Open photo studio',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Full bike preview',exact:true});
   await page.waitForFunction(()=>document.querySelector('[data-bike-export]')?.disabled===false);await waitForArtwork(page);
   const transform=()=>page.locator('[data-bike-preview-art]').evaluate(el=>el.getAttribute('style')||getComputedStyle(el).transform);
@@ -373,7 +385,7 @@ async function checkPreviewWorkflow(page) {
   await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>cloud['preview-owner'][0].configuration.background),'rooftop');
   await page.evaluate(()=>mountGarage('preview-owner'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await waitForArtwork(page);
-  await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-bike-export]')?.disabled===false);await waitForArtwork(page);
+  await page.getByRole('button',{name:'Open photo studio',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-bike-export]')?.disabled===false);await waitForArtwork(page);
   assert.equal(await page.locator('[data-bike-scene="rooftop"]').getAttribute('aria-pressed'),'true','A saved build reopens its chosen scene');
   await page.screenshot({path:'/tmp/bike-garage-v3-preview-phone.png'});
   // Browser save is a local PNG download only; no native share or external send.
@@ -383,7 +395,7 @@ async function checkPreviewWorkflow(page) {
   const png=PNG.sync.read(fs.readFileSync(await file.path()));assert(png.width>=1024&&Math.abs(png.width/png.height-1.5)<.02,'The download is a full-size, correctly proportioned PNG photo');
   assert.equal(await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build').length),writes+1,'Export never writes a build or points');
   await page.getByRole('button',{name:'Close bike preview',exact:true}).click();
-  await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();
+  await page.getByRole('button',{name:'Open photo studio',exact:true}).click();
   await page.evaluate(()=>mountGarage('other-preview-owner'));
   assert.equal(await page.locator('.bike-fullscreen').count(),0,'Switching account destroys the previous private preview');
   console.log('PASS: preview transforms preserve config; scenes join undo/save history; saved scenes reopen; PNG download and account disposal stay private.');
@@ -397,8 +409,8 @@ async function checkPhotoLoading(browser) {
   };
   const writes=page=>page.evaluate(()=>rpcCalls.filter(call=>call.method!=='get_bike_garage').length);
   const checkUnavailable=async page=>{
-    assert(await page.getByRole('button',{name:'Expand bike preview',exact:true}).isDisabled());
-    assert(await page.getByRole('button',{name:'Electric blue frame',exact:true}).isDisabled());
+    assert(await page.getByRole('button',{name:'Open photo studio',exact:true}).isDisabled());
+    assert(await page.locator('[data-bike-colour="#428CFF"]').isDisabled());
     assert.equal(await writes(page),0,'Photo loading/retry never writes a build');
   };
 
@@ -414,8 +426,8 @@ async function checkPhotoLoading(browser) {
     assert.equal(await failed.getByRole('textbox',{name:'NAME YOUR BUILD',exact:true}).inputValue(),'Kept while photo is offline');
     assert.equal(await failed.evaluate(()=>rpcCalls.length),calls,'Retry photo does not reload or mutate garage data');
     assert(await failed.locator('[data-bike-photo-status]').isHidden());
-    assert(await failed.getByRole('button',{name:'Expand bike preview',exact:true}).isEnabled());
-    await failed.getByRole('button',{name:'Electric blue frame',exact:true}).click();assert.equal(await frameIndicator(failed),'#428CFF');
+    assert(await failed.getByRole('button',{name:'Open photo studio',exact:true}).isEnabled());
+    await chooseWorkshopPart(failed,'frame');await failed.getByRole('button',{name:'Electric blue frame',exact:true}).click();assert.equal(await frameIndicator(failed),'#428CFF');
   } finally {await failed.close();}
 
   // A request that never replies releases the loading state after 12 seconds.
@@ -427,7 +439,7 @@ async function checkPhotoLoading(browser) {
     assert(await timeout.getByText('Loading your bike…',{exact:true}).isVisible());await checkUnavailable(timeout);
     await timeout.clock.fastForward(12001);await timeout.getByRole('button',{name:'Retry photo',exact:true}).waitFor();await checkUnavailable(timeout);
     holdPhoto=false;releasePhoto();await timeout.getByRole('button',{name:'Retry photo',exact:true}).click();await waitForArtwork(timeout);
-    assert(await timeout.getByRole('button',{name:'Expand bike preview',exact:true}).isEnabled());assert.equal(await writes(timeout),0);
+    assert(await timeout.getByRole('button',{name:'Open photo studio',exact:true}).isEnabled());assert.equal(await writes(timeout),0);
   } finally {holdPhoto=false;releasePhoto();await timeout.close();}
 
   // The optional photograph may finish after switching accounts or leaving the page.
@@ -454,7 +466,19 @@ async function checkPhotoLoading(browser) {
   assert.deepEqual(errors,[],'Photo errors/retries/disposal cause no uncaught JavaScript errors');
   console.log('PASS: real photo loading, retry, bounded timeout, draft retention, and stale account/disposal guards.');
 }
-async function checkStickyPreview(page) {
+async function checkControlsSheet(page) {
+  assert(await page.locator('[data-bike-sheet]').isHidden(),'Options are collapsed on entry so the bike is the main view');
+  const beforeCalls=await page.evaluate(()=>rpcCalls.length);
+  await openWorkshopGroup(page,'Frame');
+  await page.locator('[data-bike-group="Frame"]').click();
+  assert(await page.locator('[data-bike-sheet]').isHidden(),'Re-tapping the current category closes its options');
+  await openWorkshopGroup(page,'Frame');await page.getByRole('button',{name:'Hide controls',exact:true}).click();
+  assert(await page.locator('[data-bike-sheet]').isHidden(),'The explicit collapse control hides the options');
+  const frame=page.locator('[data-bike-art] [data-bike-part="frame"]').first();
+  await frame.focus();await frame.press('Enter');
+  assert(await page.locator('[data-bike-sheet]').isVisible(),'Selecting the bike part opens its options');
+  assert.equal(await page.locator('[data-bike-group="Frame"]').getAttribute('aria-expanded'),'true');
+  assert.equal(await page.evaluate(()=>rpcCalls.length),beforeCalls,'Opening and closing controls never writes or reloads a build');
   for(const [width,height] of [[390,900],[320,650]]) {
     await page.setViewportSize({width,height});
     const before=await page.locator('.bike-stage').boundingBox();
@@ -476,13 +500,13 @@ async function run(page) {
     await page.setViewportSize({width,height:900});
     await page.evaluate(()=>window.scrollTo(0,0));
     await waitForArtwork(page);await page.screenshot({path:`/tmp/bike-garage-${name}.png`,fullPage:true});
-    await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();
+    await page.getByRole('button',{name:'Open photo studio',exact:true}).click();
     await waitForArtwork(page);await page.screenshot({path:`/tmp/bike-garage-photo-${name}-preview.png`});
     await page.getByRole('button',{name:'Close bike preview',exact:true}).click();await page.locator('.bike-fullscreen').waitFor({state:'detached'});
   }
   console.log('Screenshots ready: /tmp/bike-garage-phone.png and /tmp/bike-garage-desktop.png');
   if(process.env.JKCREW_BIKE_SCREENSHOTS_ONLY) return;
-  await checkStickyPreview(page);
+  await checkControlsSheet(page);
   if(process.env.JKCREW_BIKE_STICKY_ONLY) return;
   const draft = () => page.evaluate(()=>JSON.parse(localStorage.getItem(`jkcrew-bike-draft-v1:${currentUser}`)||'null'));
   const config = async () => (await draft()).configuration;
@@ -516,7 +540,7 @@ async function run(page) {
   await page.evaluate(()=>mountGarage('legacy-bike'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   assert.deepEqual(await config(),await page.evaluate(()=>JKCrewBikeConfig.normalize(legacyBike)),'Remount preserves existing saved colours and styles');
   const originalSavedRows=await page.evaluate(()=>JSON.stringify(cloud['legacy-bike']));
-  await nameField().fill('Unfinished custom idea');await page.getByRole('button',{name:'Pink frame',exact:true}).click();
+  await nameField().fill('Unfinished custom idea');await chooseWorkshopPart(page,'frame');await page.getByRole('button',{name:'Pink frame',exact:true}).click();
   const unfinished=await draft();const writesBeforeBlank=await count('save_bike_build');
   await page.evaluate(()=>confirmAnswer=false);await page.getByRole('button',{name:'+ Blank bike',exact:true}).click();
   assert.deepEqual(await draft(),unfinished,'Cancelling Blank bike preserves all draft state');assert.equal(await nameField().inputValue(),'Unfinished custom idea');
@@ -537,13 +561,17 @@ async function run(page) {
 
   // Changes repaint real displayed materials; selection remains keyboard-accessible.
   await page.setViewportSize({width:390,height:900});
+  await chooseWorkshopPart(page,'frame');
   const originalColour=await frameColour();const originalPixels=await displayedBike(page);
   assert.equal(visiblePixelChanges(originalPixels,await displayedBike(page)),0,'Repeated unchanged artwork has stable pixels');
   await page.getByRole('button',{name:'Electric blue frame',exact:true}).click();
   assert.equal(await frameColour(),'#428CFF');assert.equal((await config()).colors.frame,'#428CFF');
   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.bikeColour),'#428CFF','Palette repaint keeps keyboard focus');
   const bluePixels=await displayedBike(page);assert(visiblePixelChanges(originalPixels,bluePixels)>20,'Frame colour changes actual bike pixels');
-  await page.getByRole('button',{name:'Undo last change',exact:true}).click();assert.equal(await frameColour(),originalColour);assert.equal(visiblePixelChanges(originalPixels,await displayedBike(page)),0,'Undo restores displayed material');
+  await page.getByRole('button',{name:'Undo last change',exact:true}).click();assert.equal(await frameColour(),originalColour);
+  const undoPixels=await displayedBike(page),undoChanges=visiblePixelChanges(originalPixels,undoPixels);
+  if(undoChanges){fs.writeFileSync('/tmp/bike-before-blue.png',originalPixels);fs.writeFileSync('/tmp/bike-after-undo.png',undoPixels);}
+  assert.equal(undoChanges,0,'Undo restores displayed material');
   await page.getByRole('button',{name:'Redo change',exact:true}).click();assert.equal(await frameColour(),'#428CFF');
   const redoPixels=await displayedBike(page),redoChanges=visiblePixelChanges(bluePixels,redoPixels);
   if(redoChanges){fs.writeFileSync('/tmp/bike-v2-blue-before.png',bluePixels);fs.writeFileSync('/tmp/bike-v2-blue-redo.png',redoPixels);}
@@ -566,6 +594,7 @@ async function run(page) {
   assert.equal(await count('save_bike_build'),savesBeforeEditing,'Editing never saves automatically');
   await page.evaluate(()=>mountGarage());await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   assert.equal(await nameField().inputValue(),'Night Rider');assert.deepEqual(await config(),firstConfig,'Unmount/remount restores local draft');
+  assert(await page.locator('[data-bike-sheet]').isHidden(),'A restored private draft still opens with the controls collapsed');
   await boot(page);assert.equal(await nameField().inputValue(),'Night Rider');assert.equal(await frameColour(),'#123ABC','Full page reload restores durable local draft');
   await page.evaluate(()=>mountGarage('rider-b'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   assert.equal(await nameField().inputValue(),'My dream bike');assert.equal(await frameColour(),'#F1F4F8');
@@ -577,7 +606,7 @@ async function run(page) {
   await save();assert.equal(await page.locator('[data-bike-count]').textContent(),'1 / 3');
   let calls=await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build'));
   assert.equal(calls.at(-1).args.p_slot,1);assert.equal(calls.at(-1).args.p_expected_revision,0);
-  await nameField().fill('Acid Session');await page.getByRole('button',{name:'Acid frame',exact:true}).click();
+  await nameField().fill('Acid Session');await chooseWorkshopPart(page,'frame');await page.getByRole('button',{name:'Acid frame',exact:true}).click();
   await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
   assert.equal(await page.locator('[data-bike-count]').textContent(),'2 / 3');
   assert.equal(await page.evaluate(()=>cloud['rider-a'][0].name),'Night Rider');
@@ -617,7 +646,7 @@ async function run(page) {
   await page.evaluate(()=>{rpcModes.push({method:'get_bike_garage',type:'error'});mountGarage();});
   await feedback(page,/garage could not load/).waitFor();assert.equal(await page.locator('[data-bike-garage]').evaluate(el=>el.open),false);
   assert(await page.getByRole('button',{name:'Refresh garage',exact:true}).isVisible());assert(await page.locator('[data-bike-save]').isDisabled());
-  await page.getByRole('button',{name:'Pink frame',exact:true}).click();await refresh();assert.equal(await frameColour(),'#E789D0');
+  await chooseWorkshopPart(page,'frame');await page.getByRole('button',{name:'Pink frame',exact:true}).click();await refresh();assert.equal(await frameColour(),'#E789D0');
 
   // The 15-second timeout releases busy controls and requires a safe refresh.
   assert(page.clock?.install && page.clock?.fastForward,'Playwright clock is available for timeout coverage');
@@ -641,7 +670,7 @@ async function run(page) {
   await nameField().fill('Cloud saved once');await page.evaluate(()=>rpcModes.push({method:'save_bike_build',type:'commit-error'}));
   await page.locator('[data-bike-save]').click();await feedback(page,/The save wasn't confirmed/).waitFor();
   assert.equal(await page.evaluate(()=>cloud['uncertain-save'].length),1);
-  await nameField().fill('Newer local idea');await page.getByRole('button',{name:'Gold frame',exact:true}).click();
+  await nameField().fill('Newer local idea');await chooseWorkshopPart(page,'frame');await page.getByRole('button',{name:'Gold frame',exact:true}).click();
   await refresh();assert.equal(await nameField().inputValue(),'Newer local idea');assert.equal(await frameColour(),'#F2BC57','Recovery preserves edits made after the uncertain save');
   assert.equal((await draft()).revision,1,'Refresh adopts the remotely committed revision');
   assert.equal((await draft()).slot,1);assert.equal((await draft()).pendingSave,null);
@@ -671,18 +700,18 @@ async function run(page) {
     const geometry=await page.locator('.bike-garage').evaluate(el=>({scroll:el.scrollWidth,width:el.clientWidth,document:document.documentElement.scrollWidth,viewport:innerWidth}));
     assert(geometry.scroll<=geometry.width+1,`${role}/${width}/${theme}: workshop has no overflow`);assert(geometry.document<=geometry.viewport+1,`${role}/${width}/${theme}: page has no overflow`);
     assert(Number(await nameField().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)))>=16,'Name input avoids mobile autozoom');
-    await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();
+    await page.getByRole('button',{name:'Open photo studio',exact:true}).click();
     const dialog=page.getByRole('dialog',{name:'Full bike preview',exact:true});assert(await dialog.isVisible());await waitForArtwork(page);assert(await dialog.getByRole('button',{name:'Close bike preview',exact:true}).isVisible());assert.equal(await dialog.locator('[data-bike-save],[data-bike-colour],[data-bike-brake]').count(),0,'Preview contains no workshop editing or save controls');
     const fit=await dialog.evaluate(el=>{const d=el.getBoundingClientRect(),s=el.querySelector('[data-bike-preview-art] > svg').getBoundingClientRect();return {d:{x:d.x,y:d.y,right:d.right,bottom:d.bottom},s:{x:s.x,y:s.y,right:s.right,bottom:s.bottom},sw:el.scrollWidth,cw:el.clientWidth,sh:el.scrollHeight,ch:el.clientHeight};});
     assert(fit.sw<=fit.cw+1&&fit.sh<=fit.ch+1,`${role}/${width}/${theme}: fullscreen fits without scrolling`);assert(fit.s.x>=fit.d.x&&fit.s.right<=fit.d.right+1&&fit.s.y>=fit.d.y&&fit.s.bottom<=fit.d.bottom+1,`${role}/${width}/${theme}: bike stays inside fullscreen`);
     await page.getByRole('button',{name:'Close bike preview',exact:true}).click();await dialog.waitFor({state:'detached'});
   }
-  await page.setViewportSize({width:844,height:390});await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();
+  await page.setViewportSize({width:844,height:390});await page.getByRole('button',{name:'Open photo studio',exact:true}).click();
   assert(await page.locator('.bike-fullscreen').evaluate(el=>el.scrollHeight<=el.clientHeight+1&&el.scrollWidth<=el.clientWidth+1),'Landscape phone fullscreen fits without scrolling');
   await page.getByRole('button',{name:'Close bike preview',exact:true}).click();await page.locator('.bike-fullscreen').waitFor({state:'detached'});
   await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('[data-bike-save]').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
   await page.getByRole('button',{name:'Back to JKCREW',exact:true}).click();assert.equal(await page.evaluate(()=>backCalls),1);
-  await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();await page.evaluate(()=>JKCrewBikeGarage.destroy());assert.equal(await page.locator('.bike-fullscreen').count(),0,'Dispose removes a fullscreen preview');
+  await page.getByRole('button',{name:'Open photo studio',exact:true}).click();await page.evaluate(()=>JKCrewBikeGarage.destroy());assert.equal(await page.locator('.bike-fullscreen').count(),0,'Dispose removes a fullscreen preview');
   assert((await page.evaluate(()=>rpcCalls)).every(call=>['get_bike_garage','save_bike_build','delete_bike_build'].includes(call.method)),'No training, scoring, invitation or notification RPCs');
   console.log('PASS: neutral white defaults, preserved colourful builds, safe Blank bike reset/white save roundtrip, live colours/styles, keyboard focus, undo/redo, private drafts/accounts, three-slot CRUD, revisions, safe refresh/retry/timeout, uncertain-commit recovery without duplicates, disposal, blocked-storage fallback, fullscreen, and 320/390/1024 dark/light layouts.');
 

@@ -37,6 +37,8 @@ const JKCrewBikeGarage = (() => {
     const key = `jkcrew-bike-draft-v1:${userId}`;
     let alive = true, config = copy(defaults), name = 'My dream bike', slot = null, revision = 0, savedFingerprint = '', pendingSave = null, history = [], future = [], group = 'Frame', part = 'frame';
     let builds = [], loaded = false, loading = false, busy = false, loadSequence = 0, status = '', statusKind = '', draftAvailable = true, fullscreen = null;
+    let controlsOpen = false, optionsScroll = 0;
+    let bike3D = null, loading3D = false, failed3D = false, view3DRequest = 0, timer3D = 0;
     let photoSequence = 0, photoReady = false, seatCategory = 'All', seatPage = 0, layoutFrame = 0;
     const selectedParts = Object.fromEntries(Object.entries(groups).map(([label, parts]) => [label, parts[0]]));
     const valid = () => alive && root.isConnected && isCurrent();
@@ -98,6 +100,35 @@ const JKCrewBikeGarage = (() => {
       root.querySelector('[data-bike-retry]').hidden = loaded || loading;
     }
     function paint() {
+      if(!valid())return;
+      if(!globalThis.JKCrewBike3D||failed3D){paintPhoto();return;}
+      const artwork=root.querySelector('[data-bike-art]'),loading=root.querySelector('[data-bike-photo-status]');
+      root.querySelector('[data-bike-design-title]').textContent=name.trim()||'My dream bike';
+      root.querySelector('[data-bike-frame-colour]').style.backgroundColor=config.colors.frame;
+      root.querySelector('[data-bike-part-hint]').textContent='Drag to spin · Pinch to zoom';
+      if(bike3D){try{bike3D.update(copy(config))?.catch(()=>{if(valid())fallback3D();});}catch{fallback3D();return;}photoReady=true;updateStatus();return;}
+      if(loading3D){updateStatus();return;}
+      loading3D=true;photoReady=false;loading.hidden=false;
+      const request=++view3DRequest;
+      timer3D=setTimeout(()=>{if(valid()&&request===view3DRequest)fallback3D();},12000);
+      artwork.setAttribute('aria-busy','true');loading.innerHTML='<span>Preparing your 360° bike…</span>';updateStatus();
+      JKCrewBike3D.mount({element:artwork,configuration:copy(config),onSelect:id=>{if(valid())select(id);},isCurrent:()=>valid()&&request===view3DRequest&&!failed3D,onError:()=>{if(request===view3DRequest)fallback3D();}}).then(handle=>{
+        if(!valid()||failed3D||request!==view3DRequest){handle?.dispose();return;}
+        clearTimeout(timer3D);
+        bike3D=handle;loading3D=false;bike3D.update(copy(config));photoReady=true;
+        artwork.dataset.view='3d';artwork.setAttribute('aria-busy','false');loading.hidden=true;
+        root.querySelector('[data-bike-view-reset]').hidden=false;updateStatus();
+      }).catch(()=>{if(valid()&&request===view3DRequest)fallback3D();});
+    }
+    function fallback3D() {
+      if(!valid()||failed3D)return;
+      failed3D=true;loading3D=false;++view3DRequest;clearTimeout(timer3D);bike3D?.dispose();bike3D=null;
+      root.querySelector('[data-bike-art]').dataset.view='photo';
+      root.querySelector('[data-bike-view-reset]').hidden=true;
+      root.querySelector('[data-bike-3d-retry]').hidden=false;
+      paintPhoto();
+    }
+    function paintPhoto() {
       if (!valid()) return;
       const sequence = ++photoSequence;
       photoReady = JKCrewBikeArt.isReady(config);
@@ -111,7 +142,7 @@ const JKCrewBikeGarage = (() => {
       if (focusedPart) root.querySelector(`[data-bike-art] [data-bike-part="${CSS.escape(focusedPart)}"]`)?.focus({preventScroll:true});
       root.querySelector('[data-bike-design-title]').textContent = name.trim() || 'My dream bike';
       root.querySelector('[data-bike-frame-colour]').style.backgroundColor = config.colors.frame;
-      root.querySelector('[data-bike-part-hint]').textContent = `Editing ${labels[part].toLowerCase()}`;
+      root.querySelector('[data-bike-part-hint]').textContent = failed3D?'Photo view · 360° unavailable':`Editing ${labels[part].toLowerCase()}`;
       updateStatus();
       if (!photoReady) JKCrewBikeArt.prepare(config).then(() => {
         if (!valid() || sequence !== photoSequence) return;
@@ -138,7 +169,7 @@ const JKCrewBikeGarage = (() => {
     }
     function controls() {
       if (!valid()) return;
-      const scrollArea=root.querySelector('[data-bike-controls]'),scrollTop=scrollArea.scrollTop;
+      const scrollArea=root.querySelector('[data-bike-controls]'),scrollTop=root.querySelector('[data-bike-sheet]').hidden?optionsScroll:scrollArea.scrollTop;
       const focused=root.querySelector('.bike-controls')?.contains(document.activeElement)?document.activeElement:null;
       const focusAttribute=['data-bike-group','data-bike-select','data-bike-colour','data-bike-style','data-bike-custom-colour','data-bike-finish','data-bike-option','data-bike-fade-colour','data-bike-seat-design','data-bike-seat-category','data-bike-brake'].find(attribute=>focused?.hasAttribute(attribute));
       const focusValue=focusAttribute?focused.getAttribute(focusAttribute):'';
@@ -148,8 +179,8 @@ const JKCrewBikeGarage = (() => {
       const colourName=palette.find(([,value])=>value===selected)?.[0]||'Custom colour';
       const partButtons=groups[group].map(id=>`<button type="button" data-bike-select="${id}" aria-pressed="${part===id}">${labels[id]}</button>`).join('');
       root.querySelector('[data-bike-navigation]').innerHTML=`
-        <div class="bike-part-tabs" aria-label="Bike sections">${Object.keys(groups).map(label=>`<button type="button" data-bike-group="${label}" aria-pressed="${group===label}"><i aria-hidden="true">${groupIcons[label]}</i>${groupLabels[label]}</button>`).join('')}</div>
-        ${groups[group].length>1?`<details class="bike-part-menu"><summary aria-label="Choose a part, currently ${labels[part]}"><span><small>EDITING</small><strong>${labels[part]}</strong></span><span class="bike-part-menu-hint">Change part <b aria-hidden="true">⌄</b></span></summary><div class="bike-part-picker" aria-label="Choose a part">${partButtons}</div></details>`:`<div class="bike-part-current"><span><small>EDITING</small><strong>${labels[part]}</strong></span><span class="bike-part-menu-hint">Tap a part on your bike</span></div>`}`;
+        <div class="bike-part-tabs" aria-label="Bike sections">${Object.keys(groups).map(label=>`<button type="button" data-bike-group="${label}" aria-pressed="${controlsOpen&&group===label}" aria-expanded="${controlsOpen&&group===label}" aria-controls="bike-options-sheet"><i aria-hidden="true">${groupIcons[label]}</i>${groupLabels[label]}</button>`).join('')}</div>`;
+      root.querySelector('[data-bike-part-navigation]').innerHTML=`${groups[group].length>1?`<details class="bike-part-menu"><summary aria-label="Choose a part, currently ${labels[part]}"><span><small>EDITING</small><strong>${labels[part]}</strong></span><span class="bike-part-menu-hint">Change part <b aria-hidden="true">⌄</b></span></summary><div class="bike-part-picker" aria-label="Choose a part">${partButtons}</div></details>`:`<div class="bike-part-current"><span><small>EDITING</small><strong>${labels[part]}</strong></span><span class="bike-part-menu-hint">Tap a part on your bike</span></div>`}`;
       scrollArea.innerHTML=`
         ${style?`<div class="bike-style-options bike-component-options"><span class="bike-eyebrow">${part==='pedals'?'MATERIAL':part==='drivetrain'?'CHAIN & SPROCKET':part==='pegs'?'PEG SETUP':part==='decal'?'GRAPHIC':'STYLE'}</span><div>${style[1].map(([id,label])=>`<button type="button" data-bike-style="${id}" aria-pressed="${config[style[0]]===id}">${label}</button>`).join('')}</div></div>`:''}
         ${part==='brakes'?`<fieldset class="bike-brake-setup"><legend class="bike-eyebrow">BRAKE SETUP</legend>${[['front','Front brake'],['rear','Rear brake']].map(([side,label])=>`<label><input type="checkbox" data-bike-brake="${side}" ${config.brakeStyle===side||config.brakeStyle==='dual'?'checked':''}><span>${label}</span><b aria-hidden="true">✓</b></label>`).join('')}<p class="bike-control-tip">Choose either brake, both, or leave both off for brakeless.</p></fieldset>`:''}
@@ -163,8 +194,10 @@ const JKCrewBikeGarage = (() => {
         ${part==='pegs'&&config.pegs==='four'?'<p class="bike-control-tip">Front and rear pegs on both sides.</p>':''}
         ${['chrome','raw','jetfuel'].includes(finish)?`<p class="bike-control-tip">${finish==='jetfuel'?'Iridescent blue, purple and gold metal.':finish==='raw'?'Exposed steel with a brushed finish.':'Bright polished metal.'}</p>`:''}
         <p class="bike-control-tip bike-tap-tip">Tap any part on the bike to customise it.</p>`;
+      root.querySelector('[data-bike-sheet]').hidden=!controlsOpen;
+      root.querySelector('[data-bike-workshop]').dataset.controlsOpen=String(controlsOpen);
       if(focusAttribute)root.querySelector(`[${focusAttribute}="${CSS.escape(focusValue)}"]${optionValue?`[data-bike-value="${CSS.escape(optionValue)}"]`:''}`)?.focus({preventScroll:true});
-      scrollArea.scrollTop=scrollTop;
+      scrollArea.scrollTop=scrollTop;optionsScroll=scrollTop;
       updateStatus();
     }
     function change(fn) {
@@ -172,12 +205,17 @@ const JKCrewBikeGarage = (() => {
       history.push(snapshot()); if (history.length > 60) history.shift(); future = [];
       fn(); status=''; persist(); paint(); controls();
     }
+    function closeControls() {
+      optionsScroll=root.querySelector('[data-bike-controls]').scrollTop;controlsOpen=false;controls();
+      root.querySelector(`[data-bike-group="${CSS.escape(group)}"]`)?.focus({preventScroll:true});
+    }
     function select(id) {
       if (!labels[id]) return;
+      controlsOpen=true;
       const differentPart=part!==id;
       const fromMenu=Boolean(document.activeElement?.closest('.bike-part-menu'));
       part=id; group=Object.keys(groups).find(key=>groups[key].includes(id));selectedParts[group]=id;paint();controls();
-      if(differentPart)root.querySelector('[data-bike-controls]').scrollTop=0;
+      if(differentPart){optionsScroll=0;root.querySelector('[data-bike-controls]').scrollTop=0;}
       if(fromMenu)root.querySelector('.bike-part-menu summary')?.focus({preventScroll:true});
     }
     function garage() {
@@ -283,10 +321,10 @@ const JKCrewBikeGarage = (() => {
       });
       fullscreen=handle;
     }
-    root.innerHTML=`<section class="bike-garage" data-bike-workshop>
-      <header class="bike-garage-header"><div class="bike-header-title"><button type="button" class="bike-back" data-bike-back aria-label="Back to JKCREW">←</button><div><span class="bike-eyebrow">MAKE IT YOURS</span><h1>Bike Garage</h1></div></div><button type="button" class="bike-collection-open" data-bike-collection-open>My garage <span data-bike-collection-count>0</span></button></header>
-      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art aria-busy="true"></div><div class="bike-photo-status" data-bike-photo-status role="status"><span>Loading your bike…</span></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Expand bike preview">⛶</button></div><div class="bike-edit-tools"><button type="button" data-bike-undo aria-label="Undo last change">↶ <span>Undo</span></button><button type="button" data-bike-redo aria-label="Redo change">↷ <span>Redo</span></button><button type="button" data-bike-shuffle>✳ Surprise me</button></div></div>
-      <section class="bike-controls" aria-label="Customise your bike"><div class="bike-control-navigation" data-bike-navigation></div><div class="bike-control-scroll" data-bike-controls tabindex="0" aria-label="Part options"></div></section></div>
+    root.innerHTML=`<section class="bike-garage" data-bike-workshop data-controls-open="false">
+      <header class="bike-garage-header"><div class="bike-header-title"><button type="button" class="bike-back" data-bike-back aria-label="Back to JKCREW">←</button><div><h1>Bike Garage</h1></div></div><button type="button" class="bike-collection-open" data-bike-collection-open>My garage <span data-bike-collection-count>0</span></button></header>
+      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art aria-busy="true"></div><div class="bike-photo-status" data-bike-photo-status role="status"><span>Loading your bike…</span></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Open photo studio" title="Backgrounds & save photo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 5l1-2h6l1 2h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><circle cx="12" cy="12" r="4"/></svg></button></div><div class="bike-edit-tools"><button type="button" data-bike-undo aria-label="Undo last change">↶ <span>Undo</span></button><button type="button" data-bike-redo aria-label="Redo change">↷ <span>Redo</span></button><button type="button" data-bike-shuffle aria-label="Surprise me" title="Surprise me">✦</button><button type="button" data-bike-view-reset hidden aria-label="Reset bike view" title="Reset bike view">↺</button><button type="button" data-bike-3d-retry hidden aria-label="Retry 360° view" title="Retry 360° view">↻</button></div></div>
+      <section class="bike-controls" aria-label="Customise your bike"><div class="bike-options-sheet" id="bike-options-sheet" data-bike-sheet hidden><div class="bike-sheet-heading"><div data-bike-part-navigation></div><button type="button" data-bike-sheet-close aria-label="Hide controls">⌄</button></div><div class="bike-control-scroll" data-bike-controls tabindex="0" aria-label="Part options"></div></div><div class="bike-control-navigation" data-bike-navigation></div></section></div>
       <div class="bike-save-bar"><label class="bike-name-field"><span>NAME YOUR BUILD</span><input type="text" maxlength="40" data-bike-name value="${html(name)}" autocomplete="off"></label><div class="bike-save-actions"><button type="button" class="bike-save-copy" data-bike-retry hidden aria-label="Refresh garage" title="Refresh garage">↻</button><button type="button" class="bike-save-copy" data-bike-save-copy hidden aria-label="Save as new" title="Save as new">⧉</button><button type="button" class="bike-primary" data-bike-save>Save to garage</button></div><p class="bike-save-status" data-bike-status role="status" aria-live="polite"></p></div>
       <dialog class="bike-collection-dialog" aria-label="My bike garage"><header><div><span class="bike-eyebrow">YOUR COLLECTION</span><h2>Saved bikes</h2></div><button type="button" data-bike-collection-close aria-label="Close my garage">×</button></header><div class="bike-collection-body"><p class="bike-collection-status" data-bike-collection-status role="status" aria-live="polite" hidden></p>
       <details class="bike-garage-shelf" data-bike-garage><summary><span><span class="bike-eyebrow">YOUR COLLECTION</span><strong>My garage <small data-bike-count>0 / 3</small></strong></span><b aria-hidden="true">+</b></summary><div class="bike-garage-toolbar"><p>Three spaces. Endless ideas.</p><button type="button" data-bike-reload>Retry loading garage</button></div><div class="bike-saved-grid" data-bike-saved-list></div></details>
@@ -300,8 +338,11 @@ const JKCrewBikeGarage = (() => {
       if(button.hasAttribute('data-bike-collection-open'))return openCollection();
       if(button.hasAttribute('data-bike-collection-close'))return closeCollection();
       if(button.hasAttribute('data-bike-photo-retry'))return paint();
+      if(button.hasAttribute('data-bike-view-reset'))return bike3D?.resetView();
+      if(button.hasAttribute('data-bike-3d-retry')){failed3D=false;button.hidden=true;root.querySelector('[data-bike-art]').innerHTML='';return paint();}
       if(button.dataset.bikePart)return select(button.dataset.bikePart);
-      if(button.dataset.bikeGroup){group=button.dataset.bikeGroup;return select(selectedParts[group]||groups[group][0]);}
+      if(button.hasAttribute('data-bike-sheet-close'))return closeControls();
+      if(button.dataset.bikeGroup){if(controlsOpen&&group===button.dataset.bikeGroup)return closeControls();group=button.dataset.bikeGroup;return select(selectedParts[group]||groups[group][0]);}
       if(button.dataset.bikeSelect)return select(button.dataset.bikeSelect);
       if(button.dataset.bikeColour)return change(()=>config.colors[part]=button.dataset.bikeColour);
       if(button.dataset.bikeStyle)return change(()=>config[styles[part][0]]=button.dataset.bikeStyle);
@@ -340,6 +381,7 @@ const JKCrewBikeGarage = (() => {
     root.addEventListener('keydown',event=>{
       const menu=root.querySelector('.bike-part-menu[open]');
       if(event.key==='Escape'&&menu){event.preventDefault();menu.open=false;menu.querySelector('summary').focus({preventScroll:true});}
+      else if(event.key==='Escape'&&controlsOpen&&!collection.open&&!fullscreen){event.preventDefault();closeControls();}
     },{signal:controller.signal});
     document.addEventListener('click',event=>{
       const menu=root.querySelector('.bike-part-menu[open]');
@@ -363,7 +405,7 @@ const JKCrewBikeGarage = (() => {
     window.addEventListener('resize',scheduleLayout,{signal:controller.signal});
     window.visualViewport?.addEventListener('resize',scheduleLayout,{signal:controller.signal});
     window.addEventListener('beforeunload',event=>{if(valid()&&dirty()&&!draftAvailable){event.preventDefault();event.returnValue='';}},{signal:controller.signal});
-    active={dispose(){alive=false;controller.abort();observer.disconnect();cancelAnimationFrame(layoutFrame);if(collection.open)collection.close();if(fullscreen){fullscreen.destroy();fullscreen=null;}}};
+    active={dispose(){alive=false;++view3DRequest;clearTimeout(timer3D);bike3D?.dispose();bike3D=null;controller.abort();observer.disconnect();cancelAnimationFrame(layoutFrame);if(collection.open)collection.close();if(fullscreen){fullscreen.destroy();fullscreen=null;}}};
     paint();controls();garage();fitWorkspace();void load();
   }
   return {mount,destroy,teaserHtml,normalize,defaults:copy(defaults)};

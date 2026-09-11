@@ -1,18 +1,20 @@
-# JKCREW Bike Garage — 2.14.102
+# JKCREW Bike Garage — 2.14.103
 
-A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses original generated studio photographs with masked material recolouring, instant part/colour changes and a full-bike preview.
+A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It offers an original, fully modelled 360° BMX viewer with part/colour controls, and a separate photographic studio for backgrounds and PNG export.
 
-The builder is a compact workspace sized to the visible app area. The bike, section navigation and save bar stay in place; only part settings scroll. Portrait phones show the bike above the controls, while landscape and wider screens place them side by side. On short landscape phones, the app bars make room for the editor and the builder's Back button returns to JKCREW. Resize observers and the visual viewport keep the workspace fitted when rotating the device or opening its keyboard.
+The bike is the main surface in an immersive workspace. A compact bottom dock opens Paint, Cockpit, Wheels or Details; all part controls are closed on entry. Tapping the active category again, Hide controls, or Escape closes the options. The sheet has one bounded scroller and remembers its position when reopened. The name and Save action remain available. App top/bottom bars make room for the viewer only while Bike Garage is open; Back returns to normal navigation. Safe-area padding and visual-viewport sizing support phones, tablets, landscape and the onscreen keyboard.
+
+The 3D model has physical geometry on both sides: frame tubing, forks, bars, machined stem forms, crossed spokes, nipples, hubs, chain, cranks, level platforms, saddle and pegs. Drag rotates horizontally through a full turn, pinch/wheel zooms, arrow keys rotate, plus/minus zoom and Home/Reset restore framing. Rotation and zoom are temporary view state; changing a part, its colour, the bike name or undoing an edit preserves the view. A click/tap selects a part, while a drag or multi-touch gesture does not. Geometry is original JKCREW work rendered using locally hosted, pinned Three.js modules. The engine/model load on demand and never delay app-shell installation or sign-in. If 3D cannot load or WebGL is unavailable, the existing photographic editor remains usable with a clear Photo view message and a Retry 360° view action.
 
 Colours appear before finish options. The part menu gives direct access to every part without a wrapping wall of buttons. Each category remembers the last part selected during the visit. Editing a colour or option preserves the settings scroll position; selecting another part starts its settings at the top. **My garage** opens a separate drawer containing saved builds and a closed inspiration section. Closing it preserves the unfinished design and restores focus; load/remove errors remain visible in the drawer.
 
-New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. Photographic artwork depicts the bike at a slight angle on a light studio background. Paint colours retain photographed material textures, shading and reflections.
+New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. The 3D viewer uses a studio setting, physical materials and ground shadows. Photo Studio retains the generated photographs, material textures, shading and reflections for finished side-view pictures.
 
 Sixteen colour zones cover the frame, forks, bars, grips, rims, hubs, spokes, nipples, saddle, seat post, stem, headset, pedals, cranks, sprocket and pegs. Metal components offer gloss, matte, chrome, raw and jet-fuel finishes. Frames support a two-colour fade. Riders can choose plastic or metal platform pedals, top/front-load stems, independently ticked front and rear brakes, up to four pegs, rainbow titanium spoke styling, two/four-piece bars, tyre walls and seat shape. A paged gallery offers 50 original seat patterns alongside standard solid colours. Undo/redo restores design changes; Surprise me tries another colour combination. Bike names are limited to 40 characters.
 
-Drivetrain controls choose RHD or LHD. With two pegs, RHD places them on the bike's left side and LHD on its right; four pegs remain on both sides. The registered LHD photograph moves the drivetrain behind the frame while preserving the camera and all other components.
+Drivetrain controls choose RHD or LHD. With two pegs, RHD places them on the bike's left side and LHD on its right; four pegs remain on both sides. The 3D model moves the drivetrain physically; Photo Studio uses the registered LHD photograph for its side-view composition.
 
-The full-bike preview supports pinch zoom, drag, wheel zoom, keyboard controls, reset and 2D image rotation. Four photographic scenes—Street, Skatepark, The workshop and Rooftop dusk—join the existing Studio. Scene changes are design changes and persist with Save to garage. View zoom, pan and rotation are temporary inspection controls. The bike is cut out around its frame, spokes and parts and grounded using contact shadows and restrained ambient tone.
+The camera button opens **Photo Studio**, which retains pinch zoom, drag, wheel zoom, keyboard controls, reset and 2D image rotation for inspecting the finished photograph. Four photographic scenes—Street, Skatepark, The workshop and Rooftop dusk—join the existing Studio. Scene changes are design changes and persist with Save to garage. View zoom, pan and rotation are temporary inspection controls. The bike is cut out around its frame, spokes and parts and grounded using contact shadows and restrained ambient tone.
 
 **Save photo** prepares a complete opaque 2048 × 1365 PNG of the bike and chosen background. It always exports the full composition, independent of inspection zoom and rotation. Supported phones open the device share sheet; on iPhone/iPad select Save Image. Other browsers download the PNG. Export failures offer retry or an explicit download fallback, and cancellation never claims that a photo was saved. This does not enable the separate training share card.
 
@@ -24,6 +26,7 @@ A closed inspiration section links to 13 verified real seat and component refere
 
 ## Integration
 
+- `bike-three.js` / `bike-three-model.js`: on-demand 3D renderer, original geometry, view controls, part picking, responsive framing and GPU cleanup. Third-party modules are pinned to Three.js 0.180.0 with its MIT license.
 - `bike-config.js`: shared version-3 defaults and strict normalization; old v1/v2 local fingerprints and pending-save recovery are normalized without overwriting saved records. Existing bikes default to RHD and Studio.
 - `bike-seat-designs.js`: 50 original patterns and verified source links.
 - `bike-renderer.js`: sanitised photographic SVG compositor, bounded public-image loading and keyboard-accessible part controls.
@@ -43,6 +46,8 @@ A closed inspiration section links to 13 verified real seat and component refere
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation
+
+The 2.14.103 viewer adds actual WebGL tests for a complete orbit, front/rear geometry and occlusion, touch pinch, raycast selection, drag suppression, all hardware options, resize framing, camera-preserving colour changes/undo, renderer disposal, failed dependencies and context-loss recovery. The layout suite covers 20 coach/rider × dark/light phone/tablet/desktop cases, closed/open sheets, scroll retention and directly reachable actions. Existing garage CRUD, legacy drafts and saving checks pass with the new dock.
 
 The 2.14.102 hardware fix passes 124 pixel/registration checks in `tests/bike-hardware-graphics.cjs`, including confirmed failures against the former stem-collar and pedal-spill rendering. It covers both stem/bar styles, both pedal materials and drivetrains, isolated recolouring, and connected transparent cutouts. Existing part/save compatibility, 164 photo-export assertions, smoke and startup/cache checks pass.
 

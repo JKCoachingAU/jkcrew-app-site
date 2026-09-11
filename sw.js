@@ -1,34 +1,35 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.102";
+const RELEASE_VERSION = "2.14.103";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.102",
-  "./app.js?v=2.14.102",
-  "./daily-completion.js?v=2.14.102",
-  "./daily-completion.css?v=2.14.102",
-  "./progress-sharing.js?v=2.14.102",
-  "./progress-sharing.css?v=2.14.102",
-  "./battle-rematches.js?v=2.14.102",
-  "./battle-rematches.css?v=2.14.102",
-  "./bike-config.js?v=2.14.102",
-  "./bike-seat-designs.js?v=2.14.102",
-  "./bike-photo-masks.js?v=2.14.102",
-  "./bike-renderer.js?v=2.14.102",
-  "./bike-preview.js?v=2.14.102",
-  "./bike-preview.css?v=2.14.102",
-  "./bike-garage.js?v=2.14.102",
-  "./bike-garage.css?v=2.14.102",
-  "./manifest.webmanifest?v=2.14.102",
+  "./styles.css?v=2.14.103",
+  "./app.js?v=2.14.103",
+  "./daily-completion.js?v=2.14.103",
+  "./daily-completion.css?v=2.14.103",
+  "./progress-sharing.js?v=2.14.103",
+  "./progress-sharing.css?v=2.14.103",
+  "./battle-rematches.js?v=2.14.103",
+  "./battle-rematches.css?v=2.14.103",
+  "./bike-config.js?v=2.14.103",
+  "./bike-seat-designs.js?v=2.14.103",
+  "./bike-photo-masks.js?v=2.14.103",
+  "./bike-renderer.js?v=2.14.103",
+  "./bike-preview.js?v=2.14.103",
+  "./bike-preview.css?v=2.14.103",
+  "./bike-three.js?v=2.14.103",
+  "./bike-garage.js?v=2.14.103",
+  "./bike-garage.css?v=2.14.103",
+  "./manifest.webmanifest?v=2.14.103",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.102",
+  "./icons/badges/prestige-01.png?v=2.14.103",
 ];
 
 // Public bike photos are fetched only when the garage needs them, then cached.
@@ -59,6 +60,15 @@ const BIKE_PHOTO_ASSETS = [
   "./images/bike-garage/scene-skatepark-v4-thumb.webp",
   "./images/bike-garage/scene-warehouse-v4-thumb.webp",
   "./images/bike-garage/scene-rooftop-v4-thumb.webp",
+];
+
+// 3D code is optional public content, cached after opening Bike Garage.
+const BIKE_3D_ASSETS = [
+  "./bike-three-model.js?v=2.14.103",
+  "./vendor/three.module.min.js",
+  "./vendor/three.core.min.js",
+  "./vendor/OrbitControls.js",
+  "./vendor/RoomEnvironment.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -119,7 +129,7 @@ self.addEventListener("fetch", (event) => {
 
   // Versioned public assets can be reused immediately, even on a weak signal.
   // Never cache API/account data or assets outside the explicit public lists.
-  const shellUrls = new Set([...APP_SHELL, ...BIKE_PHOTO_ASSETS].map(path => new URL(path, self.location.href).href));
+  const shellUrls = new Set([...APP_SHELL, ...BIKE_PHOTO_ASSETS, ...BIKE_3D_ASSETS].map(path => new URL(path, self.location.href).href));
   if (!shellUrls.has(requestUrl.href)) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
