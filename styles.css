@@ -11878,3 +11878,151 @@ body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-
     background: var(--event-roster-hover); border-color: var(--event-roster-focus); filter: none;
   }
 }
+
+/* Coach challenges: weekly target first, current battles second, history on demand. */
+#app .coach-shell #view .coach-challenges-page {
+  --challenge-surface: #111b26; --challenge-surface-soft: #0e1721;
+  --challenge-ink: #edf3fa; --challenge-muted: #a4b3c5; --challenge-edge: #334253;
+  --challenge-blue: #a0c1ff; --challenge-blue-soft: #1d2d47;
+  --challenge-violet: #c2afff; --challenge-violet-soft: #29223f;
+  --challenge-gold: #e8c577; --challenge-gold-soft: #252218; --challenge-gold-edge: #695937;
+  --text: var(--challenge-ink); --muted: var(--challenge-muted); --line: var(--challenge-edge);
+  --aqua: var(--challenge-blue); --aqua-soft: var(--challenge-blue-soft); --gold: var(--challenge-gold);
+  display: grid; gap: 30px; min-width: 0; color: var(--challenge-ink);
+}
+html[data-theme="light"] #app .coach-shell #view .coach-challenges-page {
+  --challenge-surface: #fff; --challenge-surface-soft: #f2f5f9;
+  --challenge-ink: #1c2b3d; --challenge-muted: #55667a; --challenge-edge: #c8d3df;
+  --challenge-blue: #345f9f; --challenge-blue-soft: #e8effb;
+  --challenge-violet: #65449d; --challenge-violet-soft: #efe9f7;
+  --challenge-gold: #795911; --challenge-gold-soft: #fbf6e9; --challenge-gold-edge: #cbb575;
+  background: #f3f6fa; border-radius: 18px; padding: 22px;
+}
+#app .coach-shell #view .coach-challenges-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+#app .coach-shell #view .coach-challenges-page .eyebrow { color: var(--challenge-muted); font: 700 10px/1.5 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+#app .coach-shell #view .coach-challenges-header h1 { margin: 7px 0 10px; font: 800 clamp(1.8rem, 3.4vw, 2.8rem)/1.05 var(--body); letter-spacing: -.035em; text-transform: none; font-style: normal; color: var(--challenge-ink); text-shadow: none; }
+#app .coach-shell #view .coach-challenges-header p { margin: 0; max-width: 620px; color: var(--challenge-muted); font: 500 14px/1.5 var(--body); }
+#app .coach-shell #view .coach-challenges-page #refresh-coach-battles { flex: 0 0 44px; width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 18px; border-radius: 11px; }
+#app .coach-shell #view .coach-challenges-page .coach-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+#app .coach-shell #view .coach-challenges-page .coach-section-heading > div { min-width: 0; }
+#app .coach-shell #view .coach-challenges-page .coach-section-heading h2 { margin: 0 0 5px; color: var(--challenge-ink); font: 750 21px/1.15 var(--body); letter-spacing: -.02em; }
+#app .coach-shell #view .coach-challenges-page .coach-section-heading p { margin: 0; color: var(--challenge-muted); font: 500 12px/1.45 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-section-heading > button { flex-shrink: 0; }
+#app .coach-shell #view .coach-challenges-page :is(.primary-btn, .secondary-btn) { min-height: 44px; border-radius: 10px; box-shadow: none; text-shadow: none; -webkit-text-fill-color: currentColor; }
+#app .coach-shell #view .coach-challenges-page .secondary-btn { color: var(--challenge-ink); background: var(--challenge-surface); border: 1px solid var(--challenge-edge); }
+#app .coach-shell #view .coach-challenges-page #coach-create-battle { background: #aacbff; color: #132940; border: 1px solid #bed8ff; }
+#app .coach-shell #view .coach-challenges-page #coach-create-weekly-challenge { color: var(--challenge-gold); background: var(--challenge-gold-soft); border-color: var(--challenge-gold-edge); }
+#app .coach-shell #view .coach-challenges-page :is(.coach-weekly-panel, .coach-current-battles) { min-width: 0; }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card { min-width: 0; padding: 22px; border: 1px solid var(--challenge-gold-edge); border-left: 3px solid var(--challenge-gold); border-radius: 15px; background: var(--challenge-gold-soft); box-shadow: none; }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card + .coach-weekly-card { margin-top: 12px; }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card-head > div { min-width: 0; }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card .eyebrow { color: var(--challenge-gold); }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card h3 { margin: 7px 0 0; color: var(--challenge-ink); font: 750 21px/1.2 var(--body); letter-spacing: -.015em; overflow-wrap: anywhere; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-reward { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 8px 11px; border: 1px solid var(--challenge-gold-edge); border-radius: 9px; background: color-mix(in srgb, var(--challenge-gold) 10%, transparent); color: var(--challenge-gold); font: 750 15px/1.1 var(--body); white-space: nowrap; }
+#app .coach-shell #view .coach-challenges-page .coach-weekly-card > p { margin: 14px 0 18px; color: var(--challenge-muted); font: 500 13px/1.6 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 18px 0; padding-top: 18px; border-top: 1px solid color-mix(in srgb, var(--challenge-gold-edge) 55%, transparent); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-meta > div { min-width: 0; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-meta dt { margin: 0 0 6px; color: var(--challenge-muted); font: 600 10px/1.4 var(--body); letter-spacing: .06em; text-transform: uppercase; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-meta dd { margin: 0; color: var(--challenge-ink); font: 650 13px/1.45 var(--body); overflow-wrap: anywhere; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-progress { display: grid; gap: 9px; margin-top: 18px; color: var(--challenge-muted); font: 600 12px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-progress progress { display: block; width: 100%; height: 7px; overflow: hidden; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--challenge-gold-edge) 40%, transparent); color: var(--challenge-gold); accent-color: var(--challenge-gold); appearance: none; -webkit-appearance: none; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-progress progress::-webkit-progress-bar { background: color-mix(in srgb, var(--challenge-gold-edge) 40%, transparent); border-radius: 6px; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-progress progress::-webkit-progress-value { background: var(--challenge-gold); border-radius: 6px; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-progress progress::-moz-progress-bar { background: var(--challenge-gold); border-radius: 6px; }
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-riders, .coach-challenge-upcoming) { margin-top: 18px; border-top: 1px solid color-mix(in srgb, var(--challenge-gold-edge) 55%, transparent); }
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-riders, .coach-challenge-upcoming) > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 12px 0 0; color: var(--challenge-ink); font: 650 12px/1.4 var(--body); list-style: none; cursor: pointer; }
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-riders, .coach-challenge-upcoming) > summary::-webkit-details-marker { display: none; }
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-riders, .coach-challenge-upcoming) > summary::after { content: "+"; font-size: 19px; color: var(--challenge-muted); }
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-riders, .coach-challenge-upcoming)[open] > summary::after { content: "−"; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-riders ul { display: grid; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-riders li { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--challenge-gold-edge) 35%, transparent); font: 600 13px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-riders li :is(small, span:last-child) { color: var(--challenge-muted); font-size: 11px; }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-upcoming { border-color: var(--challenge-edge); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-upcoming > .coach-weekly-card { margin-top: 14px; }
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-empty, .coach-challenge-error) { padding: 22px; border: 1px dashed var(--challenge-gold-edge); border-radius: 14px; background: var(--challenge-gold-soft); color: var(--challenge-muted); font: 500 13px/1.6 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-error { border-color: var(--challenge-edge); background: var(--challenge-surface-soft); }
+#app .coach-shell #view .coach-challenges-page .coach-challenge-empty strong { color: var(--challenge-ink); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-toolbar { align-items: end; gap: 16px; margin-bottom: 16px; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-filters { flex-wrap: wrap; gap: 6px; overflow: visible; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-filters button { min-height: 44px; padding: 10px 13px; border-radius: 10px; border: 1px solid var(--challenge-edge); background: var(--challenge-surface); color: var(--challenge-muted); font: 650 12px/1.3 var(--body); letter-spacing: 0; text-transform: none; box-shadow: none; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-filters button.active { background: var(--challenge-blue-soft); color: var(--challenge-blue); border-color: var(--challenge-blue); box-shadow: inset 0 -2px var(--challenge-blue); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-search { min-width: 0; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-search label { display: block; margin-bottom: 6px; color: var(--challenge-muted); font: 600 11px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-search input { min-height: 44px; padding: 11px 13px; background: var(--challenge-surface); color: var(--challenge-ink); border: 1px solid var(--challenge-edge); border-radius: 10px; font: 500 16px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-search input::placeholder { color: var(--challenge-muted); opacity: .8; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section { border: 1px solid var(--challenge-edge); border-radius: 15px; background: var(--challenge-surface-soft); box-shadow: none; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section::before { display: none; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section > .panel-head { padding: 15px 18px; border-bottom-color: var(--challenge-edge); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section .panel-title { color: var(--challenge-blue); font: 700 15px/1.35 var(--body); letter-spacing: 0; text-transform: none; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section.tone-gold .panel-title { color: var(--challenge-violet); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section .pill { color: var(--challenge-muted); background: var(--challenge-surface); border-color: var(--challenge-edge); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-card { background: var(--challenge-surface); border: 1px solid var(--challenge-edge); box-shadow: none; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-card.accepted { border-left: 3px solid var(--challenge-blue); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-card.pending { border-left: 3px solid var(--challenge-violet); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-card :is(.status-chip, .coach-battle-summary-format) { background: var(--challenge-blue-soft); color: var(--challenge-blue); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-card.pending .status-chip { background: var(--challenge-violet-soft); color: var(--challenge-violet); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-card :is(.coach-battle-summary-format) { background: transparent; font: 650 11px/1.4 var(--body); letter-spacing: 0; }
+#app .coach-shell #view .coach-challenges-page .coach-battle-summary-matchup strong { font: 700 14px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-battle-summary-matchup strong b { color: var(--challenge-muted); }
+#app .coach-shell #view .coach-challenges-page .coach-battle-summary-matchup small { font: 500 11px/1.5 var(--body); text-transform: none; }
+#app .coach-shell #view .coach-challenges-page .coach-battle-view-card[open] > .coach-battle-card-summary { background: var(--challenge-surface-soft); }
+#app .coach-shell #view .coach-challenges-page .coach-battle-card-summary .accordion-caret { min-width: 26px; border-color: var(--challenge-edge); color: var(--challenge-muted); background: transparent; }
+#app .coach-shell #view .coach-challenges-page .coach-battle-pending-actions { border-color: var(--challenge-edge); background: var(--challenge-violet-soft); }
+#app .coach-shell #view .coach-challenges-page .coach-battle-pending-actions strong { color: var(--challenge-violet); }
+#app .coach-shell #view .coach-challenges-page #coach-current-battles-empty { min-height: auto; padding: 24px; background: var(--challenge-surface-soft); border: 1px dashed var(--challenge-edge); border-radius: 14px; color: var(--challenge-muted); }
+#app .coach-shell #view .coach-challenges-page .coach-battle-history { border: 1px solid var(--challenge-edge); border-radius: 14px; background: var(--challenge-surface-soft); overflow: hidden; }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading { display: flex; align-items: center; gap: 14px; min-height: 80px; padding: 20px; color: var(--challenge-ink); list-style: none; cursor: pointer; }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading::-webkit-details-marker { display: none; }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading > span:first-child { min-width: 0; margin-right: auto; }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading strong { display: block; font: 650 15px/1.35 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading small { display: block; margin-top: 4px; color: var(--challenge-muted); font: 500 12px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading .pill { color: var(--challenge-muted); border-color: var(--challenge-edge); background: var(--challenge-surface); }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading .accordion-caret { color: var(--challenge-muted); border: 0; background: transparent; margin: 0; }
+#app .coach-shell #view .coach-challenges-page .coach-battle-history[open] > .coach-history-heading { border-bottom: 1px solid var(--challenge-edge); }
+#app .coach-shell #view .coach-challenges-page .coach-history-body { padding: 20px; }
+#app .coach-shell #view .coach-challenges-page .coach-history-body > h3 { margin: 24px 0 12px; color: var(--challenge-muted); font: 650 13px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-history-body .battle-hq-search input { width: min(100%, 350px); }
+#app .coach-shell #view .coach-challenges-page .coach-history-body .battle-hq-card { border-left: 1px solid var(--challenge-edge); }
+#app .coach-shell #view .coach-challenges-page .coach-history-body .status-chip { color: var(--challenge-muted); background: var(--challenge-surface-soft); }
+#app .coach-shell #view .coach-challenges-page .coach-battle-archive { margin: 20px 0 0; padding: 16px; border: 1px solid var(--challenge-edge); border-radius: 12px; background: var(--challenge-surface); box-shadow: none; }
+#app .coach-shell #view .coach-challenges-page .coach-battle-archive::before { display: none; }
+#app .coach-shell #view .coach-challenges-page .coach-battle-archive > summary { min-height: 44px; color: var(--challenge-muted); }
+#app .coach-shell #view .coach-challenges-page :is(button, summary, input):focus-visible { outline: 3px solid var(--challenge-blue); outline-offset: 3px; }
+@media (max-width: 760px) {
+  #app .coach-shell #view .coach-challenges-page .battle-hq-toolbar { flex-direction: column; align-items: stretch; }
+  #app .coach-shell #view .coach-challenges-page .battle-hq-search input { width: 100%; }
+}
+@media (max-width: 540px) {
+  #app .coach-shell #view .coach-challenges-page { gap: 26px; }
+  html[data-theme="light"] #app .coach-shell #view .coach-challenges-page { padding: 16px; margin-inline: -6px; }
+  #app .coach-shell #view .coach-challenges-header { gap: 12px; }
+  #app .coach-shell #view .coach-challenges-header h1 { font-size: 1.75rem; }
+  #app .coach-shell #view .coach-challenges-header p { font-size: 12px; }
+  #app .coach-shell #view .coach-challenges-page .coach-section-heading { flex-wrap: wrap; gap: 12px; }
+  #app .coach-shell #view .coach-challenges-page .coach-section-heading h2 { font-size: 19px; }
+  #app .coach-shell #view .coach-challenges-page .coach-weekly-card { padding: 17px; }
+  #app .coach-shell #view .coach-challenges-page .coach-weekly-card-head { gap: 12px; flex-wrap: wrap; }
+  #app .coach-shell #view .coach-challenges-page .coach-weekly-card-head > div { flex: 1 1 150px; }
+  #app .coach-shell #view .coach-challenges-page .coach-weekly-card h3 { font-size: 18px; }
+  #app .coach-shell #view .coach-challenges-page .coach-challenge-meta { grid-template-columns: minmax(0, 1fr); gap: 13px; }
+  #app .coach-shell #view .coach-challenges-page .coach-challenge-meta > div { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: baseline; gap: 12px; }
+  #app .coach-shell #view .coach-challenges-page .coach-challenge-meta dt { margin: 0; }
+  #app .coach-shell #view .coach-challenges-page .battle-hq-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #app .coach-shell #view .coach-challenges-page .battle-hq-filters button { padding-inline: 8px; font-size: 11px; white-space: normal; }
+  #app .coach-shell #view .coach-challenges-page .battle-hq-filters button b { margin-left: 3px; }
+  #app .coach-shell #view .coach-challenges-page .coach-history-heading { padding: 17px; gap: 10px; }
+  #app .coach-shell #view .coach-challenges-page .coach-history-body { padding: 12px; }
+  #app .coach-shell #view .coach-challenges-page .coach-challenge-riders li { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
+@media (hover: hover) and (pointer: fine) {
+  #app .coach-shell #view .coach-challenges-page .secondary-btn:not(:disabled):hover { background: var(--challenge-surface-soft); border-color: var(--challenge-blue); filter: none; }
+  #app .coach-shell #view .coach-challenges-page #coach-create-weekly-challenge:not(:disabled):hover { background: color-mix(in srgb, var(--challenge-gold) 15%, var(--challenge-gold-soft)); border-color: var(--challenge-gold); }
+  #app .coach-shell #view .coach-challenges-page #coach-create-battle:not(:disabled):hover { background: #bed7ff; filter: none; }
+}
+#app .coach-shell #view .coach-challenges-page :is(.coach-challenge-riders, .coach-challenge-upcoming) > summary .accordion-caret { display: none; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-search > span:not(.sr-only) { display: block; margin-bottom: 6px; color: var(--challenge-muted); font: 600 11px/1.4 var(--body); }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section > .panel-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+#app .coach-shell #view .coach-challenges-page .battle-hq-section .panel-meta { margin-top: 4px; color: var(--challenge-muted); font: 500 12px/1.4 var(--body); letter-spacing: 0; text-transform: none; }
+#app .coach-shell #view .coach-challenges-page :is(.battle-hq-section, .coach-history-heading, .coach-battle-archive) .pill { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 4px 7px; border: 1px solid var(--challenge-edge); border-radius: 8px; font: 650 12px/1.2 var(--body); }
+#app .coach-shell #view .coach-challenges-page .coach-history-heading .accordion-caret { min-width: 18px; font-size: 16px; }

@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.87";
+const version = "2.14.88";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1047,14 +1047,15 @@ assert(battleMigration.includes("unnest(p_team_two)"), "The database must save e
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-battle"), "Coach battle oversight needs a create-battle action");
 assert(functionBody("renderCoachBattleViewer").includes("coach-create-weekly-challenge"), "Coaches need a weekly challenge builder");
 const coachBattleViewerBody = functionBody("renderCoachBattleViewer");
-assert(coachBattleViewerBody.includes("Battle <span>HQ</span>"), "Coach Challenges must use the approved Battle HQ hero");
-assert(coachBattleViewerBody.includes("battle-hq-metrics"), "Battle HQ must expose live operational metrics");
+assert(coachBattleViewerBody.includes("Battles &amp; Challenges"), "Coach Challenges must identify both training challenges and battles");
+assert(coachBattleViewerBody.includes("coachWeeklyChallengeHtml(challengeSummary)") && coachBattleViewerBody.includes("riders competing"), "Coaches need weekly challenge progress alongside current battle counts");
 assert(coachBattleViewerBody.includes("data-battle-hq-filter"), "Battle HQ must provide live status filters");
 assert(coachBattleViewerBody.includes("battle-hq-search"), "Battle HQ must provide rider search");
 assert(coachBattleViewerBody.includes("applyBattleFilters"), "Battle HQ filters and rider search must update the rendered cards");
 assert(functionBody("coachBattleCardHtml").includes("data-battle-hq-riders"), "Battle cards must expose searchable rider names");
-assert(css.includes(".battle-hq-hero") && css.includes(".battle-hq-metrics"), "Battle HQ must ship its approved neon hero and metric styling");
-assert(css.includes(".battle-hq-section.tone-aqua") && css.includes(".battle-hq-section.tone-gold") && css.includes(".battle-hq-section.tone-violet"), "Battle HQ sections must use distinct live, waiting and finished colour treatments");
+assert(css.includes(".coach-challenges-page") && css.includes(".coach-weekly-card") && css.includes(".coach-battle-history"), "Coach Challenges needs distinct weekly, current battle and history sections");
+assert(coachBattleViewerBody.includes('<details id="coach-battle-history" class="coach-battle-history">'), "Finished battle history must start collapsed");
+assert(!functionBody("getCoachWeeklyChallenges").includes(".rpc("), "Coach challenge overview must read recorded results without invoking award RPCs");
 assert(riderChallengeView.includes("rider-challenges-head") && riderChallengeView.includes("rider-battle-arena"), "Student Challenges must use the colourful redesign surfaces");
 assert(css.includes(".rider-challenges-head") && css.includes(".rider-battle-arena .battle-card.completed"), "Student Challenges must ship distinct hero, challenge and battle colours");
 assert(functionBody("weeklyBattleCardHtml").includes("data-forfeit-battle"), "Live rider battles need a forfeit action");
