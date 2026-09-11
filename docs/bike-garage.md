@@ -1,4 +1,4 @@
-# JKCREW Bike Garage — 2.14.101
+# JKCREW Bike Garage — 2.14.102
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses original generated studio photographs with masked material recolouring, instant part/colour changes and a full-bike preview.
 
@@ -37,12 +37,14 @@ A closed inspiration section links to 13 verified real seat and component refere
 - `supabase/migrations/20260911111023_allow_solid_white_bike_tyres.sql`: permits the new solid white tyre choice without changing saved builds, revisions or access permissions.
 - `supabase/migrations/20260911122927_support_bike_garage_parts_v2.sql`: accepts strict v2 configurations alongside unchanged legacy v1 configurations. Existing rows, ownership and revision protection are retained.
 - `supabase/migrations/20260911141311_support_bike_garage_drive_brakes_scenes_v3.sql`: accepts strict v3 drivetrain, independent brake and background fields alongside unchanged v1/v2 validation. Changes only the private validator; no saved rows, revisions, RPCs, RLS policies or grants are rewritten. Production verification accepted all 40 drivetrain/brake/background combinations and found zero invalid existing builds; RLS remains enabled.
-- `studio-hardware-v2.webp` and `studio-metal-v2.webp` supply aligned platform pedals, stem variants, pegs and brake hardware. All public bike photos load only on demand and are cached independently of private garage data.
+- `studio-hardware-v2.webp` supplies pegs and brake hardware. The registered `studio-top-plastic-v5.webp` and `studio-front-metal-v5.webp` replace the stem junction and level plastic/metal pedal platforms. The matching `studio-four-top-v5.webp` and `studio-four-front-v5.webp` plates preserve the four-piece bar junction. Independently traced component masks avoid obsolete clamp collars and paint spilling beyond the pedal. All public bike photos load only on demand and are cached independently of private garage data.
 - Six `studio-*-v3.webp` material photographs add tube-following chrome and jet-fuel reflections, including four-piece bars and both stem shapes. Raw metal remains more diffuse than chrome; paint, rubber and all 50 seat patterns use the original photographed surface shading. Each material asset loads only when required.
 - Three `studio-lhd*-v4.webp` references preserve far-side drivetrain geometry for white/paint, chrome and jet-fuel. Four `scene-*-v4.webp` images and their thumbnails load on demand. These optional photos are excluded from the installation shell to keep sign-in and updates fast.
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation
+
+The 2.14.102 hardware fix passes 124 pixel/registration checks in `tests/bike-hardware-graphics.cjs`, including confirmed failures against the former stem-collar and pedal-spill rendering. It covers both stem/bar styles, both pedal materials and drivetrains, isolated recolouring, and connected transparent cutouts. Existing part/save compatibility, 164 photo-export assertions, smoke and startup/cache checks pass.
 
 `tests/bike-garage-db.cjs` covers CRUD, configuration validation, actual authenticated/anonymous roles, owner isolation, protected columns, revision conflicts and delete/recreate behaviour. Additional isolated PostgreSQL tests exercised five overlapping real-connection races: create, edit, remove-before-save, recreate and save-before-remove. Existing profiles and scoring tables are unchanged.
 
