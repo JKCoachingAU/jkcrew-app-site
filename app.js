@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.84";
+const RELEASE_VERSION = "2.14.85";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.84" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.85" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -3436,15 +3436,26 @@ function assignmentStatus(assignment) {
   return isAssignmentComplete(assignment) ? "Done this week" : "To do this week";
 }
 
+function splitLineTricks(value = "") {
+  // A space on either side marks a separator; preserve trick names such as
+  // X-UP and No-footer. Old sheets also used pipes and ASCII arrows.
+  return String(value).split(/\s*(?:→|->|\|)\s*|\s+-\s*|\s*-\s+/)
+    .map((step) => step.trim()).filter(Boolean);
+}
+
 function assignmentPresentation(assignment = {}) {
   const title = String(assignment.trick_name || "").trim();
   const notes = String(assignment.notes || "").trim();
-  if (assignment.category !== "lines" || !notes || title.includes("→")) return { title, notes };
-  const steps = [title, ...notes.split(/\s+-\s+/)]
-    .map((step) => String(step || "").trim())
-    .filter(Boolean);
-  if (steps.length < 3 || steps.length > 4) return { title, notes };
-  return { title: steps.join(" → "), notes: "" };
+  if (assignment.category !== "lines") return { title, notes };
+  const titleSteps = splitLineTricks(title);
+  // An explicit arrow/pipe sequence is already the full line; its notes are
+  // coaching advice. Normalize mixed separators without absorbing that advice.
+  if (/→|->|\|/.test(title)) return { title: titleSteps.join(" → "), notes };
+  const noteSteps = splitLineTricks(notes);
+  if (titleSteps.length < 3 && notes && noteSteps.length >= 2) {
+    return { title: [...titleSteps, ...noteSteps].join(" → "), notes: "" };
+  }
+  return { title: titleSteps.length >= 3 ? titleSteps.join(" → ") : title, notes };
 }
 
 function dailyVenues(assignments = []) {
@@ -5014,24 +5025,10 @@ function coachManualTricktionaryPanel(athlete = {}) {
 }
 
 function tricktionaryLineComponents(assignment = {}) {
-  const title = String(assignment.trick_name || "").trim();
   if (assignment.category !== "lines") return [assignment];
-  let steps = [];
-  if (/→|->|\|/.test(title)) {
-    steps = title.split(/\s*(?:→|->|\|)\s*/);
-  } else {
-    const notes = String(assignment.notes || "").trim();
-    // Older sheets saved the first trick as the title and the remaining
-    // sequence as notes. Require an explicit 3+ step sequence; ordinary
-    // coaching prose is not another trick. A space on either side of a dash
-    // accepts older "BOX -NO FOOT" input while preserving names such as X-UP.
-    const separator = /\s+-\s*|\s*-\s+/;
-    const titleSteps = title.split(separator);
-    const noteSteps = notes.split(/\s*(?:→|->|\|)\s*|\s+-\s*|\s*-\s+/);
-    if (titleSteps.length >= 3) steps = titleSteps;
-    else if (notes && noteSteps.length >= 2 && titleSteps.length + noteSteps.length >= 3) steps = [...titleSteps, ...noteSteps];
-  }
-  steps = steps.map((step) => step.trim()).filter(Boolean);
+  const presentation = assignmentPresentation(assignment);
+  if (!presentation.title.includes("→")) return [assignment];
+  const steps = splitLineTricks(presentation.title);
   if (steps.length < 2) return [assignment];
   return steps.map((trick_name) => ({ ...assignment, trick_name, notes: "" }));
 }

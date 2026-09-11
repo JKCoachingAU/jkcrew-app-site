@@ -20,7 +20,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext([
   'normalizeTrickKey', 'safeTricktionaryCategory', 'manualTricktionary', 'tricktionaryMeta',
-  'resolveTricktionaryAlias', 'tricktionaryCategoryFromText', 'tricktionaryLineComponents',
+  'resolveTricktionaryAlias', 'tricktionaryCategoryFromText', 'splitLineTricks', 'assignmentPresentation', 'tricktionaryLineComponents',
   'tricktionaryLandingDate', 'landedTricktionaryEntries', 'getTricktionaryPagedRows', 'getTricktionaryData',
 ].map(functionCode).join('\n'), context);
 const aggregate = data => Array.from(context.landedTricktionaryEntries({ profile: { country_code: 'AU' }, ...data }));

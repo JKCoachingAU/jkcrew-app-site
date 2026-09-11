@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.84";
+const version = "2.14.85";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -316,7 +316,7 @@ assert(functionBody("recordPercentageAttempt").includes("sessionOpenAssignmentSe
 const navigateBody = functionBody("navigate");
 assert(navigateBody.includes("resetPageExpansions(options)"), "Every fresh navigation must reset accordion and training-tab layout for all roles");
 assert(!navigateBody.includes('view === "session" && previousView !== "session"'), "Re-tapping Session must restore the closed layout");
-const assignmentPresentationForTest = new Function(`${functionBody("assignmentPresentation")}; return assignmentPresentation;`)();
+const assignmentPresentationForTest = new Function(`${functionBody("splitLineTricks")}\n${functionBody("assignmentPresentation")}; return assignmentPresentation;`)();
 assert.deepEqual(
   assignmentPresentationForTest({ category: "lines", trick_name: "Manual", notes: "Barspin - 180" }),
   { title: "Manual → Barspin → 180", notes: "" },
@@ -718,6 +718,8 @@ const tricktionaryAggregationFactory = new Function(`
   ${functionBody("tricktionaryMeta")}
   ${functionBody("resolveTricktionaryAlias")}
   ${functionBody("tricktionaryCategoryFromText")}
+  ${functionBody("splitLineTricks")}
+  ${functionBody("assignmentPresentation")}
   ${functionBody("tricktionaryLineComponents")}
   ${functionBody("tricktionaryLandingDate")}
   ${functionBody("landedTricktionaryEntries")}

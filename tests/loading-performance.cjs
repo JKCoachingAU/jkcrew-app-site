@@ -41,14 +41,14 @@ async function workerChecks() {
  const worker=vm.createContext({self:{location:{origin:'https://jkcrew.test',href:origin+'sw.js'},addEventListener:(n,fn)=>handlers[n]=fn},caches:{open:async()=>cache},URL,Set,Promise,fetch:r=>{networkCalls.push(r);return network.promise}});
  vm.runInContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),worker);
  const dispatch=(url,mode='cors')=>{let result;const waits=[];handlers.fetch({request:{url,method:'GET',mode},respondWith:p=>result=p,waitUntil:p=>waits.push(p)});return {result,waits}};
- stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.84','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
+ stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.85','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
  const html=dispatch(origin+'?push=contests','navigate');assert.equal(await html.result,'cached-shell','Navigation must finish while network remains unresolved');
- const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.84').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
+ const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.85').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
  assert.equal(dispatch('https://soanwttlorlgdfrzbvtp.supabase.co/rest/v1/run_plans').result,undefined);
  assert.equal(dispatch(origin+'private-data.json').result,undefined);
  assert.equal(dispatch(origin+'riley-test/','navigate').result,undefined,'Nested app navigation must not receive the root app shell');
  network.reject(new Error('offline'));await Promise.all(html.waits);
- network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.84');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.84'));
+ network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.85');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.85'));
 }
 async function browserChecks() {
  const server=http.createServer((req,res)=>{let file=decodeURIComponent(new URL(req.url,'http://test').pathname);if(file==='/')file='/index.html';const filename=path.join(root,file);if(!filename.startsWith(root)||!fs.existsSync(filename)){res.writeHead(404);return res.end()};const type=file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':'application/octet-stream';res.setHeader('content-type',type);res.end(fs.readFileSync(filename))});
