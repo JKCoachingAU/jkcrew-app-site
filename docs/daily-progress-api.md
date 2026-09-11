@@ -1,6 +1,6 @@
-# Daily Tricks / Today Progress review API
+# Release 2.14.93 — Daily Tricks / Today Progress API
 
-Release 2.14.93 API. The migration has been applied to production as authorized; share cards are excluded from the client release.
+The Daily-confirmation, battle-options and additive `20260911100447_make_daily_standings_read_only.sql` migrations are live as authorized. Final validation passed, including production coach/rider summary reads inside a read-only transaction. Share cards are disabled in the 2.14.93 client: it exposes no new Share result, Share / Save Image or preview/export path.
 
 All RPC names live in public, accept authenticated rider or their linked coach/admin. Today read also allows linked parent. Snake_case JSON. Each mutation is one database transaction.
 
@@ -26,10 +26,10 @@ Completion points preserve current +1 list, +1 under 20 minutes, +1 first confir
 ## get_today_training_progress
 Arguments: p_athlete_id uuid.
 Returns {athlete_id,rider_name,local_date,timezone,daily_results:[],completed_categories:[{category,items:[{id,trick_name,completed_at,venue}]}],today_points,today_xp,weekly_score,rank_number,improvements:[],next_goal,no_data}.
-Local day uses existing rider-country timezone mapping (same as scoring), not viewing coach timezone. Daily results include confirmed results and labeled legacy saved times; read never finalizes unfinished ticks. Activity deduplicated by assignment/source; tombstones/corrections excluded. Points/XP use persisted award-ledger timestamps only (and labelled attributable score adjustments), not inferred session totals; weekly score from existing authoritative leaderboard. improvements only supported saved PB results, next_goal from remaining assigned training. No total duration/session-end.
+Local day uses existing rider-country timezone mapping (same as scoring), not viewing coach timezone. Daily results include confirmed results and labeled legacy saved times; read never finalizes unfinished ticks. Activity deduplicated by assignment/source; tombstones/corrections excluded. Points/XP use persisted award-ledger timestamps only (and labelled attributable score adjustments), not inferred session totals; weekly score/rank use the pure private standings helper described below, preserving the existing leaderboard’s exact scoring and ranking. improvements only supported saved PB results, next_goal from remaining assigned training. No total duration/session-end.
 
 
-## Review decisions and edge cases
+## Release decisions and edge cases
 
 - start_daily_tricks(p_venue text default '') is rider-only and returns the training_sessions row, now with nullable daily_venue metadata. A fresh local day or a different venue after a saved Daily result creates a new row; old rows/results stay intact and ended_at is never forced. Same venue/day reuses its row. An unfinished other-venue timer must be completed at that venue first.
 - New landed Daily actions require an active rider-local-day timer; corrections remain possible. Every Daily landing must have durable evidence at/after that timer's start for a new time/PB. Earlier ticked lists stay saved but must be unticked and completed again to record a valid timed result. No fabricated zero-second result or untimed Daily award is generated from pre-ticked lists.
@@ -39,9 +39,12 @@ Local day uses existing rider-country timezone mapping (same as scoring), not vi
 - Client tap timestamps are trusted only within 30 seconds before server arrival; clock skew or longer offline delivery uses server arrival. The confirmation popup delay is always excluded.
 - Existing global profile PBs and legacy saved results remain intact. Existing authorized linked-coach manual PB edits still work. A direct old-app write to Daily timing/PB columns is rejected; confirm_daily_finish is the athlete's authoritative save path.
 - The rider-to-coach Daily-completed push is queued only after a successful saved confirmation with the existing dedupe key and notification preferences. No notifications were sent by this review work.
-- Today category items and next_goal also include notes for presentation of legacy Lines; the private summary may reconstruct the line, while the share image uses only trick_name and never text derived from notes.
+- Today category items and next_goal also include notes for private presentation of legacy Lines. Sharing is disabled in this release. The retained, unreleased sharing code uses only trick_name and never text derived from notes.
+- `20260911100447_make_daily_standings_read_only.sql` changes only the standings lookup in `confirm_daily_finish` and `get_today_training_progress`. Its private stable helper preserves weekly awards, legacy-session exclusion, adjustments, event eligibility, country boundaries, ghost visibility and `RANK` ordering exactly. It avoids the legacy leaderboard’s badge-sync side effect and has no direct authenticated/anonymous execute grant. Existing reward logic and the global leaderboard remain unchanged.
 
 ## Local validation
+
+`tests/daily-readonly-standings-db.cjs` checks exact score/rank parity and installs a failing badge-write sentinel: the old lookup fails, while Today and confirmed Daily results succeed after the additive fix. It also verifies Today inside a read-only transaction and the private helper’s access restrictions. Run with the same `JKCREW_PGLITE_PATH` setting below.
 
 Run: JKCREW_PGLITE_PATH=/path/to/@electric-sql/pglite node tests/daily-completion-db.cjs
 The test starts from read-only retrieved production function definitions and reproduces the old auto-awards before applying this isolated migration. It checks actual transaction rollback, repeat coach/rider confirms, corrections, timing/PB compatibility, per-venue scoring, first-confirmed group awards, Daily-only XP/push behavior, untouched untimed scoring, day boundaries and authorization. The PGlite harness serializes requests. Separately, tests/daily-concurrency-postgres.cjs passed on PostgreSQL 17.11 with nine independent psql connections and verified lock waits. It covers duplicate coach/rider confirmations, competing group bonuses and both correction/confirmation orderings. That test database was removed and its temporary server stopped. No real rider data was changed by testing.

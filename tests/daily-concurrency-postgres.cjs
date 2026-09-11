@@ -87,6 +87,7 @@ async function main() {
   }
   batch('create trigger tricktionary_progress_history after insert or update of progress_date,completed_at,streak_count on assignment_progress for each row execute function private.sync_tricktionary_progress_history();');
   batch(fs.readFileSync(path.join(root, 'supabase/migrations/20260911085353_confirm_daily_tricks_and_today_progress.sql'), 'utf8'));
+  batch(fs.readFileSync(path.join(root, 'supabase/migrations/20260911100447_make_daily_standings_read_only.sql'), 'utf8'));
   control = new Connection('control');
   const version = await control.query('select version();');
   batch(`insert into profiles(id,role,display_name) values('${id(1)}','coach','Concurrency Coach');`);
