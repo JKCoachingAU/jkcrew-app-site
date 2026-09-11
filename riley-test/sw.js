@@ -1,20 +1,20 @@
 const CACHE_PREFIX = "jkcrew-riley-shell-";
-const RELEASE_VERSION = "2.14.85";
+const RELEASE_VERSION = "2.14.86";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.85",
-  "./app.js?v=2.14.85",
-  "./manifest.webmanifest?v=2.14.85",
+  "./styles.css?v=2.14.86",
+  "./app.js?v=2.14.86",
+  "./manifest.webmanifest?v=2.14.86",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.85",
+  "./icons/badges/prestige-01.png?v=2.14.86",
 ];
 
 self.addEventListener("install", (event) => {

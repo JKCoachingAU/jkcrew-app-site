@@ -11840,3 +11840,41 @@ html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-l
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-percentage { --viewer-list-tone: #7642b7; }
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-foam_pit { --viewer-list-tone: #006e9e; }
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-bonus { --viewer-list-tone: #86610a; }
+
+/* Event roster: neutral surfaces keep repeated rider actions quiet. */
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-event-modal:has(> .contest-attendee-section) {
+  --event-roster-page: #101216; --event-roster-card: #181b21;
+  --event-roster-edge: #333843; --event-roster-ink: #eef1f6; --event-roster-muted: #a5adb9;
+  --event-roster-action: #252a33; --event-roster-action-edge: #49515e;
+  --event-roster-together: #1d2430; --event-roster-together-ink: #c0cfeb;
+  --event-roster-focus: #adc8f4; --event-roster-hover: #303846;
+  background: var(--event-roster-page); border-color: var(--event-roster-edge);
+}
+html[data-theme="light"] body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-event-modal:has(> .contest-attendee-section) {
+  --event-roster-page: #f4f5f7; --event-roster-card: #fff;
+  --event-roster-edge: #d5d9e1; --event-roster-ink: #1e2938; --event-roster-muted: #616d7c;
+  --event-roster-action: #e9edf2; --event-roster-action-edge: #9aa5b4;
+  --event-roster-together: #edf1f8; --event-roster-together-ink: #315782;
+  --event-roster-focus: #315da0; --event-roster-hover: #dce3ed;
+}
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-section { color: var(--event-roster-ink); }
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-section .panel-meta,
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-copy small { color: var(--event-roster-muted); }
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-row {
+  padding: 14px; gap: 12px; background: var(--event-roster-card); border-color: var(--event-roster-edge);
+}
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-section .contest-rider-run-button {
+  background: var(--event-roster-action); color: var(--event-roster-ink);
+  border-color: var(--event-roster-action-edge); box-shadow: none; -webkit-text-fill-color: currentColor;
+}
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-section .contest-rider-run-button.together {
+  background: var(--event-roster-together); color: var(--event-roster-together-ink); border-color: var(--event-roster-action-edge);
+}
+body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-section .contest-rider-run-button:focus-visible {
+  outline: 3px solid var(--event-roster-focus); outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  body:has(#app .app-shell.coach-shell) #contest-event-backdrop .contest-attendee-section .contest-rider-run-button:not(:disabled):hover {
+    background: var(--event-roster-hover); border-color: var(--event-roster-focus); filter: none;
+  }
+}
