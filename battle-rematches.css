@@ -1,0 +1,11 @@
+.battle-rematch-action { display:inline-flex; align-items:center; gap:.45rem; margin-top:.65rem; }
+.battle-rematch-action > span { font-size:1.35em; line-height:1; }
+.battle-rematch-review { border:1px solid var(--border, #2b4548); border-left:3px solid #f5c44b; border-radius:14px; padding:14px 16px; margin:0 0 18px; background:rgba(245,196,75,.05); color:var(--text,#f2f6f6); }
+.battle-rematch-review > strong { font-size:1.15rem; }
+.battle-rematch-review p { margin:.4rem 0 0; font-size:.92rem; line-height:1.5; }
+.battle-rematch-review ul { margin:.65rem 0 0; padding-left:1.2rem; color:#efb88a; }
+.battle-suggest-trigger { margin-top:10px; }
+.battle-suggestion:not(:empty) { padding:14px 16px; margin:12px 0; border-radius:14px; background:rgba(148,166,194,.07); border:1px solid var(--border,#2b4548); line-height:1.5; }
+.battle-suggestion strong { display:block; font-size:1.1rem; }
+.battle-suggestion p { margin:.35rem 0 .7rem; }
+html[data-theme="light"] .battle-rematch-review ul { color:#8c4d1a; }

@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.92";
+const RELEASE_VERSION = "2.14.93";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -421,7 +421,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.92" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.93" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1287,6 +1287,8 @@ async function handleSession(session) {
   document.querySelector("#live-run-invitation")?.remove();
   const nextUserId = session?.user?.id || "";
   if ((state.user?.id || "") !== nextUserId) {
+    dismissDailyFinishForNavigation();
+    closeTrainingProgressViews();
     state.runBuilder = null;
     runUndoStack = []; runRedoStack = [];
     closeAthleteReviewViewer();
@@ -2125,6 +2127,7 @@ function resetPageExpansions({ expandedNavGroup = "" } = {}) {
 async function navigate(view, options = {}) {
   const previousView = state.view;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
+  if (view !== previousView) dismissDailyFinishForNavigation();
   if (view === previousView && view === "videoReviews" && (state.videoReviewRecording || state.videoReviewRecordingStarting)) return;
   if (previousView === "videoReviews" && view !== "videoReviews") {
     const hasActiveCapture = Boolean(state.videoReviewRecording || state.videoReviewRecordingStarting);
@@ -2441,6 +2444,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
         await renderCrew();
       } else if (state.view === "student" && state.selectedAthleteId) await renderStudentProfile();
       else if (state.view === "publicProfile" && state.publicAthleteId) await renderPublicAthleteProfile();
+      refreshOpenTrainingProgress();
     } catch (error) {
       console.warn("Realtime refresh failed", reason, error);
     }
@@ -3677,28 +3681,31 @@ async function refreshParkKingCard(id, venue = "", compact = true, force = false
 
 function sessionStatBarHtml({ points = 0, percent = 0, rank = 0 } = {}) {
   return `<section class="session-stat-bar panel">
-    <article><span>Total points</span><strong>${Number(points || 0)}</strong></article>
+    <article><span>Weekly score</span><strong>${Number(points || 0)}</strong></article>
     <article><span>Sheets completed</span><strong>${Number(percent || 0)}%</strong></article>
     <article><span>World ranking</span><strong>${rank ? `#${rank}` : "-"}</strong></article>
   </section>`;
 }
 
 function latestDailyTime(activeTraining = null, latestTraining = null) {
-  const source = activeTraining?.daily_completed_seconds ? activeTraining : latestTraining;
-  return source?.daily_completed_seconds ? formatPbTime(source.daily_completed_seconds) : "Not finished today";
+  const source = activeTraining?.daily_completed_seconds != null ? activeTraining : latestTraining;
+  return source?.daily_completed_seconds != null ? formatTime(source.daily_completed_seconds) : "Not finished today";
 }
 
 function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTraining = null, latestTraining = null) {
+  // A saved Daily time belongs to its venue. Starting another list leaves it saved.
+  if (activeTraining?.daily_completed_seconds != null && (activeTraining.daily_venue == null || venueIdentityKey(dailyRpcVenue(activeTraining.daily_venue)) !== venueIdentityKey(dailyRpcVenue(selectedVenue)))) activeTraining = null;
   const venues = dailyVenues(assignments);
   const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === selectedVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
   const selectedDaily = assignmentsForVenue(assignments.filter((assignment) => assignment.category === "daily"), selectedVenue);
   const dailyDone = selectedDaily.filter(isAssignmentComplete).length;
+  const dailySaved = activeTraining?.daily_completed_seconds != null;
   const timerHtml = activeTraining
-    ? `<div class="hub-timer"><span>Live timer</span><strong id="trick-timer">${formatTime(Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000))}</strong></div>`
+    ? `<div class="hub-timer"><span>${dailySaved ? "Daily time saved" : "Daily timer"}</span><strong id="trick-timer">${formatTime(activeTraining.daily_completed_seconds ?? Math.max(0, Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000)))}</strong></div>`
     : `<div class="hub-timer ready"><span>Ready</span><strong>GO</strong></div>`;
   const actionHtml = activeTraining
-    ? `<button class="danger-btn start-session-btn" id="end-session" type="button">End session</button>`
-    : `<button class="primary-btn start-session-btn" id="create-session" type="button">Start session</button>`;
+    ? `<button class="secondary-btn start-session-btn" id="finish-daily-tricks" type="button" ${!dailySaved && (!selectedDaily.length || dailyDone < selectedDaily.length) ? "disabled" : ""}>${dailySaved ? "View Daily result" : "Finish Daily Tricks"}</button>`
+    : `<button class="primary-btn start-session-btn" id="create-session" type="button">Start Daily Tricks</button>`;
   return `<section class="panel daily-session-hub">
     <div class="daily-hub-main">
       <div>
@@ -3711,7 +3718,7 @@ function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTrainin
       <div class="field"><label for="session-venue">Venue</label><select id="session-venue">${options}</select></div>
       <div class="session-pb-chip"><span>Daily PB</span><strong>${formatPbTime(state.profile?.daily_pb_seconds)}</strong></div>
       <div class="session-pb-chip"><span>Today's time</span><strong>${latestDailyTime(activeTraining, latestTraining)}</strong></div>
-      ${actionHtml}
+      <div class="daily-hub-actions">${actionHtml}${trainingProgressButtonHtml(state.user.id, state.profile?.display_name || "Rider")}</div>
     </div>
   </section>`;
 }
@@ -6019,6 +6026,7 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
     <div class="battle-status"><span class="status-chip">${escapeHtml(battle.status)}</span><small>${escapeHtml(statusCopy)}</small></div>
     ${pendingActions}
     ${forfeitAction}
+    ${typeof JKCrewBattleRematches !== "undefined" ? JKCrewBattleRematches.actionHtml(battle, state.user.id) : ""}
   </article>`;
 }
 
@@ -6085,6 +6093,10 @@ async function renderChallenges() {
   document.querySelectorAll("[data-battle-response]").forEach((button) => button.addEventListener("click", respondWeeklyRiderBattle));
   document.querySelectorAll("[data-forfeit-battle]").forEach((button) => button.addEventListener("click", forfeitWeeklyRiderBattle));
   document.querySelector("#open-battle-rules")?.addEventListener("click", showBattleRulesModal);
+  if (typeof JKCrewBattleRematches !== "undefined") JKCrewBattleRematches.bindRider({
+    view: document.querySelector("#view"), battles, viewerId: state.user.id, currentViewer: () => state.user?.id,
+    client, notify, messageFrom, updatePicker: updateRiderBattlePicker,
+  });
   if (weeklyChallenge?.new_award) setTimeout(() => showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: `+${challengeReward} leaderboard points`, message: `${weeklyChallenge.title || "Challenge"} complete. The points are on your weekly score.`, actionLabel: "Keep pushing" }), 250);
 }
 
@@ -6133,6 +6145,7 @@ function updateRiderBattlePicker(event) {
 
 async function requestWeeklyRiderBattle(event) {
   event.preventDefault();
+  if (event.currentTarget.dataset.battleSending === "true") return;
   const form = new FormData(event.currentTarget);
   const { size: battleSize, teamCount } = parseBattleFormat(form.get("battleSize"));
   if (!Number.isInteger(battleSize) || battleSize < 1 || battleSize > 6) return notify("Choose teams of one to six riders.", "error");
@@ -6147,11 +6160,16 @@ async function requestWeeklyRiderBattle(event) {
   if (!Number.isInteger(rewardPoints) || rewardPoints < 1 || rewardPoints > 20) return notify("Choose a battle value from 1 to 20 points.", "error");
   const button = event.currentTarget.querySelector("button[type='submit']");
   const restoreButton = setButtonBusy(button, "Sending...");
-  const { error } = await client.rpc("request_rider_battle_v3", { p_team_one: [state.user.id, ...teammateIds], p_team_two: opponentIds, p_team_three: thirdTeamIds, p_duration_days: durationDays, p_reward_points: rewardPoints });
-  restoreButton();
-  if (error) return notify(messageFrom(error), "error");
-  notify(`${rewardPoints}-point battle request sent. It starts when everyone accepts.`);
-  await renderChallenges();
+  event.currentTarget.dataset.battleSending = "true";
+  const formElement = event.currentTarget;
+  try {
+    if (typeof JKCrewBattleRematches !== "undefined" && !await JKCrewBattleRematches.validateSubmission(formElement, all)) return;
+    const { error } = await client.rpc("request_rider_battle_v3", { p_team_one: [state.user.id, ...teammateIds], p_team_two: opponentIds, p_team_three: thirdTeamIds, p_duration_days: durationDays, p_reward_points: rewardPoints });
+    if (error) return notify(messageFrom(error), "error");
+    notify(`${rewardPoints}-point battle request sent. It starts when everyone accepts.`);
+    await renderChallenges();
+  } catch (error) { notify(messageFrom(error), "error"); }
+  finally { delete formElement.dataset.battleSending; restoreButton(); }
 }
 
 async function respondWeeklyRiderBattle(event) {
@@ -6559,6 +6577,7 @@ async function renderAthleteHome() {
     }),
   ]);
   if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
+  clearInterval(state.timer); state.timer = null;
   const leaderboardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
   const weeklyPoints = Number(leaderboardRow?.weekly_points || 0);
   const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
@@ -6583,7 +6602,7 @@ async function renderAthleteHome() {
     <div id="athlete-home-milestones"></div>
     ${athleteRunBuilderCtaHtml()}
     <div id="athlete-home-coaching">${athleteCoachingCtaHtml([])}</div>
-    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Session timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
+    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Daily Tricks timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
     ${quoteSection()}
     <div id="athlete-home-week"><section class="panel simple-summary"><div class="panel-head"><div><div class="panel-title">This week</div><div class="panel-meta">Loading your latest progress…</div></div></div></section></div>
     ${goalsSection(state.profile)}
@@ -6595,7 +6614,7 @@ async function renderAthleteHome() {
   document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
   if (activeSession) {
     updateTimer();
-    if (!Number(activeSession.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
+    if (activeSession.daily_completed_seconds == null) state.timer = setInterval(updateTimer, 1000);
   }
 
   const secondaryDataPromise = Promise.all([
@@ -7191,6 +7210,8 @@ async function loadActiveSession() {
   const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
   if (error) throw error;
   state.activeTraining = data?.[0] || null;
+  const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
+  if (state.activeTraining && dateForTimezone(riderTimeZone, new Date(state.activeTraining.started_at)) !== dateForTimezone(riderTimeZone)) state.activeTraining = null;
   if (!state.activeTraining) {
     state.attempts = [];
     return;
@@ -7201,23 +7222,26 @@ async function loadActiveSession() {
 }
 
 async function getActiveSession() {
-  const { data, error } = await client.from("training_sessions").select("id,started_at,total_points,daily_completed_seconds,daily_completed_at").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
+  const { data, error } = await client.from("training_sessions").select("id,started_at,total_points,daily_completed_seconds,daily_completed_at,daily_venue").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
   if (error) throw error;
-  return data?.[0] || null;
+  const session = data?.[0] || null;
+  const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
+  return session && dateForTimezone(riderTimeZone, new Date(session.started_at)) === dateForTimezone(riderTimeZone) ? session : null;
 }
 
 async function renderSession({ forceParkKing = false } = {}) {
   const renderVersion = ++state.sessionRenderVersion;
-  const todayStartIso = new Date(`${localDate()}T00:00:00+10:00`).toISOString();
+  const recentStartIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const [schedule, leaderboard, todayTrainingResult] = await Promise.all([
     getWeeklyAssignments(state.user.id),
     getLeaderboard(),
-    client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at").eq("athlete_id", state.user.id).gte("started_at", todayStartIso).order("started_at", { ascending: false }).limit(8),
+    client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at,daily_venue").eq("athlete_id", state.user.id).gte("started_at", recentStartIso).order("started_at", { ascending: false }).limit(8),
   ]);
   if (state.view !== "session" || renderVersion !== state.sessionRenderVersion) return;
   const { assignments, awards } = schedule;
-  const latestDailyTraining = (todayTrainingResult.data || []).find((session) => session.daily_completed_seconds) || null;
+  const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
   const selectedVenue = selectedVenueFor(assignments);
+  const latestDailyTraining = (todayTrainingResult.data || []).find((session) => session.daily_completed_seconds != null && session.daily_completed_at && session.daily_venue != null && venueIdentityKey(dailyRpcVenue(session.daily_venue)) === venueIdentityKey(dailyRpcVenue(selectedVenue)) && dateForTimezone(riderTimeZone, new Date(session.daily_completed_at)) === dateForTimezone(riderTimeZone)) || null;
   const boardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
   const rank = leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1;
   const contestPrepSession = isContestPrepProfile(state.profile);
@@ -7232,10 +7256,11 @@ async function renderSession({ forceParkKing = false } = {}) {
   const parkKing = await parkKingPromise;
   if (state.view !== "session" || renderVersion !== state.sessionRenderVersion || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
   clearHelpVideoPreview();
+  clearInterval(state.timer); state.timer = null;
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       ${statBar}
-      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Start a <span>session</span></h1><p>Your Daily Tricks stay the same all week and reset each day. Finish the full Daily list to earn its point.</p></div></div>
+      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Today's <span>training</span></h1><p>Time your Daily Tricks. One Bangs, Dialled, Lines and other training stay untimed.</p></div></div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
@@ -7251,11 +7276,12 @@ async function renderSession({ forceParkKing = false } = {}) {
     document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
     bindSessionQuickJumps();
     bindSheetRulesButton();
+    bindTrainingProgressActions();
     return;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
   const attemptsHtml = state.attempts.length ? state.attempts.map((attempt) => `
-    <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)} · ${formatTime(attempt.duration_seconds || 0)}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
+    <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)}${attempt.category === "daily" && attempt.duration_seconds != null ? ` · ${formatTime(attempt.duration_seconds)}` : ""}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
   document.querySelector("#view").innerHTML = `
     ${statBar}
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
@@ -7270,13 +7296,15 @@ async function renderSession({ forceParkKing = false } = {}) {
   bindSessionAssignmentAccordions();
   bindExtraTrickActions();
   bindDailyReorder();
-  document.querySelector("#end-session").addEventListener("click", endSession);
+  document.querySelector("#finish-daily-tricks")?.addEventListener("click", event => requestDailyFinish(event.currentTarget));
+  document.querySelector("#create-session")?.addEventListener("click", startSession);
   document.querySelectorAll("[data-assignment-action]").forEach((button) => button.addEventListener("click", recordAssignmentAction));
   document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordPercentageAttempt));
   bindSessionQuickJumps();
   bindSheetRulesButton();
+  bindTrainingProgressActions();
   updateTimer();
-  if (!Number(state.activeTraining.daily_completed_seconds || 0)) state.timer = setInterval(updateTimer, 1000);
+  if (state.activeTraining.daily_completed_seconds == null) state.timer = setInterval(updateTimer, 1000);
 }
 
 function bindDailyVenueAccordions() {
@@ -7311,39 +7339,19 @@ function bindSessionQuickJumps() {
 function updateTimer() {
   const element = document.querySelector("#trick-timer");
   if (!element) return;
-  const completedDailySeconds = Number(state.activeTraining?.daily_completed_seconds || 0);
-  element.textContent = formatTime(completedDailySeconds || Math.floor((Date.now() - state.trickStartedAt) / 1000));
-}
-
-async function saveOwnDailyCompletionTime(seconds) {
-  const value = Math.max(0, Number(seconds || 0));
-  const previousPb = Number(state.profile?.daily_pb_seconds || 0);
-  const isNewPb = !previousPb || value < previousPb;
-  const profileUpdate = isNewPb
-    ? { daily_pb_seconds: value, daily_pb_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() }
-    : { updated_at: new Date().toISOString() };
-  if (state.activeTraining?.id) {
-    await client.from("training_sessions").update({ daily_completed_seconds: value, daily_completed_at: new Date().toISOString() }).eq("id", state.activeTraining.id);
-    state.activeTraining = { ...state.activeTraining, daily_completed_seconds: value, daily_completed_at: new Date().toISOString() };
-    clearInterval(state.timer);
-    state.timer = null;
-    updateTimer();
-  }
-  if (isNewPb) {
-    const { data, error } = await client.from("profiles").update(profileUpdate).eq("id", state.user.id).select(PROFILE_SELECT).single();
-    if (!error && data) state.profile = data;
-  }
-  return { previousPb, isNewPb, seconds: value };
+  const completedDailySeconds = state.activeTraining?.daily_completed_seconds;
+  element.textContent = formatTime(completedDailySeconds ?? Math.max(0, Math.floor((Date.now() - state.trickStartedAt) / 1000)));
 }
 
 async function startSession() {
-  const { error } = await client.from("training_sessions").insert({ athlete_id: state.user.id });
+  const { error } = await client.rpc("start_daily_tricks", { p_venue: dailyRpcVenue(state.selectedVenue) });
   if (error) return notify(messageFrom(error), "error");
-  notify("Session started. Go land something.");
+  notify("Daily Tricks timer started. Other training stays untimed.");
   await renderSession();
 }
 
 async function recordAssignmentAction(event) {
+  if (event.currentTarget.dataset.assignmentCategory === "daily") return recordDailyTrainingAction(event, false);
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
@@ -7385,20 +7393,10 @@ async function recordAssignmentAction(event) {
   cacheClear("park-king:");
   const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
   const message = `${result.message}${pointsNote}.`;
-  const dailyCompleteResult = result.category === "daily" && (result.daily_complete || (result.progress_date === assignmentLocalDate({ athlete_country_code: state.profile?.country_code }) && Number(result.points_awarded || 0) > 0));
-  if (dailyCompleteResult && result.live_session && Number.isFinite(Number(result.elapsed_seconds)) && Number(result.elapsed_seconds) > 0) {
-    const completion = await saveOwnDailyCompletionTime(Number(result.elapsed_seconds));
-    showProgressPopup({
-      kind: "daily",
-      title: completion.isNewPb ? `New Daily PB · ${formatPbTime(completion.seconds)}` : `Daily complete · ${formatPbTime(completion.seconds)}`,
-      message: `${Number(result.points_awarded || 0) > 0 ? `+${Number(result.points_awarded)} point · ` : ""}${completion.isNewPb ? "Fastest Daily time" : "Time saved"}`,
-    });
-    await refreshOwnXpAfterAction({ announceXp: false, trickName });
-  } else {
-    notify(message);
-    await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
-    if (tickingComplete && Number(result.points_awarded || 0) > 0) await showUpdatedWeeklyScore(Number(result.points_awarded), trickName);
-  }
+  notify(message);
+  await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
+  if (tickingComplete && Number(result.points_awarded || 0) > 0) await showUpdatedWeeklyScore(Number(result.points_awarded), trickName);
+  refreshOpenTrainingProgress(state.user.id);
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
 }
@@ -9233,7 +9231,7 @@ function coachBattleCardHtml(battle) {
       </div>
       ${winners ? `<div class="coach-battle-winner">Winners: <strong>${escapeHtml(winners)}</strong> · ${battlePrizePoints(battle)} points split across the team</div>` : ""}
       ${coachAcceptActions}
-      <div class="coach-battle-card-actions">${archiveAction}<button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
+      <div class="coach-battle-card-actions">${typeof JKCrewBattleRematches !== "undefined" ? JKCrewBattleRematches.actionHtml(battle, state.user.id, true) : ""}${archiveAction}<button class="danger-btn compact-btn" type="button" data-delete-coach-battle="${battle.id}">Delete battle</button></div>
     </div>
   </details>`;
 }
@@ -9464,6 +9462,10 @@ async function renderCoachBattleViewer() {
   applyBattleFilters();
   bindCoachBattleControls();
   restoreCoachBattleViewState(view, savedView);
+  if (typeof JKCrewBattleRematches !== "undefined") JKCrewBattleRematches.bindCoach({
+    view, battles: rows, viewerId: state.user.id, currentViewer: () => state.user?.id, client, notify, messageFrom,
+    openBuilder: (available, draft) => showCoachBattleBuilder(available, renderCoachBattleViewer, draft),
+  });
 }
 
 function refreshCoachBattleSurface() {
@@ -9515,7 +9517,7 @@ function coachBattleRiderSelect(roster, team, slot) {
   return `<div class="field coach-battle-slot" data-battle-slot="${slot}"><label for="${inputId}">Rider ${slot}</label><div class="coach-battle-rider-picker"><div class="coach-battle-rider-preview" aria-hidden="true">+</div><select id="${inputId}" name="team${team}Rider"><option value="">Choose rider</option>${roster.map((rider) => `<option value="${escapeHtml(rider.id)}">${escapeHtml(rider.display_name)}</option>`).join("")}</select></div></div>`;
 }
 
-function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) {
+function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer, rematchDraft = null) {
   document.querySelector("#coach-battle-builder-modal")?.remove();
   const backdrop = document.createElement("div");
   backdrop.id = "coach-battle-builder-modal";
@@ -9572,6 +9574,7 @@ function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) 
   backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
   backdrop.querySelector("#coach-battle-builder-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (event.currentTarget.dataset.battleSending === "true") return;
     const form = new FormData(event.currentTarget);
     const { size, teamCount } = parseBattleFormat(form.get("battleSize"));
     if (!Number.isInteger(size) || size < 1 || size > 6) return notify("Choose teams of one to six riders.", "error");
@@ -9585,12 +9588,25 @@ function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) 
     if (!Number.isInteger(rewardPoints) || rewardPoints < 1 || rewardPoints > 20) return notify("Choose a battle value from 1 to 20 points.", "error");
     const button = event.currentTarget.querySelector("button[type='submit']");
     const restore = setButtonBusy(button, "Sending...");
-    const { error } = await client.rpc("request_rider_battle_v3", { p_team_one: teamOne, p_team_two: teamTwo, p_team_three: teamThree, p_duration_days: Number(form.get("durationDays") || 7), p_reward_points: rewardPoints });
-    restore();
-    if (error) return notify(messageFrom(error), "error");
-    backdrop.remove(); notify(`${Array(teamCount).fill(size).join("v")} ${rewardPoints}-point battle invites sent. The battle starts when everyone accepts.`); await refresh();
+    const formElement = event.currentTarget;
+    formElement.dataset.battleSending = "true";
+    try {
+      if (typeof JKCrewBattleRematches !== "undefined" && !await JKCrewBattleRematches.validateSubmission(formElement, all)) return;
+      const { error } = await client.rpc("request_rider_battle_v3", { p_team_one: teamOne, p_team_two: teamTwo, p_team_three: teamThree, p_duration_days: Number(form.get("durationDays") || 7), p_reward_points: rewardPoints });
+      if (error) return notify(messageFrom(error), "error");
+      backdrop.remove(); notify(`${Array(teamCount).fill(size).join("v")} ${rewardPoints}-point battle invites sent. The battle starts when everyone accepts.`); await refresh();
+    } catch (error) { notify(messageFrom(error), "error"); }
+    finally { delete formElement.dataset.battleSending; restore(); }
   });
   updateSlots();
+  if (rematchDraft && typeof JKCrewBattleRematches !== "undefined") JKCrewBattleRematches.prepareCoach(
+    backdrop.querySelector("#coach-battle-builder-form"), rematchDraft,
+    { client, viewerId: state.user.id, currentViewer: () => state.user?.id, notify, messageFrom }, updateSlots,
+  );
+  if (typeof JKCrewBattleRematches !== "undefined") JKCrewBattleRematches.bindCoachSuggestion(
+    backdrop.querySelector("#coach-battle-builder-form"),
+    { client, viewerId: state.user.id, currentViewer: () => state.user?.id, notify, messageFrom }, updateSlots,
+  );
 }
 
 function showWeeklyChallengeBuilder(refresh = renderCoachBattleViewer) {
@@ -10027,9 +10043,9 @@ function sessionViewerRiderCardHtml(entry, activeGroupSession) {
   const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
   const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
   const status = daily.length && complete === daily.length ? "complete" : complete > 0 ? "progress" : "ready";
-  const statusLabel = status === "complete" ? "Daily complete" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
-  const finish = participant?.daily_finish_seconds ? ` · Timer finished ${formatPbTime(participant.daily_finish_seconds)}` : "";
-  const finishButton = activeGroupSession && !participant?.daily_finish_seconds ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}">Finish Daily Tricks</button>` : "";
+  const statusLabel = status === "complete" ? participant?.daily_finish_seconds != null ? "Daily result saved" : "Ready to confirm" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
+  const finish = participant?.daily_finish_seconds != null ? ` · Timer finished ${formatTime(participant.daily_finish_seconds)}` : "";
+  const finishButton = activeGroupSession ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}" data-rider-name="${escapeHtml(athlete.display_name)}" ${participant?.daily_finish_seconds == null && (!daily.length || complete < daily.length) ? "disabled" : ""}>${participant?.daily_finish_seconds != null ? "View Daily result" : "Finish Daily Tricks"}</button>` : "";
   return `<article class="viewer-rider-accordion status-${status} ${isOpen ? "open" : ""}">
     <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
       <span class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))}${finish}</small></span></span>
@@ -10037,7 +10053,7 @@ function sessionViewerRiderCardHtml(entry, activeGroupSession) {
       <span class="viewer-card-footer"><span class="viewer-rider-status"><i aria-hidden="true"></i>${statusLabel}</span><span class="accordion-caret">${isOpen ? "Close" : "Open"}<b aria-hidden="true">${isOpen ? "−" : "+"}</b></span></span>
       <span class="viewer-progress"><span style="width:${percent}%"></span></span>
     </button>
-    ${finishButton}
+    <div class="viewer-training-actions">${finishButton}${trainingProgressButtonHtml(athlete.id, athlete.display_name)}</div>
     ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
   </article>`;
 }
@@ -10123,7 +10139,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   document.querySelector("#view").innerHTML = `
     <div class="page-head session-page-head"><div><div class="eyebrow">Coach workspace</div><h1>Live <span>session</span></h1><p>Your group, their progress, one place.</p></div><button class="secondary-btn compact-btn" type="button" id="viewer-refresh" aria-label="Refresh session"><span aria-hidden="true">↻</span><span class="session-refresh-label">Refresh</span></button></div>
     <section class="panel group-session-control coach-tone-aqua ${activeGroupSession?.status || "ready"}">
-      <div class="session-timer-heading"><span class="session-state-badge"><i aria-hidden="true"></i>${started ? (activeGroupSession.status === "paused" ? "Paused" : "Live session") : "Ready to ride"}</span><span class="session-timer-caption">Session clock</span></div>
+      <div class="session-timer-heading"><span class="session-state-badge"><i aria-hidden="true"></i>${started ? (activeGroupSession.status === "paused" ? "Paused" : "Live session") : "Ready to ride"}</span><span class="session-timer-caption">Daily Tricks clock</span></div>
       <div class="group-timer-block"><div class="timer-label">${escapeHtml(coachGroupLabel(activeGroupSession?.group_name || state.sessionViewerGroup))}<span> / ${escapeHtml(venueLabel(activeGroupSession?.venue || state.sessionViewerVenue))}</span></div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? (activeGroupSession.status === "paused" ? "Clock paused · resume when everyone is ready" : "Clock running · open a rider to log their tricks") : "Choose your group and location, then start the clock"}</small></div>
       <div class="group-session-actions">
         ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session →</button>`}
@@ -10318,6 +10334,7 @@ function sessionViewerRunList(entry) {
 }
 
 function bindSessionViewerActions() {
+  bindTrainingProgressActions();
   const setup = document.querySelector("#session-viewer-setup");
   const setupIsCurrent = () => setup?.isConnected && state.view === "sessionViewer";
   setup?.addEventListener("toggle", () => {
@@ -10455,30 +10472,13 @@ async function endViewerGroupSession(event) {
 }
 
 async function finishViewerDailyTimer(event) {
-  const button = event.currentTarget;
-  const restoreButton = setButtonBusy(button, "Saving...");
-  try {
-    const session = state.sessionViewerActiveSessionCache || await withTimeout(getActiveCoachGroupSession(), "Load live session", 12000);
-    if (!session) return notify("Start the group session first.", "error");
-    const seconds = groupSessionElapsedSeconds(session);
-    const { data, error } = await withTimeout(client.rpc("finish_group_session_daily", {
-      p_group_session_id: session.id,
-      p_athlete_id: button.dataset.finishDailyAthlete,
-      p_seconds: seconds,
-    }), "Save Daily finish", 15000);
-    if (error) throw error;
-    const result = Array.isArray(data) ? data[0] : data;
-    clearCoachCaches({ command: true, sessionViewer: true, leaderboard: true });
-    notify(result?.is_new_pb ? `New Daily PB saved: ${formatPbTime(result.daily_finish_seconds)}` : `Daily finish saved: ${formatPbTime(result?.daily_finish_seconds || seconds)}`);
-    await renderSessionViewer();
-  } catch (error) {
-    notify(messageFrom(error), "error");
-  } finally {
-    restoreButton();
-  }
+  event.preventDefault();
+  event.stopPropagation();
+  return requestDailyFinish(event.currentTarget, true);
 }
 
 async function recordViewerAssignmentAction(event) {
+  if (event.currentTarget.dataset.assignmentCategory === "daily") return recordDailyTrainingAction(event, true);
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
@@ -10507,9 +10507,8 @@ async function recordViewerAssignmentAction(event) {
     cacheClear("leaderboard");
     cacheClear("park-king:");
     const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
-    const dailyCompleteResult = result?.category === "daily" && (result?.daily_complete || Number(result?.points_awarded || 0) > 0);
-    const timeNote = dailyCompleteResult && result?.live_session && Number(result?.elapsed_seconds) > 0 ? ` · ${formatPbTime(Number(result.elapsed_seconds))}` : "";
-    notify(`${result?.message || "Trick progress updated"}${pointsNote}${timeNote}.`);
+    notify(`${result?.message || "Trick progress updated"}${pointsNote}.`);
+    refreshOpenTrainingProgress(athleteId);
     await refreshSessionViewerLight({ force: true });
   } catch (error) {
     clearPendingAssignmentProgress(button.dataset.assignmentId);
@@ -10706,6 +10705,7 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
 }
 
 function bindSessionViewerFastActions() {
+  bindTrainingProgressActions();
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
     state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
     state.sessionViewerActiveList = "";

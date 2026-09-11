@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.92";
+const version = "2.14.93";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -924,13 +924,25 @@ for (const name of [
   "addExtraRiderToGroupSession",
   "toggleViewerGroupSessionPause",
   "endViewerGroupSession",
-  "finishViewerDailyTimer",
 ]) {
   const body = functionBody(name);
   assert(body.includes("withTimeout("), `${name} must protect network requests with a timeout`);
   assert(body.includes("finally"), `${name} must restore its busy state in finally`);
 }
 assert(functionBody("saveSessionViewerAssignments").includes("weekStartDateForCountry"), "Coach edits must use the rider's local week");
+assert(functionBody("finishViewerDailyTimer").includes("requestDailyFinish(event.currentTarget, true)"), "Coach finish must use the shared confirmation flow");
+const dailyCompletion = read("daily-completion.js");
+assert(dailyCompletion.includes('withTimeout(client.rpc("prepare_daily_finish"'), "Preparing a Daily finish must use a bounded request");
+assert(dailyCompletion.includes('withTimeout(client.rpc("confirm_daily_finish"'), "Saving a Daily finish must use a bounded request");
+assert(dailyCompletion.includes("finally { dailyFinishUi.requests.delete(key); restore(); }"), "Manual finish must restore its busy state");
+for (const asset of ["daily-completion", "progress-sharing", "battle-rematches"]) {
+  for (const extension of ["js", "css"]) {
+    const file = `${asset}.${extension}`;
+    assert.equal(read(`riley-test/${file}`), read(file), `${file} must match on the Riley path`);
+    assert(html.includes(`${file}?v=${version}`) && serviceWorker.includes(`${file}?v=${version}`), `${file} must be loaded and cached`);
+  }
+}
+
 
 const battleMigration = read("supabase/migrations/20260827010000_release_all_users_battles_and_challenges.sql");
 const battleContractMigration = read("supabase/migrations/20260827013000_finish_battle_release_contracts.sql");

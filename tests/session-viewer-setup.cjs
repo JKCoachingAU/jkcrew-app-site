@@ -61,7 +61,8 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
           'finishViewerDailyTimer', 'recordViewerAssignmentAction', 'recordViewerAssignmentAttempt', 'recordViewerPercentageAttempt',
           'selectViewerListTab', 'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments',
           'stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal',
-          'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites'
+          'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites',
+          'bindTrainingProgressActions', 'dismissDailyFinishForNavigation'
         ]) window[name] = () => {};
         window.coachPrimaryView = window.parentPrimaryView = window.athletePrimaryView = view => view;
         window.setLoading = () => { document.querySelector('#view').innerHTML = ''; return ++state.loadingOverlayToken; };

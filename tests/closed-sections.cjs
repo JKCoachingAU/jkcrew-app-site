@@ -18,7 +18,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       window.app = document.querySelector('#app');
       window.state = {view: '', user: {id: 'test', email: 'test@example.test'}, profile: {role: 'athlete'}, sessionOpenDailyVenues: new Set(), sessionOpenAssignmentSections: new Set(), sessionViewerOpenAthleteId: '', sessionViewerActiveList: '', videoReviewRecordedReplies: new Map(), videoReviewMedia: new Map(), loadingOverlayToken: 0};
       window.liveRun = null;
-      for (const name of ['stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites', 'setSyncStatus', 'refreshNotificationCentre', 'refreshBoardChatUnread', 'showNotificationDrawer']) window[name] = () => {};
+      for (const name of ['stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites', 'setSyncStatus', 'refreshNotificationCentre', 'refreshBoardChatUnread', 'showNotificationDrawer', 'dismissDailyFinishForNavigation']) window[name] = () => {};
       window.isCoachRole = role => role === 'coach';
       window.coachPrimaryView = window.parentPrimaryView = window.athletePrimaryView = view => view;
       window.escapeHtml = value => String(value || '');
