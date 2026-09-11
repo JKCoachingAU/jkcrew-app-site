@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pglite');
 
 // This fixture uses genuine non-owner database roles and the migration's RLS,
@@ -65,6 +66,32 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   const remove = async (slot, expected) =>
     (await db.query('select public.delete_bike_build($1,$2) result', [slot, expected])).rows[0].result;
   const garage = async () => (await db.query('select public.get_bike_garage() result')).rows[0].result;
+
+  const moduleContext = {};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bike-config.js'), 'utf8'), moduleContext);
+  const bikeConfig = moduleContext.JKCrewBikeConfig;
+  const plain = value => JSON.parse(JSON.stringify(value));
+  const normalized = value => plain(bikeConfig.normalize(value));
+  const v2Default = normalized();
+  equal(v2Default.version, 2, 'The shared configuration module emits version two');
+  equal(Object.keys(v2Default.colors), [...Object.keys(configuration.colors), 'seatpost','stem','headset','spokes','nipples','pegs'], 'The shared module contains exactly the sixteen supported colour parts');
+  equal(Array.from(bikeConfig.metalParts), ['frame','fork','bars','rims','hubs','cranks','sprocket','seatpost','stem','headset','pegs'], 'Only supported metal parts expose finishes');
+  equal(Array.from(bikeConfig.finishOptions), ['gloss','matte','chrome','raw','jetfuel'], 'All five finish identifiers are stable');
+  equal(Array.from(bikeConfig.seatDesignIds), ['solid', ...Array.from({length:50}, (_, n) => `design-${String(n + 1).padStart(2,'0')}`)], 'The seat design catalogue includes solid and exactly fifty designs');
+  for (const part of Object.keys(configuration.colors)) equal(v2Default.colors[part], '#F1F4F8', 'Existing blank-bike parts remain neutral white');
+  for (const part of ['seatpost','stem','headset','spokes','nipples','pegs']) equal(v2Default.colors[part], '#BCC7D6', 'New hardware defaults to chrome colour');
+  for (const part of bikeConfig.metalParts) equal(v2Default.finishes[part], ['seatpost','stem','headset','pegs'].includes(part) ? 'chrome' : 'gloss', 'Metal finish defaults match the existing paint or new hardware');
+  const legacyInput = { ...configuration, barStyle:'four-piece', tyreStyle:'tan-wall', seatStyle:'padded', pegs:'both', decal:'lightning' };
+  const legacyBefore = plain(legacyInput), upgraded = normalized(legacyInput);
+  equal(legacyInput, legacyBefore, 'Normalising a legacy bike does not mutate its source');
+  for (const [part, value] of Object.entries(legacyInput.colors)) equal(upgraded.colors[part], value.toUpperCase(), 'Legacy colours survive the version upgrade');
+  for (const key of ['barStyle','tyreStyle','seatStyle','pegs','decal']) equal(upgraded[key], legacyInput[key], 'Every existing style survives the version upgrade');
+  equal(normalized(upgraded), upgraded, 'Version two normalisation is idempotent');
+  for (const bad of [null, [], 'bike', 123, { colors:[], finishes:'chrome', seatDesign:'design-51', frameFadeColor:'url(secret)', extra:'private' }]) equal(normalized(bad), v2Default, 'Invalid or unknown fields use safe defaults and are stripped');
+  equal(normalized(Object.create({ colors:{frame:'#123456'}, pegs:'four', seatDesign:'design-50' })), v2Default, 'Inherited properties cannot inject cosmetic choices');
+  const mutable = bikeConfig.normalize(); mutable.colors.frame='#123456'; mutable.finishes.frame='matte';
+  equal(normalized(), v2Default, 'A caller can edit its normalised copy without altering defaults');
+  ok(Object.isFrozen(bikeConfig) && Object.isFrozen(bikeConfig.defaults) && Object.isFrozen(bikeConfig.defaults.colors) && Object.isFrozen(bikeConfig.defaults.finishes), 'Published defaults are protected from accidental mutation');
 
   const metadata = (await db.query(`
     select p.proname, p.prosecdef, p.provolatile,
@@ -144,6 +171,75 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   await denied(save(3, 'Stale white update', whiteConfiguration, 1), '40001', 'Solid white builds preserve stale-write protection');
   const oldStyleUpdate = await save(3, 'White-wall tyres', thirdStyle, whiteUpdate.revision);
   equal(oldStyleUpdate.configuration.tyreStyle, 'white-wall', 'A solid white build can still change back to an existing tyre style');
+
+  const validationResults = async values => (await db.query(`
+    select private.bike_garage_configuration_is_valid(value) valid
+    from jsonb_array_elements($1::jsonb) with ordinality order by ordinality
+  `, [JSON.stringify(values)])).rows.map(row => row.valid);
+  const legacyCases = [];
+  for (const barStyle of ['two-piece','four-piece']) for (const tyreStyle of ['black','tan-wall','white-wall','white'])
+    for (const seatStyle of ['slim','padded']) for (const pegs of ['none','rear','both']) for (const decal of ['jkcrew','lightning','none'])
+      legacyCases.push({...configuration,barStyle,tyreStyle,seatStyle,pegs,decal});
+  legacyCases.push(null, {}, {...configuration, pegs:'four'}, {...configuration, framePaint:'solid'}, {...configuration, colors:{...configuration.colors, stem:'#123456'}}, {...configuration, version:'1'});
+  const legacyValidation = await validationResults(legacyCases);
+  const beforePartsMigration = await garage();
+  await denied(save(3, 'Version two before upgrade', v2Default, oldStyleUpdate.revision), '22023', 'The old validator requires the additive migration before accepting new parts');
+  const partsSql = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20260911122927_support_bike_garage_parts_v2.sql'), 'utf8');
+  await db.exec('reset role'); await db.exec(partsSql); await as(rider);
+  const {definition: priorDefinition, ...priorAccess} = whiteValidator;
+  const {definition: partsDefinition, ...partsAccess} = await validatorMetadata();
+  equal(partsAccess, priorAccess, 'Adding parts preserves validator privileges, invoker security and search path');
+  equal(await garage(), beforePartsMigration, 'Adding parts does not rewrite saved bikes, timestamps or revisions');
+  equal(await validationResults(legacyCases), legacyValidation, 'Every old style combination and legacy rejection remains unchanged');
+  equal(await validationResults([v2Default, upgraded]), [true,true], 'Module defaults and upgraded v1 bikes match the database v2 schema');
+
+  const fullV2 = normalized({
+    ...v2Default, pegs:'four', framePaint:'fade', frameFadeColor:'#428CFF', pedalMaterial:'metal', brakeStyle:'dual',
+    spokeStyle:'rainbow', stemStyle:'front-load', seatDesign:'design-50',
+    colors:{...v2Default.colors, seatpost:'#123456',stem:'#ABCDEF',headset:'#345678',spokes:'#456789',nipples:'#567890',pegs:'#678901'},
+    finishes:Object.fromEntries(bikeConfig.metalParts.map((part, index) => [part, bikeConfig.finishOptions[index % bikeConfig.finishOptions.length]]))
+  });
+  equal(normalized(fullV2), fullV2, 'Every new option survives client normalisation');
+  const finishCases = bikeConfig.metalParts.flatMap(part => bikeConfig.finishOptions.map(finish => ({...fullV2,finishes:{...fullV2.finishes,[part]:finish}})));
+  const designCases = bikeConfig.seatDesignIds.map(seatDesign => ({...fullV2,seatDesign}));
+  equal(await validationResults([...finishCases,...designCases]), Array(finishCases.length + designCases.length).fill(true), 'Every finish on every metal part and all fifty seat designs are accepted');
+  const v2Saved = await save(3, 'Expanded parts bike', fullV2, oldStyleUpdate.revision);
+  equal(v2Saved.configuration, fullV2, 'A v2 update round-trips all parts, finishes and options');
+  equal(v2Saved.revision, oldStyleUpdate.revision + 1, 'New parts use the existing revision contract');
+  equal((await garage()).builds.find(build => build.slot===3), v2Saved, 'Saved v2 details are returned intact');
+  await denied(save(3, 'Stale expanded bike', fullV2, oldStyleUpdate.revision), '40001', 'Expanded builds retain stale-write protection');
+  const invalidV2 = [
+    {...fullV2, version:3}, {...fullV2, version:'2'}, {...fullV2, owner_id:otherRider}, {...fullV2, extra:'x'.repeat(8193)},
+    {...fullV2, colors:null}, {...fullV2, colors:[]}, {...fullV2, colors:{...fullV2.colors,chain:'#123456'}},
+    {...fullV2, finishes:null}, {...fullV2, finishes:[]}, {...fullV2, finishes:'chrome'}, {...fullV2, finishes:{...fullV2.finishes,seat:'chrome'}},
+    {...fullV2, framePaint:'rainbow'}, {...fullV2, frameFadeColor:'#12345'}, {...fullV2, frameFadeColor:123456},
+    {...fullV2, pedalMaterial:'carbon'}, {...fullV2, brakeStyle:true}, {...fullV2, spokeStyle:'other'}, {...fullV2, stemStyle:'side-load'},
+    ...['design-00','design-51','design-1','design-050','DESIGN-01','design-01<script>',null,50].map(seatDesign=>({...fullV2,seatDesign})),
+    ...Object.keys(fullV2).map(key=>Object.fromEntries(Object.entries(fullV2).filter(([name])=>name!==key))),
+    ...Object.keys(fullV2.colors).map(part=>({...fullV2,colors:Object.fromEntries(Object.entries(fullV2.colors).filter(([name])=>name!==part))})),
+    ...Object.keys(fullV2.colors).map(part=>({...fullV2,colors:{...fullV2.colors,[part]:'#NOTHEX'}})),
+    ...bikeConfig.metalParts.map(part=>({...fullV2,finishes:Object.fromEntries(Object.entries(fullV2.finishes).filter(([name])=>name!==part))})),
+    ...bikeConfig.metalParts.map(part=>({...fullV2,finishes:{...fullV2.finishes,[part]:'polished'}}))
+  ];
+  equal(await validationResults(invalidV2), Array(invalidV2.length).fill(false), 'V2 requires exact keys, every part and finish, valid values/types, bounded size and design IDs');
+  for (const bad of invalidV2.slice(0,26)) await denied(save(3, 'Invalid new choice', bad, v2Saved.revision), '22023', 'RPC validation rejects malformed new choices');
+  await denied(db.query('update public.bike_garage_builds set configuration=$1 where slot=3', [JSON.stringify({...fullV2,seatDesign:'design-51'})]), '23514', 'Direct table writes cannot bypass the new option constraints');
+  equal((await garage()).builds.find(build=>build.slot===3), v2Saved, 'Invalid new options leave the saved v2 build unchanged');
+  await as(otherRider);
+  await denied(save(3, 'Foreign expanded bike', fullV2, v2Saved.revision), '40001', 'V2 fields do not bypass ownership');
+  await as(rider);
+  const beforePartsRerun = await garage();
+  await db.exec('reset role'); await db.exec(partsSql); await as(rider);
+  equal(await garage(), beforePartsRerun, 'Repeating the additive migration leaves v1 and v2 rows unchanged');
+  // A rolled-back fixture verifies new-slot creation without changing the other
+  // owner fixtures used by the existing access and profile-cleanup regressions.
+  await as(coach); const coachBefore = await garage(); await db.exec('begin');
+  const v2Created = await save(2, 'New expanded bike', fullV2);
+  equal(v2Created.configuration, fullV2, 'A new v2 build round-trips through creation');
+  equal(v2Created.revision, 1, 'A new v2 build uses revision one');
+  equal((await garage()).builds.find(build=>build.slot===2), v2Created, 'The newly created v2 build is readable by its owner');
+  await db.exec('rollback'); equal(await garage(), coachBefore, 'The isolated creation fixture leaves existing test owners untouched');
+  await as(rider);
 
   const beforeInvalid = await garage();
   for (const [slot, name, config, revision, label] of [
