@@ -1,0 +1,42 @@
+.bike-fullscreen.bike-photo-preview{box-sizing:border-box;width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:clamp(14px,2.2vw,32px);padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom));background:#081015;color:#edf5f7;border:0;overflow:auto;font-family:'Barlow',sans-serif}
+.bike-fullscreen.bike-photo-preview[open]{display:flex;align-items:stretch;justify-content:flex-start;gap:20px}
+.bike-photo-preview::backdrop{background:#081015}
+.bike-photo-preview *{box-sizing:border-box}
+.bike-photo-preview button{appearance:none;min-height:44px;border:1px solid #334b57;border-radius:10px;background:#15252e;color:#edf5f7;cursor:pointer;font:600 14px/1.2 'Barlow',sans-serif;text-transform:none;letter-spacing:0;box-shadow:none;touch-action:manipulation}
+.bike-photo-preview button:hover:not(:disabled){background:#213b46;border-color:#73c5bb}
+.bike-photo-preview button:focus-visible,.bike-photo-canvas:focus-visible{outline:3px solid #51e2cd;outline-offset:3px}
+.bike-photo-preview button:disabled{cursor:default;opacity:.42}
+.bike-photo-preview [hidden]{display:none!important}
+.bike-photo-top{display:flex;align-items:center;justify-content:space-between;gap:20px;flex:0 0 auto;max-width:1800px;width:100%;margin:0 auto}
+.bike-photo-top>div{min-width:0}.bike-photo-top span,.bike-photo-scene-heading>span{font:600 10px/1.5 'Roboto Mono',monospace;letter-spacing:2px;color:#8aa4b0}
+.bike-photo-top h2{font:700 clamp(23px,2.8vw,36px)/1.1 'Barlow Condensed',sans-serif;margin:5px 0 0;overflow-wrap:anywhere}
+.bike-photo-preview .bike-photo-close{width:46px;flex:0 0 46px;font-size:26px;background:transparent}
+.bike-photo-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:clamp(16px,2vw,30px);align-items:center;flex:1;min-height:0;width:100%;max-width:1800px;margin:auto}
+.bike-photo-view{min-width:0;display:flex;flex-direction:column;align-items:center;min-height:0;max-height:100%}
+.bike-photo-canvas{position:relative;width:100%;aspect-ratio:3/2;max-height:calc(100dvh - 240px);overflow:hidden;border-radius:18px;border:1px solid #324650;background:#111b22;touch-action:none;cursor:grab;display:flex;align-items:center;justify-content:center;isolation:isolate}
+.bike-photo-canvas:active{cursor:grabbing}
+.bike-photo-transform{width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:center;will-change:transform;pointer-events:none}
+.bike-photo-transform>svg{display:block;width:100%!important;height:100%!important;object-fit:contain;flex:0 0 auto}
+.bike-photo-transform[aria-busy=true]{opacity:.5}
+.bike-photo-tools{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+.bike-photo-tools button{min-width:44px;padding:9px 13px;font-size:18px}.bike-photo-tools [data-bike-view-reset]{font-size:12px;padding:11px 13px}
+.bike-photo-tools output{min-width:46px;text-align:center;color:#bcced6;font:500 11px 'Roboto Mono',monospace}
+.bike-photo-tool-separator{height:24px;width:1px;background:#30444e;margin:0 4px}
+.bike-photo-view-tip{margin:10px 0 0;color:#8aa2ae;font-size:12px;text-align:center;line-height:1.4}
+.bike-photo-options{border:1px solid #2a414a;border-radius:18px;background:#101e26;padding:20px;align-self:center;min-width:0}
+.bike-photo-scene-heading h3{font:700 28px/1.1 'Barlow Condensed',sans-serif;margin:6px 0 8px}.bike-photo-scene-heading p{font-size:13px;color:#a6bcc7;line-height:1.4;margin:0 0 18px}
+.bike-scene-list{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.bike-photo-preview .bike-scene-list button{position:relative;padding:0;overflow:hidden;text-align:left;border:2px solid transparent;background:#1d3039;min-width:0;min-height:44px}
+.bike-scene-list button img{display:block;width:100%;height:70px;object-fit:cover}.bike-scene-list button>span:last-of-type{display:block;padding:8px;font-size:12px}
+.bike-scene-list button>b{position:absolute;right:5px;top:5px;width:20px;height:20px;border-radius:50%;display:none;place-items:center;background:#40dcc5;color:#052019;font-size:13px}
+.bike-photo-preview .bike-scene-list button[aria-pressed=true]{border-color:#40dcc5;background:#25453f}.bike-scene-list button[aria-pressed=true]>b{display:grid}
+.bike-photo-preview .bike-scene-list [data-bike-scene=studio]{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:0 10px}.bike-scene-studio{font-size:24px;color:#e8f0f4}.bike-scene-list [data-bike-scene=studio]>b{position:static;margin-left:auto}
+.bike-photo-export{margin-top:20px;border-top:1px solid #2b414b;padding-top:18px}
+.bike-photo-preview [data-bike-export]{background:#39dec5;border-color:#70f6df;color:#06231d;width:100%;font-size:15px;font-weight:700;min-height:49px}.bike-photo-preview [data-bike-export]:hover:not(:disabled){background:#70ead8}
+.bike-photo-preview [data-bike-download],.bike-photo-preview [data-bike-preview-retry]{width:100%;margin-top:10px;padding:10px}
+.bike-photo-export [role=status]{font-size:12px;line-height:1.45;color:#adc6d0;min-height:18px;margin:12px 0 0}.bike-photo-export [role=status].error{color:#ffb8ac}
+.bike-photo-save-tip{color:#8ca4af;font-size:11px;line-height:1.5;margin:12px 0 0}.bike-photo-save-tip strong{font-weight:600;color:#c4d8df}
+@media(max-width:850px){.bike-fullscreen.bike-photo-preview[open]{gap:15px}.bike-photo-body{grid-template-columns:1fr;align-items:start;min-height:auto;flex:0 0 auto}.bike-photo-view{max-height:none}.bike-photo-canvas{max-height:60dvh}.bike-photo-options{width:100%;padding:16px}.bike-photo-scene-heading{display:none}.bike-scene-list{grid-template-columns:repeat(4,minmax(0,1fr))}.bike-photo-preview .bike-scene-list [data-bike-scene=studio]{grid-column:1/-1}.bike-scene-list button img{height:66px}.bike-scene-list button>span:last-of-type{padding:8px 5px;font-size:11px}.bike-photo-export{margin-top:14px;padding-top:14px}.bike-photo-save-tip{margin-top:8px}.bike-photo-tools{gap:6px}.bike-photo-tools button{padding:8px 10px}.bike-photo-view-tip{font-size:11px}}
+@media(max-width:420px){.bike-fullscreen.bike-photo-preview{padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}.bike-photo-top h2{font-size:24px}.bike-photo-top span{font-size:9px}.bike-photo-canvas{border-radius:12px}.bike-photo-tools{gap:5px}.bike-photo-tools button{min-width:42px;padding:8px}.bike-photo-tools output{min-width:40px}.bike-photo-tool-separator{margin:0 1px}.bike-photo-options{padding:12px}.bike-scene-list{gap:6px}.bike-scene-list button img{height:54px}.bike-scene-list button>span:last-of-type{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.bike-photo-preview *{scroll-behavior:auto!important;transition:none!important}}
+@media(orientation:landscape) and (max-height:540px){.bike-fullscreen.bike-photo-preview{padding:10px 14px;overflow:hidden}.bike-fullscreen.bike-photo-preview[open]{gap:9px}.bike-photo-top h2{font-size:22px;margin-top:0}.bike-photo-top>div>span{display:none}.bike-photo-preview .bike-photo-close{height:44px;min-height:44px}.bike-photo-body{grid-template-columns:minmax(0,1fr) 252px;flex:1;min-height:0;align-items:stretch;gap:14px}.bike-photo-view{height:100%;min-height:0;max-height:100%}.bike-photo-canvas{flex:1;min-height:0;max-height:none;aspect-ratio:auto}.bike-photo-tools{margin-top:7px;gap:5px}.bike-photo-view-tip{margin-top:5px;font-size:10px}.bike-photo-options{align-self:stretch;min-height:0;overflow:auto;padding:12px}.bike-scene-list{grid-template-columns:1fr 1fr}.bike-scene-list button img{height:45px}.bike-photo-export{margin-top:10px;padding-top:10px}.bike-photo-options .bike-photo-save-tip{font-size:10px}.bike-photo-tools [data-bike-view-reset]{font-size:11px}}

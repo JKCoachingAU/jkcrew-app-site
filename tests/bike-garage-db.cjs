@@ -72,8 +72,13 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   const bikeConfig = moduleContext.JKCrewBikeConfig;
   const plain = value => JSON.parse(JSON.stringify(value));
   const normalized = value => plain(bikeConfig.normalize(value));
-  const v2Default = normalized();
-  equal(v2Default.version, 2, 'The shared configuration module emits version two');
+  const v3Default = normalized();
+  // Keep historical database fixtures genuinely V2 while the client emits V3.
+  const asV2 = value => { const {driveSide, background, ...config} = plain(value); return {...config, version:2}; };
+  const v2Default = asV2(v3Default);
+  equal(v3Default.version, 3, 'The shared configuration module emits version three');
+  equal(v3Default.driveSide, 'rhd', 'Legacy/default bikes keep right-hand drive');
+  equal(v3Default.background, 'studio', 'Legacy/default bikes keep the studio scene');
   equal(Object.keys(v2Default.colors), [...Object.keys(configuration.colors), 'seatpost','stem','headset','spokes','nipples','pegs'], 'The shared module contains exactly the sixteen supported colour parts');
   equal(Array.from(bikeConfig.metalParts), ['frame','fork','bars','rims','hubs','cranks','sprocket','seatpost','stem','headset','pegs'], 'Only supported metal parts expose finishes');
   equal(Array.from(bikeConfig.finishOptions), ['gloss','matte','chrome','raw','jetfuel'], 'All five finish identifiers are stable');
@@ -86,11 +91,11 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   equal(legacyInput, legacyBefore, 'Normalising a legacy bike does not mutate its source');
   for (const [part, value] of Object.entries(legacyInput.colors)) equal(upgraded.colors[part], value.toUpperCase(), 'Legacy colours survive the version upgrade');
   for (const key of ['barStyle','tyreStyle','seatStyle','pegs','decal']) equal(upgraded[key], legacyInput[key], 'Every existing style survives the version upgrade');
-  equal(normalized(upgraded), upgraded, 'Version two normalisation is idempotent');
-  for (const bad of [null, [], 'bike', 123, { colors:[], finishes:'chrome', seatDesign:'design-51', frameFadeColor:'url(secret)', extra:'private' }]) equal(normalized(bad), v2Default, 'Invalid or unknown fields use safe defaults and are stripped');
-  equal(normalized(Object.create({ colors:{frame:'#123456'}, pegs:'four', seatDesign:'design-50' })), v2Default, 'Inherited properties cannot inject cosmetic choices');
+  equal(normalized(upgraded), upgraded, 'Version three normalisation is idempotent');
+  for (const bad of [null, [], 'bike', 123, { colors:[], finishes:'chrome', seatDesign:'design-51', frameFadeColor:'url(secret)', extra:'private' }]) equal(normalized(bad), v3Default, 'Invalid or unknown fields use safe defaults and are stripped');
+  equal(normalized(Object.create({ colors:{frame:'#123456'}, pegs:'four', seatDesign:'design-50' })), v3Default, 'Inherited properties cannot inject cosmetic choices');
   const mutable = bikeConfig.normalize(); mutable.colors.frame='#123456'; mutable.finishes.frame='matte';
-  equal(normalized(), v2Default, 'A caller can edit its normalised copy without altering defaults');
+  equal(normalized(), v3Default, 'A caller can edit its normalised copy without altering defaults');
   ok(Object.isFrozen(bikeConfig) && Object.isFrozen(bikeConfig.defaults) && Object.isFrozen(bikeConfig.defaults.colors) && Object.isFrozen(bikeConfig.defaults.finishes), 'Published defaults are protected from accidental mutation');
 
   const metadata = (await db.query(`
@@ -191,15 +196,15 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   equal(partsAccess, priorAccess, 'Adding parts preserves validator privileges, invoker security and search path');
   equal(await garage(), beforePartsMigration, 'Adding parts does not rewrite saved bikes, timestamps or revisions');
   equal(await validationResults(legacyCases), legacyValidation, 'Every old style combination and legacy rejection remains unchanged');
-  equal(await validationResults([v2Default, upgraded]), [true,true], 'Module defaults and upgraded v1 bikes match the database v2 schema');
+  equal(await validationResults([v2Default, asV2(upgraded)]), [true,true], 'Module defaults and upgraded v1 bikes match the database v2 schema');
 
-  const fullV2 = normalized({
+  const fullV2 = asV2(normalized({
     ...v2Default, pegs:'four', framePaint:'fade', frameFadeColor:'#428CFF', pedalMaterial:'metal', brakeStyle:'dual',
     spokeStyle:'rainbow', stemStyle:'front-load', seatDesign:'design-50',
     colors:{...v2Default.colors, seatpost:'#123456',stem:'#ABCDEF',headset:'#345678',spokes:'#456789',nipples:'#567890',pegs:'#678901'},
     finishes:Object.fromEntries(bikeConfig.metalParts.map((part, index) => [part, bikeConfig.finishOptions[index % bikeConfig.finishOptions.length]]))
-  });
-  equal(normalized(fullV2), fullV2, 'Every new option survives client normalisation');
+  }));
+  equal(normalized(fullV2), {...fullV2,version:3,driveSide:'rhd',background:'studio'}, 'Every V2 option survives client normalisation with only the V3 defaults added');
   const finishCases = bikeConfig.metalParts.flatMap(part => bikeConfig.finishOptions.map(finish => ({...fullV2,finishes:{...fullV2.finishes,[part]:finish}})));
   const designCases = bikeConfig.seatDesignIds.map(seatDesign => ({...fullV2,seatDesign}));
   equal(await validationResults([...finishCases,...designCases]), Array(finishCases.length + designCases.length).fill(true), 'Every finish on every metal part and all fifty seat designs are accepted');
@@ -240,6 +245,102 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   equal((await garage()).builds.find(build=>build.slot===2), v2Created, 'The newly created v2 build is readable by its owner');
   await db.exec('rollback'); equal(await garage(), coachBefore, 'The isolated creation fixture leaves existing test owners untouched');
   await as(rider);
+
+  // V3 is additive: V1/V2 remain strict and no stored bike is upgraded merely
+  // by installing the validator or normalising a client-side copy.
+  const driveSides = ['rhd','lhd'];
+  const backgrounds = ['studio','street','skatepark','warehouse','rooftop'];
+  const brakeStyles = ['none','front','rear','dual'];
+  const fullV2Before = plain(fullV2), fullV3 = normalized({...fullV2,driveSide:'lhd',background:'skatepark',brakeStyle:'front'});
+  equal(fullV2, fullV2Before, 'Upgrading a V2 configuration does not mutate its stored-format source');
+  equal(fullV3, {...fullV2,version:3,driveSide:'lhd',background:'skatepark',brakeStyle:'front'}, 'V3 preserves all V2 component, material and seat choices');
+  equal(normalized(fullV3), fullV3, 'A complete V3 configuration normalises idempotently');
+  equal(normalized(legacyInput).driveSide, 'rhd', 'V1 upgrades retain right-hand drive');
+  equal(normalized(fullV2).background, 'studio', 'V2 upgrades retain the original studio background');
+  for (const driveSide of ['left','RHD','lhd<script>',null,1,{},[]]) equal(normalized({...fullV3,driveSide}).driveSide, 'rhd', 'Invalid drive-side values cannot enter a normalised config');
+  for (const background of ['beach','STREET','https://example.test/private',null,true,{},[]]) equal(normalized({...fullV3,background}).background, 'studio', 'Scene selection only accepts the local scene identifiers');
+  for (const brakeStyle of ['both','front-rear','FRONT',null,true,{}]) equal(normalized({...fullV3,brakeStyle}).brakeStyle, 'none', 'Invalid brake styles fall back safely');
+  equal(normalized(Object.create({driveSide:'lhd',background:'rooftop',brakeStyle:'front'})), v3Default, 'Inherited V3 choices are ignored');
+  const combinationsV3 = driveSides.flatMap(driveSide => backgrounds.flatMap(background => brakeStyles.map(brakeStyle => ({...fullV3,driveSide,background,brakeStyle}))));
+  for (const value of combinationsV3) equal(normalized(value), value, 'Every drive/brake/scene combination survives client normalisation');
+  const preservedCases = [...legacyCases,v2Default,fullV2,...finishCases,...designCases,...invalidV2,
+    ...['none','rear','dual','front'].map(brakeStyle => ({...fullV2,brakeStyle})),
+    {...fullV2,driveSide:'rhd'}, {...fullV2,background:'studio'}];
+  const priorValidation = await validationResults(preservedCases);
+  await denied(save(3, 'V3 before migration', fullV3, v2Saved.revision), '22023', 'The V2 schema rejects V3 until the additive migration is installed');
+  const beforeV3Migration = await garage();
+  const accessSnapshot = async () => (await db.query(`
+    select jsonb_build_object(
+      'functions', (select jsonb_agg(jsonb_build_object('name',p.proname,'definition',pg_get_functiondef(p.oid),'privileges',p.proacl::text) order by p.proname)
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('get_bike_garage','save_bike_build','delete_bike_build')),
+      'table', (select jsonb_build_object('rls',relrowsecurity,'forced',relforcerowsecurity,'privileges',relacl::text) from pg_class where oid='public.bike_garage_builds'::regclass),
+      'policies', (select jsonb_agg(jsonb_build_object('name',polname,'roles',polroles,'using',pg_get_expr(polqual,polrelid),'check',pg_get_expr(polwithcheck,polrelid)) order by polname) from pg_policy where polrelid='public.bike_garage_builds'::regclass),
+      'triggers', (select jsonb_agg(pg_get_triggerdef(oid) order by tgname) from pg_trigger where tgrelid='public.bike_garage_builds'::regclass)
+    ) snapshot
+  `)).rows[0].snapshot;
+  const priorSecurity = await accessSnapshot();
+  const scenesSql = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20260911141311_support_bike_garage_drive_brakes_scenes_v3.sql'), 'utf8');
+  await db.exec('reset role'); await db.exec(scenesSql); await as(rider);
+  const {definition: sceneDefinition, ...sceneAccess} = await validatorMetadata();
+  equal(sceneAccess, partsAccess, 'V3 preserves validator invoker security, immutability, grants and restricted search path');
+  equal(await accessSnapshot(), priorSecurity, 'V3 leaves every RPC definition, grant, RLS policy and protected-metadata trigger unchanged');
+  equal(await garage(), beforeV3Migration, 'Installing V3 does not rewrite V1/V2 configurations, names, timestamps or revisions');
+  equal(await validationResults(preservedCases), priorValidation, 'All historical valid and invalid configurations retain their exact V1/V2 validator result');
+  equal(await validationResults([v3Default,fullV3,...combinationsV3]), Array(2+combinationsV3.length).fill(true), 'All forty drive/brake/scene combinations and module defaults match the V3 schema');
+
+  const invalidV3 = [
+    {...fullV3,version:4}, {...fullV3,version:'3'}, {...fullV3,version:2}, {...fullV3,owner_id:otherRider},
+    {...fullV3,extra:'x'.repeat(8193)}, {...fullV3,colors:null}, {...fullV3,finishes:[]},
+    {...fullV3,colors:{...fullV3.colors,frame:'#NOTHEX'}}, {...fullV3,finishes:{...fullV3.finishes,frame:'polished'}},
+    {...fullV3,seatDesign:'design-51'}, {...fullV3,pedalMaterial:'carbon'},
+    ...['left','RHD','lhd<script>',null,1,{},[]].map(driveSide=>({...fullV3,driveSide})),
+    ...['beach','STREET','https://example.test/private',null,true,{},[]].map(background=>({...fullV3,background})),
+    ...['both','front-rear','FRONT',null,true,{}].map(brakeStyle=>({...fullV3,brakeStyle})),
+    ...Object.keys(fullV3).map(key=>Object.fromEntries(Object.entries(fullV3).filter(([name])=>name!==key)))
+  ];
+  equal(await validationResults(invalidV3), Array(invalidV3.length).fill(false), 'V3 rejects malformed/missing fields, unsupported versions, external scene URLs and ownership injection');
+  for (const bad of invalidV3) await denied(save(3, 'Invalid V3 choice', bad, v2Saved.revision), '22023', 'RPC rejects malformed V3 configs before changing saved data');
+  await denied(db.query('update public.bike_garage_builds set configuration=$1 where slot=3', [JSON.stringify({...fullV3,background:'https://example.test/private'})]), '23514', 'Direct writes cannot bypass the V3 scene allowlist');
+  equal(await garage(), beforeV3Migration, 'Rejected V3 inputs leave saved data unchanged');
+  // Exercise real CRUD for every combination inside a rolled-back fixture.
+  await db.exec('begin');
+  const deniedInTransaction = async (operation, code, message) => {
+    await db.exec('savepoint garage_v3_rejection');
+    try { await denied(operation(), code, message); }
+    finally { await db.exec('rollback to savepoint garage_v3_rejection; release savepoint garage_v3_rejection'); }
+  };
+  let v3Updated = v2Saved;
+  for (const value of combinationsV3) {
+    const previousRevision = v3Updated.revision;
+    v3Updated = await save(3, 'Drive and scene test', value, previousRevision);
+    equal(v3Updated.configuration, value, 'Saving a V3 combination round-trips the exact configuration');
+    equal(v3Updated.revision, previousRevision+1, 'V3 updates retain monotonic revisions');
+    equal((await garage()).builds.find(build=>build.slot===3), v3Updated, 'An authoritative read returns the exact saved V3 combination');
+  }
+  await deniedInTransaction(() => save(3, 'Stale V3 device', fullV3, v2Saved.revision), '40001', 'V3 saves reject stale revisions');
+  await deniedInTransaction(() => remove(3, v2Saved.revision), '40001', 'V3 removals reject stale revisions');
+  await as(otherRider);
+  equal(await garage(), {builds:[]}, 'Other riders cannot read V3 builds');
+  await deniedInTransaction(() => save(3, 'Foreign V3 update', fullV3, v3Updated.revision), '40001', 'A foreign V3 revision never addresses another owner');
+  await deniedInTransaction(() => remove(3, v3Updated.revision), '40001', 'A foreign V3 build cannot be removed');
+  await as(coach);
+  const v3Created = await save(1, 'Left front-brake build', fullV3);
+  equal(v3Created.configuration, fullV3, 'New V3 slots round-trip left drive, front-only braking and a scene');
+  const v3Copy = await save(2, 'Second scene copy', {...fullV3,background:'warehouse'});
+  equal(v3Copy.configuration, {...fullV3,background:'warehouse'}, 'Duplicating a V3 bike preserves choices while changing only its scene');
+  await save(3, 'Third V3 slot', {...fullV3,background:'rooftop',brakeStyle:'dual'});
+  await deniedInTransaction(() => save(4, 'Fourth V3 slot', fullV3), '22023', 'V3 retains the three-slot limit');
+  equal((await garage()).builds[0], v3Created, 'Creating a copy never mutates the original V3 build');
+  equal(await remove(2, v3Copy.revision), {deleted:true}, 'V3 removal keeps the existing result contract');
+  const v3Recreated = await save(2, 'Reused V3 slot', {...fullV3,background:'street'});
+  equal(v3Recreated.revision, v3Copy.revision+2, 'V3 delete/recreate preserves the tombstone revision');
+  await deniedInTransaction(() => save(2, 'Stale deleted V3', fullV3, v3Copy.revision), '40001', 'A stale pre-deletion V3 copy cannot overwrite the recreated slot');
+  await as(null,'anon');
+  await deniedInTransaction(() => save(1,'Anonymous V3',fullV3), '42501', 'V3 does not make anonymous saves accessible');
+  await as(rider); await db.exec('rollback'); await as(rider);
+  equal(await garage(), beforeV3Migration, 'The V3 CRUD fixture preserves all historical owner fixtures');
+  await db.exec('reset role'); await db.exec(scenesSql); await as(rider);
+  equal(await garage(), beforeV3Migration, 'Repeating the V3 migration still leaves saved rows unchanged');
 
   const beforeInvalid = await garage();
   for (const [slot, name, config, revision, label] of [

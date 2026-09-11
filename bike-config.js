@@ -9,11 +9,12 @@ const JKCrewBikeConfig = (() => {
   const options = Object.freeze({
     barStyle: ['two-piece','four-piece'], tyreStyle: ['white','black','tan-wall','white-wall'],
     seatStyle: ['slim','padded'], pegs: ['none','rear','both','four'], decal: ['none','jkcrew','lightning'],
-    framePaint: ['solid','fade'], pedalMaterial: ['plastic','metal'], brakeStyle: ['none','rear','dual'],
-    spokeStyle: ['standard','rainbow'], stemStyle: ['top-load','front-load'], seatDesign: seatDesignIds
+    framePaint: ['solid','fade'], pedalMaterial: ['plastic','metal'], brakeStyle: ['none','front','rear','dual'],
+    spokeStyle: ['standard','rainbow'], stemStyle: ['top-load','front-load'], seatDesign: seatDesignIds,
+    driveSide: ['rhd','lhd'], background: ['studio','street','skatepark','warehouse','rooftop']
   });
   const defaults = Object.freeze({
-    version: 2,
+    version: 3,
     colors: Object.freeze(Object.fromEntries([
       ...legacyParts.map(part => [part, '#F1F4F8']),
       ...hardwareParts.map(part => [part, '#BCC7D6'])
@@ -21,7 +22,8 @@ const JKCrewBikeConfig = (() => {
     barStyle: 'two-piece', tyreStyle: 'white', seatStyle: 'slim', pegs: 'none', decal: 'none',
     finishes: Object.freeze(Object.fromEntries(metalParts.map(part => [part, hardwareParts.includes(part) ? 'chrome' : 'gloss']))),
     framePaint: 'solid', frameFadeColor: '#AD8AFF', pedalMaterial: 'plastic',
-    brakeStyle: 'none', spokeStyle: 'standard', stemStyle: 'top-load', seatDesign: 'solid'
+    brakeStyle: 'none', spokeStyle: 'standard', stemStyle: 'top-load', seatDesign: 'solid',
+    driveSide: 'rhd', background: 'studio'
   });
   const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined;

@@ -78,3 +78,79 @@ Edit target: `studio-metal-v2.png`. Final prompt:
 Edit target: `studio-chrome-options-v3.png`. Final prompt:
 
 > Use case: precise-object-edit. Asset type: aligned photographic jet-fuel metal handlebar for an interactive BMX. Edit this exact 1536x1024 photograph. Change ONLY the four-piece chrome handlebars into polished PVD oil slick / JET FUEL metal. Deep saturated electric cyan-blue on the forward-facing surface, dark violet-purple and magenta along the curved edges, occasional gold reflected transitions, narrow brilliant silver-white highlights and deep charcoal reflected shadows. Iridescent colours follow the physical curvature and angle of each tube individually; no single world-coordinate rainbow gradient. Preserve the exact shape, silhouette, thickness, welded joints and grip positions. Keep grips white. Preserve stem, headset, bicycle, every other component, frame, fork, seat, wheels, pegs, shadows, background, camera, framing and pixel geometry otherwise unchanged. Photoreal product photograph with high-contrast polished metal reflection detail, no extra parts, no text or logos. Entire image must align exactly with the original photograph for compositing only the handlebar area.
+
+## v4 — drivetrain and finished-bike scenes (2.14.99)
+
+Seven original images were generated with the built-in ImageGen tool. Input files are this project's original photographic masters. No retailer photography is embedded. All outputs retain 1536 × 1024 registration; WebP delivery copies and 240 × 160 scene thumbnails were converted with Sharp. The original PNG sources are retained in `images/bike-garage/`.
+
+The preview uses a photographic bike cutout, soft tyre contact shadows and subtle scene-specific ambient tone. Its camera view is fixed: pinch zoom, pan and image rotation inspect the existing image, not a fabricated 3D view. Exports retain the complete composition.
+
+### `studio-lhd-v4.png`
+
+Input: `studio-white-v1.png`.
+
+Final prompt:
+
+```text
+Use case: precise-object-edit. Asset type: registered LEFT HAND DRIVE BMX component photograph for a bike customizer. Input image is the edit target, exact 1536x1024 white BMX studio photograph viewed from the bicycle's RIGHT side (front wheel to the right). Keep EXACT same camera, geometry, image dimensions, crop, bike orientation, frame, wheels, every spoke, seat, handlebars, fork, crank spindle and near pedal positions, white material, background, shadows and all other pixels. Change ONLY the drivetrain: this must become a genuine LEFT HAND DRIVE BMX, with the chain and sprocket on the FAR LEFT SIDE of the bike. Remove the currently visible near/right chain and sprocket. Reveal the right-side white crank arm and bottom bracket naturally without a near-side chainring. Render the far-side small white sprocket and metal chain partly visible BEHIND the seat tube, chainstays and crank, occluded correctly by the foreground frame. The far chain goes from far side of rear hub to far bottom bracket. Keep exact rear wheel and crank coordinates and believable BMX chain alignment. It is NOT a mirrored image; do not flip any other component or camera. No added pegs or brakes, no text, no logos. Highly realistic product photography. Only the rear-hub to bottom-bracket drivetrain region changes; the rest must remain precisely aligned for a masked image replacement.
+```
+
+### `scene-street-v4.png`
+
+New background; no input image.
+
+Final prompt:
+
+```text
+Use case: photorealistic-natural. Asset type: empty photographic background plate for compositing a realistic BMX. Output 1536x1024 landscape, no bicycle and no people. Low product-photography camera approximately 75cm above pavement, 55mm lens, very slight downward view. An authentic Australian inner-city street spot: subtly weathered grey concrete paving, low pale concrete ledge far behind, tasteful weathered brick and dark industrial doors and distant city detail in upper half. Foreground is wide EMPTY LEVEL concrete from y540 down to bottom, perfectly clear from x80 to1450 for a full-size BMX to be placed across the picture with wheel contacts around y900. Background must be comfortably behind subject plane, gently out of focus, no objects intruding through bike space. Bright but soft overcast neutral daylight from upper left, realistic diffuse ground bounce to match a white studio-lit product, no hard dramatic shadows. Fine concrete grain at realistic scale, faint scuffs, detailed natural environment, restrained charcoal/tan/grey colours. No painted bicycle, no riders, no text, no logos, no black silhouette. Professional editorial BMX product photography backdrop.
+```
+
+### `scene-skatepark-v4.png`
+
+New background; no input image.
+
+Final prompt:
+
+```text
+Use case: photorealistic-natural. Asset type: empty photographic skatepark background plate for compositing a realistic BMX. Output exact1536x1024 landscape. No bicycle and no people. Low product-photography camera 75cm above ground, 55mm lens, slight downward view. Real modern outdoor concrete skatepark, smooth concrete bowls and quarterpipes only BEHIND the subject plane in upper half, subtle coping, distant gum trees and soft pale sky, very gently blurred distance. Foreground x80..1450 and y530..1024 is a clear uninterrupted FLAT smooth pale grey concrete deck to place one full-size BMX at wheel contact y900. No foreground ramp, gap, ledge or objects obstructing bicycle. Soft neutral overcast morning daylight from upper left, bright diffuse ground bounce matching a studio-lit product photograph. Fine realistic concrete pores, wheel scuff marks and genuine skatepark forms. High-end photographic realism, no illustration or CGI/game graphics, no text/logos, no bicycle-shaped shadows. Subtle sport editorial atmosphere.
+```
+
+### `scene-warehouse-v4.png`
+
+New background; no input image.
+
+Final prompt:
+
+```text
+Use case: photorealistic-natural. Asset type: empty realistic BMX workshop background plate for compositing a bicycle. Output1536x1024 landscape, no bicycle, no people. Low product-photography camera about75cm above ground with55mm lens, slight downward view. Beautiful authentic industrial BMX workshop with tall black-framed factory windows admitting large soft neutral daylight from upper left, distant neatly organised wood workbench, indistinct hanging tools, dark steel cabinets and warm timber details across the upper half. Background behind subject plane, natural shallow depth of field. Broad EMPTY flat polished grey concrete floor from y530..1024 and x80..1450, wheel contact plane for later inserted BMX near y900. Diffuse window light and soft floor bounce; neutral bright foreground, moody but visible workshop distance. No harsh colour cast, no hard shadows, no glossy wet floor reflections, no objects crossing foreground. High-end real product photography, fine subtle floor scuffs, no illustration/CGI, no text/logos, no bike outlines or painted bikes.
+```
+
+### `scene-rooftop-v4.png`
+
+New background; no input image.
+
+Final prompt:
+
+```text
+Use case: photorealistic-natural. Asset type: empty photographic rooftop background for compositing a realistic BMX bike. Output1536x1024 landscape, no bicycle or people. Low55mm product photography camera75cm above ground, slight downward view. Safe broad urban rooftop terrace at early blue hour with a subtle peach-violet horizon and distant soft city skyline, low concrete parapet well BEHIND the subject plane in upper half. Foreground is open EMPTY dry pale grey concrete x80..1450,y530..1024 with subject contact plane near y900. Foreground illuminated by a broad neutral soft photographic fill light upper left, believable gentle skylight bounce; keep enough neutral light that a bright metallic bike photo fits naturally. Distant city lights glow subtly, fine realistic concrete texture, restrained colour atmosphere, no dramatic coloured light across foreground, no deep darkness, no wet mirror reflections. No objects intruding into bike space, no shadows shaped like bicycle, no text/logos. Premium real editorial BMX photograph background, not a videogame render.
+```
+
+### `studio-lhd-chrome-v4.png`
+
+Input: `studio-lhd-v4.png`.
+
+Final prompt:
+
+```text
+Use case: precise-object-edit. Asset type: exactly registered LEFT HAND DRIVE BMX photographic material reference. Input is edit target 1536x1024. Preserve exact same LEFT HAND drivetrain layout: far-side ring/chain remain behind the frame, NO near-side sprocket or chain. Preserve exact all geometry, camera, dimensions, tube outlines, wheel/spoke positions, crank arms, white grips/seat/tyres/pedals, original background and shadows. Change ONLY the material on the metal FRAME TUBES, CRANK ARMS, FAR SPROCKET and HUBS into polished mirror chrome steel/aluminium. Deep charcoal studio reflections, narrow silver-white softbox highlights and realistic welded and machined surfaces, curved reflection following each tube, strong tonal depth and fine edge detail. No illustration, no text/logos, no new components, no camera or silhouette movement. It must align exactly to original for replacing only the bottom-bracket/rear-hub region in a compositor.
+```
+
+### `studio-lhd-jetfuel-v4.png`
+
+Input: `studio-lhd-v4.png`.
+
+Final prompt:
+
+```text
+Use case: precise-object-edit. Asset type: exactly registered LEFT HAND DRIVE BMX photographic material reference. Input is edit target 1536x1024. Preserve exact same LEFT HAND drivetrain layout: far-side ring/chain remain behind the frame, NO near-side sprocket or chain. Preserve exact all geometry, camera, dimensions, tube outlines, wheel/spoke positions, crank arms, white grips/seat/tyres/pedals, original background and shadows. Change ONLY the material on the metal FRAME TUBES, CRANK ARMS, FAR SPROCKET and HUBS into polished PVD oil-slick JET FUEL reflective metal. Rich saturated electric cyan and deep violet/magenta with gold transitions, charcoal reflected shadows and narrow brilliant white specular highlights. Each tube reflects colour around its own cylindrical curvature, NOT a global rainbow gradient. Top tube cyan-blue/violet, down tube violet/magenta with cyan-facing reflections, gold naturally on stays. No illustration, no text/logos, no new components, no camera or silhouette movement. It must align exactly to original for replacing only the bottom-bracket/rear-hub region in a compositor.
+```

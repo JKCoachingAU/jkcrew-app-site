@@ -240,3 +240,19 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-garage .bike-fin
 html[data-theme=light] #app #view[data-view="bikeGarage"]{background:#edf3f5}
 #app #view[data-view="bikeGarage"] .bike-seat-filter select{font-family:inherit;font-size:16px;font-weight:600;line-height:1.5}
 body:has(#view[data-view="bikeGarage"]){overflow-x:clip;overflow-y:visible}
+
+/* Each brake remains an independent, labelled control with a full touch target. */
+.bike-brake-setup{border:0;padding:0;margin:0 0 20px;min-width:0}
+.bike-brake-setup legend{margin-bottom:10px;padding:0}
+.bike-brake-setup>label{display:flex;align-items:center;gap:12px;min-height:52px;margin:8px 0;padding:12px 14px;border:1px solid var(--bike-line);border-radius:10px;background:#0a151b;color:var(--bike-ink);cursor:pointer;font-size:14px;font-weight:600}
+.bike-brake-setup input{appearance:auto;width:20px;height:20px;min-height:20px;margin:0;flex:0 0 20px;accent-color:#2ac7b8;cursor:pointer}
+.bike-brake-setup>label>b{margin-left:auto;color:#91fbe6;visibility:hidden}
+.bike-brake-setup>label:has(input:checked){background:#173b3e;border-color:#4f938f}
+.bike-brake-setup>label:has(input:checked)>b{visibility:visible}
+.bike-brake-setup>label:has(input:disabled){opacity:.55;cursor:default}
+.bike-brake-setup input:focus-visible{outline:2px solid #69eddd;outline-offset:4px}
+html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-brake-setup>label{background:#f3f6f7;color:#172137}
+html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-brake-setup>label:has(input:checked){background:#d9eeeb;border-color:#70b2a9}
+html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-brake-setup>label>b{color:#14544e}
+/* On a short landscape phone, the pinned photo would cover the workshop controls. */
+@media(max-width:850px) and (max-height:500px) and (orientation:landscape){.bike-stage{position:relative;top:auto;z-index:auto}}

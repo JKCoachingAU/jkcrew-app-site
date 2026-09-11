@@ -3,36 +3,41 @@
 const JKCrewBikeArt=(()=>{
   'use strict';
   const names={frame:'Frame',fork:'Fork',bars:'Handlebars',grips:'Grips',rims:'Wheel rims',hubs:'Wheel hubs',seat:'Seat',pedals:'Pedals',cranks:'Cranks',sprocket:'Sprocket',tyres:'Tyres',pegs:'Pegs',decal:'Frame decal',seatpost:'Seatpost',stem:'Stem',headset:'Headset',spokes:'Spokes',nipples:'Spoke nipples',brakes:'Brakes'};
-  const assetUrls=Object.freeze({base:'./images/bike-garage/studio-white-v1.webp',options:'./images/bike-garage/studio-options-v1.webp',hardware:'./images/bike-garage/studio-hardware-v2.webp',metal:'./images/bike-garage/studio-metal-v2.webp',chrome:'./images/bike-garage/studio-chrome-v3.webp',chromeOptions:'./images/bike-garage/studio-chrome-options-v3.webp',jetfuel:'./images/bike-garage/studio-jetfuel-v3.webp',jetfuelOptions:'./images/bike-garage/studio-jetfuel-options-v3.webp',chromeTopStem:'./images/bike-garage/studio-chrome-top-stem-v3.webp',chromeFrontStem:'./images/bike-garage/studio-chrome-front-stem-v3.webp'});
+  const assetUrls=Object.freeze({base:'./images/bike-garage/studio-white-v1.webp',options:'./images/bike-garage/studio-options-v1.webp',hardware:'./images/bike-garage/studio-hardware-v2.webp',metal:'./images/bike-garage/studio-metal-v2.webp',chrome:'./images/bike-garage/studio-chrome-v3.webp',chromeOptions:'./images/bike-garage/studio-chrome-options-v3.webp',jetfuel:'./images/bike-garage/studio-jetfuel-v3.webp',jetfuelOptions:'./images/bike-garage/studio-jetfuel-options-v3.webp',chromeTopStem:'./images/bike-garage/studio-chrome-top-stem-v3.webp',chromeFrontStem:'./images/bike-garage/studio-chrome-front-stem-v3.webp',lhd:'./images/bike-garage/studio-lhd-v4.webp',lhdChrome:'./images/bike-garage/studio-lhd-chrome-v4.webp',lhdJetfuel:'./images/bike-garage/studio-lhd-jetfuel-v4.webp'});
   const images=new Map(),finishes=['gloss','matte','chrome','raw','jetfuel'];
   const choice=(v,values,fallback)=>values.includes(v)?v:fallback;
   const colour=v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)?v.toUpperCase():'#F1F4F8';
-  const styles=c=>({bars:choice(c?.barStyle,['two-piece','four-piece'],'two-piece'),seat:choice(c?.seatStyle,['slim','padded'],'slim'),pegs:choice(c?.pegs,['none','rear','both','four'],'none'),tyres:choice(c?.tyreStyle,['white','black','tan-wall','white-wall'],'white'),decal:choice(c?.decal,['none','jkcrew','lightning'],'none'),brakes:choice(c?.brakeStyle,['none','rear','dual'],'none'),stem:choice(c?.stemStyle,['top-load','front-load'],'top-load'),pedal:choice(c?.pedalMaterial,['plastic','metal'],'plastic'),spokes:choice(c?.spokeStyle,['standard','rainbow'],'standard'),modern:Number(c?.version)>=2||['pedalMaterial','stemStyle','brakeStyle'].some(k=>Object.hasOwn(c||{},k))});
+  const styles=c=>({bars:choice(c?.barStyle,['two-piece','four-piece'],'two-piece'),seat:choice(c?.seatStyle,['slim','padded'],'slim'),pegs:choice(c?.pegs,['none','rear','both','four'],'none'),drive:choice(c?.driveSide,['rhd','lhd'],'rhd'),tyres:choice(c?.tyreStyle,['white','black','tan-wall','white-wall'],'white'),decal:choice(c?.decal,['none','jkcrew','lightning'],'none'),brakes:choice(c?.brakeStyle,['none','front','rear','dual'],'none'),stem:choice(c?.stemStyle,['top-load','front-load'],'top-load'),pedal:choice(c?.pedalMaterial,['plastic','metal'],'plastic'),spokes:choice(c?.spokeStyle,['standard','rainbow'],'standard'),modern:Number(c?.version)>=2||['pedalMaterial','stemStyle','brakeStyle'].some(k=>Object.hasOwn(c||{},k))});
   const reflectionParts=['frame','fork','bars','rims','hubs','cranks','sprocket','seatpost','headset'];
-  const needsChrome=c=>reflectionParts.some(k=>['chrome','raw'].includes(c?.finishes?.[k])&&!(k==='bars'&&styles(c).bars==='four-piece'));
-  const needsJetfuel=c=>reflectionParts.some(k=>c?.finishes?.[k]==='jetfuel'&&!(k==='bars'&&styles(c).bars==='four-piece'));
+  const lhdMaterialParts=['frame','cranks','sprocket','hubs'];
+  const needsChrome=c=>reflectionParts.some(k=>['chrome','raw'].includes(c?.finishes?.[k])&&!(k==='bars'&&styles(c).bars==='four-piece')&&!(styles(c).drive==='lhd'&&lhdMaterialParts.includes(k)));
+  const needsJetfuel=c=>reflectionParts.some(k=>c?.finishes?.[k]==='jetfuel'&&!(k==='bars'&&styles(c).bars==='four-piece')&&!(styles(c).drive==='lhd'&&lhdMaterialParts.includes(k)));
   const needsChromeOptions=c=>styles(c).bars==='four-piece'&&['chrome','raw'].includes(c?.finishes?.bars);
   const needsJetfuelOptions=c=>styles(c).bars==='four-piece'&&c?.finishes?.bars==='jetfuel';
   const stemReflectionUrl=c=>{if(!['chrome','raw','jetfuel'].includes(c?.finishes?.stem))return '';const s=styles(c);return s.stem==='front-load'?assetUrls.chromeFrontStem:s.modern?assetUrls.chromeTopStem:c.finishes.stem==='jetfuel'?assetUrls.jetfuel:assetUrls.chrome;};
-  const urls=c=>{const s=styles(c),list=[assetUrls.base];if(s.bars==='four-piece'||s.seat==='padded')list.push(assetUrls.options);if(s.pegs!=='none'||s.brakes!=='none'||s.modern&&(s.pedal==='plastic'||s.stem==='top-load'))list.push(assetUrls.hardware);if(s.pedal==='metal'||s.stem==='front-load')list.push(assetUrls.metal);if(needsChrome(c))list.push(assetUrls.chrome);if(needsChromeOptions(c))list.push(assetUrls.chromeOptions);if(needsJetfuel(c))list.push(assetUrls.jetfuel);if(needsJetfuelOptions(c))list.push(assetUrls.jetfuelOptions);if(stemReflectionUrl(c))list.push(stemReflectionUrl(c));return [...new Set(list)];};
+  const needsLhdMaterial=(c,values)=>styles(c).drive==='lhd'&&lhdMaterialParts.some(k=>values.includes(c?.finishes?.[k]));
+  const urls=c=>{const s=styles(c),list=[assetUrls.base];if(s.bars==='four-piece'||s.seat==='padded')list.push(assetUrls.options);if(s.pegs!=='none'||s.brakes!=='none'||s.modern&&(s.pedal==='plastic'||s.stem==='top-load'))list.push(assetUrls.hardware);if(s.pedal==='metal'||s.stem==='front-load')list.push(assetUrls.metal);if(needsChrome(c))list.push(assetUrls.chrome);if(needsChromeOptions(c))list.push(assetUrls.chromeOptions);if(needsJetfuel(c))list.push(assetUrls.jetfuel);if(needsJetfuelOptions(c))list.push(assetUrls.jetfuelOptions);if(stemReflectionUrl(c))list.push(stemReflectionUrl(c));if(s.drive==='lhd')list.push(assetUrls.lhd);if(needsLhdMaterial(c,['chrome','raw']))list.push(assetUrls.lhdChrome);if(needsLhdMaterial(c,['jetfuel']))list.push(assetUrls.lhdJetfuel);return [...new Set(list)];};
   function prepare(config={}){return Promise.all(urls(config).map(url=>{if(images.has(url))return images.get(url).promise;const entry={ready:false,promise:null};entry.promise=new Promise((resolve,reject)=>{const img=new Image();let settled=false;const finish=error=>{if(settled)return;settled=true;clearTimeout(timer);img.onload=null;img.onerror=null;if(error){if(images.get(url)===entry)images.delete(url);reject(error);}else{entry.ready=true;resolve();}};const timer=setTimeout(()=>{finish(new Error('The bike photo took too long to load.'));img.src='';},12000);img.onload=async()=>{try{if(img.decode)await img.decode();finish();}catch(error){finish(error);}};img.onerror=()=>finish(new Error('The bike photo could not load.'));img.src=url;});images.set(url,entry);return entry.promise;}));}
   const isReady=c=>urls(c).every(url=>images.get(url)?.ready);
   const table=(fn)=>Array.from({length:41},(_,i)=>Math.max(0,Math.min(1,fn(i/40))).toFixed(4)).join(' ');
-  function render(config={}, {idPrefix='bike',selectedPart='',interactive=false}={}){
+  function render(config={}, {idPrefix='bike',selectedPart='',interactive=false,transparent=false}={}){
     config=config&&typeof config==='object'?config:{};
     const masks=globalThis.JKCrewBikePhotoMasks,s=styles(config),prefix='bmx-'+(String(idPrefix||'bike').replace(/[^a-z0-9_-]/gi,'-').slice(0,64)||'bike');
     const id=k=>`${prefix}-${k}`,defs=[],layers=[],hits=[];
     const photo=url=>`<image href="${url}" x="0" y="0" width="1536" height="1024" preserveAspectRatio="none" pointer-events="none"/>`;
     const path=(shape,fill)=>`<path d="${shape.path||''}" fill="${fill}" fill-rule="${shape.fillRule||'nonzero'}"/>${shape.strokePath?`<path d="${shape.strokePath}" fill="none" stroke="${fill}" stroke-width="${shape.strokeWidth||4}" stroke-linecap="round"/>`:''}`;
     const union=(shapes)=>({path:shapes.filter(Boolean).map(m=>m.path).join(' '),bounds:[0,0,1536,1024]});
-    const activePegs=s.pegs==='none'?[]:[masks.rearPegV2,...(['both','four'].includes(s.pegs)?[masks.frontPegV2]:[]),...(s.pegs==='four'?[masks.rearFarPeg,masks.frontFarPeg]:[])];
-    const activeBrakes=s.brakes==='none'?[]:[masks.rearBrake,...(s.brakes==='dual'?[masks.frontBrake]:[])];
+    const pegPair=s.drive==='rhd'?[masks.rearFarPeg,masks.frontFarPeg]:[masks.rearPegV2,masks.frontPegV2];
+    const activePegs=s.pegs==='none'?[]:s.pegs==='four'?[masks.rearPegV2,masks.frontPegV2,masks.rearFarPeg,masks.frontFarPeg]:s.pegs==='rear'?pegPair.slice(0,1):pegPair;
+    const activeBrakes=[...(['rear','dual'].includes(s.brakes)?[masks.rearBrake]:[]),...(['front','dual'].includes(s.brakes)?[masks.frontBrake]:[])];
     const stemShape=s.stem==='front-load'?masks.stemFront:s.modern?masks.stemTop:masks.stem;
     const pedalShape=s.pedal==='metal'?masks.metalPedal:s.modern?masks.plasticPedal:masks.pedals;
     const pegShape={...union(activePegs),bounds:[209,653,1093,94],excludePath:activePegs.map(m=>m.excludePath||'').join(' ')};
-    const shapeFor=part=>part==='pegs'?pegShape:part==='stem'?stemShape:part==='pedals'?pedalShape:masks[part==='bars'&&s.bars==='four-piece'?'barsFour':part==='grips'&&s.bars==='four-piece'?'gripsFour':part==='seat'&&s.seat==='padded'?'seatPadded':part];
+    const lhdMaskNames={frame:'lhdFrame',cranks:'lhdCranks',sprocket:'lhdSprocket',chain:'lhdChain',rims:'lhdRims',tyres:'lhdTyres',sidewalls:'lhdSidewalls',spokes:'lhdSpokes',nipples:'lhdNipples'};
+    const shapeFor=part=>s.drive==='lhd'&&lhdMaskNames[part]?masks[lhdMaskNames[part]]:part==='pegs'?pegShape:part==='stem'?stemShape:part==='pedals'?pedalShape:masks[part==='bars'&&s.bars==='four-piece'?'barsFour':part==='grips'&&s.bars==='four-piece'?'gripsFour':part==='seat'&&s.seat==='padded'?'seatPadded':part];
     let composite=photo(assetUrls.base);
     const rectPatch=(key,url,x,y,w,h)=>{defs.push(`<clipPath id="${id(key+'-patch')}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`);composite+=`<g clip-path="url(#${id(key+'-patch')})">${photo(url)}</g>`;};
+    if(s.drive==='lhd')rectPatch('lhd-drive',assetUrls.lhd,292,590,448,146);
     if(s.bars==='four-piece')rectPatch('bars',assetUrls.options,865,25,260,260);
     if(s.seat==='padded')rectPatch('seat',assetUrls.options,425,295,260,125);
     if(s.modern||s.pedal==='metal')rectPatch('pedal',s.pedal==='metal'?assetUrls.metal:assetUrls.hardware,774,597,134,86);
@@ -48,7 +53,9 @@ const JKCrewBikeArt=(()=>{
     if(needsJetfuel(config))defs.push(`<g id="${id('jetfuel-photograph')}">${photo(assetUrls.jetfuel)}</g>`);
     if(needsJetfuelOptions(config))defs.push(`<g id="${id('jetfuel-options-photograph')}">${photo(assetUrls.jetfuelOptions)}</g>`);
     if(stemReflectionUrl(config))defs.push(`<g id="${id('stem-reflection-photograph')}">${photo(stemReflectionUrl(config))}</g>`);
-    const materialFor=key=>id(key==='stem'?'stem-reflection-photograph':key==='bars'&&s.bars==='four-piece'?'chrome-options-photograph':reflectionParts.includes(key)?'chrome-photograph':'photograph');
+    if(needsLhdMaterial(config,['chrome','raw']))defs.push(`<g id="${id('lhd-chrome-photograph')}">${photo(assetUrls.lhdChrome)}</g>`);
+    if(needsLhdMaterial(config,['jetfuel']))defs.push(`<g id="${id('lhd-jetfuel-photograph')}">${photo(assetUrls.lhdJetfuel)}</g>`);
+    const materialFor=key=>id(s.drive==='lhd'&&lhdMaterialParts.includes(key)?'lhd-chrome-photograph':key==='stem'?'stem-reflection-photograph':key==='bars'&&s.bars==='four-piece'?'chrome-options-photograph':reflectionParts.includes(key)?'chrome-photograph':'photograph');
     function maskFor(key,shape,detail=shape.detail){
       const [x,y,w,h]=shape.bounds;
       const exclusions=[shape.excludePath,key==='stem'?shapeFor('bars').path:'',key!=='pegs'?activePegs.map(m=>m.path).join(' '):''].filter(Boolean).join(' ');
@@ -94,7 +101,7 @@ const JKCrewBikeArt=(()=>{
         };
         defs.push(`<filter id="${id(key+'-metal')}" ${attributes}><feColorMatrix type="saturate" values="0"/>${transfer(tone)}</filter>`);
         const trueIridescence=finish==='jetfuel'&&(reflectionParts.includes(key)||key==='stem'&&!s.modern&&s.stem==='top-load');
-        const iridescentPhoto=key==='stem'?'stem-reflection-photograph':key==='bars'&&s.bars==='four-piece'?'jetfuel-options-photograph':'jetfuel-photograph';
+        const iridescentPhoto=s.drive==='lhd'&&lhdMaterialParts.includes(key)?'lhd-jetfuel-photograph':key==='stem'?'stem-reflection-photograph':key==='bars'&&s.bars==='four-piece'?'jetfuel-options-photograph':'jetfuel-photograph';
         surface=trueIridescence?`<use href="#${id(iridescentPhoto)}"/>`:raw?`<use href="#${id('photograph')}" filter="url(#${id(key+'-metal')})"/><use href="#${materialFor(key)}" filter="url(#${id(key+'-metal')})" opacity=".2"/>`:`<use href="#${materialFor(key)}" filter="url(#${id(key+'-metal')})"/>`;
       }else{
         const fill=customFill||paintGradient(key,shape,value);
@@ -116,7 +123,7 @@ const JKCrewBikeArt=(()=>{
       const shape=shapeFor(part);if(!shape)continue;
       const finish=choice(config.finishes?.[part],finishes,'gloss'),paint=part==='tyres'?(s.tyres==='white'?'#F1F4F8':'#25282C'):colour(config.colors?.[part]);
       layers.push(coated(part,shape,paint,part==='pedals'?(s.pedal==='metal'?'chrome':s.modern?'matte':'gloss'):finish,part==='seat'&&seatDesign!=='solid'&&seatArt?seatArt.fill(prefix,seatDesign):''));
-      if(part==='tyres'&&['tan-wall','white-wall'].includes(s.tyres))layers.push(coated('sidewalls',masks.sidewalls,s.tyres==='tan-wall'?'#C8A474':'#E3E1D7','matte'));
+      if(part==='tyres'&&['tan-wall','white-wall'].includes(s.tyres))layers.push(coated('sidewalls',shapeFor('sidewalls'),s.tyres==='tan-wall'?'#C8A474':'#E3E1D7','matte'));
       if(interactive)hits.push(`<g data-bike-part="${part}" role="button" tabindex="0" aria-label="Customize ${names[part].toLowerCase()}" data-selected="${selectedPart===part}" style="cursor:pointer"><title>${names[part]}</title><path class="bike-photo-hit" d="${shape.path}" fill="transparent" fill-rule="${shape.fillRule||'nonzero'}" pointer-events="fill"/></g>`);
     }
     if(s.decal!=='none'){
@@ -127,13 +134,37 @@ const JKCrewBikeArt=(()=>{
     }
     for(const [index,shape]of activeBrakes.entries()){
       const key='brake-photo-'+index;
-      const shifted=index===1&&s.bars==='four-piece';
+      const shifted=shape===masks.frontBrake&&s.bars==='four-piece';
       const actual=shifted?{...shape,path:shape.caliperPath,strokePath:shape.strokePathFour}:shape;
       defs.push(`<mask id="${id(key)}" maskUnits="userSpaceOnUse" x="0" y="0" width="1536" height="1024">${path(actual,'white')}</mask>`);layers.push(`<g mask="url(#${id(key)})" pointer-events="none">${photo(assetUrls.hardware)}</g>`);
       if(shifted){defs.push(`<clipPath id="${id('front-lever-shift')}"><path d="${shape.leverPath}"/></clipPath>`);layers.push(`<g transform="translate(-12 26)" pointer-events="none"><g clip-path="url(#${id('front-lever-shift')})">${photo(assetUrls.hardware)}</g></g><path d="M1101 132 Q1123 130 1141.5 140" fill="none" stroke="#303233" stroke-width="3.1" stroke-linecap="round" pointer-events="none"/>`);}
     }
     if(interactive){hits.push(`<g data-bike-part="decal" role="button" tabindex="0" aria-label="Customize frame decal"><title>Frame decal</title><path class="bike-photo-hit" d="M794 550 L970 442 L985 468 L810 578Z" fill="transparent" pointer-events="fill"/></g>`);hits.push(`<g data-bike-part="brakes" role="button" tabindex="0" aria-label="Customize brakes"><title>Brakes</title>${activeBrakes.map(m=>`<path class="bike-photo-hit" d="${m.path}" fill="transparent" pointer-events="fill"/>`).join('')}</g>`);}
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024" preserveAspectRatio="xMidYMid meet" class="jkcrew-bike-art" role="${interactive?'group':'img'}" aria-labelledby="${id('title')}" data-bike-photo="true" style="display:block;width:100%;height:auto"><title id="${id('title')}">Photographic custom BMX bike${interactive?'; select a part to customise it':''}</title><defs>${defs.join('')}</defs><use href="#${id('photograph')}" pointer-events="none"/>${layers.join('')}${hits.join('')}</svg>`;
+    let foreground='';
+    if(transparent===true){
+      const solid=[];
+      for(const key of ['tyres','rims','frame','fork','headset','seatpost','stem','bars','grips','seat','sprocket','cranks','pedals','hubs','pegs']){
+        const shape=shapeFor(key);if(!shape?.path)continue;
+        // Chainring and pedal apertures reveal the scene. Bolt sockets, bearings
+        // and peg interiors remain opaque photographed hardware.
+        if(['sprocket','pedals'].includes(key)&&shape.excludePath){
+          defs.push(`<mask id="${id('foreground-'+key)}" maskUnits="userSpaceOnUse" x="0" y="0" width="1536" height="1024">${path(shape,'white')}<path d="${shape.excludePath}" fill="black"/></mask>`);
+          solid.push(`<g mask="url(#${id('foreground-'+key)})"><rect width="1536" height="1024" fill="white"/></g>`);
+        }else solid.push(path(shape,'white'));
+      }
+      defs.push(`<filter id="${id('foreground-detail-filter')}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 -.2126 -.7152 -.0722 0 1"/><feComponentTransfer><feFuncA type="table" tableValues="${table(a=>a<.105?0:Math.min(1,(a-.105)/.2))}"/></feComponentTransfer></filter><mask id="${id('foreground-detail')}" maskUnits="userSpaceOnUse" x="0" y="0" width="1536" height="1024"><use href="#${id('photograph')}" filter="url(#${id('foreground-detail-filter')})"/></mask>`);
+      const fine=[path(shapeFor('spokes'),'white'),path(shapeFor('nipples'),'white'),path(shapeFor('chain'),'white'),path(masks.seatRails,'white')];
+      for(const shape of activeBrakes){
+        const shifted=shape===masks.frontBrake&&s.bars==='four-piece';
+        if(shifted)solid.push(`<g transform="translate(-12 26)"><path d="${shape.leverPath}" fill="white"/></g><path d="M1101 132 Q1123 130 1141.5 140" fill="none" stroke="white" stroke-width="3.1" stroke-linecap="round"/>`);
+      }
+      // Cables use their source photograph rather than the brake-free base.
+      if(activeBrakes.length)defs.push(`<mask id="${id('foreground-brake-detail')}" maskUnits="userSpaceOnUse" x="0" y="0" width="1536" height="1024">${photo(assetUrls.hardware).replace('/>',' filter="url(#'+id('foreground-detail-filter')+')"/>')}</mask>`);
+      const brakeShapes=activeBrakes.map(shape=>path({...shape,...(shape===masks.frontBrake&&s.bars==='four-piece'?{path:shape.caliperPath,strokePath:shape.strokePathFour}:{}),strokeWidth:3.1},'white')).join('');
+      defs.push(`<mask id="${id('foreground')}" maskUnits="userSpaceOnUse" x="0" y="0" width="1536" height="1024">${solid.join('')}<g mask="url(#${id('foreground-detail')})">${fine.join('')}</g>${activeBrakes.length?`<g mask="url(#${id('foreground-brake-detail')})">${brakeShapes}</g>`:''}</mask>`);
+      foreground=` mask="url(#${id('foreground')})"`;
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024" preserveAspectRatio="xMidYMid meet" class="jkcrew-bike-art" role="${interactive?'group':'img'}" aria-labelledby="${id('title')}" data-bike-photo="true" data-drive-side="${s.drive}" data-transparent="${transparent===true}" style="display:block;width:100%;height:auto"><title id="${id('title')}">Photographic custom BMX bike${interactive?'; select a part to customise it':''}</title><defs>${defs.join('')}</defs><g${foreground}><use href="#${id('photograph')}" pointer-events="none"/>${layers.join('')}</g>${hits.join('')}</svg>`;
   }
   return Object.freeze({render,prepare,isReady,assetUrls});
 })();

@@ -1,10 +1,16 @@
-# JKCREW Bike Garage — 2.14.98
+# JKCREW Bike Garage — 2.14.99
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses original generated studio photographs with masked material recolouring, instant part/colour changes and a full-bike preview.
 
 New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. Photographic artwork depicts the bike at a slight angle on a light studio background. Paint colours retain photographed material textures, shading and reflections.
 
-Sixteen colour zones cover the frame, forks, bars, grips, rims, hubs, spokes, nipples, saddle, seat post, stem, headset, pedals, cranks, sprocket and pegs. Metal components offer gloss, matte, chrome, raw and jet-fuel finishes. Frames support a two-colour fade. Riders can choose plastic or metal platform pedals, top/front-load stems, rear or front-and-rear brakes, up to four pegs, rainbow titanium spoke styling, two/four-piece bars, tyre walls and seat shape. A paged gallery offers 50 original seat patterns alongside standard solid colours. Undo/redo restores design changes; Surprise me tries another colour combination. Bike names are limited to 40 characters.
+Sixteen colour zones cover the frame, forks, bars, grips, rims, hubs, spokes, nipples, saddle, seat post, stem, headset, pedals, cranks, sprocket and pegs. Metal components offer gloss, matte, chrome, raw and jet-fuel finishes. Frames support a two-colour fade. Riders can choose plastic or metal platform pedals, top/front-load stems, independently ticked front and rear brakes, up to four pegs, rainbow titanium spoke styling, two/four-piece bars, tyre walls and seat shape. A paged gallery offers 50 original seat patterns alongside standard solid colours. Undo/redo restores design changes; Surprise me tries another colour combination. Bike names are limited to 40 characters.
+
+Drivetrain controls choose RHD or LHD. With two pegs, RHD places them on the bike's left side and LHD on its right; four pegs remain on both sides. The registered LHD photograph moves the drivetrain behind the frame while preserving the camera and all other components.
+
+The full-bike preview supports pinch zoom, drag, wheel zoom, keyboard controls, reset and 2D image rotation. Four photographic scenes—Street, Skatepark, The workshop and Rooftop dusk—join the existing Studio. Scene changes are design changes and persist with Save to garage. View zoom, pan and rotation are temporary inspection controls. The bike is cut out around its frame, spokes and parts and grounded using contact shadows and restrained ambient tone.
+
+**Save photo** prepares a complete opaque 2048 × 1365 PNG of the bike and chosen background. It always exports the full composition, independent of inspection zoom and rotation. Supported phones open the device share sheet; on iPhone/iPad select Save Image. Other browsers download the PNG. Export failures offer retry or an explicit download fallback, and cancellation never claims that a photo was saved. This does not enable the separate training share card.
 
 Each account has three private saved slots. Explicit saving keeps designs across devices; a separate account-scoped local draft preserves ongoing edits on the current device where browser storage is available. Failed requests never show a successful save. Opening another design or starting over asks before replacing unsaved work. A revision conflict requires refreshing the garage and opening the latest design or saving into a free slot.
 
@@ -14,19 +20,22 @@ A closed inspiration section links to 13 verified real seat and component refere
 
 ## Integration
 
-- `bike-config.js`: shared version-2 defaults and strict normalization; old local fingerprints and pending-save recovery are normalized without overwriting saved records.
+- `bike-config.js`: shared version-3 defaults and strict normalization; old v1/v2 local fingerprints and pending-save recovery are normalized without overwriting saved records. Existing bikes default to RHD and Studio.
 - `bike-seat-designs.js`: 50 original patterns and verified source links.
 - `bike-renderer.js`: sanitised photographic SVG compositor, bounded public-image loading and keyboard-accessible part controls.
 - `bike-photo-masks.js`: material masks and alternate-part silhouettes in the photographs’ fixed 1536 × 1024 coordinates.
 - `images/bike-garage/studio-white-v1.webp` and `studio-options-v1.webp`: original photographic assets, about 109 KB each. Photos load only on demand, then use the public-asset service-worker cache. They do not block sign-in or worker installation. Original PNG sources are retained beside them.
 - [Generation prompts and provenance](bike-garage-artwork.md).
 - `bike-garage.js` / `bike-garage.css`: scoped UI, draft state, explicit save/remove and lifecycle cleanup.
+- `bike-preview.js` / `bike-preview.css`: responsive photo viewer, scene composition, gestures and local PNG export. Only known public artwork is embedded in exports; no private data is uploaded. Native file sharing is invoked synchronously from the button after preparation to preserve the [Web Share user-activation requirement](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share).
 - `get_bike_garage`, `save_bike_build`, `delete_bike_build`: authenticated security-invoker RPCs, protected by ownership RLS and strict configuration validation.
 - `supabase/migrations/20260911102828_add_private_bike_garage.sql`: additive schema. Removed slots keep a revision tombstone with no bike name/configuration, so a stale device cannot overwrite a later replacement.
 - `supabase/migrations/20260911111023_allow_solid_white_bike_tyres.sql`: permits the new solid white tyre choice without changing saved builds, revisions or access permissions.
 - `supabase/migrations/20260911122927_support_bike_garage_parts_v2.sql`: accepts strict v2 configurations alongside unchanged legacy v1 configurations. Existing rows, ownership and revision protection are retained.
+- `supabase/migrations/20260911141311_support_bike_garage_drive_brakes_scenes_v3.sql`: accepts strict v3 drivetrain, independent brake and background fields alongside unchanged v1/v2 validation. Changes only the private validator; no saved rows, revisions, RPCs, RLS policies or grants are rewritten. Production verification accepted all 40 drivetrain/brake/background combinations and found zero invalid existing builds; RLS remains enabled.
 - `studio-hardware-v2.webp` and `studio-metal-v2.webp` supply aligned platform pedals, stem variants, pegs and brake hardware. All public bike photos load only on demand and are cached independently of private garage data.
 - Six `studio-*-v3.webp` material photographs add tube-following chrome and jet-fuel reflections, including four-piece bars and both stem shapes. Raw metal remains more diffuse than chrome; paint, rubber and all 50 seat patterns use the original photographed surface shading. Each material asset loads only when required.
+- Three `studio-lhd*-v4.webp` references preserve far-side drivetrain geometry for white/paint, chrome and jet-fuel. Four `scene-*-v4.webp` images and their thumbnails load on demand. These optional photos are excluded from the installation shell to keep sign-in and updates fast.
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation
@@ -34,5 +43,7 @@ A closed inspiration section links to 13 verified real seat and component refere
 `tests/bike-garage-db.cjs` covers CRUD, configuration validation, actual authenticated/anonymous roles, owner isolation, protected columns, revision conflicts and delete/recreate behaviour. Additional isolated PostgreSQL tests exercised five overlapping real-connection races: create, edit, remove-before-save, recreate and save-before-remove. Existing profiles and scoring tables are unchanged.
 
 `tests/bike-garage-ui.cjs` exercises the real UI and artwork with isolated save fixtures, mobile/tablet layouts, drafts, saved designs, failure/conflict handling and account/navigation cleanup. Existing smoke, closed-section and startup/cache checks cover the app integration.
+
+The v3 database/configuration suite passes 486 assertions, retaining legacy validation, ownership isolation and revision safety. The dedicated `tests/bike-preview-export.cjs` passes 164 assertions covering real PNG output across all four scenes, colour changes, native file sharing, cancellation, fallback, gestures, download filenames, stale work and object-URL cleanup. Visual checks include actual RHD/LHD compositions and narrow portrait/landscape layouts.
 
 Design reference: the user's [Source BMX custom builder](https://us.sourcebmx.com/en-au/products/custom-builder-bike). The JKCREW feature uses original code and artwork, with no Source product images or storefront embedded.

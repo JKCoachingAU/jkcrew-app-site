@@ -110,8 +110,39 @@ const JKCrewBikePhotoMasks = (() => {
   const rearBrakeCable = 'M1003 96 L1017 100 L1038.5 110 L1054 120 L1067.5 130 L1079.5 140 L1091 150 L1101 160 L1110.5 170 L1119 180 L1127 190 L1134.5 200 L1141 210 L1146.5 220 L1151.5 230 L1155.5 240 L1158.5 250 L1161.5 260 L1163.5 270 L1163.5 280 L1162 290 L1160 300 L1155.5 310 L1151 320 L1144 330 L1133.5 340 L1119 350 L1103 357 M1057 364 L700 454 M689 456 L638 465 M570 458 Q542 456 519 461 L503 470';
   const frontBrakeBody = 'M1101 94 Q1105 92 1110 99 L1117 104 L1115 111 L1105 106Z M1145 409 L1155 409 L1158 433 Q1170 439 1172 455 L1167 463 L1173 504 L1193 509 L1195 522 L1182 528 L1179 539 L1169 546 L1160 543 L1156 531 L1145 529 L1137 518 L1139 508 L1154 505 L1142 468 L1136 446 Q1137 437 1145 436Z';
   const frontBrakeCable = 'M1113 105 L1118.5 110 L1127.5 120 L1135.5 130 L1141.5 140 L1147.5 150 L1151.5 160 L1155.5 170 L1158.5 180 L1161.5 190 L1163.5 200 L1164.5 210 L1166 220 L1166.5 230 L1167.5 240 L1167.5 250 L1167.5 270 L1166 290 L1164.5 300 L1163.5 310 L1162.5 320 L1161.5 330 L1159.5 340 L1158.5 350 L1156.5 360 L1150 408';
+  // LHD keeps this camera; the drivetrain is physically behind the frame.
+  const lhdFrame=frame+' '+[
+    'M606 462 L663 625 Q670 639 667 651 L647 660 Q637 649 632 635 L578 477Z',
+    'M660 643 L707 610 L722 635 L682 667 Q669 675 658 663Z',
+    'M594 654 L645 650 L650 672 L596 680Z',
+    ellipse(658,664,29,29,-7)
+  ].join(' ');
+  const lhdCranks='M672 642 L779 632 L783 648 L781 653 L683 676 Q677 690 659 690 Q640 690 632 676 Q624 662 635 647 Q648 634 662 639Z';
+  const lhdSprocket=ellipse(640,651,42,48,-2);
+  const lhdChain=[
+    'M343 650 L489 625 L491 635 L350 661Z',
+    'M557 610 L625 598 L628 609 L558 621Z',
+    'M656 600 Q675 602 685 623 L678 630 Q669 611 655 610Z',
+    'M311 699 L495 697 L496 708 L313 714Z',
+    'M563 692 L641 680 L646 690 L565 704Z'
+  ].join(' ');
+  const lhdSprocketHoles='M613 623 L623 620 L627 635 L612 640 L608 636Z M606 645 L622 647 L624 657 L607 662Z M610 674 L620 677 L626 687 L616 691Z';
+  const lhdWheelOcclusions=[lhdFrame,fork,lhdChain,pedals,lhdCranks,lhdSprocket,hubs].join(' ');
   return Object.freeze({
     width:1536,height:1024,
+    lhdFrame:make(lhdFrame,[299,315,820,396],hubBolts+' '+lhdCranks),
+    lhdCranks:make(lhdCranks,[627,631,158,61],ellipse(658,663,11.5,13,-7)),
+    lhdSprocket:make(lhdSprocket,[595,600,89,101],lhdSprocketHoles+' '+lhdFrame+' '+lhdCranks+' '+lhdChain),
+    lhdChain:make(lhdChain,[308,595,380,122]),
+    lhdSpokes:Object.freeze({...make(spokeWindow,[166,513,1190,361],lhdWheelOcclusions),detail:true}),
+    lhdNipples:Object.freeze({...make(nippleWindow,[155,503,1209,381],lhdWheelOcclusions,'evenodd'),detail:true}),
+    lhdRims:make(rims,[139,488,1244,412],lhdWheelOcclusions,'evenodd'),
+    lhdTyres:make(tyres,[95,443,1335,503],lhdWheelOcclusions,'evenodd'),
+    lhdSidewalls:make(sidewalls,[118,466,1288,457],lhdWheelOcclusions,'evenodd'),
+    // Foreground-only silhouettes retain photographed bearings and rail clamps;
+    // recolour exclusions remain separate from the bike's transparency.
+    chain:make(chain,[301,594,430,141]),
+    seatRails:make('M535 394 Q549 385 564 382 L581 382 L583 391 L563 395 L548 403 Q540 403 535 399Z',[532,379,54,27]),
     seatpost:make(seatpost,[555,382,55,64],ellipse(600,426,3.2,3.1)),
     stem:make(stem,[1031,260,82,53],ellipse(1040.5,292,4.2,4.8)+' '+ellipse(1045,304,3.8,4.1)),
     headset:make(headset,[1046,300,80,139]),

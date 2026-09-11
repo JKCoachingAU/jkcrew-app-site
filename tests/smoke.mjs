@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.98";
+const version = "2.14.99";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -935,7 +935,7 @@ const dailyCompletion = read("daily-completion.js");
 assert(dailyCompletion.includes('withTimeout(client.rpc("prepare_daily_finish"'), "Preparing a Daily finish must use a bounded request");
 assert(dailyCompletion.includes('withTimeout(client.rpc("confirm_daily_finish"'), "Saving a Daily finish must use a bounded request");
 assert(dailyCompletion.includes("finally { dailyFinishUi.requests.delete(key); restore(); }"), "Manual finish must restore its busy state");
-for (const asset of ["daily-completion", "progress-sharing", "battle-rematches"]) {
+for (const asset of ["daily-completion", "progress-sharing", "battle-rematches", "bike-garage", "bike-preview"]) {
   for (const extension of ["js", "css"]) {
     const file = `${asset}.${extension}`;
     assert.equal(read(`riley-test/${file}`), read(file), `${file} must match on the Riley path`);
