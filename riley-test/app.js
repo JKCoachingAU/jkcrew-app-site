@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.88";
+const RELEASE_VERSION = "2.14.89";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -421,7 +421,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.88" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.89" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9467,7 +9467,8 @@ async function deleteCoachBattle(event) {
 }
 
 function coachBattleRiderSelect(roster, team, slot) {
-  return `<div class="field coach-battle-slot" data-battle-slot="${slot}"><label>Rider ${slot}</label><select name="team${team}Rider"><option value="">Choose rider</option>${roster.map((rider) => `<option value="${rider.id}">${escapeHtml(rider.display_name)}</option>`).join("")}</select></div>`;
+  const inputId = `coach-battle-${team.toLowerCase()}-${slot}`;
+  return `<div class="field coach-battle-slot" data-battle-slot="${slot}"><label for="${inputId}">Rider ${slot}</label><div class="coach-battle-rider-picker"><div class="coach-battle-rider-preview" aria-hidden="true">+</div><select id="${inputId}" name="team${team}Rider"><option value="">Choose rider</option>${roster.map((rider) => `<option value="${escapeHtml(rider.id)}">${escapeHtml(rider.display_name)}</option>`).join("")}</select></div></div>`;
 }
 
 function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) {
@@ -9475,17 +9476,54 @@ function showCoachBattleBuilder(roster = [], refresh = renderCoachBattleViewer) 
   const backdrop = document.createElement("div");
   backdrop.id = "coach-battle-builder-modal";
   backdrop.className = "battle-intro-backdrop";
-  backdrop.innerHTML = `<section class="battle-intro-card coach-battle-builder-card" role="dialog" aria-modal="true" aria-label="Create rider battle"><div class="eyebrow">Coach battle builder</div><h2>Create a crew battle</h2><p>Every rider will receive an invite. The timer starts only after all selected riders accept.</p><form id="coach-battle-builder-form"><div class="field"><label for="coach-battle-size">Format</label><select id="coach-battle-size" name="battleSize">${battleFormatOptionsHtml()}</select></div><div class="coach-battle-team-builder"><fieldset><legend>Team 1</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "One", slot)).join("")}</fieldset><div class="coach-builder-vs">VS</div><fieldset><legend>Team 2</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "Two", slot)).join("")}</fieldset><div class="coach-builder-vs" data-third-team hidden>VS</div><fieldset data-third-team hidden><legend>Team 3</legend>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "Three", slot)).join("")}</fieldset></div><div class="battle-request-settings"><div class="field"><label for="coach-battle-duration">Battle length</label><select id="coach-battle-duration" name="durationDays">${Array.from({length:7},(_,index)=>`<option value="${index+1}" ${index===6?"selected":""}>${index+1} day${index ? "s" : ""}</option>`).join("")}</select></div><div class="field"><label for="coach-battle-reward-points">Battle points</label><input id="coach-battle-reward-points" name="rewardPoints" type="number" inputmode="numeric" min="1" max="20" step="1" value="5" required><small id="coach-battle-prize-help">Split across the winning team</small></div></div><div class="battle-intro-actions"><button class="primary-btn" type="submit">Send battle invites</button><button class="secondary-btn" type="button" data-close-coach-builder>Cancel</button></div></form></section>`;
+  backdrop.innerHTML = `<section class="battle-intro-card coach-battle-builder-card" role="dialog" aria-modal="true" aria-labelledby="coach-battle-builder-title">
+    <header class="battle-builder-header"><div><div class="eyebrow">Coach · Battle builder</div><h2 id="coach-battle-builder-title">Create a <span>crew battle</span></h2><p>Pick your riders. Set the stakes.</p></div><div class="battle-builder-emblem" aria-hidden="true">VS</div><button class="battle-builder-close" type="button" data-dismiss-battle-builder aria-label="Close battle builder">×</button></header>
+    <form id="coach-battle-builder-form">
+      <div class="battle-builder-matchup-head"><div class="battle-builder-step"><span>01</span><h3>Choose your sides</h3></div><div class="field battle-builder-format-field"><label for="coach-battle-size">Format</label><select id="coach-battle-size" name="battleSize">${battleFormatOptionsHtml()}</select></div></div>
+      <div class="coach-battle-team-builder">
+        <fieldset data-builder-team="One"><legend><span>01</span> Team 1</legend><div class="coach-team-status"></div>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "One", slot)).join("")}</fieldset>
+        <div class="coach-builder-vs" aria-hidden="true">VS</div>
+        <fieldset data-builder-team="Two"><legend><span>02</span> Team 2</legend><div class="coach-team-status"></div>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "Two", slot)).join("")}</fieldset>
+        <div class="coach-builder-vs" data-third-team aria-hidden="true" hidden>VS</div>
+        <fieldset data-builder-team="Three" data-third-team hidden><legend><span>03</span> Team 3</legend><div class="coach-team-status"></div>${[1,2,3].map((slot) => coachBattleRiderSelect(roster, "Three", slot)).join("")}</fieldset>
+      </div>
+      <div class="battle-builder-settings-head"><div class="battle-builder-step"><span>02</span><h3>Set the stakes</h3></div><span class="battle-builder-rule">Winner takes all</span></div>
+      <div class="battle-request-settings"><div class="field"><label for="coach-battle-duration">Battle length</label><select id="coach-battle-duration" name="durationDays">${Array.from({length:7},(_,index)=>`<option value="${index+1}" ${index===6?"selected":""}>${index+1} day${index ? "s" : ""}</option>`).join("")}</select></div><div class="field"><label for="coach-battle-reward-points">Battle points</label><input id="coach-battle-reward-points" name="rewardPoints" type="number" inputmode="numeric" min="1" max="20" step="1" value="5" required aria-describedby="coach-battle-prize-help"></div></div>
+      <div class="battle-builder-prize-note"><span aria-hidden="true">★</span><small id="coach-battle-prize-help">Split across the winning team</small></div>
+      <footer class="battle-builder-footer"><div class="battle-builder-selection-status" id="coach-battle-selection-status" role="status" aria-live="polite"></div><p>Every rider gets an invite. The clock starts once everyone accepts.</p><div class="battle-intro-actions"><button class="primary-btn" type="submit">Send battle invites <span aria-hidden="true">→</span></button><button class="secondary-btn" type="button" data-close-coach-builder>Cancel</button></div></footer>
+    </form>
+  </section>`;
   document.body.append(backdrop);
   const updateSlots = () => {
     const { size, teamCount } = parseBattleFormat(backdrop.querySelector("#coach-battle-size")?.value);
     backdrop.querySelectorAll("[data-third-team]").forEach((element) => { element.hidden = teamCount !== 3; });
     backdrop.querySelector(".coach-battle-team-builder").classList.toggle("three-teams", teamCount === 3);
-    backdrop.querySelectorAll("[data-battle-slot]").forEach((field) => { const active = Number(field.dataset.battleSlot) <= size && (!field.closest("[data-third-team]") || teamCount === 3); field.hidden = !active; field.querySelector("select").disabled = !active; });
-    backdrop.querySelector("#coach-battle-prize-help").textContent = `${battlePrizePoints({team_count: teamCount,reward_points:backdrop.querySelector('[name="rewardPoints"]').value})} points to the winning side · winner takes all`;
+    const selectedRiders = new Set();
+    backdrop.querySelectorAll("[data-battle-slot]").forEach((field) => {
+      const active = Number(field.dataset.battleSlot) <= size && (!field.closest("[data-third-team]") || teamCount === 3);
+      const select = field.querySelector("select");
+      field.hidden = !active;
+      select.disabled = !active;
+      if (active && select.value) selectedRiders.add(select.value);
+      const preview = field.querySelector(".coach-battle-rider-preview");
+      if (preview.dataset.riderId !== select.value) {
+        const rider = roster.find(row => String(row.id) === select.value);
+        preview.innerHTML = rider ? avatarHtml(rider) : "+";
+        preview.dataset.riderId = select.value;
+        field.classList.toggle("has-rider", Boolean(rider));
+      }
+    });
+    backdrop.querySelectorAll("[data-builder-team]").forEach(team => {
+      const chosen = new Set([...team.querySelectorAll("select:not(:disabled)")].map(select => select.value).filter(Boolean)).size;
+      team.querySelector(".coach-team-status").textContent = `${chosen} / ${size} selected`;
+    });
+    backdrop.querySelector("#coach-battle-selection-status").textContent = `${selectedRiders.size} of ${size * teamCount} riders selected`;
+    backdrop.querySelector("#coach-battle-prize-help").textContent = `${battlePrizePoints({team_count: teamCount,reward_points:backdrop.querySelector('[name="rewardPoints"]').value})} points to the winning side`;
   };
   backdrop.querySelector("#coach-battle-size")?.addEventListener("change", updateSlots);
   backdrop.querySelector("#coach-battle-reward-points")?.addEventListener("input", updateSlots);
+  backdrop.querySelectorAll(".coach-battle-slot select").forEach(select => select.addEventListener("change", updateSlots));
+  backdrop.querySelector("[data-dismiss-battle-builder]")?.addEventListener("click", () => backdrop.remove());
   backdrop.querySelector("[data-close-coach-builder]")?.addEventListener("click", () => backdrop.remove());
   backdrop.addEventListener("click", (event) => { if (event.target === backdrop) backdrop.remove(); });
   backdrop.querySelector("#coach-battle-builder-form")?.addEventListener("submit", async (event) => {
