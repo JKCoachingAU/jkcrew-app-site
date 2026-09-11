@@ -1,8 +1,10 @@
-# JKCREW Bike Garage — 2.14.94
+# JKCREW Bike Garage — 2.14.95
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses an original SVG illustration with instant part/colour changes and a full-bike preview.
 
-Ten parts can be recoloured. Riders can also change two/four-piece bars, tyre walls, seat shape, pegs and the frame graphic. Undo/redo restores design changes; Surprise me tries another colour combination. Bike names are limited to 40 characters.
+New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. The original SVG depicts the bike at a slight angle on a light studio background, with separately paintable parts.
+
+Ten parts can be recoloured. Riders can also change two/four-piece bars, all-white/black tyres or contrasting tyre walls, seat shape, pegs and the frame graphic. Undo/redo restores design changes; Surprise me tries another colour combination. Bike names are limited to 40 characters.
 
 Each account has three private saved slots. Explicit saving keeps designs across devices; a separate account-scoped local draft preserves ongoing edits on the current device where browser storage is available. Failed requests never show a successful save. Opening another design or starting over asks before replacing unsaved work. A revision conflict requires refreshing the garage and opening the latest design or saving into a free slot.
 
@@ -16,6 +18,7 @@ The garage is visual play, not a real component catalogue, compatibility calcula
 - `bike-garage.js` / `bike-garage.css`: scoped UI, draft state, explicit save/remove and lifecycle cleanup.
 - `get_bike_garage`, `save_bike_build`, `delete_bike_build`: authenticated security-invoker RPCs, protected by ownership RLS and strict configuration validation.
 - `supabase/migrations/20260911102828_add_private_bike_garage.sql`: additive schema. Removed slots keep a revision tombstone with no bike name/configuration, so a stale device cannot overwrite a later replacement.
+- `supabase/migrations/20260911111023_allow_solid_white_bike_tyres.sql`: permits the new solid white tyre choice without changing saved builds, revisions or access permissions.
 - The three client assets are included in both app paths and their separate service-worker caches.
 
 ## Validation

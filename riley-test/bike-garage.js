@@ -1,15 +1,15 @@
 /* A private, cosmetic bike workshop. Training scores and rider records are never written here. */
 const JKCrewBikeGarage = (() => {
   const defaults = {
-    version: 1, colors: { frame: '#AD8AFF', fork: '#252B39', bars: '#252B39', grips: '#AD8AFF', rims: '#BCC7D6', hubs: '#AD8AFF', seat: '#252B39', pedals: '#AD8AFF', cranks: '#BCC7D6', sprocket: '#AD8AFF' },
-    barStyle: 'two-piece', tyreStyle: 'black', seatStyle: 'slim', pegs: 'both', decal: 'jkcrew',
+    version: 1, colors: { frame: '#F1F4F8', fork: '#F1F4F8', bars: '#F1F4F8', grips: '#F1F4F8', rims: '#F1F4F8', hubs: '#F1F4F8', seat: '#F1F4F8', pedals: '#F1F4F8', cranks: '#F1F4F8', sprocket: '#F1F4F8' },
+    barStyle: 'two-piece', tyreStyle: 'white', seatStyle: 'slim', pegs: 'none', decal: 'none',
   };
   const palette = [['Midnight','#252B39'],['Chrome','#BCC7D6'],['Cloud','#F1F4F8'],['Lilac','#AD8AFF'],['Electric blue','#428CFF'],['Ice','#51D5E8'],['Mint','#7CE3B8'],['Acid','#D6F16A'],['Gold','#F2BC57'],['Orange','#F68B4D'],['Coral','#F26879'],['Pink','#E789D0']];
   const groups = { Frame: ['frame'], 'Front end': ['fork','bars','grips'], Wheels: ['rims','hubs','tyres'], Details: ['seat','pedals','cranks','sprocket','pegs','decal'] };
   const labels = {frame:'Frame',fork:'Forks',bars:'Handlebars',grips:'Grips',rims:'Rims',hubs:'Hubs',tyres:'Tyres',seat:'Seat',pedals:'Pedals',cranks:'Cranks',sprocket:'Sprocket',pegs:'Pegs',decal:'Frame graphic'};
   const styles = {
     bars: ['barStyle',[['two-piece','Two piece'],['four-piece','Four piece']]],
-    tyres: ['tyreStyle',[['black','All black'],['tan-wall','Tan wall'],['white-wall','White wall']]],
+    tyres: ['tyreStyle',[['white','All white'],['black','All black'],['tan-wall','Tan wall'],['white-wall','White wall']]],
     seat: ['seatStyle',[['slim','Slim'],['padded','Padded']]],
     pegs: ['pegs',[['none','No pegs'],['rear','Rear only'],['both','Front & rear']]],
     decal: ['decal',[['jkcrew','JKCREW'],['lightning','Lightning'],['none','Clean frame']]],
@@ -204,10 +204,10 @@ const JKCrewBikeGarage = (() => {
     }
     root.innerHTML=`<section class="bike-garage" data-bike-workshop>
       <header class="bike-garage-header"><div><span class="bike-eyebrow">JKCREW GARAGE / 01</span><h1>Your bike.<br><em>Your style.</em></h1><p>Build something only you would ride.</p></div><button type="button" class="bike-back" data-bike-back>← Back</button></header>
-      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><span class="bike-stage-number">01—∞</span></div><div class="bike-stage-art" data-bike-art></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Expand bike preview">⛶</button></div></div>
+      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Expand bike preview">⛶</button></div></div>
       <section class="bike-controls" aria-label="Customise your bike"><div data-bike-controls></div><div class="bike-edit-tools"><button type="button" data-bike-undo aria-label="Undo last change">↶ Undo</button><button type="button" data-bike-redo aria-label="Redo change">↷ Redo</button><button type="button" data-bike-shuffle>✳ Surprise me</button></div></section></div>
       <div class="bike-save-bar"><label class="bike-name-field"><span>NAME YOUR BUILD</span><input type="text" maxlength="40" data-bike-name value="${html(name)}" autocomplete="off"></label><div class="bike-save-actions"><button type="button" class="bike-save-copy" data-bike-retry hidden>Refresh garage</button><button type="button" class="bike-save-copy" data-bike-save-copy hidden>Save as new</button><button type="button" class="bike-primary" data-bike-save>Save to garage</button></div><p class="bike-save-status" data-bike-status role="status" aria-live="polite"></p></div>
-      <details class="bike-garage-shelf" data-bike-garage><summary><span><span class="bike-eyebrow">YOUR COLLECTION</span><strong>My garage <small data-bike-count>0 / 3</small></strong></span><b aria-hidden="true">+</b></summary><div class="bike-garage-toolbar"><p>Three spaces. Endless ideas.</p><button type="button" data-bike-new>+ New design</button><button type="button" data-bike-reload>Retry loading garage</button></div><div class="bike-saved-grid" data-bike-saved-list></div></details>
+      <details class="bike-garage-shelf" data-bike-garage><summary><span><span class="bike-eyebrow">YOUR COLLECTION</span><strong>My garage <small data-bike-count>0 / 3</small></strong></span><b aria-hidden="true">+</b></summary><div class="bike-garage-toolbar"><p>Three spaces. Endless ideas.</p><button type="button" data-bike-reload>Retry loading garage</button></div><div class="bike-saved-grid" data-bike-saved-list></div></details>
       <p class="bike-garage-footnote">Dream builds, made by you. Saved designs are private to your account.</p>
     </section>`;
     root.addEventListener('click',event=>{

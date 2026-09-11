@@ -53,6 +53,8 @@ async function checkStickyPreview(page) {
     assert.equal(sticky.position,'sticky');assert(Math.abs(sticky.top-78)<2,`${width} phone bike stays pinned at 78px (${sticky.top})`);
     const swatch=page.getByRole('button',{name:'Electric blue frame',exact:true});
     const clear=await swatch.evaluate(el=>{const r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {y,visible:y>0&&y<innerHeight,hit:el.contains(document.elementFromPoint(x,y))};});
+    const blank=page.getByRole('button',{name:'+ Blank bike',exact:true});
+    assert(await blank.isVisible());assert((await blank.boundingBox()).height>=44,'Sticky Blank bike control keeps a full touch target');
     assert(clear.visible&&clear.y>sticky.bottom&&clear.hit,`${width}: sticky bike leaves the palette visible and tappable`);
     await swatch.click();assert.equal(await page.locator('#bmx-garage-main-frame stop').nth(1).getAttribute('stop-color'),'#428CFF');
     if(width===390)await page.screenshot({path:'/tmp/bike-garage-phone-editing.png'});
@@ -64,6 +66,9 @@ async function run(page) {
     await page.setViewportSize({width,height:900});
     await page.evaluate(()=>window.scrollTo(0,0));
     await page.screenshot({path:`/tmp/bike-garage-${name}.png`,fullPage:true});
+    await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();
+    await page.screenshot({path:`/tmp/bike-garage-white-${name}-preview.png`});
+    await page.getByRole('button',{name:'Close bike preview',exact:true}).click();await page.locator('.bike-fullscreen').waitFor({state:'detached'});
   }
   console.log('Screenshots ready: /tmp/bike-garage-phone.png and /tmp/bike-garage-desktop.png');
   if(process.env.JKCREW_BIKE_SCREENSHOTS_ONLY) return;
@@ -80,8 +85,43 @@ async function run(page) {
   const shelf = async () => {if(!await page.locator('[data-bike-garage]').evaluate(el=>el.open))await page.locator('[data-bike-garage] summary').click();};
   assert.equal(await page.locator('[data-bike-garage]').evaluate(el=>el.open),false,'Collection starts closed');
   assert.equal(await count('save_bike_build'),0);assert.equal(await count('delete_bike_build'),0);
+  const neutralDefaults=await page.evaluate(()=>JKCrewBikeGarage.defaults);
+  assert.equal(Object.keys(neutralDefaults.colors).length,10);assert(Object.values(neutralDefaults.colors).every(colour=>colour==='#F1F4F8'),'Every blank-bike part starts neutral white');
+  assert.equal(neutralDefaults.tyreStyle,'white');assert.equal(neutralDefaults.pegs,'none');assert.equal(neutralDefaults.decal,'none');
+  assert.equal(await page.locator('[data-bike-new]').count(),1,'Only one Blank bike action exists');
+  assert(await page.locator('.bike-stage-top').getByRole('button',{name:'+ Blank bike',exact:true}).isVisible(),'Blank bike is available while the garage shelf is closed');
   const normalized=await page.evaluate(()=>JKCrewBikeGarage.normalize({colors:{frame:'#abcd12',fork:'url(secret)',unrelated:'#000000'},barStyle:'unsupported',pegs:'rear',private_data:'never'}));
-  assert.equal(normalized.colors.frame,'#ABCD12');assert.equal(normalized.colors.fork,'#252B39');assert.equal(normalized.barStyle,'two-piece');assert.equal(normalized.pegs,'rear');assert(!('private_data' in normalized));assert(!('unrelated' in normalized.colors));
+  assert.equal(normalized.colors.frame,'#ABCD12');assert.equal(normalized.colors.fork,'#F1F4F8');assert.equal(normalized.barStyle,'two-piece');assert.equal(normalized.pegs,'rear');assert(!('private_data' in normalized));assert(!('unrelated' in normalized.colors));
+
+  // Existing colourful bikes retain their saved appearance; Blank bike affects only the draft.
+  await page.evaluate(()=>{
+    window.legacyBike={version:1,colors:{frame:'#AD8AFF',fork:'#252B39',bars:'#252B39',grips:'#AD8AFF',rims:'#BCC7D6',hubs:'#AD8AFF',seat:'#252B39',pedals:'#AD8AFF',cranks:'#BCC7D6',sprocket:'#AD8AFF'},barStyle:'four-piece',tyreStyle:'tan-wall',seatStyle:'padded',pegs:'both',decal:'jkcrew'};
+    cloud['legacy-bike']=[{slot:1,name:'Existing coloured bike',configuration:clone(legacyBike),revision:7,updated_at:new Date().toISOString()}];mountGarage('legacy-bike');
+  });
+  await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await shelf();await page.locator('[data-bike-load="1"]').click();
+  assert.deepEqual(await config(),await page.evaluate(()=>legacyBike),'Opening an existing saved bike never applies new blank defaults');
+  assert.equal(await frameColour(),'#AD8AFF');
+  await page.evaluate(()=>mountGarage('legacy-bike'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
+  assert.deepEqual(await config(),await page.evaluate(()=>legacyBike),'Remount preserves existing saved colours and styles');
+  const originalSavedRows=await page.evaluate(()=>JSON.stringify(cloud['legacy-bike']));
+  await nameField().fill('Unfinished custom idea');await page.getByRole('button',{name:'Pink frame',exact:true}).click();
+  const unfinished=await draft();const writesBeforeBlank=await count('save_bike_build');
+  await page.evaluate(()=>confirmAnswer=false);await page.getByRole('button',{name:'+ Blank bike',exact:true}).click();
+  assert.deepEqual(await draft(),unfinished,'Cancelling Blank bike preserves all draft state');assert.equal(await nameField().inputValue(),'Unfinished custom idea');
+  await page.evaluate(()=>confirmAnswer=true);await page.getByRole('button',{name:'+ Blank bike',exact:true}).click();
+  assert.deepEqual(await config(),neutralDefaults,'Confirmed Blank bike resets every part/style to neutral defaults');
+  assert.equal(await nameField().inputValue(),'My dream bike');assert.equal((await draft()).slot,null);assert.equal((await draft()).revision,0);assert.equal((await draft()).pendingSave,null);
+  assert(await page.getByRole('button',{name:'Undo last change',exact:true}).isDisabled());assert(await page.getByRole('button',{name:'Redo change',exact:true}).isDisabled());
+  assert.equal(await count('save_bike_build'),writesBeforeBlank,'Blank bike never writes to the garage automatically');
+  assert.equal(await page.evaluate(()=>JSON.stringify(cloud['legacy-bike'])),originalSavedRows,'Existing saved rows remain intact after Blank bike');
+  await nameField().fill('White studio build');await save();
+  assert.equal(await page.evaluate(()=>cloud['legacy-bike'].length),2);assert.deepEqual(await page.evaluate(()=>cloud['legacy-bike'].find(row=>row.slot===2).configuration),neutralDefaults,'All-white tyres and parts survive save roundtrip');
+  await page.evaluate(()=>mountGarage('legacy-bike'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await shelf();
+  await page.locator('[data-bike-load="1"]').click();assert.deepEqual(await config(),await page.evaluate(()=>legacyBike));
+  await page.locator('[data-bike-load="2"]').click();assert.deepEqual(await config(),neutralDefaults,'Opening the saved white build retains white tyres');
+  await page.evaluate(()=>mountGarage('rider-a'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
+
+  const savesBeforeEditing=await count('save_bike_build');
 
   // Changes repaint the real SVG; selecting and colouring remain keyboard-accessible.
   await page.setViewportSize({width:390,height:900});
@@ -96,7 +136,7 @@ async function run(page) {
     assert.equal((await config()).colors[part],'#7CE3B8');
     assert.equal(await page.locator(`#bmx-garage-main-${part} stop`).nth(1).getAttribute('stop-color'),'#7CE3B8');
   }
-  for(const [part,key,choices] of [['bars','barStyle',[['Four piece','four-piece'],['Two piece','two-piece']]],['tyres','tyreStyle',[['Tan wall','tan-wall'],['White wall','white-wall'],['All black','black']]],['seat','seatStyle',[['Padded','padded'],['Slim','slim']]],['pegs','pegs',[['No pegs','none'],['Rear only','rear'],['Front & rear','both']]],['decal','decal',[['Lightning','lightning'],['Clean frame','none'],['JKCREW','jkcrew']]]]) {
+  for(const [part,key,choices] of [['bars','barStyle',[['Four piece','four-piece'],['Two piece','two-piece']]],['tyres','tyreStyle',[['Tan wall','tan-wall'],['White wall','white-wall'],['All black','black'],['All white','white']]],['seat','seatStyle',[['Padded','padded'],['Slim','slim']]],['pegs','pegs',[['Rear only','rear'],['Front & rear','both'],['No pegs','none']]],['decal','decal',[['Lightning','lightning'],['Clean frame','none'],['JKCREW','jkcrew']]]]) {
     await selectPart(part);
     for(const [label,value] of choices){const before=await page.locator(`[data-bike-art] [data-bike-part="${part}"]`).first().innerHTML();await page.getByRole('button',{name:label,exact:true}).click();assert.equal((await config())[key],value);assert.notEqual(await page.locator(`[data-bike-art] [data-bike-part="${part}"]`).first().innerHTML(),before,`${label} changes real artwork`);}
   }
@@ -105,12 +145,12 @@ async function run(page) {
   await page.getByLabel('Custom frame colour',{exact:true}).evaluate(input=>{input.value='#123abc';input.dispatchEvent(new Event('change',{bubbles:true}));});
   assert.equal(await frameColour(),'#123ABC');
   const firstConfig=await config();
-  assert.equal(await count('save_bike_build'),0,'Editing never saves automatically');
+  assert.equal(await count('save_bike_build'),savesBeforeEditing,'Editing never saves automatically');
   await page.evaluate(()=>mountGarage());await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   assert.equal(await nameField().inputValue(),'Night Rider');assert.deepEqual(await config(),firstConfig,'Unmount/remount restores local draft');
   await boot(page);assert.equal(await nameField().inputValue(),'Night Rider');assert.equal(await frameColour(),'#123ABC','Full page reload restores durable local draft');
   await page.evaluate(()=>mountGarage('rider-b'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
-  assert.equal(await nameField().inputValue(),'My dream bike');assert.equal(await frameColour(),'#AD8AFF');
+  assert.equal(await nameField().inputValue(),'My dream bike');assert.equal(await frameColour(),'#F1F4F8');
   await nameField().fill('Rider B only');
   await page.evaluate(()=>mountGarage('rider-a'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   assert.equal(await nameField().inputValue(),'Night Rider','Accounts never inherit each other’s drafts');
@@ -126,7 +166,7 @@ async function run(page) {
   await nameField().fill('Finals Bike');await page.getByRole('button',{name:'Coral frame',exact:true}).click();
   await page.getByRole('button',{name:'Save as new',exact:true}).click();await page.getByText('Saved to your garage ✓',{exact:true}).waitFor();
   assert.equal(await page.locator('[data-bike-count]').textContent(),'3 / 3');assert(await page.getByRole('button',{name:'Save as new',exact:true}).isDisabled());
-  await shelf();const fullSaveCount=await count('save_bike_build');await page.getByRole('button',{name:'+ New design',exact:true}).click();await page.locator('[data-bike-save]').click();await page.getByText(/three garage spaces are full/).waitFor();assert.equal(await count('save_bike_build'),fullSaveCount,'A full garage cannot create a fourth slot');
+  await shelf();const fullSaveCount=await count('save_bike_build');await page.getByRole('button',{name:'+ Blank bike',exact:true}).click();await page.locator('[data-bike-save]').click();await page.getByText(/three garage spaces are full/).waitFor();assert.equal(await count('save_bike_build'),fullSaveCount,'A full garage cannot create a fourth slot');
   await page.locator('[data-bike-load="1"]').click();assert.equal(await nameField().inputValue(),'Night Rider');
   await nameField().fill('Night Rider II');await save();assert.equal(await page.evaluate(()=>cloud['rider-a'][0].revision),2);
   await page.evaluate(()=>mountGarage());await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await shelf();
@@ -226,7 +266,7 @@ async function run(page) {
   await page.getByRole('button',{name:'← Back',exact:true}).click();assert.equal(await page.evaluate(()=>backCalls),1);
   await page.getByRole('button',{name:'Expand bike preview',exact:true}).click();await page.evaluate(()=>JKCrewBikeGarage.destroy());assert.equal(await page.locator('.bike-fullscreen').count(),0,'Dispose removes a fullscreen preview');
   assert((await page.evaluate(()=>rpcCalls)).every(call=>['get_bike_garage','save_bike_build','delete_bike_build'].includes(call.method)),'No training, scoring, invitation or notification RPCs');
-  console.log('PASS: live colours/styles, keyboard focus, undo/redo, private drafts/accounts, three-slot CRUD, revisions, safe refresh/retry/timeout, uncertain-commit recovery without duplicates, disposal, blocked-storage fallback, fullscreen, and 320/390/1024 dark/light layouts.');
+  console.log('PASS: neutral white defaults, preserved colourful builds, safe Blank bike reset/white save roundtrip, live colours/styles, keyboard focus, undo/redo, private drafts/accounts, three-slot CRUD, revisions, safe refresh/retry/timeout, uncertain-commit recovery without duplicates, disposal, blocked-storage fallback, fullscreen, and 320/390/1024 dark/light layouts.');
 
 }
 (async()=>{
@@ -239,4 +279,4 @@ async function run(page) {
     await boot(page);await run(page);assert.deepEqual(errors,[]);
     console.log('PASS: isolated Bike Garage UI; no production requests or writes.');
   } finally {await browser.close();}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+})().catch(error=>{console.error(error.stack || error);process.exitCode=1;});

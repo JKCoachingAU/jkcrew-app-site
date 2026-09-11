@@ -16,6 +16,11 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
     colors: Object.fromEntries(['frame', 'fork', 'bars', 'grips', 'rims', 'hubs', 'seat', 'pedals', 'cranks', 'sprocket'].map((key, n) => [key, n % 2 ? '#abcdef' : '#A1B2C3'])),
     barStyle: 'two-piece', tyreStyle: 'black', seatStyle: 'slim', pegs: 'none', decal: 'jkcrew'
   };
+  const whiteConfiguration = {
+    ...configuration,
+    colors: Object.fromEntries(Object.keys(configuration.colors).map(key => [key, '#FFFFFF'])),
+    tyreStyle: 'white', decal: 'none'
+  };
   await db.exec(`
     create schema auth; create schema private;
     create role anon; create role authenticated;
@@ -116,6 +121,30 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   await as(otherRider); await as(rider);
   equal((await garage()).builds[0], second, 'A separate visit sees the authoritative saved build');
 
+  // Apply the additive migration over real saved builds in all three old styles.
+  // Its only definition change is the extra enum value; rows and ACLs stay intact.
+  await denied(save(3, 'White tyres before upgrade', whiteConfiguration, 1), '22023', 'The original validator does not accidentally accept solid white tyres');
+  const beforeWhiteMigration = await garage();
+  const validatorMetadata = async () => (await db.query(`
+    select pg_get_functiondef(oid) definition, proacl::text privileges, prosecdef, provolatile, proconfig
+    from pg_proc where oid='private.bike_garage_configuration_is_valid(jsonb)'::regprocedure
+  `)).rows[0];
+  const originalValidator = await validatorMetadata();
+  const whiteSql = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20260911111023_allow_solid_white_bike_tyres.sql'), 'utf8');
+  await db.exec('reset role');
+  await db.exec(whiteSql);
+  await as(rider);
+  const whiteValidator = await validatorMetadata();
+  equal({ ...whiteValidator, definition: whiteValidator.definition.replace("('black','tan-wall','white-wall','white')", "('black','tan-wall','white-wall')") }, originalValidator, 'The additive migration preserves all validation, invoker security and privileges except the new tyre enum value');
+  equal(await garage(), beforeWhiteMigration, 'The migration leaves saved black, tan-wall and white-wall builds unchanged');
+  const whiteUpdate = await save(3, 'Solid white bike', whiteConfiguration, 1);
+  equal(whiteUpdate.configuration, whiteConfiguration, 'Solid white tyres and white component colours round-trip through an update');
+  equal(whiteUpdate.revision, 2, 'A white-tyre update obeys normal revision checks');
+  equal((await garage()).builds.find(build => build.slot === 3), whiteUpdate, 'Another garage read sees the complete solid white configuration');
+  await denied(save(3, 'Stale white update', whiteConfiguration, 1), '40001', 'Solid white builds preserve stale-write protection');
+  const oldStyleUpdate = await save(3, 'White-wall tyres', thirdStyle, whiteUpdate.revision);
+  equal(oldStyleUpdate.configuration.tyreStyle, 'white-wall', 'A solid white build can still change back to an existing tyre style');
+
   const beforeInvalid = await garage();
   for (const [slot, name, config, revision, label] of [
     [0, 'Bad slot', configuration, 0, 'zero slot'], [null, 'Bad slot', configuration, 0, 'missing slot'],
@@ -165,7 +194,9 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
   await as(coach);
   equal(await garage(), { builds: [] }, 'Coaches do not automatically see rider garages');
   equal((await db.query('select * from public.bike_garage_builds')).rows, [], 'A coach database role still sees only their own rows');
-  await save(1, 'Coach bike');
+  const whiteCreate = await save(1, 'Coach bike', whiteConfiguration);
+  equal(whiteCreate.configuration, whiteConfiguration, 'A brand-new solid white build round-trips through save');
+  equal(whiteCreate.revision, 1, 'A new solid white build starts at revision one');
   await as(missingProfile);
   await denied(save(1, 'No profile'), '23503', 'Build ownership must reference an existing profile');
 
