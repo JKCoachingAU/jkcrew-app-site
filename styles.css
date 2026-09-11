@@ -12137,3 +12137,9 @@ html[data-theme="light"] #coach-battle-builder-modal .coach-battle-team-builder 
 #coach-battle-builder-modal .coach-battle-slot.has-rider .coach-battle-rider-preview { border: 0; }
 #coach-battle-builder-modal .coach-battle-builder-card #coach-battle-builder-form .battle-intro-actions .primary-btn { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 #coach-battle-builder-modal .coach-battle-builder-card #coach-battle-builder-form .battle-intro-actions .primary-btn > span { font-size: 21px; line-height: 1; }
+/* Larger battle teams keep every rider visible inside a narrow matchup card. */
+.battle-team-avatars:is([data-team-size="4"], [data-team-size="5"], [data-team-size="6"]) { display: grid; grid-template-columns: repeat(3, minmax(0, 40px)); justify-content: center; gap: 6px; max-width: 100%; }
+.battle-team-avatars[data-team-size="4"] { grid-template-columns: repeat(2, minmax(0, 40px)); }
+.battle-team-avatars:is([data-team-size="4"], [data-team-size="5"], [data-team-size="6"]) .avatar { width: 40px; height: 40px; min-width: 0; margin: 0; font-size: 16px; }
+/* Rider matchup tiles keep their dark surface in light mode. */
+html[data-theme="light"] .battle-card .battle-team > strong { color: #eef7f8; }

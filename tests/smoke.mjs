@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.89";
+const version = "2.14.90";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -960,7 +960,7 @@ assert(riderChallengeView.includes("weeklyChallenge?.reward_points || 5"), "The 
 assert(riderChallengeView.includes('weeklyChallenge?.completion_rule === "percentage_perfect"'), "The rider card must explain the Perfectionist rule");
 assert(riderChallengeView.includes("Land all 10 attempts"), "The Perfectionist card must clearly explain 10/10 scoring");
 assert(riderChallengeView.includes("+${challengeReward} leaderboard points"), "The completion popup must use the challenge reward instead of a hard-coded five");
-assert(functionBody("battleRulesMarkup").includes("1v1, 2v2, 3v3, 1v1v1 or 2v2v2"), "Rider battle help must explain every team format");
+assert(functionBody("battleRulesMarkup").includes("Choose up to 6v6v6"), "Rider battle help must explain teams of up to six on two or three sides");
 const battleLoader = functionBody("getWeeklyRiderBattles");
 assert(battleLoader.includes('rpc("get_my_rider_battles")'), "Battle identities must load through the limited participant RPC");
 assert(!battleLoader.includes('challenger:profiles'), "Battle loading must not rely on profile joins hidden by rider RLS");
@@ -992,7 +992,8 @@ assert.equal(battleSelectionSizer(1, 0, 2), 2, "Selecting two opponents should a
 assert.equal(battleSelectionSizer(1, 0, 3), 3, "Selecting three opponents should automatically grow the battle to 3v3");
 assert.equal(battleSelectionSizer(1, 2, 3), 3, "Selecting two teammates and three opponents should grow the battle to 3v3");
 assert.equal(battleSelectionSizer(3, 0, 1), 3, "An explicitly selected 3v3 format should remain selected while riders are added");
-assert.equal(battleSelectionSizer(1, 99, 99), 3, "The battle format must remain capped at 3v3");
+assert.equal(battleSelectionSizer(1, 5, 6), 6, "Five teammates and six opponents must support 6v6");
+assert.equal(battleSelectionSizer(1, 99, 99), 6, "The battle format must remain capped at six riders per side");
 const riderBattlePicker = functionBody("updateRiderBattlePicker");
 assert(!riderBattlePicker.includes("opponentChecked.length >= size"), "The current format must not block adding another opponent");
 assert(!riderBattlePicker.includes("teammateTarget === 0"), "The initial 1v1 format must not block adding a teammate");
@@ -1020,11 +1021,11 @@ opponentInputs[1].checked = true; updateBattlePicker({ target: opponentInputs[1]
 assert.equal(battleSizeControl.value, "2", "A second opponent must promote the picker to 2v2");
 opponentInputs[2].checked = true; updateBattlePicker({ target: opponentInputs[2] });
 assert.equal(battleSizeControl.value, "3", "A third opponent must promote the picker to 3v3");
-assert.equal(opponentInputs[3].disabled, true, "The picker must stop at three selected opponents");
+assert.equal(opponentInputs[3].disabled, false, "More opponents remain selectable up to the new six-rider limit");
 assert.equal(teammateInputs[0].disabled, true, "A selected opponent cannot also be chosen as a teammate");
 teammateInputs[1].checked = true; updateBattlePicker({ target: teammateInputs[1] });
 teammateInputs[2].checked = true; updateBattlePicker({ target: teammateInputs[2] });
-assert.equal(teammateInputs[3].disabled, true, "The picker must stop at two selected teammates plus the current rider");
+assert.equal(teammateInputs[3].disabled, false, "More teammates remain selectable up to five plus the current rider");
 assert.equal(sendBattleButton.disabled, false, "A complete 3v3 selection must enable the battle request");
 assert.equal(sendBattleButton.textContent, "Send 3v3 battle request", "The ready action must show the selected battle format");
 const riderBattleRequest = functionBody("requestWeeklyRiderBattle");
