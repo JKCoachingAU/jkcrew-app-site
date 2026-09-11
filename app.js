@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.86";
+const RELEASE_VERSION = "2.14.87";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -48,6 +48,7 @@ const state = {
   sessionViewerGroup: "monday",
   sessionViewerVenue: "",
   sessionViewerSearch: "",
+  sessionViewerSetupOpen: false,
   sessionViewerOpenAthleteId: "",
   sessionViewerActiveList: "",
   sessionViewerTimer: null,
@@ -420,7 +421,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.86" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.87" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2115,6 +2116,7 @@ function resetPageExpansions({ expandedNavGroup = "" } = {}) {
   state.sessionOpenAssignmentSections.clear();
   state.sessionViewerOpenAthleteId = "";
   state.sessionViewerActiveList = "";
+  state.sessionViewerSetupOpen = false;
   document.querySelectorAll(".sidebar-nav-group").forEach((group) => {
     group.open = Boolean(expandedNavGroup && group.dataset.navGroup === expandedNavGroup);
   });
@@ -9916,6 +9918,10 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
         <button class="secondary-btn" type="submit">Add to this session</button>
       </form>
     </section>` : "";
+  // Native details toggle events are deferred. Read the live disclosure just
+  // before repainting so a quick selection or manual close is never undone.
+  const setup = document.querySelector("#session-viewer-setup");
+  if (setup?.isConnected) state.sessionViewerSetupOpen = setup.open;
   document.querySelector("#view").innerHTML = `
     <div class="page-head session-page-head"><div><div class="eyebrow">Coach workspace</div><h1>Live <span>session</span></h1><p>Your group, their progress, one place.</p></div><button class="secondary-btn compact-btn" type="button" id="viewer-refresh" aria-label="Refresh session"><span aria-hidden="true">↻</span><span class="session-refresh-label">Refresh</span></button></div>
     <section class="panel group-session-control coach-tone-aqua ${activeGroupSession?.status || "ready"}">
@@ -9926,7 +9932,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       </div>
       <div class="session-snapshot" data-session-snapshot>${sessionViewerSnapshotHtml(schedules)}</div>
     </section>
-    <details class="panel session-viewer-controls coach-tone-blue">
+    <details id="session-viewer-setup" class="panel session-viewer-controls coach-tone-blue" ${state.sessionViewerSetupOpen ? "open" : ""}>
       <summary class="session-setup-summary"><span><strong>Group & location</strong><small>${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</small></span><span class="session-setup-caret" aria-hidden="true">+</span></summary>
       <div class="session-setup-fields">
         <div class="field viewer-group-filter"><label>Group filter</label><div class="viewer-filter-tabs viewer-group-tabs" role="group" aria-label="Group filter">${sessionViewerGroupTabs(started)}</div></div>
@@ -10114,6 +10120,11 @@ function sessionViewerRunList(entry) {
 }
 
 function bindSessionViewerActions() {
+  const setup = document.querySelector("#session-viewer-setup");
+  const setupIsCurrent = () => setup?.isConnected && state.view === "sessionViewer";
+  setup?.addEventListener("toggle", () => {
+    if (setupIsCurrent()) state.sessionViewerSetupOpen = setup.open;
+  });
   document.querySelector("#viewer-refresh")?.addEventListener("click", () => renderSessionViewer());
   document.querySelectorAll("[data-viewer-group]").forEach((button) => button.addEventListener("click", (event) => {
     const nextGroup = event.currentTarget.dataset.viewerGroup;
