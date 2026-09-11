@@ -97,6 +97,10 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       await summary().click(); await assertOpen(false, 'Explicit close is recorded');
       await clickRefresh(); await assertOpen(false, 'Refresh does not reopen explicitly closed setup');
       await summary().focus(); await page.keyboard.press('Enter'); await assertOpen(true, 'Keyboard toggle opens setup');
+      await page.evaluate(async () => { document.querySelector('#session-viewer-setup > summary').click(); await renderSessionViewer(); });
+      await assertOpen(false, 'An immediate render reads a native close before its queued toggle event');
+      await page.evaluate(async () => { document.querySelector('#session-viewer-setup > summary').click(); await renderSessionViewer(); });
+      await assertOpen(true, 'An immediate render reads a native open before its queued toggle event');
 
       // Close the current disclosure while a group render waits for its plans.
       await page.evaluate(() => { qaHoldPlan = true; });
