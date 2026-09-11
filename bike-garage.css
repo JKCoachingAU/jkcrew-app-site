@@ -1,5 +1,7 @@
 /* Bike Garage is one bounded workspace. Only the part options and collection scroll. */
 #app #view[data-view="bikeGarage"]{width:100%;max-width:none;margin:0;padding:12px;overflow:hidden}
+/* Installation stays available elsewhere; the workshop footer belongs to saving. */
+body:has(#view[data-view="bikeGarage"]) #install-app{display:none}
 .bike-garage{--bike-ink:#edf1f7;--bike-muted:#a3aebb;--bike-line:#303a47;--bike-surface:#151c25;--bike-raised:#202a36;--bike-field:#0f151e;--bike-accent:#64c9c0;--bike-selected:#233c42;--bike-selected-ink:#c6f2ec;--bike-focus:#87ddd4;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;width:100%;height:var(--bike-workspace-height,calc(100dvh - 180px));min-height:0;margin:0;padding:0;color:var(--bike-ink);overflow:hidden}
 .bike-garage *{box-sizing:border-box}
 .bike-garage [hidden]{display:none!important}

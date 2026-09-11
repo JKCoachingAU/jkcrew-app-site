@@ -9,7 +9,8 @@ const navItems = [['◇','Command'],['●','Session'],['✦','Riders'],['⚡','C
 const nav = navItems.map(([icon,label])=>`<button class="nav-btn" type="button"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');
 // Match renderShell's layout surfaces. Omitting its topbar or bottom navigation
 // would hide the overlap that originally made the workshop difficult to use.
-const shell = `<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"><div class="app-shell coach-shell"><aside class="sidebar"><div class="sidebar-brand logo-sidebar-brand"><img src="/icons/jkc-logo.png" alt="JK Coaching"><span>JK Coaching</span></div><div class="role-pill">Coach account</div><nav class="nav-list">${nav}</nav></aside><div class="main-wrap"><header class="topbar"><div class="topbar-title"><img class="topbar-logo" src="/icons/jkc-logo.png" alt="">JKCREW live</div><div class="topbar-actions"><span class="sync-status"><i></i><b>Saved</b></span></div></header><main id="view" class="content" data-view="bikeGarage"></main></div><nav class="bottom-nav">${nav}</nav></div></div></body></html>`;
+// The available install prompt intentionally sits outside #app, matching index.html.
+const shell = `<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"><div class="app-shell coach-shell"><aside class="sidebar"><div class="sidebar-brand logo-sidebar-brand"><img src="/icons/jkc-logo.png" alt="JK Coaching"><span>JK Coaching</span></div><div class="role-pill">Coach account</div><nav class="nav-list">${nav}</nav></aside><div class="main-wrap"><header class="topbar"><div class="topbar-title"><img class="topbar-logo" src="/icons/jkc-logo.png" alt="">JKCREW live</div><div class="topbar-actions"><span class="sync-status"><i></i><b>Saved</b></span></div></header><main id="view" class="content" data-view="bikeGarage"></main></div><nav class="bottom-nav">${nav}</nav></div></div><button id="install-app" class="install-app" type="button">Install JK Coaching</button></body></html>`;
 const mime = {'.png':'image/png','.webp':'image/webp','.jpg':'image/jpeg','.svg':'image/svg+xml'};
 async function routeLocal(route) {
   const url = new URL(route.request().url());
@@ -37,6 +38,7 @@ async function boot(page) {
   await settle(page);
 }
 async function fitsShell(page,label) {
+  assert(await page.locator('#install-app').isHidden(),`${label}: the global install prompt cannot cover the garage Save button`);
   const result=await page.evaluate(()=>{
     const rect=selector=>{const el=document.querySelector(selector),r=el?.getBoundingClientRect();return r?{top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height,display:getComputedStyle(el).display}:null;};
     const garage=rect('.bike-garage'),header=rect('.topbar'),nav=rect('.bottom-nav');
@@ -131,8 +133,13 @@ async function checkCollection(page) {
     const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true});page.setDefaultTimeout(10000);
     const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',routeLocal);await boot(page);
     for(const role of ['coach','rider'])for(const [width,height] of [[390,844],[1024,768],[844,390],[320,650]])for(const theme of ['dark','light'])await checkLayout(page,role,width,height,theme);
-    await checkCollection(page);assert.deepEqual(errors,[]);
+    await checkCollection(page);
+    await page.setViewportSize({width:1024,height:768});
+    await page.evaluate(()=>{JKCrewBikeGarage.destroy();const view=document.querySelector('#view');view.dataset.view='home';view.innerHTML='<section><h1>Dashboard</h1></section>';});
+    await settle(page);
+    assert(await page.locator('#install-app').isVisible(),'The install prompt remains available after returning to another app page');
+    assert.deepEqual(errors,[]);
     assert(await page.evaluate(()=>layoutCalls.every(call=>['get_bike_garage','delete_bike_build'].includes(call.method))&&layoutCalls.filter(call=>call.method==='delete_bike_build').length===1),'Layout tests only read fake builds and exercise one rejected mock deletion');
-    console.log('PASS: real shell, stable bike/navigation/save, isolated settings scroll, touch targets, draft retention, collection dialog, and resized phone/tablet layouts in both roles/themes.');
+    console.log('PASS: real shell, stable bike/navigation/save, isolated settings scroll, touch targets, draft retention, collection dialog, resized phone/tablet layouts, and scoped install-prompt visibility.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});
