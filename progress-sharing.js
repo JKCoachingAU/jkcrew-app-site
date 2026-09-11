@@ -4,6 +4,10 @@
  * openTodayTrainingProgress, refreshOpenTrainingProgress,
  * showTrainingSharePreview({ dailyResult | todayProgress }).
  */
+// Release decision: retain the reviewed share-card implementation but make
+// every UI and direct export entry unavailable until separately approved.
+const TRAINING_SHARE_CARDS_ENABLED = false;
+
 (() => {
   "use strict";
   let progressView = null;
@@ -76,6 +80,7 @@
   }
 
   function buildTrainingShareData(input = {}) {
+    if (!TRAINING_SHARE_CARDS_ENABLED) return null;
     if (input.dailyResult) return { kind: "daily", daily: dailyShareData(input.dailyResult) };
     if (input.todayProgress) return { kind: "today", today: todayShareData(input.todayProgress) };
     throw new Error("Choose a saved result or today's progress to share.");
@@ -137,7 +142,7 @@
     const refresh = view.dialog.querySelector("[data-progress-refresh]");
     const share = view.dialog.querySelector("[data-progress-preview]");
     refresh.disabled = true;
-    share.disabled = true;
+    if (share) share.disabled = true;
     body.setAttribute("aria-busy", "true");
     view.dialog.querySelector("[data-progress-status]").textContent = view.data ? "Updating today's progress…" : "Loading your recorded progress…";
     try {
@@ -151,7 +156,7 @@
       view.dialog.querySelector("[data-progress-name]").textContent = text(data.rider_name, 90) || view.riderName || "Rider";
       view.dialog.querySelector("[data-progress-status]").textContent = "Updated just now";
       view.dialog.scrollTop = top;
-      share.disabled = false;
+      if (share) share.disabled = false;
     } catch (error) {
       if (progressView !== view || request !== view.request || userId() !== view.userId) return;
       if (error?.code === "42501" || [401, 403].includes(Number(error?.status))) {
@@ -182,11 +187,12 @@
     });
     view.dialog = dialog;
     progressView = view;
-    dialog.innerHTML = `<header class="training-progress-header"><div><span class="training-progress-eyebrow">JKCREW · Training</span><h2>Today's <em>Progress</em></h2><p data-progress-name>${html(view.riderName || "Rider")}</p></div><button type="button" class="training-progress-close" data-progress-close aria-label="Close today's progress">×</button></header><div class="training-progress-tools"><p role="status" data-progress-status>Loading your recorded progress…</p><button type="button" class="training-progress-button small" data-progress-refresh>↻ Refresh</button></div><div data-progress-body></div><footer class="training-progress-footer"><button type="button" class="training-progress-button accent" data-progress-preview disabled>Share / Save Image <span aria-hidden="true">↗</span></button><button type="button" class="training-progress-button" data-progress-continue>Keep riding</button></footer>`;
+    dialog.innerHTML = `<header class="training-progress-header"><div><span class="training-progress-eyebrow">JKCREW · Training</span><h2>Today's <em>Progress</em></h2><p data-progress-name>${html(view.riderName || "Rider")}</p></div><button type="button" class="training-progress-close" data-progress-close aria-label="Close today's progress">×</button></header><div class="training-progress-tools"><p role="status" data-progress-status>Loading your recorded progress…</p><button type="button" class="training-progress-button small" data-progress-refresh>↻ Refresh</button></div><div data-progress-body></div><footer class="training-progress-footer">${TRAINING_SHARE_CARDS_ENABLED ? `<button type="button" class="training-progress-button accent" data-progress-preview disabled>Share / Save Image <span aria-hidden="true">↗</span></button>` : ""}<button type="button" class="training-progress-button" data-progress-continue>Keep riding</button></footer>`;
     dialog.querySelector("[data-progress-close]").onclick = () => dialog.close();
     dialog.querySelector("[data-progress-continue]").onclick = () => dialog.close();
     dialog.querySelector("[data-progress-refresh]").onclick = () => loadProgress(view);
-    dialog.querySelector("[data-progress-preview]").onclick = () => {
+    const preview = dialog.querySelector("[data-progress-preview]");
+    if (preview) preview.onclick = () => {
       if (view.data && view.userId === userId()) showTrainingSharePreview({ todayProgress: view.data });
     };
     dialog.showModal();
@@ -330,6 +336,7 @@
   }
 
   async function showTrainingSharePreview(input = {}) {
+    if (!TRAINING_SHARE_CARDS_ENABLED) return;
     const owner = userId();
     if (!owner) return;
     const source = input.dailyResult || input.todayProgress;

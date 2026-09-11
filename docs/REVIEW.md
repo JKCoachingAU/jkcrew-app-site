@@ -1,6 +1,8 @@
 # JKCREW review — Daily progress and rematches
 
-Prepared version **2.14.93**, on branch `review/daily-progress-rematches`.
+Release candidate **2.14.93**, prepared on branch `review/daily-progress-rematches`.
+
+**Release scope updated:** the user approved publishing the Daily and battle features, excluding share cards. `TRAINING_SHARE_CARDS_ENABLED` is fixed to `false`: the release has no new share, image-save or card-preview controls, and the preview/export entry points do nothing. Sharing descriptions and images below document the retained, unreleased review work.
 
 **Nothing has been deployed.** This is an isolated copy of JKCREW. The live 2.14.92 app, original checkout and real rider results are unchanged. No real battle invitations, posts or notifications were sent.
 

@@ -33,6 +33,8 @@ const progress = {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
     const errors = [];
+    let downloads = 0;
+    page.on("download", () => downloads++);
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => route.abort());
     await page.setContent('<html data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"><div class="app-shell rider-shell"><main id="view"><input id="ongoing-training" value="unchanged"><div id="progress-trigger"></div></main></div></div></body></html>');
@@ -55,13 +57,14 @@ const progress = {
       const fillText = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(value,...args){drawnText.push(String(value));return fillText.call(this,value,...args);};
       window.shareCalls=[];
-      Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false});
+      Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>true});
       Object.defineProperty(navigator,'share',{configurable:true,value:async(data)=>{shareCalls.push({title:data.title,names:data.files.map(f=>f.name),types:data.files.map(f=>f.type),sizes:data.files.map(f=>f.size)});}});
     ` });
     await page.addScriptTag({ content: fs.readFileSync(path.join(root, 'progress-sharing.js'), 'utf8') });
     // In the app, these helpers are defined by the later deferred app script.
     await page.addScriptTag({ content: ['splitLineTricks','assignmentPresentation'].map(extract).join('\n') });
     await page.evaluate(() => { document.querySelector('#progress-trigger').innerHTML = trainingProgressButtonHtml('rider', 'Lars Test Rider'); bindTrainingProgressActions(); bindTrainingProgressActions(); });
+    assert.equal(await page.evaluate(() => TRAINING_SHARE_CARDS_ENABLED), false, 'Release share-card gate stays disabled');
     const originalState = await page.evaluate(() => JSON.stringify({training:state.activeTraining,attempts:state.attempts}));
     await page.getByRole('button', { name: "Today's Progress" }).click();
     await page.getByText('Updated just now', { exact: true }).waitFor();
@@ -75,6 +78,7 @@ const progress = {
     assert.equal(await page.locator('dialog details[open]').count(), 0);
     assert(!(await page.locator('dialog').textContent()).includes('SECRET_'));
     assert(!(await page.locator('dialog').textContent()).includes('overall duration'));
+    assert.equal(await page.getByRole('button', {name:/share|save image/i}).count(),0,'Today has no sharing controls');
 
     for (const width of [320, 390, 1024]) {
       for (const theme of ['dark', 'light']) {
@@ -95,85 +99,41 @@ const progress = {
     await page.evaluate(()=>{fixture.today_points=16;return refreshOpenTrainingProgress('rider');});
     await page.evaluate(()=>{pendingRpc.shift()({data:{...structuredClone(fixture),today_points:999}})});
     assert.equal(await page.locator('.training-progress-stats strong').first().textContent(),'16');
-    // A failed refresh retains labelled prior data and disables sharing stale results.
+    // A failed refresh retains labelled prior data and the release never exposes sharing.
     await page.evaluate(()=>{rpcQueue.push('error');return refreshOpenTrainingProgress('rider')});
     assert(await page.getByText(/Couldn't update/).isVisible());
-    assert(await page.locator('[data-progress-preview]').isDisabled());
+    assert.equal(await page.locator('[data-progress-preview]').count(),0);
     assert.equal(await page.locator('.training-progress-stats strong').first().textContent(),'16');
     await page.locator('[data-progress-refresh]').click();
     await page.getByText('Updated just now',{exact:true}).waitFor();
 
-    // Native Share is never automatic; both actions work from an exact image preview.
-    await page.locator('[data-progress-preview]').click();
-    await page.locator('.training-share-image img').waitFor();
-    await page.locator('[data-share-native]').waitFor({state:'visible'});
-    assert.equal(await page.evaluate(()=>shareCalls.length),0);
-    assert.equal(await page.locator('.training-share-image img').evaluate(img=>img.naturalWidth),1080);
-    assert.equal(await page.locator('.training-share-image img').evaluate(img=>img.naturalHeight),1440);
-    const privacyModel=await page.evaluate(()=>JSON.stringify(buildTrainingShareData({todayProgress:fixture})));
-    assert(!privacyModel.includes('SECRET_')&&!privacyModel.includes('contact')&&!privacyModel.includes('run_plans'));
-    assert.deepEqual(JSON.parse(privacyModel).today.categories.find(category=>category.key==='lines').items.map(item=>item.name), ['Manual → Barspin → 180','360','Truck box'], 'Shared Lines use only structured trick names, never reconstructed notes');
-    for (const privateText of ['Private coaching feedback','PRIVATE_CONTACT','NEVER_EXPORT_NOTES']) {
-      assert(!privacyModel.includes(privateText), 'Ambiguous legacy coaching notes stay out of the export model');
-      assert(!(await page.evaluate(()=>drawnText.join('|'))).includes(privateText), 'Ambiguous legacy coaching notes stay off the exported canvas');
+    // This release excludes share cards even when native sharing is supported.
+    // Public preview/data entries are safe no-ops with either source payload.
+    for (const kind of ['dailyResult','todayProgress']) {
+      assert.equal(await page.evaluate(kind => buildTrainingShareData({[kind]:kind==='dailyResult'?dailyFixture:fixture}),kind),null,'Export model is unavailable');
+      await page.evaluate(kind => showTrainingSharePreview({[kind]:kind==='dailyResult'?dailyFixture:fixture}),kind);
     }
-    assert(!privacyModel.includes('PRIVATE_INSTRUCTION')&&!privacyModel.includes('NEVER_EXPORT'),'Full line coaching notes are excluded');
-    assert(!(await page.evaluate(()=>drawnText.join('|'))).includes('SECRET_'));
-    for(const category of ['One Bangs','Dialled','Lines','Bonus Tricks']) assert((await page.evaluate(()=>drawnText.join('|'))).includes(category));
-    for(const width of [390,1024]) {
-      await page.setViewportSize({width,height:width>500?900:844});
-      await page.locator('.training-share-dialog').evaluate(el=>el.scrollTop=0);
-      assert(await page.locator('.training-share-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
-      await page.screenshot({path:path.join(screenshotDirectory,`jkcrew-progress-share-${width}.png`)});
-    }
-    let downloadPromise=page.waitForEvent('download');
-    await page.locator('[data-share-save]').click();
-    let download=await downloadPromise;
-    assert.equal(download.suggestedFilename(),'jkcrew-todays-progress.png');
-    assert(fs.statSync(await download.path()).size>10000);
-    downloadPromise=page.waitForEvent('download');
-    await page.locator('[data-share-native]').click();
-    download=await downloadPromise;
-    assert.equal(download.suggestedFilename(),'jkcrew-todays-progress.png','Unsupported native files fall back to download');
-    await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>true}));
-    await page.locator('[data-share-native]').click();
-    assert.equal(await page.evaluate(()=>shareCalls.length),1);
-    assert.deepEqual(await page.evaluate(()=>shareCalls[0].types),['image/png']);
-    await page.evaluate(()=>Object.defineProperty(navigator,'share',{configurable:true,value:async()=>{throw new DOMException('Cancelled','AbortError')}}));
-    await page.locator('[data-share-native]').click();
-    assert(await page.getByText('Sharing cancelled. Your preview is still here.',{exact:true}).isVisible());
-    await page.evaluate(()=>Object.defineProperty(navigator,'share',{configurable:true,value:async()=>{throw new Error('Native sharing unavailable')}}));
-    await page.locator('[data-share-native]').click();
-    assert(await page.getByText("Sharing isn't available right now. Tap Save Image to download your card.",{exact:true}).isVisible());
-    await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>{throw new Error('File sharing blocked')}}));
-    downloadPromise=page.waitForEvent('download');
-    await page.locator('[data-share-native]').click();
-    assert.equal((await downloadPromise).suggestedFilename(),'jkcrew-todays-progress.png');
-    await page.locator('[data-share-close]').click();
-    assert(await page.locator('.training-today-dialog').isVisible());
+    await page.evaluate(()=>showTrainingSharePreview());
+    assert.equal(await page.locator('.training-share-dialog, .training-share-image, [data-share-native], [data-share-save], [data-progress-preview]').count(),0,'No direct preview or export path opens');
+    assert.equal(await page.getByRole('button',{name:/share|save image/i}).count(),0);
+    assert.equal(await page.evaluate(()=>drawnText.length),0,'Disabled feature never renders an export canvas');
+    assert.equal(await page.evaluate(()=>shareCalls.length),0,'Disabled feature never calls native sharing');
+    assert.equal(downloads,0,'Disabled feature never starts a download');
+    assert(await page.locator('.training-today-dialog').isVisible(),'Direct preview no-op preserves the private summary');
+    assert.equal(await page.locator('.training-progress-stats strong').first().textContent(),'16');
     await page.locator('[data-progress-continue]').click();
     await page.waitForFunction(()=>!document.querySelector('dialog'));
     assert.equal(await page.locator('dialog').count(),0);
-    assert.equal(await page.evaluate(()=>JSON.stringify({training:state.activeTraining,attempts:state.attempts})),originalState,'Summary/share never finish or change training');
-
-    // The same preview framework renders authoritative Daily result and valid PB.
+    assert.equal(await page.evaluate(()=>JSON.stringify({training:state.activeTraining,attempts:state.attempts})),originalState,'Private summary never changes training');
     await page.evaluate(()=>showTrainingSharePreview({dailyResult:dailyFixture}));
-    await page.locator('.training-share-image img').waitFor();
-    assert((await page.evaluate(()=>drawnText.join('|'))).includes('NEW PERSONAL BEST'));
-    await page.screenshot({path:path.join(screenshotDirectory,'jkcrew-daily-result-share.png')});
-    const incompatible=await page.evaluate(()=>buildTrainingShareData({dailyResult:{...dailyFixture,pb_comparable:false}}));
-    assert.equal(incompatible.daily.newPb,false);assert.equal(incompatible.daily.previousPb,null);assert.equal(incompatible.daily.pbSeconds,null);
-    await page.evaluate(()=>closeTrainingProgressViews());
-    await page.waitForFunction(()=>!document.querySelector('dialog'));
+    assert.equal(await page.locator('dialog').count(),0,'Direct preview is also unavailable with no summary open');
 
     // Fresh queries reflect a new local date, empty day, no fabricated rewards/PB.
     await page.evaluate(()=>{fixture.local_date='2026-09-12';fixture.daily_results=[];fixture.completed_categories=[];fixture.improvements=[];fixture.next_goal=null;fixture.today_points=0;fixture.today_xp=null;fixture.xp_attribution='partial';fixture.attributable_today_xp=35;return openTodayTrainingProgress({athleteId:'rider'});});
     assert(await page.getByText('No finish recorded today',{exact:true}).isVisible());
     assert.equal(await page.locator('.training-progress-stats strong').last().textContent(),'—');
     assert(await page.getByText('Today’s full XP total is unavailable because earlier rewards were adjusted today.',{exact:true}).isVisible());
-    const partialXp=await page.evaluate(()=>buildTrainingShareData({todayProgress:fixture}));
-    assert.equal(partialXp.today.todayXp,null,'Partial XP never masquerades as a complete day total');
-    assert(!('attributable_today_xp' in partialXp.today),'Known subtotal is not exported as full XP');
+    assert.equal(await page.evaluate(()=>buildTrainingShareData({todayProgress:fixture})),null,'Partial XP does not expose an export path');
     assert.equal(await page.locator('.training-progress-pb').count(),0);
     await page.evaluate(()=>{fixture.daily_results=[{...dailyFixture,legacy:true,pb_comparable:false,completion_points:null}];return refreshOpenTrainingProgress('rider')});
     assert(await page.getByText(/Previously saved time/).isVisible());
@@ -194,13 +154,16 @@ const progress = {
     await page.evaluate(()=>{rpcQueue.push('denied');return refreshOpenTrainingProgress('second-rider');});
     assert(await page.getByText('Progress is no longer available for this rider.',{exact:true}).isVisible());
     assert.equal(await page.locator('.training-progress-stats').count(),0,'Access revoked clears an earlier private summary');
-    assert(await page.locator('[data-progress-preview]').isDisabled());
+    assert.equal(await page.locator('[data-progress-preview]').count(),0);
     await page.evaluate(()=>closeTrainingProgressViews());
     await page.waitForFunction(()=>!document.querySelector('dialog'));
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.evaluate(()=>{state.user.id='rider';state.profile.role='athlete';fixture.athlete_id='rider';return openTodayTrainingProgress({athleteId:'rider'})});
     assert.equal(await page.locator('.training-today-dialog').evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.equal(await page.getByRole('button',{name:/share|save image/i}).count(),0,'Sharing stays absent after account changes and refreshes');
+    assert.equal(await page.evaluate(()=>shareCalls.length),0);
+    assert.equal(downloads,0);
     assert.deepEqual(errors,[]);
-    console.log('PASS: fresh private local-day summaries, updates/stale/error guards, exact completions/rewards/PB, phone/tablet light/dark layouts, privacy allowlist, portrait image, native share/cancel/download fallback, no training mutation, account isolation, reduced motion.');
+    console.log('PASS: fresh private local-day summaries, updates/stale/error guards, exact completions/rewards/PB, phone/tablet light/dark layouts, disabled share controls and direct preview/export entries, no canvas/native share/download, no training mutation, account isolation, reduced motion.');
   } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

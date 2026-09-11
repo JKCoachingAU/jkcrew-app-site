@@ -1,5 +1,7 @@
 # Today's Progress and share-preview hooks
 
+**2.14.93 release:** Today's Progress is enabled. Share cards are deliberately disabled by `TRAINING_SHARE_CARDS_ENABLED = false`; no Share/Save Image controls render, `showTrainingSharePreview` is a no-op, and `buildTrainingShareData` returns null. The sharing documentation below describes retained code for a future review, not an available user feature.
+
 `progress-sharing.js` and `progress-sharing.css` are review-copy assets. Load CSS after `styles.css`, and the deferred JavaScript before `app.js`. Add both to the existing service-worker asset list with the same version convention as the app.
 
 The module reads the current global `state` and `client` only when an action runs. It calls `get_today_training_progress({p_athlete_id})` using the contract in `daily-progress-api.md`. The backend selects the rider's local day and authorizes access. The UI does not calculate day boundaries, count weekly totals as daily earnings, or use an overall session timer.

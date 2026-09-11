@@ -111,6 +111,7 @@ function showDailyFinishConfirmation(candidate, context) {
 
 function dailySavedResultHtml(result, context) {
   const seconds = dailyFinishNumber(result.seconds);
+  const sharingEnabled = typeof TRAINING_SHARE_CARDS_ENABLED !== "undefined" && TRAINING_SHARE_CARDS_ENABLED;
   const comparable = result.pb_comparable === true;
   const previousPb = comparable ? dailyFinishNumber(result.previous_pb_seconds) : null;
   const personalBest = comparable ? dailyFinishNumber(result.pb_seconds) : null;
@@ -134,7 +135,7 @@ function dailySavedResultHtml(result, context) {
     ${comparable ? `<div class="daily-pb-comparison"><div><span>Personal best · same list</span><strong>${personalBest === null ? "Not available" : formatTime(personalBest)}</strong></div><p>${escapeHtml(comparison)}</p></div>` : `<p class="daily-finish-note">Earlier saved Daily result. A compatible PB comparison and completion point breakdown aren’t available for this result.</p>`}
     ${rank !== null && rank > 0 ? `<p class="daily-result-rank">Leaderboard position <strong>#${rank}</strong></p>` : ""}
     <p class="daily-finish-note">Keep going with One Bangs, Dialled, Lines or your other training. Your Daily result is saved.</p>
-    <div class="daily-finish-actions"><button class="primary-btn" type="button" data-keep-riding>Keep riding</button><button class="secondary-btn" type="button" data-share-daily>Share result</button></div>`;
+    <div class="daily-finish-actions"><button class="primary-btn" type="button" data-keep-riding>Keep riding</button>${sharingEnabled ? `<button class="secondary-btn" type="button" data-share-daily>Share result</button>` : ""}</div>`;
 }
 
 function showSavedDailyResult(result, context) {
@@ -145,7 +146,8 @@ function showSavedDailyResult(result, context) {
   const current = dailyFinishModal(dailySavedResultHtml(result, context), context, { result: true });
   current.result = result;
   current.element.querySelector("[data-keep-riding]").onclick = () => closeDailyFinish();
-  current.element.querySelector("[data-share-daily]").onclick = () => showTrainingSharePreview({ dailyResult: result });
+  const share = current.element.querySelector("[data-share-daily]");
+  if (share) share.onclick = () => showTrainingSharePreview({ dailyResult: result });
 }
 
 async function refreshAfterDailyFinish(result, context) {

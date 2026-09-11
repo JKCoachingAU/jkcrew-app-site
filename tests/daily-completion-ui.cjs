@@ -129,7 +129,10 @@ function coachMode(){dismissDailyFinishForNavigation();state.user={id:'coach'};s
     for(const text of ['Test Rider One','01:30','+2','Daily completion points','47','Weekly score','Personal best · same list','#4','You matched your personal best.'])assert(resultText.includes(text),text);
     assert.equal(await page.evaluate(()=>sessions.r1.ended_at),null,'Finish does not end training');
     for(const width of [320,390,1024]){await page.setViewportSize({width,height:844});assert(await page.locator('.daily-finish-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Result content fits '+width);assert(await page.locator('.daily-finish-backdrop').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Result backdrop fits '+width);}
-    await page.locator('[data-share-daily]').click();assert.equal(await page.evaluate(()=>shares.length),1);assert.equal(await page.evaluate(()=>shares[0].dailyResult.result_id),'result-r1','Share receives saved result only');
+    assert.equal(await page.evaluate(()=>TRAINING_SHARE_CARDS_ENABLED),false,'Sharing is excluded from this release');
+    assert.equal(await page.locator('[data-share-daily]').count(),0,'Saved Daily result has no Share result control');
+    assert.equal(await page.getByRole('button',{name:/share|save image/i}).count(),0);
+    assert.equal(await page.evaluate(()=>shares.length),0,'Saving a result never enters sharing');
     await page.locator('[data-keep-riding]').click();assert.equal(await page.locator('.daily-finish-backdrop').count(),0);assert.equal(await page.locator('#finish-daily-tricks').textContent(),'View Daily result');
     assert.equal(await page.evaluate(()=>state.timer),null,'Only the rider Daily timer stops after confirmed save');assert.equal(await page.evaluate(()=>liveIntervals.size),0,'Confirmed save removes all Daily clock intervals');
     for(const category of ['one_bang','dialled','lines','foam_pit','bonus'])assert.equal(await page.locator('[data-assignment-category="'+category+'"]').count(),1,'Untimed '+category+' stays available');
@@ -191,7 +194,9 @@ function coachMode(){dismissDailyFinishForNavigation();state.user={id:'coach'};s
     await page.evaluate(()=>{results.r2=null;daily('r2').forEach(a=>a.completed=true);holdPrepare=true;});
     await page.locator('[data-finish-daily-athlete="r2"]').click();await page.evaluate(()=>{state.view='coachHome';dismissDailyFinishForNavigation();state.view='sessionViewer';holdPrepare=false;prepareReleases.splice(0).forEach(release=>release());});
     await page.waitForFunction(()=>dailyFinishUi.requests.size===0);assert.equal(await page.locator('.daily-finish-backdrop').count(),0,'Leaving and returning to same page suppresses stale response');
+    assert.equal(await page.locator('[data-share-daily]').count(),0);
+    assert.equal(await page.evaluate(()=>shares.length),0,'Rider and coach results leave sharing unavailable');
     assert.deepEqual(errors,[]);
-    console.log('PASS actual rider/coach Daily controls, final-tap timing, corrections/reopen, same-candidate retries, no premature celebration, isolated rider queues, Keep riding, saved share hook, navigation/realtime safety and mobile/tablet layout. No live requests.');
+    console.log('PASS actual rider/coach Daily controls, final-tap timing, corrections/reopen, same-candidate retries, no premature celebration, isolated rider queues, Keep riding, share-card controls excluded, navigation/realtime safety and mobile/tablet layout. No live requests.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});
