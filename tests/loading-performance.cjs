@@ -41,14 +41,14 @@ async function workerChecks() {
  const worker=vm.createContext({self:{location:{origin:'https://jkcrew.test',href:origin+'sw.js'},addEventListener:(n,fn)=>handlers[n]=fn},caches:{open:async()=>cache},URL,Set,Promise,fetch:r=>{networkCalls.push(r);return network.promise}});
  vm.runInContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),worker);
  const dispatch=(url,mode='cors')=>{let result;const waits=[];handlers.fetch({request:{url,method:'GET',mode},respondWith:p=>result=p,waitUntil:p=>waits.push(p)});return {result,waits}};
- stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.99','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
+ stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.100','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
  const html=dispatch(origin+'?push=contests','navigate');assert.equal(await html.result,'cached-shell','Navigation must finish while network remains unresolved');
- const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.99').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
+ const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.100').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
  assert.equal(dispatch('https://soanwttlorlgdfrzbvtp.supabase.co/rest/v1/run_plans').result,undefined);
  assert.equal(dispatch(origin+'private-data.json').result,undefined);
  assert.equal(dispatch(origin+'riley-test/','navigate').result,undefined,'Nested app navigation must not receive the root app shell');
  network.reject(new Error('offline'));await Promise.all(html.waits);
- network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.99');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.99'));
+ network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.100');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.100'));
  network=deferred();const photoUrl=origin+'images/bike-garage/studio-white-v1.webp',photo={ok:true,clone(){return this}};
  const firstPhoto=dispatch(photoUrl);network.resolve(photo);assert.equal(await firstPhoto.result,photo);const photoRequests=networkCalls.length;
  assert.equal(await dispatch(photoUrl).result,photo);assert.equal(networkCalls.length,photoRequests,'Bike photos are reused offline after the first request');

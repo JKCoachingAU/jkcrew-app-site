@@ -1,6 +1,10 @@
-# JKCREW Bike Garage — 2.14.99
+# JKCREW Bike Garage — 2.14.100
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It uses original generated studio photographs with masked material recolouring, instant part/colour changes and a full-bike preview.
+
+The builder is a compact workspace sized to the visible app area. The bike, section navigation and save bar stay in place; only part settings scroll. Portrait phones show the bike above the controls, while landscape and wider screens place them side by side. On short landscape phones, the app bars make room for the editor and the builder's Back button returns to JKCREW. Resize observers and the visual viewport keep the workspace fitted when rotating the device or opening its keyboard.
+
+Colours appear before finish options. The part menu gives direct access to every part without a wrapping wall of buttons. Each category remembers the last part selected during the visit. Editing a colour or option preserves the settings scroll position; selecting another part starts its settings at the top. **My garage** opens a separate drawer containing saved builds and a closed inspiration section. Closing it preserves the unfinished design and restores focus; load/remove errors remain visible in the drawer.
 
 New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. Photographic artwork depicts the bike at a slight angle on a light studio background. Paint colours retain photographed material textures, shading and reflections.
 
@@ -43,6 +47,8 @@ A closed inspiration section links to 13 verified real seat and component refere
 `tests/bike-garage-db.cjs` covers CRUD, configuration validation, actual authenticated/anonymous roles, owner isolation, protected columns, revision conflicts and delete/recreate behaviour. Additional isolated PostgreSQL tests exercised five overlapping real-connection races: create, edit, remove-before-save, recreate and save-before-remove. Existing profiles and scoring tables are unchanged.
 
 `tests/bike-garage-ui.cjs` exercises the real UI and artwork with isolated save fixtures, mobile/tablet layouts, drafts, saved designs, failure/conflict handling and account/navigation cleanup. Existing smoke, closed-section and startup/cache checks cover the app integration.
+
+`tests/bike-garage-layout.cjs` includes the actual topbar, sidebar and bottom navigation in its fixture. It checks the available viewport, independent settings scrolling, native touch swipes, directly tappable controls, retained drafts and scroll position, drawer focus, and phone/tablet rotation in both coach/rider and dark/light themes.
 
 The v3 database/configuration suite passes 486 assertions, retaining legacy validation, ownership isolation and revision safety. The dedicated `tests/bike-preview-export.cjs` passes 164 assertions covering real PNG output across all four scenes, colour changes, native file sharing, cancellation, fallback, gestures, download filenames, stale work and object-URL cleanup. Visual checks include actual RHD/LHD compositions and narrow portrait/landscape layouts.
 
