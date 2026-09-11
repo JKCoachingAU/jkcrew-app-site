@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.83";
+const RELEASE_VERSION = "2.14.84";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -420,7 +420,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.83" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.84" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2644,7 +2644,7 @@ async function getTricktionaryPagedRows(queryPage, pageSize = 800) {
 }
 
 async function getTricktionaryData(athleteId) {
-  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult] = await Promise.all([
+  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult, landingHistoryResult, landedAttemptsResult] = await Promise.all([
     client.from("profiles").select(PROFILE_SELECT).eq("id", athleteId).single(),
     getTricktionaryPagedRows((from, to) => client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).order("id", { ascending: true }).range(from, to)),
     getTricktionaryPagedRows((from, to) => client.from("assignment_progress").select("*").eq("athlete_id", athleteId).order("assignment_id", { ascending: true }).range(from, to)),
@@ -2652,8 +2652,10 @@ async function getTricktionaryData(athleteId) {
     client.from("training_sessions").select("*").eq("athlete_id", athleteId).order("started_at", { ascending: false }).limit(60),
     getTricktionaryPagedRows((from, to) => client.from("assignment_point_awards").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
     getTricktionaryPagedRows((from, to) => client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
+    getTricktionaryPagedRows((from, to) => client.rpc("get_tricktionary_landing_history", { p_athlete_id: athleteId }).order("id", { ascending: true }).range(from, to)),
+    getTricktionaryPagedRows((from, to) => client.from("trick_attempts").select("id,athlete_id,trick_name,category,status,created_at,session_id").eq("athlete_id", athleteId).eq("status", "landed").order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
   ]);
-  [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult].forEach((result) => { if (result.error) throw result.error; });
+  [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult, landingHistoryResult, landedAttemptsResult].forEach((result) => { if (result.error) throw result.error; });
   return {
     profile: profileResult.data,
     assignments: assignmentsResult.data || [],
@@ -2662,6 +2664,8 @@ async function getTricktionaryData(athleteId) {
     sessions: sessionsResult.data || [],
     awards: awardsResult.data || [],
     percentageAttempts: percentageAttemptsResult.data || [],
+    landingHistory: landingHistoryResult.data || [],
+    landedAttempts: landedAttemptsResult.data || [],
   };
 }
 
@@ -5009,31 +5013,46 @@ function coachManualTricktionaryPanel(athlete = {}) {
   </section>`;
 }
 
+function tricktionaryLineComponents(assignment = {}) {
+  const title = String(assignment.trick_name || "").trim();
+  if (assignment.category !== "lines") return [assignment];
+  let steps = [];
+  if (/→|->|\|/.test(title)) {
+    steps = title.split(/\s*(?:→|->|\|)\s*/);
+  } else {
+    const notes = String(assignment.notes || "").trim();
+    // Older sheets saved the first trick as the title and the remaining
+    // sequence as notes. Require an explicit 3+ step sequence; ordinary
+    // coaching prose is not another trick. A space on either side of a dash
+    // accepts older "BOX -NO FOOT" input while preserving names such as X-UP.
+    const separator = /\s+-\s*|\s*-\s+/;
+    const titleSteps = title.split(separator);
+    const noteSteps = notes.split(/\s*(?:→|->|\|)\s*|\s+-\s*|\s*-\s+/);
+    if (titleSteps.length >= 3) steps = titleSteps;
+    else if (notes && noteSteps.length >= 2 && titleSteps.length + noteSteps.length >= 3) steps = [...titleSteps, ...noteSteps];
+  }
+  steps = steps.map((step) => step.trim()).filter(Boolean);
+  if (steps.length < 2) return [assignment];
+  return steps.map((trick_name) => ({ ...assignment, trick_name, notes: "" }));
+}
+
+function tricktionaryLandingDate(timestamp, profile = {}, explicitDate = "") {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(explicitDate || ""))) return explicitDate;
+  if (!timestamp) return "unknown";
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return "unknown";
+  const zones = typeof countryTimezones === "undefined" ? {} : countryTimezones;
+  const timeZone = zones[profile.country_code || "AU"] || "Australia/Brisbane";
+  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
+}
+
 function landedTricktionaryEntries(data = {}) {
   const profile = data.profile || {};
   const meta = tricktionaryMeta(profile);
   const assignmentsById = new Map((data.assignments || []).map((assignment) => [assignment.id, assignment]));
   const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
-  const awardsByAssignment = (data.awards || []).reduce((map, award) => {
-    if (!award.assignment_id) return map;
-    const rows = map.get(award.assignment_id) || [];
-    rows.push(award);
-    map.set(award.assignment_id, rows);
-    return map;
-  }, new Map());
-  const percentageByAssignment = (data.percentageAttempts || []).reduce((map, attempt) => {
-    if (!attempt.assignment_id) return map;
-    const rows = map.get(attempt.assignment_id) || [];
-    rows.push(attempt);
-    map.set(attempt.assignment_id, rows);
-    return map;
-  }, new Map());
   const byName = new Map();
-  const countForAssignment = (assignment) => {
-    if (assignment.category === "percentage") return 0;
-    if (assignment.category === "dialled") return Number(assignment.target_reps || 3) || 3;
-    return 1;
-  };
   const addEntry = (assignment, count, landedAt, sourceOverride = "", manual = false, manualId = "") => {
     if (!assignment || !Number(count)) return;
     const sourceKey = normalizeTrickKey(assignment.trick_name || "");
@@ -5079,30 +5098,115 @@ function landedTricktionaryEntries(data = {}) {
     if (manual) previous.manual = true;
     byName.set(key, previous);
   };
-  const countedAssignments = new Set();
+  const days = new Map();
+  const historyPercentageIds = new Set();
+  const revokedPercentageIds = new Set();
+  const historyAssignmentDays = new Set();
+  const revokedAssignments = new Set();
+  const revokedSessionDays = new Set();
+  const componentsFor = (assignment) => {
+    const sourceKey = normalizeTrickKey(assignment.trick_name);
+    const key = resolveTricktionaryAlias(sourceKey, meta.aliases);
+    // Keep an explicitly renamed/merged Line as its organised card. Expanding
+    // it would discard the rider or coach's deliberate canonical grouping.
+    if (assignment.category === "lines" && (key !== sourceKey || meta.titles[key])) return [assignment];
+    return tricktionaryLineComponents(assignment);
+  };
+  (data.landingHistory || []).forEach((landing) => {
+    if (!landing.assignment_id || landing.category === "percentage") return;
+    const day = tricktionaryLandingDate(landing.landed_at, profile, landing.landing_date);
+    historyAssignmentDays.add(`${landing.assignment_id}:${day}`);
+  });
+  (data.landingHistory || []).filter((landing) => landing.evidence_type === "revoked").forEach((landing) => {
+    if (landing.category === "percentage" && String(landing.id).startsWith("percentage:")) {
+      const attemptId = String(landing.id).slice("percentage:".length);
+      revokedPercentageIds.add(attemptId);
+      historyPercentageIds.add(attemptId);
+      return;
+    }
+    const day = tricktionaryLandingDate(landing.landed_at, profile, landing.landing_date);
+    revokedAssignments.add(`${landing.assignment_id}:${day}`);
+    componentsFor(landing).forEach((component) => {
+      revokedSessionDays.add(JSON.stringify([normalizeTrickKey(component.trick_name), component.category || "daily", day]));
+    });
+  });
+  const addEvidence = (assignment, count, landedAt, date, evidenceKey, source, sourceLabel = "") => {
+    if (!assignment || !Number.isFinite(Number(count)) || Number(count) <= 0) return;
+    if (assignment.category === "lines") {
+      const sourceKey = normalizeTrickKey(assignment.trick_name);
+      const key = resolveTricktionaryAlias(sourceKey, meta.aliases);
+      if (meta.hidden?.[key] || meta.categories[sourceKey] === "foam" || meta.categories[key] === "foam" || assignment.tricktionaryCategory === "foam") return;
+    }
+    const day = tricktionaryLandingDate(landedAt, profile, date);
+    if (source !== "session" && revokedAssignments.has(`${assignment.assignment_id || assignment.id}:${day}`)) return;
+    componentsFor(assignment).forEach((component, index) => {
+      const name = normalizeTrickKey(component.trick_name);
+      if (!name) return;
+      const key = JSON.stringify([name, component.category || "daily", day]);
+      if (source === "session" && revokedSessionDays.has(key)) return;
+      const bucket = days.get(key) || { assignment: component, landedAt, assignmentEvidence: new Map(), sessionEvidence: new Map(), sources: new Set() };
+      const evidence = source === "session" ? bucket.sessionEvidence : bucket.assignmentEvidence;
+      const componentKey = `${evidenceKey}:${index}`;
+      evidence.set(componentKey, Math.max(evidence.get(componentKey) || 0, Number(count)));
+      bucket.sources.add(sourceLabel || categoryInfo[component.category]?.label || component.category || "Training");
+      if (!bucket.landedAt || new Date(landedAt) > new Date(bucket.landedAt)) bucket.landedAt = landedAt;
+      days.set(key, bucket);
+    });
+  };
+  (data.landingHistory || []).forEach((landing, index) => {
+    if (landing.evidence_type === "revoked") return;
+    const assignment = { ...assignmentsById.get(landing.assignment_id), ...landing };
+    const isPercentage = landing.evidence_type === "percentage";
+    if (isPercentage && revokedPercentageIds.has(String(landing.id).replace(/^percentage:/, ""))) return;
+    if (isPercentage) historyPercentageIds.add(String(landing.id).replace(/^percentage:/, ""));
+    const day = tricktionaryLandingDate(landing.landed_at, profile, landing.landing_date);
+    const evidenceKey = isPercentage ? String(landing.id) : `${landing.assignment_id || landing.id || index}:${day}`;
+    addEvidence(assignment, landing.landed_count, landing.landed_at, day, evidenceKey, "assignment", isPercentage ? "Percentage landed reps" : "");
+  });
   (data.assignments || []).forEach((assignment) => {
     const progress = progressByAssignment.get(assignment.id);
     const complete = assignment.category === "daily" ? Boolean(progress?.progress_date) : Boolean(progress?.completed_at);
     if (!complete || assignment.category === "percentage") return;
-    const landedAt = progress?.completed_at || progress?.updated_at || assignment.updated_at || assignment.created_at;
-    addEntry(assignment, countForAssignment(assignment), landedAt);
-    countedAssignments.add(assignment.id);
+    const landedAt = progress.completed_at || progress.updated_at || assignment.updated_at || assignment.created_at;
+    const day = tricktionaryLandingDate(landedAt, profile, assignment.category === "daily" ? progress.progress_date : "");
+    // A saved snapshot describes what was landed then. Editing a sheet later
+    // must not turn its old tick into proof of the replacement trick or Line.
+    if (historyAssignmentDays.has(`${assignment.id}:${day}`)) return;
+    const count = assignment.category === "dialled" ? Math.max(1, Number(progress.streak_count || 1)) : 1;
+    addEvidence(assignment, count, landedAt, day, `${assignment.id}:${day}`, "assignment");
   });
-  awardsByAssignment.forEach((awards, assignmentId) => {
-    if (countedAssignments.has(assignmentId)) return;
-    const assignment = assignmentsById.get(assignmentId);
+  (data.awards || []).forEach((award) => {
+    const assignment = assignmentsById.get(award.assignment_id);
     if (!assignment || assignment.category === "percentage") return;
-    const landedAt = awards[0]?.created_at || assignment.updated_at || assignment.created_at;
-    addEntry(assignment, countForAssignment(assignment), landedAt);
-    countedAssignments.add(assignmentId);
+    const progress = progressByAssignment.get(assignment.id);
+    if (assignment.category !== "daily" && progress?.completed_at) return;
+    const key = String(award.award_key || "");
+    // Daily list/first-finish bonuses do not prove anything about sibling
+    // assignments. Only the explicitly linked trick can be recovered here.
+    const isDailyEvidence = /^(?:daily-trick|daily-complete|daily-under-20|daily):/.test(key);
+    if (assignment.category === "daily" ? !isDailyEvidence : Number(award.points || 0) <= 0) return;
+    const day = tricktionaryLandingDate(award.created_at, profile, assignment.category === "daily" ? key.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] : "");
+    if (historyAssignmentDays.has(`${assignment.id}:${day}`)) return;
+    addEvidence(assignment, 1, award.created_at, day, `${assignment.id}:${day}`, "assignment");
   });
-  percentageByAssignment.forEach((attempts, assignmentId) => {
-    const assignment = assignmentsById.get(assignmentId);
+  (data.percentageAttempts || []).forEach((attempt, index) => {
+    if (attempt.landed !== true || historyPercentageIds.has(String(attempt.id))) return;
+    const assignment = assignmentsById.get(attempt.assignment_id);
     if (!assignment) return;
-    const landedAttempts = attempts.filter((attempt) => attempt.landed);
-    if (!landedAttempts.length) return;
-    const landedAt = landedAttempts[0]?.created_at || assignment.updated_at || assignment.created_at;
-    addEntry(assignment, landedAttempts.length, landedAt, "Percentage landed reps");
+    addEvidence(assignment, 1, attempt.created_at, "", `percentage:${attempt.id || `${attempt.assignment_id}:${attempt.attempt_number || index}`}`, "assignment", "Percentage landed reps");
+  });
+  (data.landedAttempts || []).forEach((attempt, index) => {
+    if (attempt.status !== "landed") return;
+    const day = tricktionaryLandingDate(attempt.created_at, profile);
+    addEvidence(attempt, 1, attempt.created_at, day, String(attempt.id || index), "session", "Landed session tricks");
+  });
+  days.forEach((bucket) => {
+    const total = (evidence) => [...evidence.values()].reduce((sum, count) => sum + count, 0);
+    // A tick during an active session creates both progress and a session
+    // landing without an assignment id. The larger confirmed daily total
+    // retains additional session landings without counting the same tick twice.
+    const count = Math.max(total(bucket.assignmentEvidence), total(bucket.sessionEvidence));
+    addEntry(bucket.assignment, count, bucket.landedAt, [...bucket.sources].join(", "));
   });
   manualTricktionary(data.profile).forEach((trick) => {
     const title = String(trick.title || trick.name || "").trim();
@@ -5743,13 +5847,14 @@ function previousTrainingSheetsHtml(data = {}) {
       if (!rows.length) return "";
       return `<div class="previous-sheet-group"><strong>${escapeHtml(label)}</strong>${rows.map((assignment) => {
         const presentation = assignmentPresentation(assignment);
-        const done = Boolean(progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length);
+        const progress = progressByAssignment.get(assignment.id);
+        const done = Boolean((assignment.category === "daily" ? progress?.progress_date : progress?.completed_at) || (awardsByAssignment.get(assignment.id) || []).length);
         const attempts = attemptsByAssignment.get(assignment.id) || 0;
         return `<div class="list-row previous-sheet-row ${done ? "complete" : ""}"><div><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(categoryInfo[assignment.category]?.label || assignment.category)} · ${done ? "Completed" : "Not completed"} · Attempts: ${attempts}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></div><span class="assignment-check">${done ? "✓" : ""}</span></div>`;
       }).join("")}</div>`;
     }).filter(Boolean).join("");
     const dailyTotal = assignments.filter((assignment) => assignment.category === "daily").length;
-    const dailyDone = assignments.filter((assignment) => assignment.category === "daily" && (progressByAssignment.get(assignment.id)?.completed_at || (awardsByAssignment.get(assignment.id) || []).length)).length;
+    const dailyDone = assignments.filter((assignment) => assignment.category === "daily" && (progressByAssignment.get(assignment.id)?.progress_date || (awardsByAssignment.get(assignment.id) || []).length)).length;
     const venues = [...new Set(assignments.map((assignment) => venueLabel(assignment.venue)).filter(Boolean))].join(", ");
     return `<details class="previous-sheet-week">
       <summary><span><strong>Week ${escapeHtml(week)}</strong><small>${escapeHtml(venues || "Venue not set")} · ${dailyDone}/${dailyTotal} Daily · ${points} pts</small></span><span class="accordion-caret">Open</span></summary>

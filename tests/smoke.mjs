@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.83";
+const version = "2.14.84";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -718,6 +718,8 @@ const tricktionaryAggregationFactory = new Function(`
   ${functionBody("tricktionaryMeta")}
   ${functionBody("resolveTricktionaryAlias")}
   ${functionBody("tricktionaryCategoryFromText")}
+  ${functionBody("tricktionaryLineComponents")}
+  ${functionBody("tricktionaryLandingDate")}
   ${functionBody("landedTricktionaryEntries")}
   ${functionBody("attemptsByTrick")}
   return { landedTricktionaryEntries, attemptsByTrick, tricktionaryMeta };
