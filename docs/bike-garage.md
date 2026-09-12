@@ -1,6 +1,6 @@
 # JKCREW Bike Garage — 2.14.116
 
-A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. The updated 360° BMX is the main builder view, with live part/colour controls and drag-to-rotate. There is no Photo/360 view switch. WebGL loads when the garage opens, not during sign-in. Photo Studio remains available for finished image export; the photographic editor is used only as a recovery fallback when 3D cannot run.
+A cosmetic BMX customiser built into JKCREW. Riders open **Home → Build your dream bike** at the bottom of the page; coaches open **More → Bike Garage**. The updated 360° BMX is the main builder view, with live part/colour controls and drag-to-rotate. There is no Photo/360 view switch. WebGL loads when the garage opens, not during sign-in. Photo Studio remains available for finished image export; the photographic editor is used only as a recovery fallback when 3D cannot run.
 
 The bike is the main surface in an immersive workspace. A compact bottom dock opens Paint, Front end, Wheels or Details; all part controls are closed on entry. Tapping the active category again, Hide controls, or Escape closes the options. The sheet has one bounded scroller and remembers its position when reopened. The name and Save action remain available. App top/bottom bars make room for the viewer only while Bike Garage is open; Back returns to normal navigation. Safe-area padding and visual-viewport sizing support phones, tablets, landscape and the onscreen keyboard.
 

@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.117";
+const RELEASE_VERSION = "2.14.118";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -198,7 +198,7 @@ function parentPrimaryView(view = "") {
 }
 
 function athletePrimaryView(view = "") {
-  if (view === "bikeGarage") return "profile";
+  if (view === "bikeGarage") return "home";
   return view === "coaching" ? "home" : view;
 }
 
@@ -422,7 +422,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.117" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.118" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -6611,8 +6611,10 @@ async function renderAthleteHome() {
     <div id="athlete-home-week"><section class="panel simple-summary"><div class="panel-head"><div><div class="panel-title">This week</div><div class="panel-meta">Loading your latest progress…</div></div></div></section></div>
     ${goalsSection(state.profile)}
     <div id="athlete-home-proposals"></div>
-    <div id="athlete-home-trick-requests"></div>`;
+    <div id="athlete-home-trick-requests"></div>
+    ${typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}`;
   bindGoalActions();
+  document.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => navigate("bikeGarage"));
   document.querySelector("#open-home-run-builder")?.addEventListener("click", openRunBuilder);
   document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => navigate("coaching"));
   document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
@@ -9668,7 +9670,7 @@ function renderBikeGarage() {
   JKCrewBikeGarage.mount({
     root: document.querySelector("#view"), client, userId,
     isCurrent: () => state.view === "bikeGarage" && state.user?.id === userId,
-    onBack: () => navigate(isCoachRole(state.profile?.role) ? "more" : "profile"),
+    onBack: () => navigate(isCoachRole(state.profile?.role) ? "more" : state.profile?.role === "athlete" ? "home" : "profile"),
   });
 }
 
@@ -15729,7 +15731,7 @@ async function renderProfile() {
   }
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
-    ${typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}
+    ${state.profile?.role !== "athlete" && typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}
     <div class="profile-grid">
       <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
       <section class="panel">
