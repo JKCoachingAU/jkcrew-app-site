@@ -21,9 +21,9 @@
     {id:'hero',label:'Full bike',kind:'fit',yawByAspect:true,polar:1.31},
     {id:'side',label:'Side profile',kind:'fit',yaw:0,polar:1.40},
     {id:'top',label:'Top down',kind:'fit',yaw:.6,polar:.62},
-    {id:'cockpit',label:'Front end',kind:'focus',local:[.37,.76,0],yaw:1.05,polar:.95,distance:.34},
+    {id:'cockpit',label:'Front end',kind:'focus',local:[.36,.72,0],yaw:1.05,polar:.95,distance:.34},
     {id:'drivetrain',label:'Drivetrain',kind:'focus',local:[-.16,.30,.05],yaw:-.75,polar:1.28,distance:.40},
-    {id:'wheel',label:'Front wheel',kind:'focus',local:[.505,.266,.03],yaw:1.0,polar:1.40,distance:.34},
+    {id:'wheel',label:'Front wheel',kind:'focus',local:[.457,.266,.03],yaw:1.0,polar:1.40,distance:.34},
   ]);
   const BACKGROUND_MOOD={
     studio:{sky:'#e9edf2',fog:'#e9edf2',ground:'#e3e8ee',key:'#fff7ee',fill:'#d5e7ff',keyIntensity:2.2,fillIntensity:.65},

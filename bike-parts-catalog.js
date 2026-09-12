@@ -33,13 +33,13 @@ const JKCrewBikeParts = (() => {
   // fall out of these six points and stay in realistic BMX ranges.
   const frameModels = Object.freeze([
     {id:'compact', name:'Compact 20.5"', tagline:'Short 13.2" rear end · tight and flickable',
-      rear:[-.495,.266], front:[.470,.266], bb:[-.16,.293], seat:[-.250,.600], headLow:[.345,.565], headTop:[.315,.686]},
+      rear:[-.480,.266], front:[.431,.266], bb:[-.16,.285], seat:[-.223,.500], headLow:[.326,.550], headTop:[.300,.650]},
     {id:'standard', name:'Standard 20.75"', tagline:'All-round street & park geometry',
-      rear:[-.54,.266], front:[.505,.266], bb:[-.16,.295], seat:[-.255,.61], headLow:[.355,.58], headTop:[.324,.703]},
-    {id:'long', name:'Long 21.25"', tagline:'Stretched 16.1" rear end · stable at speed',
-      rear:[-.565,.266], front:[.560,.266], bb:[-.155,.298], seat:[-.265,.625], headLow:[.375,.598], headTop:[.342,.724]},
+      rear:[-.495,.266], front:[.457,.266], bb:[-.16,.285], seat:[-.225,.515], headLow:[.350,.560], headTop:[.324,.660]},
+    {id:'long', name:'Long 21.25"', tagline:'Longer rear end · stable at speed',
+      rear:[-.510,.266], front:[.472,.266], bb:[-.16,.285], seat:[-.228,.520], headLow:[.365,.560], headTop:[.339,.660]},
     {id:'tall', name:'Tall 21.5" / high-stack', tagline:'Raised front end for bigger riders',
-      rear:[-.545,.266], front:[.520,.266], bb:[-.16,.300], seat:[-.260,.640], headLow:[.360,.615], headTop:[.328,.745]},
+      rear:[-.500,.266], front:[.477,.266], bb:[-.16,.290], seat:[-.230,.535], headLow:[.361,.580], headTop:[.330,.700]},
   ]);
 
   // Fork models vary leg thickness/taper/crown bulk — cosmetic families that
@@ -56,7 +56,7 @@ const JKCrewBikeParts = (() => {
   const barModels = Object.freeze([
     {id:'street-low', name:'Low 6" rise', tagline:'Low, narrow bars for technical street', riseY:.152, widthZ:.300},
     {id:'classic-mid', name:'Mid 8" rise', tagline:'The go-to all-around height and width', riseY:.210, widthZ:.335},
-    {id:'tall-ak', name:'Tall 9.5" rise', tagline:'Tall, wide bars for a commanding cockpit', riseY:.245, widthZ:.375},
+    {id:'tall-ak', name:'Tall 9.5" rise', tagline:'Tall, wide bars for a higher front end', riseY:.245, widthZ:.375},
   ]);
 
   // Tread presets reshape the instanced tread-block pass around each tyre.

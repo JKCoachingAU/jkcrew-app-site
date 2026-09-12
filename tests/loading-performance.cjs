@@ -41,14 +41,14 @@ async function workerChecks() {
  const worker=vm.createContext({self:{location:{origin:'https://jkcrew.test',href:origin+'sw.js'},addEventListener:(n,fn)=>handlers[n]=fn},caches:{open:async()=>cache},URL,Set,Promise,fetch:r=>{networkCalls.push(r);return network.promise}});
  vm.runInContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),worker);
  const dispatch=(url,mode='cors')=>{let result;const waits=[];handlers.fetch({request:{url,method:'GET',mode},respondWith:p=>result=p,waitUntil:p=>waits.push(p)});return {result,waits}};
- stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.109','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
+ stores.set(origin+'index.html','cached-shell');stores.set(origin+'app.js?v=2.14.110','cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
  const html=dispatch(origin+'?push=contests','navigate');assert.equal(await html.result,'cached-shell','Navigation must finish while network remains unresolved');
- const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.109').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
+ const count=networkCalls.length;assert.equal(await dispatch(origin+'app.js?v=2.14.110').result,'cached-js');assert.equal(await dispatch(origin+'vendor/supabase-2.116.0.min.js').result,'cached-sdk');assert.equal(networkCalls.length,count);
  assert.equal(dispatch('https://soanwttlorlgdfrzbvtp.supabase.co/rest/v1/run_plans').result,undefined);
  assert.equal(dispatch(origin+'private-data.json').result,undefined);
  assert.equal(dispatch(origin+'riley-test/','navigate').result,undefined,'Nested app navigation must not receive the root app shell');
  network.reject(new Error('offline'));await Promise.all(html.waits);
- network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.109');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.109'));
+ network=deferred();const missing=dispatch(origin+'styles.css?v=2.14.110');network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+'styles.css?v=2.14.110'));
  network=deferred();const photoUrl=origin+'images/bike-garage/studio-white-v1.webp',photo={ok:true,clone(){return this}};
  const firstPhoto=dispatch(photoUrl);network.resolve(photo);assert.equal(await firstPhoto.result,photo);const photoRequests=networkCalls.length;
  assert.equal(await dispatch(photoUrl).result,photo);assert.equal(networkCalls.length,photoRequests,'Bike photos are reused offline after the first request');
@@ -56,7 +56,7 @@ async function workerChecks() {
  assert.equal(dispatch(origin+'riley-test/images/bike-garage/studio-white-v1.webp').result,undefined,'Each app worker handles only its own bike photos');
  for(const name of ['studio-four-top-v5.webp','studio-four-front-v5.webp','studio-top-plastic-v5.webp','studio-front-metal-v5.webp','studio-hardware-v2.webp','studio-metal-v2.webp','studio-chrome-v3.webp','studio-chrome-options-v3.webp','studio-jetfuel-v3.webp','studio-jetfuel-options-v3.webp','studio-chrome-top-stem-v3.webp','studio-chrome-front-stem-v3.webp','studio-lhd-v4.webp','studio-lhd-chrome-v4.webp','studio-lhd-jetfuel-v4.webp',...['street','skatepark','warehouse','rooftop'].flatMap(scene=>['scene-'+scene+'-v4.webp','scene-'+scene+'-v4-thumb.webp'])]) { network=deferred();const response=dispatch(origin+'images/bike-garage/'+name);network.resolve(photo);assert.equal(await response.result,photo,'Optional artwork uses the public cache'); }
  assert(!fs.readFileSync(path.join(root,'sw.js'),'utf8').match(/const APP_SHELL = \[([\s\S]*?)\];/)[1].includes('images/bike-garage/'),'Optional bike photos must not delay app-shell installation');
- for(const name of ['bike-three-model.js?v=2.14.109','vendor/three.module.min.js','vendor/three.core.min.js','vendor/OrbitControls.js','vendor/RoomEnvironment.js']) { network=deferred();const response=dispatch(origin+name);network.resolve(photo);assert.equal(await response.result,photo,'3D assets load and cache only on demand'); }
+ for(const name of ['bike-three-model.js?v=2.14.110','vendor/three.module.min.js','vendor/three.core.min.js','vendor/OrbitControls.js','vendor/RoomEnvironment.js']) { network=deferred();const response=dispatch(origin+name);network.resolve(photo);assert.equal(await response.result,photo,'3D assets load and cache only on demand'); }
  const garageShell=fs.readFileSync(path.join(root,'sw.js'),'utf8').match(/const APP_SHELL = \[([\s\S]*?)\];/)[1];
  assert(!garageShell.includes('three.module')&&!garageShell.includes('three.core')&&!garageShell.includes('bike-three-model'),'3D model and engine must not block shell installation');
  const entryHTML=fs.readFileSync(path.join(root,'index.html'),'utf8');

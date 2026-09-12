@@ -1,8 +1,10 @@
-# JKCREW Bike Garage — 2.14.109
+# JKCREW Bike Garage — 2.14.110
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It opens with the original photographic BMX and live part/colour controls. A compact **360° view** button opens the rotating model; **Photo view** returns to the photograph. Switching views keeps the current design and undo history, cancels stale loads and releases the outgoing GPU renderer. WebGL loads only when requested. Photo Studio remains available for backgrounds and PNG export.
 
 The bike is the main surface in an immersive workspace. A compact bottom dock opens Paint, Front end, Wheels or Details; all part controls are closed on entry. Tapping the active category again, Hide controls, or Escape closes the options. The sheet has one bounded scroller and remembers its position when reopened. The name and Save action remain available. App top/bottom bars make room for the viewer only while Bike Garage is open; Back returns to normal navigation. Safe-area padding and visual-viewport sizing support phones, tablets, landscape and the onscreen keyboard.
+
+The 3D model uses a lower, shorter frame, straight parallel fork legs with offset dropouts, smoothly formed bars with a connected crossbar, a rounded pivotal saddle and a spindle joining both cranks through the bottom bracket. Controls group colours and finishes into compact cards; a bordered **Choose part** selector and labelled **Done** action stay visible.
 
 The 3D model has physical geometry on both sides: frame tubing, forks, bars, machined stem forms, crossed spokes, nipples, hubs, chain, cranks, level platforms, saddle and pegs. Drag rotates horizontally through a full turn, pinch/wheel zooms, arrow keys rotate, plus/minus zoom and Home/Reset restore framing. Rotation and zoom are temporary view state; changing a part, its colour, the bike name or undoing an edit preserves the view. A click/tap selects a part, while a drag or multi-touch gesture does not. Geometry is original JKCREW work rendered using locally hosted, pinned Three.js modules. The engine/model load on demand and never delay app-shell installation or sign-in. If 3D cannot load or WebGL is unavailable, the existing photographic editor remains usable with a clear Photo view message and a Retry 360° view action.
 

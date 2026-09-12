@@ -95,6 +95,22 @@ async function componentDetailChecks(page){
     equal(r.rubberClearcoat,0,'Rubber grips do not use a glossy plastic clearcoat');
   }
 }
+async function assemblyChecks(page){
+  const results=await page.evaluate(async()=>{
+    const T=await import('/vendor/three.module.min.js'),{createBike}=await import('/bike-three-model.js'),results=[];
+    for(const frameModel of ['compact','standard','long','tall'])for(const driveSide of ['rhd','lhd']){
+      const model=createBike(JKCrewBikeConfig.normalize({frameModel,driveSide,seatStyle:'padded'}));await model.ready;model.group.updateMatrixWorld(true);
+      const bounds=part=>new T.Box3().setFromObject(part),spindle=model.group.getObjectByName('Bottom bracket spindle');
+      const bosses=model.parts.cranks.children.filter(m=>m.name==='Crank axle boss'),legs=model.parts.fork.children.filter(m=>m.name==='Straight fork leg');
+      const cross=model.group.getObjectByName('Welded crossbar'),halves=model.parts.bars.children.filter(m=>m.name==='Formed handlebar half');let joinGap=0;
+      for(const side of [-1,1]){const endpoint=new T.Vector3(0,side*cross.geometry.parameters.height/2,0).applyMatrix4(cross.matrixWorld);let gap=Infinity;
+        for(const mesh of halves)for(let i=0;i<mesh.geometry.attributes.position.count;i++)gap=Math.min(gap,new T.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,i).applyMatrix4(mesh.matrixWorld).distanceTo(endpoint));joinGap=Math.max(joinGap,gap);
+      }
+      results.push({frameModel,driveSide,frameHeight:bounds(model.parts.frame).getSize(new T.Vector3()).y,seatLength:bounds(model.parts.seat).getSize(new T.Vector3()).x,connected:bosses.length===2&&bosses.every(b=>bounds(spindle).intersectsBox(bounds(b))),straight:legs.length===2&&legs.every(l=>l.geometry.type==='CylinderGeometry')&&Math.abs(legs[0].quaternion.dot(legs[1].quaternion))>.99999,joinGap});model.dispose();
+    }return results;
+  });
+  for(const r of results){check(r.connected,`${r.frameModel}/${r.driveSide}: spindle physically reaches both crank bosses`);check(r.straight,`${r.frameModel}: fork legs are straight and parallel`);check(r.frameHeight<.49,`${r.frameModel}: frame stays compact relative to 20-inch wheels`);check(r.seatLength<.245,`${r.frameModel}: pivotal saddle has a compact rounded silhouette`);check(r.joinGap<.015,`${r.frameModel}: crossbar joins the formed uprights`);}
+}
 async function interaction(page){
   check(await page.locator('[data-bike-sheet]').isHidden(),'3D opens with editing controls collapsed');
   check(await page.locator('.bike-three-canvas').evaluate(el=>Boolean(el.getContext('webgl2'))&&getComputedStyle(el).transform==='none'),'The view uses real WebGL rather than a CSS-rotated photo');
@@ -107,10 +123,10 @@ async function interaction(page){
   check(await page.locator('[data-bike-sheet]').isHidden(),'Dragging does not open a part editor');
   equal(await page.evaluate(()=>JSON.stringify(testDraft())),clean,'Orbiting does not dirty or rewrite the saved build');equal(await page.evaluate(()=>testCalls.length),calls,'Orbiting never sends an account write');
   await page.evaluate(()=>testHandle.resetView());await settle(page);
-  const target=await point(page,[.05,.659,0]);
+  const target=await point(page,[.05,.576,0]);
   await page.mouse.move(target.x,target.y);await page.mouse.down();await page.mouse.move(target.x+55,target.y,{steps:8});await page.mouse.move(target.x,target.y,{steps:8});await page.mouse.up();await settle(page);
   check(await page.locator('[data-bike-sheet]').isHidden(),'A drag returning to its starting point is not mistaken for a tap');
-  await page.evaluate(()=>testHandle.resetView());await settle(page);const tap=await point(page,[.05,.659,0]);await page.mouse.click(tap.x,tap.y);
+  await page.evaluate(()=>testHandle.resetView());await settle(page);const tap=await point(page,[.05,.576,0]);await page.mouse.click(tap.x,tap.y);
   check(await page.locator('[data-bike-sheet]').isVisible(),'A deliberate tap on the 3D frame opens editing');
   equal(await page.locator('[data-bike-group="Frame"]').getAttribute('aria-expanded'),'true','Raycast selection opens the actual tapped part');
   await setView(page,{yaw:1.1,polar:1.1});const camera=await view(page);
@@ -210,7 +226,7 @@ async function run(){
     await page.locator('[data-bike-undo]').click();await settle(page);
     equal(await page.evaluate(()=>testDraft().configuration.colors.frame),'#F1F4F8','Undo history survives switching views');
     if(process.env.JKCREW_360_CAPTURE_ONLY){await captureAndMeasure(page);return;}
-    await checksForModel(page);await componentDetailChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
+    await checksForModel(page);await componentDetailChecks(page);await assemblyChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
     const draftBeforeLoss=await page.evaluate(()=>JSON.stringify(testDraft()));await page.evaluate(()=>testHandle.canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());await page.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await page.locator('[data-bike-3d-retry]').isVisible(),'A real GPU context loss offers a usable fallback and retry');equal(await page.evaluate(()=>JSON.stringify(testDraft())),draftBeforeLoss,'A GPU interruption preserves the exact local draft');await page.locator('[data-bike-3d-retry]').click();await ready(page);equal(await page.locator('.bike-three-canvas').count(),1,'Retry restores exactly one live renderer');await captureAndMeasure(page);
     await page.evaluate(()=>{JKCrewBikeGarage.destroy();document.querySelector('#view').innerHTML='<p>Outside the garage</p>';});equal(await page.locator('canvas.bike-three-canvas').count(),0,'Leaving the garage removes the canvas');check(await page.evaluate(()=>testMounts.every(m=>!m.resolved||m.disposed)),'Leaving the garage disposes every mounted renderer');await page.close();
     const failed=await create();await failed.route('**/bike-three-model.js*',route=>route.abort());await failed.evaluate(()=>testMount('fallback-owner'));await failed.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await failed.locator('[data-bike-3d-retry]').isVisible(),'A failed dependency offers a 360 retry and usable photo fallback');equal(await failed.locator('.bike-three-canvas').count(),0,'Failed initialisation leaves no dead canvas');equal(await failed.evaluate(()=>testCalls.filter(c=>c.method!=='get_bike_garage').length),0,'Fallback does not write account data');await failed.close();
