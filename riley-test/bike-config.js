@@ -17,7 +17,7 @@ const JKCrewBikeConfig = (() => {
     spokeStyle: ['standard','rainbow'], stemStyle: ['top-load','front-load'], seatDesign: seatDesignIds,
     driveSide: ['rhd','lhd'], background: ['studio','street','skatepark','warehouse','rooftop'],
     frameModel: ['compact','standard','long','tall'], forkModel: ['lightweight','standard','heavy-duty'],
-    barModel: ['street-low','classic-mid','tall-ak'], tireTread: ['slick','all-round','knobby'],
+    barModel: ['classic-mid'], tireTread: ['slick','all-round','knobby'],
     hubStyle: ['cassette','freecoaster'], crankModel: ['three-piece','two-piece'],
     sprocketStyle: ['cutout','guard'], gripStyle: ['flangeless','flanged']
   });

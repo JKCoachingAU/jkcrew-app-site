@@ -277,6 +277,8 @@ async function run(){
   const errors=[];const create=async(deviceScaleFactor=1)=>{const context=await browser.newContext({viewport:{width:800,height:800},hasTouch:true,deviceScaleFactor});const page=await context.newPage();page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>new URL(route.request().url()).origin===local.url?route.continue():route.abort());await page.goto(local.url+'/fixture');await page.waitForFunction(()=>testReady);return page;};
   try{
     const page=await create();check(!local.requests.some(file=>file.startsWith('/vendor/')),'Loading the garage script alone does not download WebGL dependencies');await page.evaluate(()=>testMount());await ready(page);
+    equal(await page.evaluate(()=>['street-low','classic-mid','tall-ak'].map(barModel=>JKCrewBikeConfig.normalize({barModel}).barModel)),['classic-mid','classic-mid','classic-mid'],'Saved bar sizes normalize to medium');
+    await part(page,'bars','Front end');equal(await page.locator('[data-bike-key="barModel"]').count(),0,'Handlebar size selector is removed');await closeSheet(page);
     equal(await page.locator('[data-bike-view-toggle]').count(),0,'The updated 360 bike is the default without a photographic view switch');
     equal(await page.locator('.bike-three-canvas').count(),1,'Opening the builder starts exactly one 3D renderer');
     if(process.env.JKCREW_360_CAPTURE_ONLY){await captureAndMeasure(page);return;}

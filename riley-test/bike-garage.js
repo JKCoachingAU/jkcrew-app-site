@@ -25,9 +25,9 @@ const JKCrewBikeGarage = (() => {
   const finishLabels = {gloss:'Gloss',matte:'Matte',chrome:'Chrome',raw:'Raw',jetfuel:'Jet fuel'};
   const catalogue = value => (globalThis.JKCrewBikeParts?.[value] || []).map(item => [item.id, item.name, item.tagline]);
   // Each style button carries its own config key so independent choices
-  // such as bar shape and height remain unambiguous.
+  // such as tyre colour and tread remain unambiguous.
   const styleGroups = {
-    bars: [['barStyle',[['two-piece','Two piece',''],['four-piece','Four piece','']],'CROSSBAR'], ['barModel', catalogue('barModels'), 'HEIGHT & WIDTH']],
+    bars: [['barStyle',[['two-piece','Two piece',''],['four-piece','Four piece','']],'CROSSBAR']],
     grips: [['gripStyle', catalogue('gripStyles'), 'FLANGE']],
     tyres: [['tyreStyle',[['white','All white',''],['black','All black',''],['tan-wall','Tan wall',''],['white-wall','White wall','']],'TYRE COLOUR'], ['tireTread', catalogue('tireTreads'), 'TREAD PATTERN']],
     hubs: [['hubStyle', catalogue('hubStyles'), 'HUB TYPE']],
@@ -453,7 +453,7 @@ const JKCrewBikeGarage = (() => {
         config.seatDesign=pick(JKCrewBikeConfig.seatDesignIds);
         const parts=globalThis.JKCrewBikeParts;
         if(parts){
-          config.barModel=pick(parts.barModels).id;
+          config.barModel='classic-mid';
           config.tireTread=pick(parts.tireTreads).id;config.hubStyle=pick(parts.hubStyles).id;config.crankModel=pick(parts.crankModels).id;
           config.sprocketStyle=pick(parts.sprocketStyles).id;config.gripStyle=pick(parts.gripStyles).id;
         }

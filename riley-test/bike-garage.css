@@ -350,6 +350,7 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-garage :is(button,summary){-webkit-tap-highlight-color:transparent}
 .bike-workshop-grid{border-color:var(--bike-line);box-shadow:0 8px 24px #00000014}
 .bike-controls,.bike-options-sheet{background:var(--bike-surface)}
+.bike-controls{container-type:inline-size}
 .bike-control-navigation{padding:6px 16px;background:var(--bike-field)}
 .bike-part-tabs{max-width:920px;gap:6px}
 .bike-garage .bike-part-tabs button{position:relative;min-height:48px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--bike-muted);font-size:13px;font-weight:600;gap:10px}
@@ -361,7 +362,7 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-sheet-heading{flex-basis:52px;gap:12px;padding:0 max(18px,calc((100% - 1100px)/2));border-bottom:1px solid var(--bike-line)}
 .bike-part-menu summary{gap:12px;padding:0;min-height:44px}
 .bike-part-menu strong,.bike-part-current strong{font-size:16px;font-weight:650}
-.bike-part-menu-hint{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--bike-muted);font-size:12px;font-weight:500;white-space:nowrap}
+.bike-part-menu-hint{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:0 14px;border:1px solid var(--bike-accent);border-radius:8px;background:var(--bike-selected);color:var(--bike-selected-ink);font-size:12px;font-weight:650;white-space:nowrap}
 .bike-part-menu-hint .bike-ui-icon{width:16px;height:16px}
 .bike-part-menu summary:hover .bike-part-menu-hint{color:var(--bike-ink);background:var(--bike-raised)}
 .bike-part-picker{padding:8px;gap:6px;border:1px solid var(--bike-line);background:var(--bike-field);box-shadow:0 12px 24px #0004}
@@ -402,11 +403,21 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-garage .bike-primary{border-radius:8px;font-weight:650;box-shadow:none}
 .bike-save-status{color:var(--bike-muted)}
 @media(min-width:900px) and (min-height:501px){
- .bike-control-scroll:has(>.bike-finishes){display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-content:start;align-items:start;gap:12px 30px}
- .bike-control-scroll:has(>.bike-finishes)>*{grid-column:1/-1;margin-bottom:0}
- .bike-control-scroll:has(>.bike-finishes)>.bike-colour-section{grid-column:1;grid-row:1/4;border-right:1px solid var(--bike-line);padding-right:24px}
- .bike-control-scroll:has(>.bike-colour-section)>.bike-finishes,.bike-control-scroll:has(>.bike-colour-section)>.bike-style-options:not(.bike-component-options){grid-column:2}
+ .bike-options-sheet{height:min(230px,calc(var(--bike-workspace-height,700px)*.31));max-height:min(230px,calc(var(--bike-workspace-height,700px)*.31))}
+ .bike-sheet-heading{flex-basis:48px;padding:0 20px}
+ .bike-control-scroll{padding:12px 20px}
+ .bike-control-scroll:has(>.bike-finishes){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-content:start;align-items:start;gap:10px 24px}
+ .bike-control-scroll:has(>.bike-finishes)>*{grid-column:2;margin-bottom:0}
+ .bike-control-scroll:has(>.bike-finishes)>.bike-colour-section{grid-column:1;grid-row:1/5;border-right:1px solid var(--bike-line);padding-right:20px}
+ .bike-control-scroll:has(>.bike-finishes):not(:has(>.bike-colour-section))>.bike-finishes{grid-column:1;grid-row:1/4}
  .bike-palette{grid-template-columns:repeat(6,44px)}
+ .bike-control-scroll .bike-custom-colour{margin-top:2px}
+}
+@container(min-width:1080px){
+ .bike-control-scroll:has(>.bike-finishes){grid-template-columns:minmax(294px,1fr) minmax(0,1.2fr) minmax(0,1fr);gap:10px 24px}
+ .bike-control-scroll:has(>.bike-finishes)>.bike-finishes{grid-column:2;grid-row:1/3}
+ .bike-control-scroll:has(>.bike-finishes)>.bike-style-options{grid-column:3}
+ .bike-control-scroll:has(>.bike-finishes)>.bike-control-tip{grid-column:2/4}
 }
 @media(max-width:600px){
  .bike-control-navigation{padding:5px 6px}

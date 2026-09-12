@@ -97,6 +97,7 @@ async function checkLayout(page,role,width,height,theme) {
   if(role==='coach')await page.screenshot({path:output+'-closed.png'});
   await choosePart(page,'Frame','frame');await choosePart(page,'Details','seat');
   await fitsShell(page,label+'/open');
+  if(width>=900&&height>500)assert(await page.locator('.bike-options-sheet').evaluate(el=>el.getBoundingClientRect().height)<=231,`${label}: expanded settings leave more height for the bike`);
   assert.equal(await page.locator('.bike-control-scroll').evaluate(el=>el.scrollTop),0,`${label}: changing parts begins at the top`);
   const fixed=()=>page.evaluate(()=>({y:scrollY,stage:document.querySelector('.bike-stage').getBoundingClientRect().toJSON(),dock:document.querySelector('.bike-controls').getBoundingClientRect().toJSON(),save:document.querySelector('.bike-save-bar').getBoundingClientRect().toJSON()}));
   const before=await fixed(),editor=page.locator('.bike-control-scroll');
@@ -112,6 +113,8 @@ async function checkLayout(page,role,width,height,theme) {
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:from}]});
     for(let step=1;step<=6;step++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:from+(to-from)*step/6}]});
     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();
+    // Let native touch momentum settle before the separate colour-click check.
+    await page.evaluate(()=>new Promise(resolve=>{const el=document.querySelector('.bike-control-scroll');let last=el.scrollTop,still=0;function tick(){const next=el.scrollTop;still=next===last?still+1:0;last=next;if(still>=12)resolve();else requestAnimationFrame(tick);}requestAnimationFrame(tick);}));
     await page.waitForFunction(()=>document.querySelector('.bike-control-scroll').scrollTop>0);
     assert.equal(await page.evaluate(()=>scrollY),before.y,'A touch swipe scrolls only the options, independently of bike drag gestures');
   }
