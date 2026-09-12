@@ -165,6 +165,25 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
       assert(await page.locator('#run-title').isDisabled());
       assert(await page.locator('#run-builder-form button[type=submit]').first().isDisabled());
 
+      // A blank title above the scrolled trick list must never block Save.
+      for (const saved of [false,true]) for (const title of ['', '   ']) {
+        await page.evaluate(saved => seed({saved}), saved);
+        await page.locator('#run-title').fill(title);
+        const count=await page.evaluate(()=>requests.length);
+        await page.locator('.run-finish-actions button[type=submit]').click();
+        await page.waitForFunction(count=>requests.length===count+1&&!state.runBuilder,count);
+        const request=await page.evaluate(()=>requests.at(-1));
+        assert.equal((request.payload.p_content||request.payload).title,'Untitled run');
+        assert.equal((request.payload.p_content||request.payload).points.length,20);
+        assert.deepEqual(await page.evaluate(()=>invalids),[]);
+      }
+      await page.evaluate(()=>seed());
+      await page.locator('[data-run-time-key="travelSeconds"]').first().evaluate(input=>input.value='121');
+      const invalidBefore=await page.evaluate(()=>requests.length);
+      await page.locator('.run-finish-actions button[type=submit]').click();
+      assert.equal(await page.evaluate(()=>requests.length),invalidBefore,'Invalid timing still blocks the request');
+      assert((await page.locator('.run-finish-actions [data-run-save-feedback]').innerText()).includes('Travel time'));
+
       // Both real save buttons reflect the pending write. A second native
       // submit during that write must not create another run or edit request.
       await page.evaluate(() => seed({saved:true,decimalLimit:true}));
@@ -194,6 +213,7 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
         assert.equal(await page.locator('#run-builder-form button[type=submit]:enabled').count(), 2);
         assert.equal(await page.locator('#run-builder-form [aria-busy="true"]').count(), 0);
         assert((await page.evaluate(() => messages.at(-1).message)).includes('Your run edits are still here.'));
+        assert((await page.locator('.run-finish-actions [data-run-save-feedback]').innerText()).includes('Simulated connection failure'));
         await page.evaluate(() => {saveFailure=null;});
         await page.locator('.run-finish-actions button[type=submit]').click();
         await page.waitForFunction(() => !state.runBuilder);
@@ -211,13 +231,6 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
       assert.equal(await page.evaluate(() => sync.at(-1)), 'saved');
       assert.equal(await page.evaluate(() => messages.at(-1).message), 'Your run was saved. Reopen Events & runs to view it.');
 
-      // Relaxing timing steps must retain ordinary title validation.
-      await page.evaluate(() => seed());
-      await page.locator('#run-title').fill('');
-      const beforeInvalidTitle = await page.evaluate(() => requests.length);
-      await page.locator('.run-finish-actions button[type=submit]').click();
-      assert.equal(await page.evaluate(() => requests.length), beforeInvalidTitle);
-      assert.equal(await page.evaluate(() => invalids.at(-1).id), 'run-title');
       assert.deepEqual(errors, [], label + ': no unhandled errors');
       console.log('PASS: ' + label + ' real Save/Watch, fractional timing, read-only playback, busy/retry and refresh-error cases.');
       await page.close();

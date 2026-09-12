@@ -12155,3 +12155,10 @@ html[data-theme="light"] .battle-card .battle-team > strong { color: #eef7f8; }
 .run-removed-history > .run-list { padding:0 12px 12px; }
 [data-saved-run-id][hidden] { display:none !important; }
 @media(max-width:520px) { .saved-run-list-entry { grid-template-columns:minmax(0,1fr); gap:6px; } .saved-run-list-entry > button { justify-self:end; } }
+
+/* Keep run save feedback beside both save actions, including below the trick list. */
+.run-save-actions{flex-wrap:wrap}
+.run-save-feedback{flex-basis:100%;margin:0 0 8px;font-size:14px;line-height:1.45;color:var(--muted,#a3aebb);text-transform:none}
+.run-save-feedback[hidden]{display:none}
+.run-save-feedback[data-tone="error"]{color:#ff9c91}
+html[data-theme="light"] .run-save-feedback[data-tone="error"]{color:#a12820}

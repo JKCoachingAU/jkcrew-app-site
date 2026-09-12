@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.116";
+const RELEASE_VERSION = "2.14.117";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -422,7 +422,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.116" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.117" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8677,7 +8677,7 @@ function liveRunFingerprint(value) {
 
 function liveRunSnapshot() {
   const b = { ...state.runBuilder, ...currentRunFormState() };
-  return { title: document.querySelector("#run-title")?.value ?? b.title ?? "", venue: b.venue || "", planType: b.planType || "training", notes: document.querySelector("#run-notes")?.value ?? b.notes ?? "",
+  return { title: String(document.querySelector("#run-title")?.value ?? b.title ?? "").trim() || "Untitled run", venue: b.venue || "", planType: b.planType || "training", notes: document.querySelector("#run-notes")?.value ?? b.notes ?? "",
     contestItemId: b.contestItemId || null, imageDataUrl: b.imageDataUrl || "", points: structuredClone(b.points || []),
     view: runView(b.view || b.points?.[0]?.view) };
 }
@@ -11673,10 +11673,10 @@ function runBuilderPanel(runs = [], options = {}) {
       ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
-      <div class="run-save-actions"><button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
+      <div class="run-save-actions"><p class="run-save-feedback" data-run-save-feedback role="status" hidden></p><button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
       <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy>Duplicate run</button></div>
       <div class="run-builder-details">
-        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" required value="${escapeHtml(builder.title || "")}" placeholder="Qualifying, Semi-final or Final — tap to rename"></div>
+        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" value="${escapeHtml(builder.title || "")}" placeholder="Untitled run — tap to rename"></div>
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
@@ -11691,7 +11691,7 @@ function runBuilderPanel(runs = [], options = {}) {
           <div class="run-sidebar-divider"></div>
           ${stage === "route" ? runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points) : stage === "tricks" ? runBuilderTrickEditorHtml(points) : runBuilderPlaybackEditorHtml(points)}
           <div class="run-sidebar-divider"></div>
-          ${stage === "route" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>CLEAR ALL DOTS</button><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length ? "" : "disabled"}>ROUTE DONE · ADD TRICKS →</button></div>` : stage === "tricks" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" type="button" data-run-builder-stage="route">← EDIT ROUTE</button><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>TRICKS DONE · WATCH RUN →</button><button class="secondary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${submitLabel}</button></div>` : ""}
+          ${stage === "route" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>CLEAR ALL DOTS</button><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length ? "" : "disabled"}>ROUTE DONE · ADD TRICKS →</button></div>` : stage === "tricks" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" type="button" data-run-builder-stage="route">← EDIT ROUTE</button><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>TRICKS DONE · WATCH RUN →</button><p class="run-save-feedback" data-run-save-feedback role="status" hidden></p><button class="secondary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${submitLabel}</button></div>` : ""}
         </aside>
       </div>
       ${stage === "tricks" ? runTimingEditorHtml(points) : ""}
@@ -13576,6 +13576,14 @@ function bindRunBuilderActions(root = document) {
   root.querySelector("[data-run-final-type]")?.addEventListener("change", updateRunFinalType);
   root.querySelector("#finish-run-builder")?.addEventListener("click", playFinishedRunBuilder);
   root.querySelector("#delete-selected-run-point")?.addEventListener("click", deleteSelectedRunPoint);
+  root.querySelector("#run-builder-form")?.addEventListener("invalid", event => {
+    const input = event.target;
+    const label = input.getAttribute("aria-label") || (input.matches("[data-run-limit]") ? "Competition time limit" : "Run field");
+    root.querySelectorAll("[data-run-save-feedback]").forEach(status => {
+      status.hidden = false; status.dataset.tone = "error";
+      status.textContent = `${label}: ${input.validationMessage}`;
+    });
+  }, true);
   root.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
   root.querySelector("[data-selected-run-label]")?.addEventListener("input", updateSelectedRunPoint);
   root.querySelectorAll("[data-selected-run-bend]").forEach((control) => {
@@ -14145,8 +14153,13 @@ async function archiveRunPlan(event, onChanged = refreshRunRemovalView) {
 
 async function saveRunPlan(event) {
   event.preventDefault();
+  const saveForm = event.currentTarget;
+  const feedback = (text, tone = "") => saveForm.querySelectorAll("[data-run-save-feedback]").forEach(status => {
+    status.hidden = !text; status.dataset.tone = tone; status.textContent = text;
+  });
   if (liveRun) return saveLiveRun();
   if (state.runPlanSaving) return;
+  feedback("");
   if ((state.runBuilder?.points?.length || 0) < 2) return notify("Add at least two route dots before saving.", "error");
   if (!state.runBuilder?.imageDataUrl) return notify("Upload a park photo first.", "error");
   const form = new FormData(event.currentTarget);
@@ -14155,6 +14168,7 @@ async function saveRunPlan(event) {
   if (!athleteId) return notify("Choose the rider this run belongs to.", "error");
   let saved = false;
   state.runPlanSaving = true;
+  feedback("Saving your run…");
   const restoreButtons = [...(event.currentTarget.querySelectorAll?.('button[type="submit"]') || [])].map(button => setButtonBusy(button, "Saving…"));
   try {
     setSyncStatus("syncing");
@@ -14162,7 +14176,7 @@ async function saveRunPlan(event) {
     const payload = {
       coach_id: coachId,
       athlete_id: athleteId,
-      title: String(form.get("title") || "").trim(),
+      title: String(form.get("title") || "").trim() || "Untitled run",
       venue: String(state.runBuilder?.venue || "").trim(),
       plan_type: state.runBuilder?.planType || (state.runBuilder?.contestItemId ? "competition" : "training"),
       image_data_url: state.runBuilder.imageDataUrl,
@@ -14191,7 +14205,9 @@ async function saveRunPlan(event) {
       notify("Your run was saved. Reopen Events & runs to view it.");
     } else {
       setSyncStatus("error");
-      notify(`${messageFrom(error)} Your run edits are still here.`, "error");
+      const message = `${messageFrom(error)} Your run edits are still here.`;
+      feedback(message, "error");
+      notify(message, "error");
     }
   } finally {
     state.runPlanSaving = false;
