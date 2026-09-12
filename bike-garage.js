@@ -4,7 +4,7 @@ const JKCrewBikeGarage = (() => {
   const normalize = JKCrewBikeConfig.normalize;
   const palette = [['Midnight','#252B39'],['Silver','#BCC7D6'],['Cloud','#F1F4F8'],['Lilac','#AD8AFF'],['Electric blue','#428CFF'],['Ice','#51D5E8'],['Mint','#7CE3B8'],['Acid','#D6F16A'],['Gold','#F2BC57'],['Orange','#F68B4D'],['Coral','#F26879'],['Pink','#E789D0']];
   const groups = {Frame:['frame'], 'Front end':['fork','bars','grips','stem','headset','brakes'], Wheels:['rims','hubs','spokes','nipples','tyres','pegs'], Details:['seat','seatpost','pedals','cranks','sprocket','drivetrain','decal']};
-  const groupLabels = {Frame:'Paint','Front end':'Cockpit',Wheels:'Wheels',Details:'Details'};
+  const groupLabels = {Frame:'Paint','Front end':'Front end',Wheels:'Wheels',Details:'Details'};
   const groupIcons = {Frame:'◒','Front end':'⌁',Wheels:'◎',Details:'✦'};
   const labels = {frame:'Frame',fork:'Forks',bars:'Handlebars',grips:'Grips',rims:'Rims',hubs:'Hubs',tyres:'Tyres',seat:'Seat',seatpost:'Seat post',stem:'Stem',headset:'Headset',spokes:'Spokes',nipples:'Spoke nipples',pedals:'Pedals',cranks:'Cranks',sprocket:'Sprocket',pegs:'Pegs',brakes:'Brakes',drivetrain:'Drivetrain',decal:'Frame graphic'};
   const finishLabels = {gloss:'Gloss',matte:'Matte',chrome:'Chrome',raw:'Raw',jetfuel:'Jet fuel'};
