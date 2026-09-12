@@ -41,7 +41,8 @@
     try{renderer=new T.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance',preserveDrawingBuffer:false});}catch(error){if(isCurrent())onError?.(error);throw error;}
     let failCleanup=()=>{renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();};
     try{
-    renderer.setPixelRatio(Math.min(global.devicePixelRatio||1,1.75));
+    const stillPixelRatio=Math.min(global.devicePixelRatio||1,1.75);
+    renderer.setPixelRatio(stillPixelRatio);
     renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=.96;
     renderer.shadowMap.enabled=true;renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;renderer.shadowMap.type=T.VSMShadowMap;
     const canvas=renderer.domElement;canvas.className='bike-three-canvas';canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Your custom BMX. Drag to rotate. Pinch or use plus and minus to zoom. Arrow keys rotate; Home resets the view.');canvas.tabIndex=0;
@@ -132,15 +133,32 @@
     }
     function getView(){return {yaw:controls.getAzimuthalAngle(),polar:controls.getPolarAngle(),distance:camera.position.distanceTo(controls.target),target:[controls.target.x,controls.target.y,controls.target.z]};}
     function updateReadout(){const view=getView();canvas.dataset.yaw=String(view.yaw);canvas.dataset.polar=String(view.polar);canvas.dataset.distance=String(view.distance);canvas.dataset.ready=model?'true':'false';canvas.dataset.drawCalls=String(renderer.info.render.calls);canvas.dataset.triangles=String(renderer.info.render.triangles);canvas.dataset.background=currentBackground;}
-    function draw(){if(disposed||!isCurrent())return;renderer.render(scene,camera);updateReadout();}
-    function tick(){frame=0;if(disposed||!isCurrent()||document.hidden)return;controls.update();draw();if(controls.autoRotate)framesLeft=Math.max(framesLeft,2);if(--framesLeft>0)frame=requestAnimationFrame(tick);}
-    function requestDraw(count=2){if(disposed)return;framesLeft=Math.max(framesLeft,count);if(!frame&&!document.hidden)frame=requestAnimationFrame(tick);}
+    let renderingTick=false,renderedFrames=0,lastTickTime=0;
+    function draw(){if(disposed||!isCurrent())return;renderer.render(scene,camera);renderedFrames++;updateReadout();}
+    function tick(now){
+      frame=0;if(disposed||!isCurrent()||document.hidden)return;
+      // OrbitControls emits change synchronously from update(). Keep that
+      // callback from starting a second animation chain inside this frame.
+      renderingTick=true;
+      const delta=lastTickTime?Math.min((now-lastTickTime)/1000,.05):1/60;lastTickTime=now;
+      controls.update(delta);draw();renderingTick=false;
+      if(controls.autoRotate)framesLeft=Math.max(framesLeft,2);
+      if(--framesLeft>0)frame=requestAnimationFrame(tick);
+      else {lastTickTime=0;setMotionQuality(false);}
+    }
+    function setMotionQuality(moving){
+      // Keep full resolution for a still bike and exports. Touch rotation
+      // does not need to shade every high-DPI phone pixel on every frame.
+      const ratio=moving?Math.min(stillPixelRatio,1):stillPixelRatio;
+      if(renderer.getPixelRatio()!==ratio){renderer.setPixelRatio(ratio);requestDraw();}
+    }
+    function requestDraw(count=2){if(disposed)return;framesLeft=Math.max(framesLeft,count);if(!frame&&!renderingTick&&!document.hidden)frame=requestAnimationFrame(tick);}
     function setView(value={}){if(disposed)return;const old=getView();const yaw=Number.isFinite(value.yaw)?value.yaw:old.yaw,polar=T.MathUtils.clamp(Number.isFinite(value.polar)?value.polar:old.polar,controls.minPolarAngle,controls.maxPolarAngle),distance=T.MathUtils.clamp(Number.isFinite(value.distance)?value.distance:old.distance,controls.minDistance,controls.maxDistance);if(Array.isArray(value.target)&&value.target.length===3&&value.target.every(Number.isFinite))controls.target.set(...value.target);const sphere=new T.Spherical(distance,polar,yaw);camera.position.copy(controls.target).add(new T.Vector3().setFromSpherical(sphere));camera.lookAt(controls.target);controls.update();requestDraw(16);}
     let flightFrame=0;
     function cancelFlight(){if(flightFrame){cancelAnimationFrame(flightFrame);flightFrame=0;}}
     const easeInOutCubic=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
     function animateToView(nextView,duration=700){
-      cancelFlight();
+      cancelFlight();setMotionQuality(true);
       const startView=getView(),startTime=performance.now();
       let yawDelta=nextView.yaw-startView.yaw;yawDelta=((yawDelta+Math.PI)%TAU2+TAU2)%TAU2-Math.PI;
       const startTarget=controls.target.clone(),endTarget=Array.isArray(nextView.target)?new T.Vector3(...nextView.target):controls.target.clone();
@@ -203,7 +221,7 @@
       if(animate)animateToView(view);else{controls.target.set(...view.target);setView(view);}
     }
     function resetView(animate=false){setCameraPreset('hero',{animate});}
-    function setAutoRotate(on){if(disposed)return;controls.autoRotate=Boolean(on);if(controls.autoRotate){cancelFlight();requestDraw(2);}}
+    function setAutoRotate(on){if(disposed)return;controls.autoRotate=Boolean(on);setMotionQuality(controls.autoRotate);if(controls.autoRotate){cancelFlight();requestDraw(2);}}
     function resize(){if(disposed)return;const w=Math.max(1,Math.round(element.clientWidth)),h=Math.max(1,Math.round(element.clientHeight));if(w===lastWidth&&h===lastHeight)return;lastWidth=w;lastHeight=h;const previous=getView(),zoomRatio=lastFitDistance?previous.distance/lastFitDistance:1;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
       // Cheap, harmless safeguard: force one fresh shadow pass whenever the canvas
       // is resized, in case anything shadow-related was sized off the old aspect.
@@ -268,11 +286,11 @@
     function lost(event){event.preventDefault();onError?.(new Error('The 3D preview was interrupted. Reopen the preview to continue.'));}
     canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerCancel);canvas.addEventListener('keydown',keyDown);canvas.addEventListener('webglcontextlost',lost);document.addEventListener('visibilitychange',visibility);
     controls.addEventListener('change',()=>requestDraw(12));
-    controls.addEventListener('start',()=>{cancelFlight();if(controls.autoRotate){controls.autoRotate=false;onAutoRotateChange?.(false);}requestDraw(24);});
+    controls.addEventListener('start',()=>{cancelFlight();setMotionQuality(true);if(controls.autoRotate){controls.autoRotate=false;onAutoRotateChange?.(false);}requestDraw(24);});
     controls.addEventListener('end',()=>requestDraw(24));
     const handle={canvas,ready,update,selectPart:selectedPart,getView,setView,resetView,setCameraPreset,setAutoRotate,
-      getStats:()=>({calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures}),
-      async exportBlob({type='image/png',quality=.94}={}){await ready;if(disposed||!isCurrent())throw new Error('The bike preview has closed.');draw();return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('The image could not be created.')),type,quality));},
+      getStats:()=>({renderedFrames,pixelRatio:renderer.getPixelRatio(),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures}),
+      async exportBlob({type='image/png',quality=.94}={}){await ready;if(disposed||!isCurrent())throw new Error('The bike preview has closed.');const ratio=renderer.getPixelRatio();renderer.setPixelRatio(stillPixelRatio);draw();return new Promise((resolve,reject)=>canvas.toBlob(blob=>{if(!disposed){renderer.setPixelRatio(ratio);requestDraw();}blob?resolve(blob):reject(new Error('The image could not be created.'));},type,quality));},
       dispose(){if(disposed)return;disposed=true;buildNumber++;cancelFlight();if(hoverFrame)cancelAnimationFrame(hoverFrame);if(frame)cancelAnimationFrame(frame);resizeObserver.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',pointerCancel);canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('webglcontextlost',lost);document.removeEventListener('visibilitychange',visibility);clearHighlight();highlightMaterial.dispose();model?.dispose();clearScenery();if(groundMapTexture)groundMapTexture.dispose();groundGeometry.dispose();groundMaterial.dispose();contactTexture.dispose();contactMaterial.dispose();contactGeometry.dispose();key.shadow.dispose();environment.dispose();renderer.renderLists.dispose();renderer.dispose();renderer.forceContextLoss();canvas.remove();scene.clear();}
     };
     failCleanup=()=>handle.dispose();

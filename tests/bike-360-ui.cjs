@@ -130,9 +130,40 @@ async function captureAndMeasure(page){
   await part(page,'frame','Frame');await page.locator('[data-bike-colour="#F26879"]').click();await part(page,'tyres','Wheels');await page.locator('[data-bike-style="black"]').click();await closeSheet(page);await setView(page,{yaw:.35,distance:fitted.distance});await page.screenshot({path:'/tmp/bike-360-final-phone-yaw035-colour.png'});
   console.log('MEASURED local Chrome WebGL: '+JSON.stringify({...timing,titleColour,fittedView:fitted}));
 }
+async function performanceChecks(page){
+  const before=await page.evaluate(()=>JSON.stringify(testDraft()));
+  const measured=await page.evaluate(async()=>{
+    const h=testHandle;h.selectPart('');h.setAutoRotate(true);
+    await new Promise(resolve=>setTimeout(resolve,350));
+    const start=h.getStats().renderedFrames,startTime=performance.now();let callbacks=0;
+    const times=[];let last=startTime;
+    await new Promise(resolve=>{function step(now){callbacks++;times.push(now-last);last=now;if(now-startTime<1200)requestAnimationFrame(step);else resolve();}requestAnimationFrame(step);});
+    const stats=h.getStats(),elapsed=performance.now()-startTime;
+    const blob=await h.exportBlob(),bitmap=await createImageBitmap(blob),exportWidth=bitmap.width;bitmap.close();
+    h.setAutoRotate(false);
+    await new Promise(resolve=>setTimeout(resolve,1400));
+    const idleStart=h.getStats().renderedFrames;
+    await new Promise(resolve=>setTimeout(resolve,400));
+    times.sort((a,b)=>a-b);
+    return {callbacks,rendered:stats.renderedFrames-start,fps:Math.round(callbacks*1000/elapsed),p95Ms:times[Math.floor(times.length*.95)],motionRatio:stats.pixelRatio,stillRatio:h.getStats().pixelRatio,exportWidth,cssWidth:h.canvas.clientWidth,idleFrames:h.getStats().renderedFrames-idleStart};
+  });
+  check(measured.callbacks>10,'Browser animation callbacks stay responsive during sustained rotation');
+  check(measured.rendered<=measured.callbacks+1,'Orbit changes schedule at most one render per animation frame');
+  check(measured.rendered>=measured.callbacks-1,'Sustained rotation continues to render each available frame');
+  equal(measured.motionRatio,1,'High-DPI motion uses a lighter drawing buffer');
+  equal(measured.stillRatio,1.75,'The still bike returns to full display sharpness');
+  equal(measured.exportWidth,Math.floor(measured.cssWidth*1.75),'PNG export retains full resolution even during rotation');
+  equal(measured.idleFrames,0,'A settled viewer performs no background renders');
+  equal(await page.evaluate(()=>JSON.stringify(testDraft())),before,'Performance modes and export leave the saved draft unchanged');
+  // Starting/stopping repeatedly must not create another animation chain.
+  const repeated=await page.evaluate(async()=>{for(let i=0;i<5;i++){testHandle.setAutoRotate(true);testHandle.setAutoRotate(false);}testHandle.setAutoRotate(true);const start=testHandle.getStats().renderedFrames;for(let i=0;i<12;i++)await new Promise(requestAnimationFrame);const rendered=testHandle.getStats().renderedFrames-start;JKCrewBikeGarage.destroy();const stopped=testHandle.getStats().renderedFrames;await new Promise(resolve=>setTimeout(resolve,150));return {rendered,afterDispose:testHandle.getStats().renderedFrames-stopped};});
+  check(repeated.rendered<=13,'Repeated spin toggles keep exactly one animation chain');
+  equal(repeated.afterDispose,0,'Leaving a rotating viewer cancels its rendering work');
+  console.log('MEASURED high-DPI local Chrome: '+JSON.stringify(measured));
+}
 async function run(){
   const local=await server(),browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH,args:['--enable-unsafe-swiftshader']});
-  const errors=[];const create=async()=>{const context=await browser.newContext({viewport:{width:800,height:800},hasTouch:true,deviceScaleFactor:1});const page=await context.newPage();page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>new URL(route.request().url()).origin===local.url?route.continue():route.abort());await page.goto(local.url+'/fixture');await page.waitForFunction(()=>testReady);return page;};
+  const errors=[];const create=async(deviceScaleFactor=1)=>{const context=await browser.newContext({viewport:{width:800,height:800},hasTouch:true,deviceScaleFactor});const page=await context.newPage();page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>new URL(route.request().url()).origin===local.url?route.continue():route.abort());await page.goto(local.url+'/fixture');await page.waitForFunction(()=>testReady);return page;};
   try{
     const page=await create();check(!local.requests.some(file=>file.startsWith('/vendor/')),'Loading the garage script alone does not download WebGL dependencies');await page.evaluate(()=>testMount());await ready(page);if(process.env.JKCREW_360_CAPTURE_ONLY){await captureAndMeasure(page);return;}
     await checksForModel(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
@@ -144,6 +175,7 @@ async function run(){
     await slow.evaluate(()=>testMount('slow-owner'));await slowRequest;await slow.clock.fastForward(12001);await slow.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');
     check(await slow.locator('[data-bike-3d-retry]').isVisible(),'A never-replying startup is bounded by the 12-second photo fallback');await slow.locator('[data-bike-name]').fill('Kept during slow startup');await slow.locator('[data-bike-3d-retry]').click();releaseSlow();await ready(slow);await slow.evaluate(()=>Promise.allSettled(testMountPromises));
     equal(await slow.locator('.bike-three-canvas').count(),1,'Retry wins over the timed-out generation and mounts only one canvas');equal(await slow.locator('[data-bike-name]').inputValue(),'Kept during slow startup','A slow initial generation cannot erase newer edits');equal(await slow.evaluate(()=>testCalls.filter(c=>c.method!=='get_bike_garage').length),0,'Timeout and retry never save without the rider action');await slow.close();
+    const performancePage=await create(2);await performancePage.setViewportSize({width:390,height:844});await performancePage.evaluate(()=>testMount('performance-owner'));await ready(performancePage);await performanceChecks(performancePage);await performancePage.close();
     equal(errors,[],'No uncaught browser errors');console.log(`PASS: ${checks} real 3D geometry, orbit, touch, camera, configuration, lifecycle and fallback checks; no production requests or writes.`);
   }finally{await browser.close();await local.close();}
 }

@@ -1,4 +1,4 @@
-# JKCREW Bike Garage — 2.14.104
+# JKCREW Bike Garage — 2.14.105
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It offers an original, fully modelled 360° BMX viewer with part/colour controls, and a separate photographic studio for backgrounds and PNG export.
 
@@ -46,6 +46,8 @@ A closed inspiration section links to 13 verified real seat and component refere
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation
+
+The 2.14.105 performance fix prevents synchronous OrbitControls change events from scheduling duplicate animation loops. A continuous spin now renders once per browser animation frame, stops rendering when idle/hidden/disposed, and uses elapsed time for auto-rotation. High-DPI motion renders at 1×; the still bike and PNG export retain the original resolution (up to 1.75×). Model geometry, materials and saved configurations are unchanged. The WebGL regression suite covers sustained rotation, repeated spin toggles, idle/disposal, draft retention, and full-resolution exports during motion. On the same local Chrome 800×800 benchmark, the former viewer submitted about 6,144 renders across two browser callbacks; the fixed viewer delivered 60 FPS with 181 renders across 181 callbacks and zero idle draw calls. These measurements are local and are not a device-wide FPS guarantee.
 
 The 2.14.104 viewer adds actual WebGL tests for a complete orbit, front/rear geometry and occlusion, touch pinch, raycast selection, drag suppression, all hardware options, resize framing, camera-preserving colour changes/undo, renderer disposal, failed dependencies and context-loss recovery. The layout suite covers 20 coach/rider × dark/light phone/tablet/desktop cases, closed/open sheets, scroll retention and directly reachable actions. Existing garage CRUD, legacy drafts and saving checks pass with the new dock.
 
