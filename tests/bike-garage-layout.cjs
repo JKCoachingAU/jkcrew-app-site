@@ -117,7 +117,10 @@ async function checkLayout(page,role,width,height,theme) {
   }
   for(const control of ['[data-bike-group="Frame"]','.bike-part-menu > summary','[data-bike-sheet-close]','[data-bike-new]','[data-bike-shuffle]','[data-bike-preview]','[data-bike-save]'])await hitTest(page.locator(control),`${label}/open/${control}`);
   const swatch=page.locator('[data-bike-colour="#F26879"]');await swatch.scrollIntoViewIfNeeded();
-  const scroll=await editor.evaluate(el=>el.scrollTop);await swatch.click();await settle(page);
+  // Touch inertia and Playwright's visibility adjustment can still move the
+  // scroller before pointerdown. Compare the position at the actual interaction.
+  await swatch.evaluate(el=>el.addEventListener('pointerdown',()=>{window.paintScrollStart=el.closest('.bike-control-scroll').scrollTop;},{once:true}));
+  await swatch.click();const scroll=await page.evaluate(()=>window.paintScrollStart);await settle(page);
   assert(Math.abs(await editor.evaluate(el=>el.scrollTop)-scroll)<2,`${label}: painting preserves the options scroll position`);
   const stored=await page.evaluate(()=>localStorage.getItem('jkcrew-bike-draft-v1:layout-owner'));
   await page.locator('[data-bike-group="Details"]').click();await settle(page);await sheetState(page,false,label+'/same-category-closed');

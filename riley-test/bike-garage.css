@@ -339,38 +339,97 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 @media(max-width:370px){.bike-garage .bike-stage-top [data-bike-new]{font-size:10px;padding:6px}.bike-edit-tools{gap:2px}}
 #app #view[data-view="bikeGarage"] .bike-stage-bottom h2{color:#2c3440}
 
-/* Premium polish: tactile hover/press feedback on the choices that carry
-   the most weight (colour, finish, component model, saved builds) without
-   touching layout, so it reads as considered rather than re-skinned. */
-.bike-garage .bike-swatch,.bike-garage .bike-finishes button,.bike-garage .bike-style-options button,.bike-garage .bike-seat-tile,.bike-garage .bike-part-picker button,.bike-garage .bike-camera-picker button{transition:transform .13s ease,box-shadow .13s ease,background .15s,border-color .15s}
-.bike-garage .bike-swatch:hover:not(:disabled){transform:translateY(-1px) scale(1.04)}
-.bike-garage .bike-swatch:active:not(:disabled){transform:scale(.96)}
-.bike-garage .bike-finishes button:hover:not(:disabled),.bike-garage .bike-style-options button:hover:not(:disabled){transform:translateY(-1px)}
-.bike-garage .bike-finishes button:active:not(:disabled),.bike-garage .bike-style-options button:active:not(:disabled){transform:translateY(0) scale(.98)}
-.bike-saved-card,.bike-shop-grid a{transition:transform .15s ease,border-color .15s ease}
-.bike-saved-card:hover,.bike-shop-grid a:hover{transform:translateY(-2px)}
-.bike-part-reference{display:flex;flex-direction:column;gap:2px}
-.bike-camera-menu[open]>summary{background:var(--bike-selected,#e1efed)}
-@media(prefers-reduced-motion:reduce){.bike-garage .bike-swatch,.bike-garage .bike-finishes button,.bike-garage .bike-style-options button,.bike-garage .bike-seat-tile,.bike-saved-card,.bike-shop-grid a{transition:none!important}.bike-garage .bike-swatch:hover,.bike-garage .bike-swatch:active,.bike-garage .bike-finishes button:hover,.bike-garage .bike-style-options button:hover,.bike-garage .bike-finishes button:active,.bike-garage .bike-style-options button:active,.bike-saved-card:hover,.bike-shop-grid a:hover{transform:none!important}}
-
 /* Keep view selection beside the photo action, clear of the editing toolbar. */
 .bike-stage-bottom .bike-view-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;max-width:none;padding:0;background:transparent;pointer-events:auto}
 .bike-stage-bottom>div:first-child{flex:0 1 auto;min-width:0}
 @media(max-height:440px) and (orientation:landscape){.bike-stage-bottom .bike-view-actions{display:flex;margin-left:auto}}
 
-/* Readable controls with a clear part picker and compact grouped choices. */
-.bike-options-sheet{background:linear-gradient(135deg,var(--bike-surface),var(--bike-field));border-top:1px solid var(--bike-line)}
-.bike-sheet-heading{gap:12px;flex-basis:58px}
-.bike-part-menu summary{padding:5px 0;gap:12px}
-.bike-part-menu-hint{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:40px;padding:0 14px;border:1px solid var(--bike-accent);border-radius:9px;background:var(--bike-selected);color:var(--bike-selected-ink);font-size:12px;font-weight:700;white-space:nowrap}
-.bike-part-menu-hint b{font-size:20px}
-.bike-garage [data-bike-sheet-close]{width:auto;min-width:64px;padding:0 10px;border:1px solid var(--bike-line);border-radius:9px;background:var(--bike-field);color:var(--bike-ink);font-size:18px}
-.bike-garage [data-bike-sheet-close] span{font-size:12px;font-weight:700}
-.bike-control-scroll>.bike-colour-section,.bike-control-scroll>.bike-style-options,.bike-control-scroll>.bike-finishes{padding:12px;border:1px solid var(--bike-line);border-radius:12px;background:var(--bike-field);margin-top:12px}
-.bike-control-scroll>:first-child{margin-top:0}
-.bike-custom-colour{margin-top:10px;padding-top:10px}
-.bike-palette{gap:6px}
-@media(min-width:1000px){.bike-control-scroll:has(>.bike-finishes){display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-content:start;align-items:start;gap:12px}.bike-control-scroll:has(>.bike-finishes)>*{grid-column:1/-1}.bike-control-scroll:has(>.bike-finishes)>.bike-colour-section,.bike-control-scroll:has(>.bike-finishes)>.bike-finishes{grid-column:auto;margin-top:0}.bike-control-scroll:has(>.bike-finishes)>.bike-colour-section .bike-palette{grid-template-columns:repeat(6,minmax(0,1fr))}.bike-control-scroll:has(>.bike-finishes)>.bike-colour-section:only-child{grid-column:1/-1}.bike-control-scroll:has(>.bike-finishes) .bike-finishes>div{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:370px){.bike-part-menu-hint{padding:0 8px;font-size:11px;gap:5px}.bike-sheet-heading{gap:6px}.bike-garage [data-bike-sheet-close]{min-width:52px;padding:0 6px}}
+/* A quiet tool dock: colour belongs to the bike, emphasis to the active choice. */
+.bike-garage{--bike-surface:#15191f;--bike-raised:#20262e;--bike-field:#11151b;--bike-line:#303741;--bike-selected:#253536;--bike-accent:#80c9c0;--bike-selected-ink:#e5f4f1;--bike-muted:#9ca6b2}
+.bike-garage .bike-ui-icon{display:block;flex:none;width:20px;height:20px}
+.bike-garage :is(button,summary){-webkit-tap-highlight-color:transparent}
+.bike-workshop-grid{border-color:var(--bike-line);box-shadow:0 8px 24px #00000014}
+.bike-controls,.bike-options-sheet{background:var(--bike-surface)}
+.bike-control-navigation{padding:6px 16px;background:var(--bike-field)}
+.bike-part-tabs{max-width:920px;gap:6px}
+.bike-garage .bike-part-tabs button{position:relative;min-height:48px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--bike-muted);font-size:13px;font-weight:600;gap:10px}
+.bike-part-tabs i{display:flex;align-items:center;justify-content:center;font-style:normal}
+.bike-garage .bike-part-tabs button[aria-pressed=true]{background:var(--bike-raised);border-color:var(--bike-line);color:var(--bike-ink)}
+.bike-garage .bike-part-tabs button[aria-pressed=true]::after{content:"";position:absolute;bottom:0;left:35%;right:35%;height:2px;background:var(--bike-accent);border-radius:2px}
+.bike-garage .bike-part-tabs button[aria-pressed=true] .bike-ui-icon{color:var(--bike-accent)}
+.bike-options-sheet{height:min(280px,calc(var(--bike-workspace-height,700px)*.38));max-height:min(280px,calc(var(--bike-workspace-height,700px)*.38))}
+.bike-sheet-heading{flex-basis:52px;gap:12px;padding:0 max(18px,calc((100% - 1100px)/2));border-bottom:1px solid var(--bike-line)}
+.bike-part-menu summary{gap:12px;padding:0;min-height:44px}
+.bike-part-menu strong,.bike-part-current strong{font-size:16px;font-weight:650}
+.bike-part-menu-hint{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--bike-muted);font-size:12px;font-weight:500;white-space:nowrap}
+.bike-part-menu-hint .bike-ui-icon{width:16px;height:16px}
+.bike-part-menu summary:hover .bike-part-menu-hint{color:var(--bike-ink);background:var(--bike-raised)}
+.bike-part-picker{padding:8px;gap:6px;border:1px solid var(--bike-line);background:var(--bike-field);box-shadow:0 12px 24px #0004}
+.bike-garage .bike-part-picker button{background:transparent;font-size:12px}
+.bike-garage [data-bike-sheet-close]{width:auto;min-width:70px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--bike-muted);gap:5px}
+.bike-garage [data-bike-sheet-close] span{font-size:12px;font-weight:600}
+.bike-garage [data-bike-sheet-close] .bike-ui-icon{width:16px;height:16px}
+.bike-control-scroll{padding:16px max(18px,calc((100% - 1100px)/2));scrollbar-width:thin;scrollbar-color:var(--bike-line) transparent}
+.bike-control-scroll>.bike-colour-section,.bike-control-scroll>.bike-style-options,.bike-control-scroll>.bike-finishes{margin:0 0 16px;padding:0;border:0;border-radius:0;background:none}
+.bike-garage .bike-eyebrow{font:600 10px/1.4 'Barlow',sans-serif;letter-spacing:1.3px}
+.bike-colour-heading{margin-bottom:5px}
+.bike-colour-name{font-size:11px;color:var(--bike-muted)}
+.bike-palette{display:grid;grid-template-columns:repeat(6,44px);gap:2px 6px;justify-content:start}
+.bike-garage .bike-swatch{position:relative;isolation:isolate;min-width:44px;width:44px;max-width:44px;height:44px;padding:0;border:1px solid transparent;border-radius:9px;background:transparent;box-shadow:none}
+.bike-garage .bike-swatch::before{content:"";position:absolute;inset:6px;border-radius:6px;background:var(--swatch);box-shadow:inset 0 0 0 1px #ffffff24;z-index:-1}
+.bike-garage .bike-swatch:hover:not(:disabled){background:var(--bike-raised);border-color:var(--bike-line)}
+.bike-garage .bike-swatch[aria-pressed=true]{outline:none;border-color:var(--bike-accent);background:var(--bike-raised);box-shadow:none}
+.bike-garage .bike-swatch:focus-visible{outline:2px solid var(--bike-focus);outline-offset:2px}
+.bike-swatch span{width:18px;height:18px;font-size:11px;background:#15212be0}
+.bike-custom-colour{margin:7px 0 0;padding:0;border:0;justify-content:flex-start;gap:12px;font-size:12px}
+.bike-garage .bike-custom-colour input{flex:0 0 44px;min-width:44px;width:44px;height:44px;padding:7px;border:1px solid var(--bike-line);background:transparent}
+.bike-finishes>div{display:flex;flex-wrap:wrap;gap:6px;max-width:none;margin-top:10px}
+.bike-garage .bike-finishes button{flex:0 0 auto;flex-direction:row;gap:8px;min-height:44px;padding:7px 10px;background:transparent;border:1px solid var(--bike-line);border-radius:7px;font-size:12px;font-weight:500}
+.bike-finishes .bike-finish-sample{width:20px;height:20px;border-radius:4px;flex:none;border:1px solid #ffffff20}
+.bike-garage .bike-finishes button[aria-pressed=true],.bike-garage .bike-style-options button[aria-pressed=true],.bike-garage .bike-part-picker button[aria-pressed=true]{background:var(--bike-selected);border-color:var(--bike-accent);color:var(--bike-selected-ink);box-shadow:none}
+.bike-style-options>div{justify-content:flex-start;margin-top:10px;gap:6px}
+.bike-garage .bike-style-options button{flex:0 1 auto;min-height:44px;padding:8px 13px;border-radius:7px;background:transparent;font-size:12px;font-weight:500}
+.bike-control-tip{font-size:11px;line-height:1.5;margin:8px 0;color:var(--bike-muted)}
+.bike-edit-tools{gap:0;padding:3px;background:#f7f9fbeF;border:1px solid #c9d0d8;border-radius:10px;box-shadow:0 2px 8px #17202d0d}
+.bike-garage .bike-edit-tools button,.bike-garage .bike-camera-menu>summary{background:transparent;border-color:transparent;border-radius:6px}
+.bike-garage .bike-edit-tools button:hover:not(:disabled),.bike-garage .bike-camera-menu>summary:hover{background:#e5e9ee}
+.bike-garage .bike-stage-top [data-bike-new]{background:#f7f9fbef;border-color:#c9d0d8;border-radius:8px;font-weight:600}
+.bike-garage .bike-stage-bottom [data-bike-preview]{background:#202c37;color:#fff;border-color:#202c37;border-radius:10px;box-shadow:0 3px 10px #17202d24}
+.bike-garage .bike-stage-bottom [data-bike-preview]:hover{background:#344454;color:#fff}
+.bike-save-bar{padding:4px 2px 0}
+.bike-garage .bike-name-field input{border-radius:6px;font-size:16px}
+.bike-garage .bike-save-copy{background:transparent;border-color:transparent}
+.bike-garage .bike-primary{border-radius:8px;font-weight:650;box-shadow:none}
+.bike-save-status{color:var(--bike-muted)}
+@media(min-width:900px) and (min-height:501px){
+ .bike-control-scroll:has(>.bike-finishes){display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-content:start;align-items:start;gap:12px 30px}
+ .bike-control-scroll:has(>.bike-finishes)>*{grid-column:1/-1;margin-bottom:0}
+ .bike-control-scroll:has(>.bike-finishes)>.bike-colour-section{grid-column:1;grid-row:1/4;border-right:1px solid var(--bike-line);padding-right:24px}
+ .bike-control-scroll:has(>.bike-colour-section)>.bike-finishes,.bike-control-scroll:has(>.bike-colour-section)>.bike-style-options:not(.bike-component-options){grid-column:2}
+ .bike-palette{grid-template-columns:repeat(6,44px)}
+}
+@media(max-width:600px){
+ .bike-control-navigation{padding:5px 6px}
+ .bike-part-tabs{gap:2px}
+ .bike-garage .bike-part-tabs button{flex-direction:column;gap:3px;font-size:10px;min-height:50px;padding:5px 2px}
+ .bike-part-tabs .bike-ui-icon{width:18px;height:18px}
+ .bike-sheet-heading{padding:0 12px;gap:4px;flex-basis:48px}
+ .bike-control-scroll{padding:12px}
+ .bike-garage .bike-eyebrow{font-size:9px}
+ .bike-edit-tools{padding:0;gap:0;top:8px;left:8px}
+ .bike-garage .bike-stage-top [data-bike-new]{max-width:88px}
+ .bike-part-picker{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .bike-save-bar{padding-top:0}
+ .bike-garage .bike-name-field input{font-size:16px}
+}
+@media(max-width:370px){.bike-palette{gap:2px}.bike-part-menu-hint{padding:0 5px;font-size:11px}.bike-garage [data-bike-sheet-close]{min-width:54px;padding:0 4px}}
+@media(max-height:500px) and (orientation:landscape){
+ .bike-garage[data-controls-open=true] .bike-options-sheet{height:auto;max-height:none}
+ .bike-sheet-heading{padding:0 10px}
+ .bike-control-scroll{padding:10px}
+ .bike-control-navigation{padding:4px}
+ .bike-garage .bike-part-tabs button{flex-direction:row;min-height:44px;padding:4px;font-size:10px}
+ .bike-palette{gap:2px}
+}
 
 .bike-saved-art [data-bike-thumbnail]{display:grid;place-items:center;aspect-ratio:3/2;color:#334155;font-size:13px}
