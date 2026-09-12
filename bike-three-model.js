@@ -182,40 +182,45 @@ export function createBike(configuration) {
   // tubes floating into one point.
   {const gussetA=bb.clone().lerp(headLow,.86),gussetB=headLow.clone().addScaledVector(headTop.clone().sub(headLow).normalize(),.03);
     cylinder('frame',gussetA,gussetB,.0092,paints.frame,.0092,12);}
-  // Straight, parallel tapered legs join the crown and offset axle plates.
+  // Formed BMX fork shoulders blend into parallel tapered legs. The steerer,
+  // bearing seats and stem share one axis and meet without floating washers.
   const steer=headTop.clone().sub(headLow).normalize();
-  cylinder('fork',headLow.clone().addScaledVector(steer,-.016),headTop.clone().addScaledVector(steer,.049),.0143,paints.fork);
+  const axial=(name,origin,axis,sections,material,label)=>{
+    const geometry=new T.LatheGeometry(sections.map(([r,h])=>new T.Vector2(r,h)),40);
+    const mesh=add(name,geometry,material,origin);mesh.quaternion.setFromUnitVectors(Y,axis);mesh.name=label;return mesh;
+  };
+  cylinder('fork',headLow.clone().addScaledVector(steer,-.019),headTop.clone().addScaledVector(steer,.068),.0143,paints.fork).name='Continuous fork steerer';
   const crown=headLow.clone().addScaledVector(steer,-.018);
   const legR=forkModel.legRadius,legTaper=forkModel.taper;
-  for(const s of [-1,1]){
-    const start=crown.clone().add(V(0,0,s*.046)),end=front.clone().add(V(-.028,.008,s*.046));
+  for(const side of [-1,1]){
+    const start=crown.clone().addScaledVector(steer,-.025).add(V(0,0,side*.046)),end=front.clone().add(V(-.028,.008,side*.046));
     cylinder('fork',end,start,legR*(1-legTaper),paints.fork,legR,32).name='Straight fork leg';
+    const join=headLow.clone().addScaledVector(steer,-.012).add(V(0,0,side*.008));
+    const curve=new T.CubicBezierCurve3(start,start.clone().addScaledVector(start.clone().sub(end).normalize(),.019),join.clone().add(V(0,-.008,side*.021)),join);
+    add('fork',new T.TubeGeometry(curve,20,legR,16,false),paints.fork).name='Formed fork shoulder';
     const dropout=new T.Shape();dropout.moveTo(-.043,.020);dropout.lineTo(-.019,.020);dropout.quadraticCurveTo(.014,.020,.014,0);dropout.quadraticCurveTo(.014,-.017,-.004,-.017);dropout.lineTo(-.034,-.010);dropout.closePath();
     const axleHole=new T.Path();axleHole.absarc(0,0,.0055,0,TAU,true);dropout.holes.push(axleHole);
-    profile('fork',dropout,.006,paints.fork,front.clone().add(V(0,0,s*.046)));
+    profile('fork',dropout,.006,paints.fork,front.clone().add(V(0,0,side*.046)));
   }
-  cylinder('fork',crown.clone().add(V(0,0,-.046)),crown.clone().add(V(0,0,.046)),forkModel.crownRadius*.72,paints.fork);
-  for(const t of [-.009,headLow.distanceTo(headTop)+.006,headLow.distanceTo(headTop)+.015]){
-    const p=headLow.clone().addScaledVector(steer,t);cylinder('headset',p,p.clone().addScaledVector(steer,.005),t<0?.028:.025,paints.headset);
-  }
-  // Seat tube follows the actual seat-tube axis, with clamp, rails and sewn
-  // edge. The saddle sits a fixed distance up the same seatpost axis beyond
-  // the seat-tube top, so it stays correctly placed across every frame model.
+  axial('headset',headLow,steer,[[.0143,-.014],[.024,-.014],[.025,-.010],[.024,-.005],[.023,0],[.0143,0],[.0143,-.014]],paints.headset,'Lower bearing cover');
+  axial('headset',headTop,steer,[[.0143,0],[.024,0],[.024,.003],[.021,.011],[.018,.013],[.0143,.013],[.0143,0]],paints.headset,'Tapered headset dust cap');
+  axial('headset',headTop,steer,[[.0143,.013],[.018,.013],[.018,.0185],[.0143,.0185],[.0143,.013]],paints.headset,'Seated headset spacer');
+  // 25.4 mm post inserted along the seat tube, with a slim clamp and compact
+  // pivotal knuckle. The upholstered shell meets its mount directly.
   const seatAxis=seat.clone().sub(bb).normalize();
-  const saddle=seat.clone().addScaledVector(seatAxis,.042).add(V(.008,-.006,0));
-  cylinder('seatpost',seat.clone().addScaledVector(seatAxis,-.015),saddle.clone().add(V(.006,-.015,0)),.0127,paints.seatpost);
-  cylinder('seatpost',seat.clone().addScaledVector(seatAxis,-.005),seat.clone().addScaledVector(seatAxis,.009),.019,paints.seatpost);
-  bolt('seatpost',seat.clone().add(V(-.014,.005,.020)),V(0,0,1),.004);
-  // Compact pivotal saddle mount, seated directly on the post (no road-bike rails).
-  cylinder('seat',saddle.clone().add(V(0,-.018,0)),saddle.clone().add(V(0,.014,0)),.013,blackPlastic);
-  box('seat',saddle.clone().add(V(0,.012,0)),.045,.012,.037,blackPlastic);
+  const saddle=seat.clone().addScaledVector(seatAxis,.063);
+  cylinder('seatpost',seat.clone().addScaledVector(seatAxis,-.018),seat.clone().addScaledVector(seatAxis,.061),.0127,paints.seatpost).name='Inserted seatpost';
+  axial('seatpost',seat,seatAxis,[[.013,-.004],[.0178,-.004],[.0185,-.002],[.0185,.006],[.0178,.008],[.013,.008],[.013,-.004]],paints.seatpost,'Seatpost clamp');
+  box('seatpost',seat.clone().add(V(-.014,.002,0)),.013,.009,.026,paints.seatpost);
+  bolt('seatpost',seat.clone().add(V(-.020,.003,.015)),V(0,0,1),.0035);
+  const knuckle=sphere('seatpost',saddle.clone().add(V(0,-.002,0)),.018,paints.seatpost);knuckle.scale.set(1,.60,.78);knuckle.name='Pivotal seat mount';
 
   // Rounded pivotal saddle: broad rear, narrow nose, curved padding and a dark base.
-  const seatHeight=c.seatStyle==='padded'?.044:.030;
+  const seatHeight=c.seatStyle==='padded'?.036:.024;
   const seatOutline=[[-.120,0],[-.114,.034],[-.100,.061],[-.078,.069],[-.048,.067],[-.020,.057],[.010,.043],[.040,.030],[.067,.024],[.091,.020],[.105,.011],[.110,0]];
   const slices=new T.SplineCurve(seatOutline.map(([x,w])=>new T.Vector2(x,w))).getPoints(64).map(p=>[p.x,Math.max(0,p.y)]);
   const pos=[],uv=[],indices=[],steps=24;
-  const seatY=x=>saddle.y+.016+Math.pow(x/.12,2)*.006+x*.13;
+  const seatY=x=>saddle.y+.006+Math.pow(x/.12,2)*.004+x*.08;
   for(let j=0;j<slices.length;j++)for(let i=0;i<=steps;i++){
     const angle=i/steps*TAU,[x,w]=slices[j],top=Math.max(0,Math.sin(angle));
     const y=seatY(x)+(Math.sin(angle)>0?top*seatHeight*Math.sqrt(Math.min(1,w/.045)):Math.sin(angle)*.008*Math.min(1,w/.02));
@@ -224,11 +229,16 @@ export function createBike(configuration) {
   for(let j=0;j<slices.length-1;j++)for(let i=0;i<steps;i++){const a=j*(steps+1)+i,b=a+steps+1;indices.push(a,b,a+1,a+1,b,b+1);}
   for(const j of [0,slices.length-1]){const centre=pos.length/3,[x]=slices[j];pos.push(saddle.x+x,seatY(x),0);uv.push(j/(slices.length-1),.5);for(let i=0;i<steps;i++){const a=j*(steps+1)+i;indices.push(centre,...(j===0?[a,a+1]:[a+1,a]));}}
   const sg=new T.BufferGeometry();sg.setAttribute('position',new T.Float32BufferAttribute(pos,3));sg.setAttribute('uv',new T.Float32BufferAttribute(uv,2));sg.setIndex(indices);sg.computeVertexNormals();
-  add('seat',sg,paints.seat);paints.seat.side=T.DoubleSide;
+  add('seat',sg,paints.seat).name='Contoured saddle upholstery';paints.seat.side=T.DoubleSide;
+  // Moulded underside follows the saddle outline rather than a flat slab.
+  const shell=sg.clone(),shellPosition=shell.attributes.position;
+  for(let i=0;i<shellPosition.count;i++){const x=shellPosition.getX(i)-saddle.x,y=seatY(x);shellPosition.setY(i,y-.003-Math.abs(shellPosition.getY(i)-y)*.24);}
+  shell.computeVertexNormals();add('seat',shell,blackPlastic).name='Moulded saddle underside';
+  const access=add('seat',new T.CircleGeometry(.006,24),blackPlastic,V(saddle.x-.014,seatY(-.014)+seatHeight+.0003,0));access.rotation.x=-Math.PI/2;access.name='Pivotal bolt access patch';
   for(const side of [-1,1])tube('seat',slices.map(([x,w])=>V(saddle.x+x,seatY(x)-.003,side*w)),.0023,blackPlastic,48);
   // Physical subtle upholstery grain, generated locally; no image fetches.
   const cloth=document.createElement('canvas');cloth.width=cloth.height=128;const cx=cloth.getContext('2d');cx.fillStyle='#999';cx.fillRect(0,0,128,128);for(let i=0;i<128;i+=3){cx.fillStyle=i%2?'#bbb':'#888';cx.fillRect(i,0,1,128);cx.fillRect(0,i,128,1);}const bump=new T.CanvasTexture(cloth);bump.wrapS=bump.wrapT=T.RepeatWrapping;bump.repeat.set(4,3);textures.add(bump);paints.seat.bumpMap=bump;paints.seat.bumpScale=.0007;
-  for(const side of [-1,1]){const seam=plain(c.colors.seat,.88);seatSeamMaterials.push(seam);tube('seat',slices.map(([x,w])=>V(saddle.x+x,seatY(x)+.004,side*w*.98)),.0008,seam,48);}
+  for(const side of [-1,1]){const seam=plain(c.colors.seat,.88);seatSeamMaterials.push(seam);tube('seat',slices.map(([x,w])=>V(saddle.x+x,seatY(x)+.004,side*w*.98)),.0008,seam,64);}
   if(c.seatDesign!=='solid'&&globalThis.JKCrewBikeSeats){
     const svg=globalThis.JKCrewBikeSeats.thumbnail(c.seatDesign);
     if(svg)ready.push(new Promise(resolve=>{const img=new Image();let finished=false,timer;
@@ -242,25 +252,27 @@ export function createBike(configuration) {
   const topLoad=c.stemStyle==='top-load',bx=.047,by=topLoad?.013:-.003,clampR=.0116;
   const barCentre=stemCentre.clone().add(V(bx,by,0));
   part('stem').userData.clampCentre=barCentre.toArray();
-  cylinder('stem',stemCentre.clone().addScaledVector(steer,-.025),stemCentre.clone().addScaledVector(steer,.008),.021,paints.stem);
+  const rearStack=topLoad?.013:.022;
+  cylinder('stem',stemCentre.clone().addScaledVector(steer,-.025),stemCentre.clone().addScaledVector(steer,rearStack),.020,paints.stem).name='Stem steerer clamp';
   const body=new T.Shape(),cap=new T.Shape();
   if(topLoad){
-    body.moveTo(-.022,-.018);body.lineTo(bx-.006,by-.021);body.quadraticCurveTo(bx+.023,by-.021,bx+.023,by-.010);body.lineTo(bx+.023,by-.001);
-    body.lineTo(bx+clampR,by-.001);body.absarc(bx,by,clampR,0,-Math.PI,true);body.lineTo(-.022,by);body.closePath();
+    body.moveTo(-.019,-.018);body.lineTo(bx-.006,by-.021);body.quadraticCurveTo(bx+.023,by-.021,bx+.023,by-.010);body.lineTo(bx+.023,by-.001);
+    body.lineTo(bx+clampR,by-.001);body.absarc(bx,by,clampR,0,-Math.PI,true);body.lineTo(-.016,by);body.quadraticCurveTo(-.022,by,-.022,by-.006);body.lineTo(-.022,-.012);body.quadraticCurveTo(-.022,-.018,-.019,-.018);body.closePath();
     cap.moveTo(bx-.024,by+.001);cap.lineTo(bx-clampR,by+.001);cap.absarc(bx,by,clampR,Math.PI,0,true);
     cap.lineTo(bx+.024,by+.001);cap.lineTo(bx+.024,by+.012);cap.quadraticCurveTo(bx+.024,by+.017,bx+.017,by+.017);cap.lineTo(bx-.017,by+.017);cap.quadraticCurveTo(bx-.024,by+.017,bx-.024,by+.012);cap.closePath();
-    profile('stem',cap,.050,paints.stem,stemCentre);
+    profile('stem',cap,.046,paints.stem,stemCentre);
     for(const x of [-.017,.017])for(const z of [-.017,.017])bolt('stem',barCentre.clone().add(V(x,.018,z)),Y,.0038);
   }else{
     body.moveTo(-.023,-.019);body.quadraticCurveTo(bx-.006,-.025,bx-.001,by-.020);body.lineTo(bx-.001,by-clampR);body.absarc(bx,by,clampR,-Math.PI/2,-Math.PI*1.5,true);body.lineTo(bx-.001,by+.020);body.quadraticCurveTo(bx-.006,.022,-.023,.020);body.closePath();
     cap.moveTo(bx+.001,by-clampR);cap.lineTo(bx+.001,by-.023);cap.lineTo(bx+.020,by-.023);cap.quadraticCurveTo(bx+.025,by-.023,bx+.025,by-.016);cap.lineTo(bx+.025,by+.016);cap.quadraticCurveTo(bx+.025,by+.023,bx+.020,by+.023);cap.lineTo(bx+.001,by+.023);cap.lineTo(bx+.001,by+clampR);cap.absarc(bx,by,clampR,Math.PI/2,-Math.PI/2,true);cap.closePath();
-    profile('stem',cap,.048,paints.stem,stemCentre);
+    profile('stem',cap,.046,paints.stem,stemCentre);
     for(const y of [-.016,.016])for(const z of [-.016,.016])bolt('stem',barCentre.clone().add(V(.026,y,z)),V(1,0,0),.0038);
   }
-  profile('stem',body,.048,paints.stem,stemCentre);
+  profile('stem',body,.044,paints.stem,stemCentre);
   for(const z of [-.018,.018])bolt('stem',stemCentre.clone().add(V(-.023,-.005,z)),V(-1,0,0),.0038);
-  cylinder('stem',stemCentre.clone().add(V(0,.023,0)),stemCentre.clone().add(V(0,.026,0)),.015,darkSteel);
-  bolt('stem',stemCentre.clone().add(V(0,.027,0)),Y,.005);
+  axial('stem',stemCentre,steer,[[0,rearStack],[.018,rearStack],[.018,rearStack+.0015],[.016,rearStack+.003],[0,rearStack+.003]],darkSteel,'Flush compression cap');
+  bolt('stem',stemCentre.clone().addScaledVector(steer,rearStack+.003),steer,.004);
+
   // Tall BMX bars: actual swept tubing, crossbar and grip ends, sized by the
   // chosen bar model (rise and width both scale proportionally from the
   // original hand-tuned tube shape, so every height reads as one coherent
