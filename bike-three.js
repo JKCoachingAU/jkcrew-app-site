@@ -19,14 +19,14 @@
   // read as a clean close-up.
   const CAMERA_PRESETS=Object.freeze([
     {id:'hero',label:'Full bike',kind:'fit',yawByAspect:true,polar:1.31},
-    {id:'side',label:'Side profile',kind:'fit',yaw:Math.PI/2,polar:1.40},
+    {id:'side',label:'Side profile',kind:'fit',yaw:0,polar:1.40},
     {id:'top',label:'Top down',kind:'fit',yaw:.6,polar:.62},
-    {id:'cockpit',label:'Cockpit',kind:'focus',local:[.30,.665,0],yaw:.95,polar:1.20,distance:.44},
+    {id:'cockpit',label:'Cockpit',kind:'focus',local:[.37,.76,0],yaw:1.05,polar:.95,distance:.34},
     {id:'drivetrain',label:'Drivetrain',kind:'focus',local:[-.16,.30,.05],yaw:-.75,polar:1.28,distance:.40},
     {id:'wheel',label:'Front wheel',kind:'focus',local:[.505,.266,.03],yaw:1.0,polar:1.40,distance:.34},
   ]);
   const BACKGROUND_MOOD={
-    studio:{sky:'#e9edf2',fog:'#e9edf2',ground:'#e3e8ee',key:'#fff7ee',fill:'#d5e7ff',keyIntensity:2.7,fillIntensity:1.2},
+    studio:{sky:'#e9edf2',fog:'#e9edf2',ground:'#e3e8ee',key:'#fff7ee',fill:'#d5e7ff',keyIntensity:2.2,fillIntensity:.65},
     street:{sky:'#c7d2dc',fog:'#c7d2dc',ground:'#8b9096',key:'#fff4e2',fill:'#cfe0f2',keyIntensity:2.85,fillIntensity:1.15},
     skatepark:{sky:'#dbe6ee',fog:'#dbe6ee',ground:'#aab0b6',key:'#fffaf0',fill:'#d8ecff',keyIntensity:3.0,fillIntensity:1.25},
     warehouse:{sky:'#453b34',fog:'#453b34',ground:'#585049',key:'#ffcf94',fill:'#8f9db8',keyIntensity:2.35,fillIntensity:.95},
@@ -43,7 +43,7 @@
     try{
     const stillPixelRatio=Math.min(global.devicePixelRatio||1,1.75);
     renderer.setPixelRatio(stillPixelRatio);
-    renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=.96;
+    renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=.88;
     renderer.shadowMap.enabled=true;renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;renderer.shadowMap.type=T.VSMShadowMap;
     const canvas=renderer.domElement;canvas.className='bike-three-canvas';canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Your custom BMX. Drag to rotate. Pinch or use plus and minus to zoom. Arrow keys rotate; Home resets the view.');canvas.tabIndex=0;
     Object.assign(canvas.style,{width:'100%',height:'100%',display:'block',touchAction:'none',outlineOffset:'-3px'});element.appendChild(canvas);
@@ -52,8 +52,8 @@
     const controls=new OrbitControls(camera,canvas);controls.target.copy(target);controls.enableDamping=true;controls.dampingFactor=.12;controls.enablePan=false;controls.minDistance=.26;controls.maxDistance=4.6;controls.minPolarAngle=Math.PI*.10;controls.maxPolarAngle=Math.PI*.495;controls.rotateSpeed=.72;controls.zoomSpeed=.85;controls.autoRotateSpeed=1.5;
     controls.touches={ONE:T.TOUCH.ROTATE,TWO:T.TOUCH.DOLLY_PAN};
     const pmrem=new T.PMREMGenerator(renderer),room=new RoomEnvironment(),environment=pmrem.fromScene(room,.04);
-    scene.environment=environment.texture;scene.environmentIntensity=1.05;room.dispose();pmrem.dispose();
-    const hemi=new T.HemisphereLight('#eff5ff','#69717e',.48);scene.add(hemi);
+    scene.environment=environment.texture;scene.environmentIntensity=.8;room.dispose();pmrem.dispose();
+    const hemi=new T.HemisphereLight('#eff5ff','#69717e',.32);scene.add(hemi);
     const key=new T.DirectionalLight('#fff7ee',2.7);key.position.set(1.1,3.2,2.3);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-1.5;key.shadow.camera.right=1.5;key.shadow.camera.top=1.5;key.shadow.camera.bottom=-1.5;key.shadow.camera.near=.1;key.shadow.camera.far=7;key.shadow.normalBias=.001;key.shadow.bias=-.0001;key.shadow.radius=4;key.shadow.blurSamples=8;scene.add(key);
     const fill=new T.DirectionalLight('#d5e7ff',1.2);fill.position.set(-1.8,1.8,-2.2);scene.add(fill);
     // A soft rim/back light for edge separation against the backdrop, and a
@@ -61,7 +61,7 @@
     // together they read as a small studio softbox setup rather than one
     // bare sun lamp.
     const rim=new T.DirectionalLight('#eaf3ff',.9);rim.position.set(-.6,1.4,-3.0);scene.add(rim);
-    const bounce=new T.PointLight('#fff2df',.35,4,2);bounce.position.set(0,.05,.9);scene.add(bounce);
+    const bounce=new T.PointLight('#fff2df',.15,4,2);bounce.position.set(0,.05,.9);scene.add(bounce);
     const groundMaterial=new T.MeshStandardMaterial({color:'#e3e8ee',roughness:.87});
     const groundGeometry=new T.PlaneGeometry(80,80),ground=new T.Mesh(groundGeometry,groundMaterial);ground.rotation.x=-Math.PI/2;ground.position.y=-.002;ground.receiveShadow=true;scene.add(ground);
     const contactCanvas=document.createElement('canvas');contactCanvas.width=contactCanvas.height=128;const contactContext=contactCanvas.getContext('2d'),gradient=contactContext.createRadialGradient(64,64,2,64,64,64);gradient.addColorStop(0,'rgba(20,24,30,.42)');gradient.addColorStop(.38,'rgba(20,24,30,.17)');gradient.addColorStop(1,'rgba(20,24,30,0)');contactContext.fillStyle=gradient;contactContext.fillRect(0,0,128,128);const contactTexture=new T.CanvasTexture(contactCanvas),contactMaterial=new T.MeshBasicMaterial({map:contactTexture,transparent:true,depthWrite:false}),contactGeometry=new T.PlaneGeometry(.22,.12);for(const x of [-.54,.505]){const contact=new T.Mesh(contactGeometry,contactMaterial);contact.rotation.x=-Math.PI/2;contact.position.set(x,.0002,0);scene.add(contact);}

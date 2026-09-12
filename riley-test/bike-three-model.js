@@ -45,28 +45,56 @@ export function createBike(configuration) {
 
   const paints={},paintedPedalMaterials=[],seatSeamMaterials=[];
   for(const [key,color] of Object.entries(c.colors)){
-    const finish=c.finishes[key]||'gloss';
+    const finish=c.finishes[key]||'matte';
     const brushed=finish==='raw'&&metalParts.has(key);
     paints[key]=finish==='chrome'?mat({color:'#e6ebf0',metalness:1,roughness:.095,envMapIntensity:1.12,clearcoat:.25,clearcoatRoughness:.06}):
-      finish==='raw'?mat({color:'#969da1',metalness:1,roughness:.38,envMapIntensity:.9,anisotropy:brushed?1:0,anisotropyRotation:Math.PI/2}):
+      finish==='raw'?mat({color:'#969da1',metalness:1,roughness:.26,envMapIntensity:1,anisotropy:brushed?.6:0,anisotropyRotation:Math.PI/2}):
       finish==='jetfuel'?mat({color:'#bab4c4',metalness:1,roughness:.16,iridescence:1,iridescenceIOR:1.6,iridescenceThicknessRange:[180,580],clearcoat:.5,clearcoatRoughness:.12}):
-      mat({color,metalness:metalParts.has(key)?.42:.025,roughness:finish==='matte'?.64:(key==='seat'?.66:.29),clearcoat:finish==='matte'?0:metalParts.has(key)?.8:.86,clearcoatRoughness:finish==='matte'?.18:.15,
+      mat({color,metalness:metalParts.has(key)?.12:0,roughness:finish==='matte'?.68:(key==='seat'?.82:.30),clearcoat:finish==='matte'?0:metalParts.has(key)?.65:0,clearcoatRoughness:.20,
         normalMap:['gloss','matte'].includes(finish)&&key!=='seat'?microNoise:null,normalScale:new T.Vector2(.045,.045)});
   }
   const tyres=c.tyreStyle==='white'?whiteRubber:blackTyreRubber;
   tyres.normalMap=microNoise;tyres.normalScale=new T.Vector2(.12,.12);
   const rimMat=paints.rims;
   function add(name,g,m,pos,rotation){geometries.add(g);const mesh=new T.Mesh(g,m);mesh.userData.part=name;mesh.castShadow=true;mesh.receiveShadow=true;if(pos)mesh.position.copy(pos);if(rotation)mesh.rotation.set(...rotation);part(name).add(mesh);return mesh;}
-  function cylinder(name,a,b,r,m,r2=r,segments=20){const d=b.clone().sub(a),g=new T.CylinderGeometry(r2,r,d.length(),segments);const mesh=add(name,g,m,a.clone().add(b).multiplyScalar(.5));mesh.quaternion.setFromUnitVectors(Y,d.normalize());return mesh;}
-  function tube(name,points,r,m,segments=48){const curve=new T.CatmullRomCurve3(points.map(p=>Array.isArray(p)?V(...p):p));return add(name,new T.TubeGeometry(curve,segments,r,10,false),m);}
-  function sphere(name,p,r,m){return add(name,new T.SphereGeometry(r,12,8),m,p);}
+  function cylinder(name,a,b,r,m,r2=r,segments=28){const d=b.clone().sub(a),g=new T.CylinderGeometry(r2,r,d.length(),segments);const mesh=add(name,g,m,a.clone().add(b).multiplyScalar(.5));mesh.quaternion.setFromUnitVectors(Y,d.normalize());return mesh;}
+  function tube(name,points,r,m,segments=48){
+    const curve=new T.CatmullRomCurve3(points.map(p=>Array.isArray(p)?V(...p):p));
+    // Keep the bar's clamped section straight; a spline otherwise sags below
+    // the two bottom control points and cuts through the stem's circular bore.
+    if(name==='bars'&&points.length===10){const sample=curve.getPoint.bind(curve),centre=points[4];curve.getPoint=(t,target)=>{const p=sample(t,target),blend=T.MathUtils.smoothstep(Math.abs(p.z),.028,.063);p.y=T.MathUtils.lerp(centre.y,p.y,blend);p.x=T.MathUtils.lerp(centre.x,p.x,blend);return p;};}
+    return add(name,new T.TubeGeometry(curve,segments,r,12,false),m);
+  }
+  function sphere(name,p,r,m){return add(name,new T.SphereGeometry(r,24,16),m,p);}
   function box(name,p,w,h,d,m,rotation){
     const r=Math.min(.003,w*.18,h*.22,d*.22),shape=new T.Shape(),x=-w/2,y=-h/2;
     shape.moveTo(x+r,y);shape.lineTo(x+w-r,y);shape.quadraticCurveTo(x+w,y,x+w,y+r);shape.lineTo(x+w,y+h-r);shape.quadraticCurveTo(x+w,y+h,x+w-r,y+h);shape.lineTo(x+r,y+h);shape.quadraticCurveTo(x,y+h,x,y+h-r);shape.lineTo(x,y+r);shape.quadraticCurveTo(x,y,x+r,y);
     const bevel=Math.min(.0012,d*.16),g=new T.ExtrudeGeometry(shape,{depth:d-bevel*2,bevelEnabled:true,bevelSegments:2,steps:1,bevelSize:bevel,bevelThickness:bevel,curveSegments:3});g.translate(0,0,-d/2+bevel);return add(name,g,m,p,rotation);
   }
   function ring(name,p,r,t,m,rotation){return add(name,new T.TorusGeometry(r,t,10,64),m,p,rotation);}
-  function bolt(name,p,axis=V(0,0,1),r=.0045){cylinder(name,p.clone().addScaledVector(axis,-.002),p.clone().addScaledVector(axis,.002),r,steel,r,6);cylinder(name,p.clone().addScaledVector(axis,.0021),p.clone().addScaledVector(axis,.0024),r*.4,darkSteel,r*.4,6);}
+  // Socket-head hardware: a round cap with an actual recessed hex socket.
+  function bolt(name,p,axis=V(0,0,1),r=.0045){
+    const shape=new T.Shape();shape.absarc(0,0,r,0,TAU,false);
+    const hole=new T.Path();for(let i=0;i<6;i++){const a=-i/6*TAU,x=Math.cos(a)*r*.47,y=Math.sin(a)*r*.47;i?hole.lineTo(x,y):hole.moveTo(x,y);}hole.closePath();shape.holes.push(hole);
+    const g=new T.ExtrudeGeometry(shape,{depth:r*.55,bevelEnabled:true,bevelSize:r*.08,bevelThickness:r*.06,bevelSegments:1,curveSegments:16,steps:1});
+    const cap=add(name,g,steel,p.clone().addScaledVector(axis,-r*.18));cap.quaternion.setFromUnitVectors(V(0,0,1),axis);
+    cylinder(name,p.clone().addScaledVector(axis,-r*.20),p.clone().addScaledVector(axis,-r*.16),r*.48,darkSteel,r*.48,6);
+  }
+  function smoothMachinedSides(g){
+    // Extrusion's cap stays planar, while curved walls and bevel bands share
+    // normals. This removes polygon-strip reflections from machined metal.
+    const side=g.groups.find(group=>group.materialIndex===1);if(!side)return g;
+    const positions=g.attributes.position,normals=g.attributes.normal,buckets=new Map();
+    for(let i=side.start;i<side.start+side.count;i++){
+      const key=[positions.getX(i),positions.getY(i),positions.getZ(i)].map(n=>Math.round(n*1e7)).join(',');
+      let entry=buckets.get(key);if(!entry){entry={normal:V(),indices:[]};buckets.set(key,entry);}entry.normal.add(V(normals.getX(i),normals.getY(i),normals.getZ(i)));entry.indices.push(i);
+    }
+    for(const {normal,indices} of buckets.values()){normal.normalize();for(const i of indices)normals.setXYZ(i,normal.x,normal.y,normal.z);}return g;
+  }
+  function profile(name,shape,depth,m,position,rotation){
+    const g=new T.ExtrudeGeometry(shape,{depth:depth-.002,steps:1,bevelEnabled:true,bevelSize:.001,bevelThickness:.001,bevelSegments:3,curveSegments:12});g.translate(0,0,-depth/2+.001);smoothMachinedSides(g);return add(name,g,m,position,rotation);
+  }
+
   function batch(name,g,m,transforms){geometries.add(g);const mesh=new T.InstancedMesh(g,m,transforms.length);mesh.userData.part=name;mesh.castShadow=!['spokes','nipples'].includes(name);mesh.receiveShadow=true;transforms.forEach((x,i)=>mesh.setMatrixAt(i,x));mesh.instanceMatrix.needsUpdate=true;part(name).add(mesh);return mesh;}
   function rodMatrix(a,b,r=1){const o=new T.Object3D();o.position.copy(a).add(b).multiplyScalar(.5);o.quaternion.setFromUnitVectors(Y,b.clone().sub(a).normalize());o.scale.set(r,a.distanceTo(b),r);return o.updateMatrix(),o.matrix.clone();}
   function weld(a,b,r,name='frame'){const d=b.clone().sub(a).normalize(),p=a.clone().addScaledVector(d,r*.62);const mesh=ring(name,p,r*.97,.00075,paints[name]||paints.frame);mesh.quaternion.setFromUnitVectors(V(0,0,1),d);}
@@ -89,6 +117,9 @@ export function createBike(configuration) {
     }
     const profile=[V(.199,-.017),V(.204,-.020),V(.211,-.019),V(.214,-.014),V(.214,.014),V(.211,.019),V(.204,.020),V(.199,.017),V(.199,-.017)].map(p=>new T.Vector2(p.x,p.y));
     const rim=add('rims',new T.LatheGeometry(profile,96),rimMat,p,[Math.PI/2,0,0]);
+    const valve=p.clone().add(V(0,-.196,0));
+    cylinder('rims',valve,valve.clone().add(V(0,.020,0)),.0028,blackPlastic);
+    cylinder('rims',valve.clone().add(V(0,.017,0)),valve.clone().add(V(0,.022,0)),.0031,steel);
     const isDrive=wheel==='rear';
     const cassette=isDrive&&c.hubStyle==='cassette';
     cylinder('hubs',p.clone().add(V(0,0,-.046)),p.clone().add(V(0,0,.046)),wheel==='rear'?.020:.016,paints.hubs);
@@ -117,16 +148,19 @@ export function createBike(configuration) {
     const spokes=batch('spokes',new T.CylinderGeometry(1,1,1,6),paints.spokes,spokeMatrices);
     if(c.spokeStyle==='rainbow')for(let i=0;i<36;i++)spokes.setColorAt(i,new T.Color().setHSL(i/36,.8,.57));
     batch('nipples',new T.CylinderGeometry(1,1,1,6),paints.nipples,nippleMatrices);
-    // Tread block instancing follows the chosen tyre-tread preset: a slick
-    // centre strip, an all-round directional pattern, or tall knobby blocks.
-    const treadRows=Math.max(1,tread.rows),trStripes=treadRows===1?[0]:treadRows===3?[-1,0,1]:[-1.5,-.5,.5,1.5];
-    const treadObj=[];const tmp=new T.Object3D();
-    for(let i=0;i<100;i++)for(const stripe of trStripes){
-      const a=i/100*TAU+(stripe%2?1:0)*tread.spacingJitter;
-      tmp.position.copy(p).add(V(Math.cos(a)*(.264-Math.abs(stripe)*.004*tread.blockScale),Math.sin(a)*(.264-Math.abs(stripe)*.004*tread.blockScale),stripe*.017));
-      tmp.rotation.set(0,0,a-Math.PI/2);tmp.rotateY(stripe*.23);tmp.scale.set(.010*tread.blockScale,.0019*(.6+tread.blockScale*.4),.009);tmp.updateMatrix();treadObj.push(tmp.matrix.clone());
+    // Fine blocks follow the round tyre surface; no floating saw-tooth fins.
+    const treadObj=[],tmp=new T.Object3D(),knobby=c.tireTread==='knobby';
+    const rows=c.tireTread==='slick'?3:5,columns=knobby?92:144;
+    for(let i=0;i<columns;i++)for(let row=0;row<rows;row++){
+      const lateral=(row-(rows-1)/2)*.012,angle=i/columns*TAU+(row%2)*Math.PI/columns;
+      const slope=Math.asin(lateral/.031),surface=.235+Math.sqrt(.031*.031-lateral*lateral);
+      const height=knobby?.0018:.0006;
+      tmp.position.copy(p).add(V(Math.cos(angle)*(surface+height*.15),Math.sin(angle)*(surface+height*.15),lateral));
+      tmp.rotation.set(0,0,angle-Math.PI/2);tmp.rotateX(slope);
+      tmp.scale.set(knobby?.011:.0085,height,knobby?.009:.0105);tmp.updateMatrix();treadObj.push(tmp.matrix.clone());
     }
     batch('tyres',new T.BoxGeometry(1,1,1),tyres,treadObj);
+
   }
   // Rear dropouts, twin stays and front triangle; no floating tube connections.
   for(const s of [-1,1]){
@@ -160,7 +194,7 @@ export function createBike(configuration) {
     for(let j=0;j<=32;j++){const centre=curve.getPointAt(j/32),scale=1-j/32*legTaper;for(let k=0;k<=14;k++){const i=j*15+k,p=V().fromBufferAttribute(positions,i).sub(centre).multiplyScalar(scale).add(centre);positions.setXYZ(i,p.x,p.y,p.z);}}g.computeVertexNormals();add('fork',g,paints.fork);
     cylinder('fork',end.clone().add(V(0,0,-.004)),end.clone().add(V(0,0,.004)),legR,paints.fork);
   }
-  cylinder('fork',crown.clone().add(V(0,0,-.035)),crown.clone().add(V(0,0,.035)),forkModel.crownRadius,paints.fork);
+  cylinder('fork',crown.clone().add(V(0,0,-.035)),crown.clone().add(V(0,0,.035)),forkModel.crownRadius*.72,paints.fork);
   for(const t of [-.009,.008,.129,.142]){
     const p=headLow.clone().addScaledVector(steer,t);cylinder('headset',p,p.clone().addScaledVector(steer,.005),t<.1?.028:.026,paints.headset);
   }
@@ -168,11 +202,14 @@ export function createBike(configuration) {
   // edge. The saddle sits a fixed distance up the same seatpost axis beyond
   // the seat-tube top, so it stays correctly placed across every frame model.
   const seatAxis=seat.clone().sub(bb).normalize();
-  const saddle=seat.clone().addScaledVector(seatAxis,.127).add(V(.008,-.006,0));
+  const saddle=seat.clone().addScaledVector(seatAxis,.075).add(V(.008,-.006,0));
   cylinder('seatpost',seat.clone().addScaledVector(seatAxis,-.015),saddle.clone().add(V(.006,-.015,0)),.0127,paints.seatpost);
   cylinder('seatpost',seat.clone().addScaledVector(seatAxis,-.005),seat.clone().addScaledVector(seatAxis,.009),.019,paints.seatpost);
   bolt('seatpost',seat.clone().add(V(-.014,.005,.020)),V(0,0,1),.004);
-  for(const s of [-1,1])tube('seat',[saddle.clone().add(V(-.080,-.002,s*.020)),saddle.clone().add(V(-.021,-.016,s*.025)),saddle.clone().add(V(.046,-.014,s*.020)),saddle.clone().add(V(.092,.009,s*.01))],.0029,steel,20);
+  // Compact pivotal saddle mount, seated directly on the post (no road-bike rails).
+  cylinder('seat',saddle.clone().add(V(0,-.018,0)),saddle.clone().add(V(0,.014,0)),.013,blackPlastic);
+  box('seat',saddle.clone().add(V(0,.012,0)),.045,.012,.037,blackPlastic);
+
   const seatHeight=c.seatStyle==='padded'?.048:.035;
   const slices=[[-.414,.002],[-.405,.031],[-.391,.057],[-.365,.071],[-.334,.069],[-.302,.059],[-.270,.045],[-.237,.029],[-.204,.024],[-.176,.022],[-.163,.012],[-.159,.002]].map(([x,w])=>[x+(saddle.x-(-.285)),w]);
   const seatLift=saddle.y-.728;
@@ -197,19 +234,30 @@ export function createBike(configuration) {
       img.onload=()=>{if(!disposed){const texture=new T.Texture(img);texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;textures.add(texture);paints.seat.map=texture;paints.seat.color.set('#fff');paints.seat.needsUpdate=true;}finish();};img.onerror=finish;img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
     }));
   }
-  // Genuine top-load vs front-load clamp bodies and four separately visible fasteners.
-  const stemCentre=headTop.clone().addScaledVector(steer,.036),barCentre=stemCentre.clone().add(V(.041,.014,0));
-  cylinder('stem',stemCentre.clone().add(V(0,-.022,0)),stemCentre.clone().add(V(0,.006,0)),.022,paints.stem);
-  box('stem',stemCentre.clone().lerp(barCentre,.48),.077,.035,.049,paints.stem);
-  for(const z of [-.018,.018])bolt('stem',stemCentre.clone().add(V(-.021,-.002,z)),V(-1,0,0),.0038);
-  if(c.stemStyle==='top-load'){
-    box('stem',barCentre.clone().add(V(0,.019,0)),.041,.010,.048,paints.stem);
-    for(const x of [-.013,.013])for(const z of [-.016,.016])bolt('stem',barCentre.clone().add(V(x,.026,z)),V(0,1,0),.004);
+  // Machined stem with a split circular handlebar bore and separate faceplate.
+  const stemCentre=headTop.clone().addScaledVector(steer,.043);
+  const topLoad=c.stemStyle==='top-load',bx=.047,by=topLoad?.013:-.003,clampR=.0116;
+  const barCentre=stemCentre.clone().add(V(bx,by,0));
+  part('stem').userData.clampCentre=barCentre.toArray();
+  cylinder('stem',stemCentre.clone().addScaledVector(steer,-.025),stemCentre.clone().addScaledVector(steer,.008),.021,paints.stem);
+  const body=new T.Shape(),cap=new T.Shape();
+  if(topLoad){
+    body.moveTo(-.022,-.018);body.lineTo(bx-.006,by-.021);body.quadraticCurveTo(bx+.023,by-.021,bx+.023,by-.010);body.lineTo(bx+.023,by-.001);
+    body.lineTo(bx+clampR,by-.001);body.absarc(bx,by,clampR,0,-Math.PI,true);body.lineTo(-.022,by);body.closePath();
+    cap.moveTo(bx-.024,by+.001);cap.lineTo(bx-clampR,by+.001);cap.absarc(bx,by,clampR,Math.PI,0,true);
+    cap.lineTo(bx+.024,by+.001);cap.lineTo(bx+.024,by+.012);cap.quadraticCurveTo(bx+.024,by+.017,bx+.017,by+.017);cap.lineTo(bx-.017,by+.017);cap.quadraticCurveTo(bx-.024,by+.017,bx-.024,by+.012);cap.closePath();
+    profile('stem',cap,.050,paints.stem,stemCentre);
+    for(const x of [-.017,.017])for(const z of [-.017,.017])bolt('stem',barCentre.clone().add(V(x,.018,z)),Y,.0038);
   }else{
-    box('stem',barCentre.clone().add(V(.022,0,0)),.010,.040,.046,paints.stem);
-    for(const y of [-.013,.013])for(const z of [-.015,.015])bolt('stem',barCentre.clone().add(V(.029,y,z)),V(1,0,0),.004);
+    body.moveTo(-.023,-.019);body.quadraticCurveTo(bx-.006,-.025,bx-.001,by-.020);body.lineTo(bx-.001,by-clampR);body.absarc(bx,by,clampR,-Math.PI/2,-Math.PI*1.5,true);body.lineTo(bx-.001,by+.020);body.quadraticCurveTo(bx-.006,.022,-.023,.020);body.closePath();
+    cap.moveTo(bx+.001,by-clampR);cap.lineTo(bx+.001,by-.023);cap.lineTo(bx+.020,by-.023);cap.quadraticCurveTo(bx+.025,by-.023,bx+.025,by-.016);cap.lineTo(bx+.025,by+.016);cap.quadraticCurveTo(bx+.025,by+.023,bx+.020,by+.023);cap.lineTo(bx+.001,by+.023);cap.lineTo(bx+.001,by+clampR);cap.absarc(bx,by,clampR,Math.PI/2,-Math.PI/2,true);cap.closePath();
+    profile('stem',cap,.048,paints.stem,stemCentre);
+    for(const y of [-.016,.016])for(const z of [-.016,.016])bolt('stem',barCentre.clone().add(V(.026,y,z)),V(1,0,0),.0038);
   }
-  bolt('stem',stemCentre.clone().add(V(0,.026,0)),V(0,1,0),.006);
+  profile('stem',body,.048,paints.stem,stemCentre);
+  for(const z of [-.018,.018])bolt('stem',stemCentre.clone().add(V(-.023,-.005,z)),V(-1,0,0),.0038);
+  cylinder('stem',stemCentre.clone().add(V(0,.023,0)),stemCentre.clone().add(V(0,.026,0)),.015,darkSteel);
+  bolt('stem',stemCentre.clone().add(V(0,.027,0)),Y,.005);
   // Tall BMX bars: actual swept tubing, crossbar and grip ends, sized by the
   // chosen bar model (rise and width both scale proportionally from the
   // original hand-tuned tube shape, so every height reads as one coherent
@@ -240,35 +288,58 @@ export function createBike(configuration) {
   batch('grips',new T.TorusGeometry(.0159,.00055,5,24),paints.grips,gripRings);
   // Drive side is physical geometry, not a mirrored right-drive photograph.
   const chainZ=right*.074,chainCentre=bb.clone().add(V(0,0,chainZ));
-  function sprocket(name,p,r,teeth,m,thick,guard){const shape=new T.Shape();for(let i=0;i<teeth*4;i++){const a=i/(teeth*4)*TAU,rr=r*(i%4===1||i%4===2?1:.936);const x=Math.cos(a)*rr,y=Math.sin(a)*rr;i?shape.lineTo(x,y):shape.moveTo(x,y);}shape.closePath();const centreHole=new T.Path();centreHole.absarc(0,0,.009,0,TAU,true);shape.holes.push(centreHole);if(r>.025&&!guard)for(let i=0;i<5;i++){const a=i/5*TAU;const hole=new T.Path();hole.absellipse(Math.cos(a)*r*.54,Math.sin(a)*r*.54,r*.13,r*.18,0,TAU,true,a);shape.holes.push(hole);}const g=new T.ExtrudeGeometry(shape,{depth:thick,bevelEnabled:true,bevelSegments:1,steps:1,bevelSize:.0005,bevelThickness:.0005,curveSegments:8});return add(name,g,m,p.clone().add(V(0,0,-thick/2)));}
+  function sprocket(name,p,r,teeth,m,thick,guard){const shape=new T.Shape();for(let i=0;i<teeth*4;i++){const a=i/(teeth*4)*TAU,rr=r*(i%4===1||i%4===2?1:.936);const x=Math.cos(a)*rr,y=Math.sin(a)*rr;i?shape.lineTo(x,y):shape.moveTo(x,y);}shape.closePath();const centreHole=new T.Path();centreHole.absarc(0,0,.009,0,TAU,true);shape.holes.push(centreHole);if(r>.025&&!guard)for(let i=0;i<5;i++){const a=i/5*TAU;const hole=new T.Path();hole.absellipse(Math.cos(a)*r*.54,Math.sin(a)*r*.54,r*.14,r*.27,0,TAU,true,a);shape.holes.push(hole);}const g=new T.ExtrudeGeometry(shape,{depth:thick,bevelEnabled:true,bevelSegments:1,steps:1,bevelSize:.0005,bevelThickness:.0005,curveSegments:16});return add(name,g,m,p.clone().add(V(0,0,-thick/2)));}
   sprocket('sprocket',chainCentre,.052,25,paints.sprocket,c.sprocketStyle==='guard'?.006:.004,c.sprocketStyle==='guard');
   sprocket('hubs',rear.clone().add(V(0,0,chainZ)),.020,9,darkSteel,.012);
-  // Small alternating link loops and pins follow the chain's two tangents and sprockets.
-  const chainPoints=[],x1=rear.x,y1=rear.y,r1=.021,x2=bb.x,y2=bb.y,r2=.052,dx=x2-x1,dy=y2-y1;
-  const theta=Math.atan2(dy,dx),offset=Math.acos((r1-r2)/Math.hypot(dx,dy));
+  // Roller chain: two straight tangents and correctly wrapped pitch circles.
+  // Side plates, pins and rollers are instanced, keeping the close-up detail cheap.
+  const x1=rear.x,y1=rear.y,r1=.019,x2=bb.x,y2=bb.y,r2=.052;
+  const theta=Math.atan2(y2-y1,x2-x1),offset=Math.acos((r1-r2)/Math.hypot(x2-x1,y2-y1));
   const top=theta+offset,bottom=theta-offset;
-  for(let i=0;i<=32;i++){const a=top+(bottom+TAU-top)*(i/32);chainPoints.push(V(x1+Math.cos(a)*r1,y1+Math.sin(a)*r1,chainZ));}
-  for(let i=0;i<=48;i++){const a=bottom+(top-bottom)*(i/48);chainPoints.push(V(x2+Math.cos(a)*r2,y2+Math.sin(a)*r2,chainZ));}
-  const curve=new T.CatmullRomCurve3(chainPoints,true,'catmullrom',.02),len=curve.getLength(),links=Math.floor(len/.007),matrices=[];
-  const linkGeo=new T.TorusGeometry(.0028,.0007,5,8),obj=new T.Object3D();
-  for(let i=0;i<links;i++){const p=curve.getPointAt(i/links),tan=curve.getTangentAt(i/links);obj.position.copy(p);obj.rotation.set(i%2?Math.PI/2:0,0,Math.atan2(tan.y,tan.x));obj.scale.set(1.7,1,.9);obj.updateMatrix();matrices.push(obj.matrix.clone());}
-  batch('sprocket',linkGeo,darkSteel,matrices);
+  const at=(x,y,r,a)=>V(x+Math.cos(a)*r,y+Math.sin(a)*r,chainZ);
+  const rearTop=at(x1,y1,r1,top),frontTop=at(x2,y2,r2,top),rearBottom=at(x1,y1,r1,bottom),frontBottom=at(x2,y2,r2,bottom);
+  const straight=rearTop.distanceTo(frontTop),frontArc=(top-bottom)*r2,rearArc=(TAU-top+bottom)*r1,total=2*straight+frontArc+rearArc;
+  const links=Math.round(total/.0127/2)*2,pitch=total/links;
+  function chainPoint(distance){let d=(distance%total+total)%total;if(d<straight)return rearTop.clone().lerp(frontTop,d/straight);d-=straight;if(d<frontArc)return at(x2,y2,r2,top-d/r2);d-=frontArc;if(d<straight)return frontBottom.clone().lerp(rearBottom,d/straight);d-=straight;return at(x1,y1,r1,bottom-d/r1);}
+  const shape=new T.Shape(),half=pitch/2,pr=.0039;
+  shape.moveTo(-half,pr);shape.quadraticCurveTo(0,.0015,half,pr);shape.absarc(half,0,pr,Math.PI/2,-Math.PI/2,true);shape.quadraticCurveTo(0,-.0015,-half,-pr);shape.absarc(-half,0,pr,-Math.PI/2,-Math.PI*1.5,true);shape.closePath();
+  const plates=[],rollers=[],pins=[],o=new T.Object3D();
+  for(let i=0;i<links;i++){
+    const a=chainPoint(i*pitch),b=chainPoint((i+1)*pitch),middle=a.clone().lerp(b,.5),angle=Math.atan2(b.y-a.y,b.x-a.x);
+    for(const side of [-1,1]){o.position.copy(middle).add(V(0,0,side*(i%2?.0037:.0027)));o.rotation.set(0,0,angle);o.scale.set(a.distanceTo(b)/pitch,1,1);o.updateMatrix();plates.push(o.matrix.clone());}
+    rollers.push(rodMatrix(a.clone().add(V(0,0,-.0024)),a.clone().add(V(0,0,.0024)),.0032));
+    pins.push(rodMatrix(a.clone().add(V(0,0,-.0045)),a.clone().add(V(0,0,.0045)),.0016));
+  }
+  const plateGeometry=new T.ExtrudeGeometry(shape,{depth:.0008,bevelEnabled:false,curveSegments:5,steps:1});plateGeometry.translate(0,0,-.0004);
+  batch('sprocket',plateGeometry,darkSteel,plates).name='Chain side plates';
+  batch('sprocket',new T.CylinderGeometry(1,1,1,8),steel,rollers).name='Chain rollers';
+  batch('sprocket',new T.CylinderGeometry(1,1,1,8),steel,pins).name='Chain pins';
+  group.userData.chain={links,pitch,closedGap:chainPoint(0).distanceTo(chainPoint(total)),frontRadius:r2,rearRadius:r1};
   // Cranks: a tubular 3-piece arm on a splined spindle, or a thicker
   // 2-piece wedge-cluster arm with no separate visible pinch bolt.
   const twoPiece=c.crankModel==='two-piece',crankR=twoPiece?.0185:.014;
   for(const s of [-1,1]){
     const p=bb.clone().add(V(0,0,s*.099)),angle=s===right?-.22:Math.PI-.22;
     const end=p.clone().add(V(Math.cos(angle)*.165,Math.sin(angle)*.165,0));
-    cylinder('cranks',p,end,crankR,paints.cranks,.011);sphere('cranks',p,twoPiece?.0125:.016,paints.cranks);sphere('cranks',end,.012,paints.cranks);
+    const direction=end.clone().sub(p).normalize();
+    const arm=cylinder('cranks',p.clone().addScaledVector(direction,.009),end.clone().addScaledVector(direction,-.006),crankR,paints.cranks,.011);arm.geometry.scale(1,1,.82);
+    for(const [centre,r,holeR] of [[p,.017,.009],[end,.013,.0047]]){const eye=new T.Shape();eye.absarc(0,0,r,0,TAU,false);const hole=new T.Path();hole.absarc(0,0,holeR,0,TAU,true);eye.holes.push(hole);profile('cranks',eye,.023,paints.cranks,centre);}
     if(!twoPiece)bolt('cranks',p.clone().add(V(0,0,s*.015)),V(0,0,s),.008);
     const pedalCentre=end.clone().add(V(0,0,s*.062));
     cylinder('pedals',end,end.clone().add(V(0,0,s*.102)),.006,steel);
     const pm=c.pedalMaterial==='metal'?mat({color:c.colors.pedals,roughness:.22,metalness:.85,clearcoat:.5}):paints.pedals;
     paintedPedalMaterials.push(pm);
-    const rail=c.pedalMaterial==='metal'?.010:.015;
-    for(const z of [-.039,.039])box('pedals',pedalCentre.clone().add(V(0,0,z)),.106,rail,.010,pm);
-    for(const x of [-.049,0,.049])box('pedals',pedalCentre.clone().add(V(x,0,0)),x===0?.017:.010,rail,.087,pm);
-    const pins=[];for(const x of [-.042,-.021,.021,.042])for(const z of [-.035,.035])for(const sy of [-1,1])pins.push(rodMatrix(pedalCentre.clone().add(V(x,sy*rail*.5,z)),pedalCentre.clone().add(V(x,sy*(rail*.5+.0035),z)),.0015));batch('pedals',new T.CylinderGeometry(.94,1,1,6),c.pedalMaterial==='metal'?steel:pm,pins);
+    const rail=c.pedalMaterial==='metal'?.011:.016;
+    const outline=new T.Shape();outline.moveTo(-.046,-.048);outline.lineTo(.043,-.048);outline.quadraticCurveTo(.054,-.048,.056,-.035);outline.lineTo(.056,.034);outline.quadraticCurveTo(.054,.048,.043,.048);outline.lineTo(-.046,.048);outline.quadraticCurveTo(-.056,.045,-.056,.034);outline.lineTo(-.056,-.034);outline.quadraticCurveTo(-.056,-.048,-.046,-.048);
+    for(const x of [-1,1])for(const z of [-1,1]){
+      const hole=new T.Path(),cx=x*.030,cz=z*.024,w=.014,h=.013,r=.003;
+      hole.moveTo(cx-w+r,cz-h);hole.lineTo(cx+w-r,cz-h);hole.quadraticCurveTo(cx+w,cz-h,cx+w,cz-h+r);hole.lineTo(cx+w,cz+h-r);hole.quadraticCurveTo(cx+w,cz+h,cx+w-r,cz+h);hole.lineTo(cx-w+r,cz+h);hole.quadraticCurveTo(cx-w,cz+h,cx-w,cz+h-r);hole.lineTo(cx-w,cz-h+r);hole.quadraticCurveTo(cx-w,cz-h,cx-w+r,cz-h);hole.closePath();outline.holes.push(hole);
+    }
+    profile('pedals',outline,rail,pm,pedalCentre,[Math.PI/2,0,0]);
+    cylinder('pedals',pedalCentre.clone().add(V(0,0,-.045)),pedalCentre.clone().add(V(0,0,.045)),rail*.54,pm);
+    const pins=[];for(const x of [-.046,-.023,.023,.046])for(const z of [-.042,.042])for(const sy of [-1,1])pins.push(rodMatrix(pedalCentre.clone().add(V(x,sy*rail*.5,z)),pedalCentre.clone().add(V(x,sy*(rail*.5+.003),z)),.0013));
+    batch('pedals',new T.CylinderGeometry(.85,1,1,8),c.pedalMaterial==='metal'?steel:pm,pins).name='Pedal grip pins';
+
   }
   // Peg placement always opposite the drivetrain unless all four pegs are selected.
   const pegSides=c.pegs==='four'?[-1,1]:[-right],pegWheels=c.pegs==='rear'?[rear]:[rear,front];

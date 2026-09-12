@@ -59,15 +59,41 @@ async function projectedBounds(page){return page.evaluate(async()=>{
 });}
 async function checkFit(page,label){const b=await projectedBounds(page);check(b.left>=-1.03&&b.right<=1.03&&b.top<=1.03&&b.bottom>=-1.03,`${label}: every part, including both tyres, fits the canvas (${JSON.stringify(b)})`);}
 async function checksForModel(page){
-  const results=await page.evaluate(async()=>{const {createBike}=await import('/bike-three-model.js'),T=await import('/vendor/three.module.min.js');const inspect=async patch=>{const model=createBike(JKCrewBikeConfig.normalize(patch));await model.ready;const parts={};for(const [name,group]of Object.entries(model.parts)){const box=new T.Box3().setFromObject(group),size=box.getSize(new T.Vector3());parts[name]={size:size.toArray(),center:box.getCenter(new T.Vector3()).toArray(),meshes:group.children.length};}const fingerprint=JSON.stringify(model.configuration);model.dispose();return {parts,fingerprint,disposed:model.group.children.length===0};};return {none:await inspect({pegs:'none',brakeStyle:'none'}),right:await inspect({driveSide:'rhd',pegs:'both',brakeStyle:'front',stemStyle:'top-load'}),left:await inspect({driveSide:'lhd',pegs:'both',brakeStyle:'rear',stemStyle:'front-load'}),four:await inspect({pegs:'four',brakeStyle:'dual',barStyle:'four-piece'})};});
+  const results=await page.evaluate(async()=>{const {createBike}=await import('/bike-three-model.js'),T=await import('/vendor/three.module.min.js');const inspect=async patch=>{const model=createBike(JKCrewBikeConfig.normalize(patch));await model.ready;const parts={};for(const [name,group]of Object.entries(model.parts)){const box=new T.Box3().setFromObject(group),size=box.getSize(new T.Vector3());parts[name]={size:size.toArray(),center:box.getCenter(new T.Vector3()).toArray(),meshes:group.children.length,clampCentre:group.userData.clampCentre||null};}const fingerprint=JSON.stringify(model.configuration);model.dispose();return {parts,fingerprint,disposed:model.group.children.length===0};};return {none:await inspect({pegs:'none',brakeStyle:'none'}),right:await inspect({driveSide:'rhd',pegs:'both',brakeStyle:'front',stemStyle:'top-load'}),left:await inspect({driveSide:'lhd',pegs:'both',brakeStyle:'rear',stemStyle:'front-load'}),four:await inspect({pegs:'four',brakeStyle:'dual',barStyle:'four-piece'})};});
   for(const [name,result]of Object.entries(results)){check(result.disposed,`${name}: mesh resources can be disposed`);for(const part of ['frame','fork','bars','rims','tyres','pedals'])check(result.parts[part].size.every(n=>n>.005),`${name}/${part}: actual geometry has volume in all three axes`);}
   check(!results.none.parts.pegs&&!results.none.parts.brakes,'No-pegs/brakeless configuration removes those meshes');
   check(results.right.parts.sprocket.center[2]>0&&results.left.parts.sprocket.center[2]<0,'Drivetrain geometry moves to the selected physical side');
   check(results.right.parts.pegs.center[2]<0&&results.left.parts.pegs.center[2]>0,'Two pegs are physically opposite the drivetrain');
   check(results.four.parts.pegs.size[2]>results.right.parts.pegs.size[2]*2,'Four pegs occupy both sides of the bike');
   check(results.four.parts.brakes.meshes===results.right.parts.brakes.meshes+results.left.parts.brakes.meshes,'Independent front/rear brake meshes combine without replacing one another');
-  check(results.right.parts.stem.center.some((n,i)=>Math.abs(n-results.left.parts.stem.center[i])>.003),'Stem setup changes real attachment geometry');
+  check(results.right.parts.stem.clampCentre[1]-results.left.parts.stem.clampCentre[1]>.01,'Stem setup changes real attachment geometry');
   check(results.four.parts.bars.meshes!==results.none.parts.bars.meshes,'Four-piece bars have their own geometry');
+}
+async function componentDetailChecks(page){
+  const result=await page.evaluate(async()=>{
+    const T=await import('/vendor/three.module.min.js'),{createBike}=await import('/bike-three-model.js');
+    const results=[];
+    for(const driveSide of ['rhd','lhd'])for(const stemStyle of ['top-load','front-load']){
+      const model=createBike(JKCrewBikeConfig.normalize({driveSide,stemStyle,tyreStyle:'black'}));await model.ready;model.group.updateMatrixWorld(true);
+      const plates=model.group.getObjectByName('Chain side plates'),rollers=model.group.getObjectByName('Chain rollers'),pins=model.group.getObjectByName('Chain pins');
+      const matrix=new T.Matrix4(),nextMatrix=new T.Matrix4(),plateMatrix=new T.Matrix4();let worstGap=0;
+      for(let i=0;i<rollers.count;i++){
+        rollers.getMatrixAt(i,matrix);rollers.getMatrixAt((i+1)%rollers.count,nextMatrix);plates.getMatrixAt(i*2,plateMatrix);
+        const a=new T.Vector3().setFromMatrixPosition(matrix),b=new T.Vector3().setFromMatrixPosition(nextMatrix);
+        const start=new T.Vector3(-model.group.userData.chain.pitch/2,0,0).applyMatrix4(plateMatrix),end=new T.Vector3(model.group.userData.chain.pitch/2,0,0).applyMatrix4(plateMatrix);
+        worstGap=Math.max(worstGap,Math.hypot(start.x-a.x,start.y-a.y),Math.hypot(end.x-b.x,end.y-b.y));
+      }
+      const centre=new T.Vector3(...model.parts.stem.userData.clampCentre),ray=new T.Raycaster(centre.clone().add(new T.Vector3(0,0,-.2)),new T.Vector3(0,0,1),0,.4);
+      const blockedBore=ray.intersectObject(model.parts.stem,true).length;
+      results.push({driveSide,stemStyle,worstGap,plates:plates.count,rollers:rollers.count,pins:pins.count,blockedBore,rubberClearcoat:model.parts.grips.children[0].material.clearcoat});model.dispose();
+    }return results;
+  });
+  for(const r of result){
+    check(r.rollers>50&&r.plates===r.rollers*2&&r.pins===r.rollers,`${r.driveSide}/${r.stemStyle}: complete roller chain has two plates and a pin per roller`);
+    check(r.worstGap<.000001,`${r.driveSide}/${r.stemStyle}: every plate meets both adjacent rollers, including the closing link`);
+    equal(r.blockedBore,0,`${r.stemStyle}: the handlebar bore is physically open through the clamp`);
+    equal(r.rubberClearcoat,0,'Rubber grips do not use a glossy plastic clearcoat');
+  }
 }
 async function interaction(page){
   check(await page.locator('[data-bike-sheet]').isHidden(),'3D opens with editing controls collapsed');
@@ -166,7 +192,7 @@ async function run(){
   const errors=[];const create=async(deviceScaleFactor=1)=>{const context=await browser.newContext({viewport:{width:800,height:800},hasTouch:true,deviceScaleFactor});const page=await context.newPage();page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>new URL(route.request().url()).origin===local.url?route.continue():route.abort());await page.goto(local.url+'/fixture');await page.waitForFunction(()=>testReady);return page;};
   try{
     const page=await create();check(!local.requests.some(file=>file.startsWith('/vendor/')),'Loading the garage script alone does not download WebGL dependencies');await page.evaluate(()=>testMount());await ready(page);if(process.env.JKCREW_360_CAPTURE_ONLY){await captureAndMeasure(page);return;}
-    await checksForModel(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
+    await checksForModel(page);await componentDetailChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
     const draftBeforeLoss=await page.evaluate(()=>JSON.stringify(testDraft()));await page.evaluate(()=>testHandle.canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());await page.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await page.locator('[data-bike-3d-retry]').isVisible(),'A real GPU context loss offers a usable fallback and retry');equal(await page.evaluate(()=>JSON.stringify(testDraft())),draftBeforeLoss,'A GPU interruption preserves the exact local draft');await page.locator('[data-bike-3d-retry]').click();await ready(page);equal(await page.locator('.bike-three-canvas').count(),1,'Retry restores exactly one live renderer');await captureAndMeasure(page);
     await page.evaluate(()=>{JKCrewBikeGarage.destroy();document.querySelector('#view').innerHTML='<p>Outside the garage</p>';});equal(await page.locator('canvas.bike-three-canvas').count(),0,'Leaving the garage removes the canvas');check(await page.evaluate(()=>testMounts.every(m=>!m.resolved||m.disposed)),'Leaving the garage disposes every mounted renderer');await page.close();
     const failed=await create();await failed.route('**/bike-three-model.js*',route=>route.abort());await failed.evaluate(()=>testMount('fallback-owner'));await failed.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await failed.locator('[data-bike-3d-retry]').isVisible(),'A failed dependency offers a 360 retry and usable photo fallback');equal(await failed.locator('.bike-three-canvas').count(),0,'Failed initialisation leaves no dead canvas');equal(await failed.evaluate(()=>testCalls.filter(c=>c.method!=='get_bike_garage').length),0,'Fallback does not write account data');await failed.close();

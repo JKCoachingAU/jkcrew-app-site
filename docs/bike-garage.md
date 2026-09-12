@@ -1,4 +1,4 @@
-# JKCREW Bike Garage — 2.14.105
+# JKCREW Bike Garage — 2.14.106
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It offers an original, fully modelled 360° BMX viewer with part/colour controls, and a separate photographic studio for backgrounds and PNG export.
 
@@ -46,6 +46,8 @@ A closed inspiration section links to 13 verified real seat and component refere
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation
+
+The 2.14.106 model uses the supplied BMX reference photographs to replace open-loop chain geometry with a continuous roller chain, including instanced side plates, rollers and rivets. Both stems now have separate clamp bodies with circular handlebar bores and recessed socket bolts; the bar stays straight through its clamp. Crank eyes have spindle/pedal bores, platforms have bevelled edges and four windows, the saddle has a lower pivotal mount, and tyre blocks follow the round carcass. Rubber no longer uses a glossy clearcoat, painted parts have less metallic reflection, and machined surfaces use smooth bevel normals. Side-profile and cockpit presets frame their intended subjects. Existing config keys and saved bike data are unchanged. Geometry regressions cover chain joins all the way around both drive sides, open stem bores and rubber materials, in addition to the existing controls, saving, export and frame-scheduling checks.
 
 The 2.14.105 performance fix prevents synchronous OrbitControls change events from scheduling duplicate animation loops. A continuous spin now renders once per browser animation frame, stops rendering when idle/hidden/disposed, and uses elapsed time for auto-rotation. High-DPI motion renders at 1×; the still bike and PNG export retain the original resolution (up to 1.75×). Model geometry, materials and saved configurations are unchanged. The WebGL regression suite covers sustained rotation, repeated spin toggles, idle/disposal, draft retention, and full-resolution exports during motion. On the same local Chrome 800×800 benchmark, the former viewer submitted about 6,144 renders across two browser callbacks; the fixed viewer delivered 60 FPS with 181 renders across 181 callbacks and zero idle draw calls. These measurements are local and are not a device-wide FPS guarantee.
 
