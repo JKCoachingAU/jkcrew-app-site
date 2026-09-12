@@ -264,7 +264,7 @@
       if(fingerprint===currentFingerprint&&!backgroundError)return ready;
       currentFingerprint=fingerprint;
       if(!model?.updateColours(normalized)){
-        let next;try{next=createBike(normalized);}catch(error){currentFingerprint='';if(!model)throw error;if(isCurrent())onError?.(error);return Promise.resolve();}
+        let next;try{next=createBike(normalized,{environmentMap:scene.environment});}catch(error){currentFingerprint='';if(!model)throw error;if(isCurrent())onError?.(error);return Promise.resolve();}
         clearHighlight();const old=model;model=next;scene.add(model.group);if(old){scene.remove(old.group);old.dispose();}
       }
       const build=++buildNumber;

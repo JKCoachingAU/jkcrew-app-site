@@ -10,7 +10,7 @@ const PARTS=()=>globalThis.JKCrewBikeParts;
  * every part choice reads as a distinct, physically plausible real BMX
  * shape rather than a re-skin. Geometry, materials and view are separate
  * from saved config. */
-export function createBike(configuration) {
+export function createBike(configuration, {environmentMap=null}={}) {
   let c=globalThis.JKCrewBikeConfig.normalize(configuration);
   const parts=PARTS();
   const frameModel=parts?.frameById?.[c.frameModel]||{rear:[-.495,.266],front:[.457,.266],bb:[-.16,.285],seat:[-.225,.515],headLow:[.350,.560],headTop:[.324,.660]};
@@ -44,10 +44,12 @@ export function createBike(configuration) {
   const microNoise=new T.CanvasTexture(noiseCanvas);microNoise.wrapS=microNoise.wrapT=T.RepeatWrapping;microNoise.repeat.set(26,26);textures.add(microNoise);
 
   const paints={},paintedPedalMaterials=[],seatSeamMaterials=[];
+  // Chrome uses the viewer-owned reflection map so its polish can be brighter
+  // than the surrounding paint without changing the scene lighting.
   for(const [key,color] of Object.entries(c.colors)){
     const finish=c.finishes[key]||'matte';
     const brushed=finish==='raw'&&metalParts.has(key);
-    paints[key]=finish==='chrome'?mat({color:'#e6ebf0',metalness:1,roughness:.095,envMapIntensity:1.12,clearcoat:.25,clearcoatRoughness:.06}):
+    paints[key]=finish==='chrome'?mat({color:'#e6ebf0',metalness:1,roughness:.055,envMap:environmentMap,envMapIntensity:1.2,clearcoat:.25,clearcoatRoughness:.06}):
       finish==='raw'?mat({color:'#969da1',metalness:1,roughness:.26,envMapIntensity:1,anisotropy:brushed?.6:0,anisotropyRotation:Math.PI/2}):
       finish==='jetfuel'?mat({color:'#bab4c4',metalness:1,roughness:.16,iridescence:1,iridescenceIOR:1.6,iridescenceThicknessRange:[180,580],clearcoat:.5,clearcoatRoughness:.12}):
       mat({color,metalness:metalParts.has(key)?.12:0,roughness:finish==='matte'?.68:(key==='seat'?.82:.30),clearcoat:finish==='matte'?0:metalParts.has(key)?.65:0,clearcoatRoughness:.20,

@@ -49,6 +49,8 @@ Real-parts shopping links and frame/fork geometry selectors are hidden. The gara
 
 ## Validation
 
+Release 2.14.120 sharpens chrome reflections and enables a stronger chrome-only reflection intensity using the existing viewer-owned environment texture. Other finishes and lighting remain unchanged. Studio and Workshop PNGs were visually compared; the render uses the same number of draw calls, triangles and textures.
+
 Release 2.14.119 displays the actual Street, Skatepark, Workshop and Rooftop photographs in the shared 3D viewer and PNG export. A transparent shadow receiver preserves the photo floor, and the background is cropped without distortion to the camera aspect. Scene images load only on demand, are retained for this viewer, and are disposed on exit. Export waits for scene loading and PNG decoding; failed loads keep Save disabled and offer Retry without replacing the current bike. The focused `tests/bike-backgrounds.cjs` suite checks source-photo pixels, preview/export parity, mobile and desktop, delayed scene changes and load-failure recovery.
 
 Release 2.14.107 removes the frame-geometry and fork-model selectors, per-part shop references, seat-inspiration shop links and real-parts shopping section. Frame and fork colour/finish controls remain. Existing saved geometry values are preserved for compatibility, and Surprise me no longer changes those hidden values.
