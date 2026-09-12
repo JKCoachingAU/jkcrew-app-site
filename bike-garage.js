@@ -338,6 +338,13 @@ const JKCrewBikeGarage = (() => {
       let handle;
       handle=JKCrewBikePreview.mount({
         configuration:copy(config),name:name.trim()||'My dream bike',isCurrent:valid,
+        capture:bike3D?async snapshot=>{
+          const source=bike3D;
+          if(!source||!valid())throw new Error('The bike preview has closed.');
+          await source.update(snapshot);
+          if(source!==bike3D||!valid())throw new Error('The bike preview has changed.');
+          return source.exportBlob({width:2048,height:1365,fit:true});
+        }:null,
         onBackgroundChange(background){
           if(!valid()||busy||typeof background!=='string')return null;
           const normalized=normalize({...config,background});

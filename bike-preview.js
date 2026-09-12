@@ -72,7 +72,7 @@ const JKCrewBikePreview = (() => {
       return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('The photo could not be saved.')),'image/png'));
     } finally {URL.revokeObjectURL(url);}
   }
-  function mount({configuration,name='My dream bike',isCurrent=()=>true,onBackgroundChange=()=>null,onClose=()=>{}}={}) {
+  function mount({configuration,name='My dream bike',isCurrent=()=>true,capture=null,onBackgroundChange=()=>null,onClose=()=>{}}={}) {
     let config=JKCrewBikeConfig.normalize(configuration),alive=true,sequence=0,photoFile=null,fileUrl='',sharing=false;
     let zoom=1,rotation=0,panX=0,panY=0,gesture=null;
     const pointers=new Map(),controller=new AbortController(),signal=controller.signal,returnFocus=document.activeElement;
@@ -104,17 +104,26 @@ const JKCrewBikePreview = (() => {
       const mine=++sequence,snapshot=JKCrewBikeConfig.normalize(config);
       photoFile=null;exportButton.disabled=true;downloadButton.hidden=true;retry.hidden=true;
       if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl='';
-      art.setAttribute('aria-busy','true');message('Preparing your photo…');
+      art.replaceChildren();art.setAttribute('aria-busy','true');message('Preparing your photo…');
       try {
-        await JKCrewBikeArt.prepare(snapshot);
-        const scene=sceneFor(snapshot.background);
-        if(scene.url)await inlineAsset(scene.url,signal);
-        if(!current()||mine!==sequence)return;
-        const markup=renderScene(snapshot,{idPrefix:'garage-photo-'+mine});art.innerHTML=markup;art.setAttribute('aria-busy','false');
-        const blob=await pngFromSvg(markup,signal);
+        let blob;
+        if(capture){
+          // Use the same model as the 360 viewer; never substitute older artwork
+          // if capturing the current bike fails.
+          blob=await capture(snapshot);
+        }else{
+          await JKCrewBikeArt.prepare(snapshot);
+          const scene=sceneFor(snapshot.background);
+          if(scene.url)await inlineAsset(scene.url,signal);
+          if(!current()||mine!==sequence)return;
+          const markup=renderScene(snapshot,{idPrefix:'garage-photo-'+mine});art.innerHTML=markup;
+          blob=await pngFromSvg(markup,signal);
+        }
         if(!current()||mine!==sequence)return;
         const filename=(String(name).trim().replace(/[^a-z0-9_-]+/gi,'-').slice(0,50)||'my-dream-bike')+'-jkcrew.png';
         photoFile=new File([blob],filename,{type:'image/png'});fileUrl=URL.createObjectURL(blob);exportButton.disabled=false;
+        if(capture){const image=document.createElement('img');image.src=fileUrl;image.alt=name+' — your finished bike';image.dataset.bikeModelPhoto='';art.replaceChildren(image);}
+        art.setAttribute('aria-busy','false');
         message('Photo ready · High-resolution PNG');
       } catch(error) {
         if(!current()||mine!==sequence)return;

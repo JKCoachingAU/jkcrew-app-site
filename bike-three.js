@@ -176,16 +176,16 @@
       }
       flightFrame=requestAnimationFrame(step);
     }
-    function fitDistance(yaw,polar){
+    function fitDistance(yaw,polar,viewCamera=camera,viewTarget=controls.target,updateLimits=true){
       if(!model)return 2.5;
       const direction=new T.Vector3().setFromSpherical(new T.Spherical(1,polar,yaw));
       const horizontal=new T.Vector3().crossVectors(new T.Vector3(0,1,0),direction).normalize(),vertical=new T.Vector3().crossVectors(direction,horizontal).normalize();
-      const tanVertical=Math.tan(T.MathUtils.degToRad(camera.fov)*.5),tanHorizontal=tanVertical*camera.aspect;
+      const tanVertical=Math.tan(T.MathUtils.degToRad(viewCamera.fov)*.5),tanHorizontal=tanVertical*viewCamera.aspect;
       let distance=1.13;
       model.group.updateMatrixWorld(true);const matrix=new T.Matrix4(),instance=new T.Matrix4();
       model.group.traverse(mesh=>{if(!mesh.isMesh)return;mesh.geometry.computeBoundingBox();const box=mesh.geometry.boundingBox,count=mesh.isInstancedMesh?mesh.count:1;
         for(let i=0;i<count;i++){matrix.copy(mesh.matrixWorld);if(mesh.isInstancedMesh){mesh.getMatrixAt(i,instance);matrix.multiply(instance);}
-          for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const delta=new T.Vector3(x,y,z).applyMatrix4(matrix).sub(controls.target),radius=Math.hypot(delta.x,delta.z),sine=Math.sin(polar),cosine=Math.cos(polar);
+          for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const delta=new T.Vector3(x,y,z).applyMatrix4(matrix).sub(viewTarget),radius=Math.hypot(delta.x,delta.z),sine=Math.sin(polar),cosine=Math.cos(polar);
             // Fit the complete horizontal orbit, including the near tyre in front/rear views.
             const across=radius*Math.hypot(1.10/tanHorizontal,sine)+delta.y*cosine;
             const near=Math.abs(delta.y*sine-radius*cosine)*1.10/tanVertical+delta.y*cosine+radius*sine;
@@ -193,7 +193,7 @@
             distance=Math.max(distance,across,near,far);}
         }
       });
-      controls.maxDistance=Math.max(4.6,distance*2.2);
+      if(updateLimits)controls.maxDistance=Math.max(4.6,distance*2.2);
       return distance;
     }
     // Every named camera view (see CAMERA_PRESETS) resolves to a concrete
@@ -290,7 +290,34 @@
     controls.addEventListener('end',()=>requestDraw(24));
     const handle={canvas,ready,update,selectPart:selectedPart,getView,setView,resetView,setCameraPreset,setAutoRotate,
       getStats:()=>({renderedFrames,pixelRatio:renderer.getPixelRatio(),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures}),
-      async exportBlob({type='image/png',quality=.94}={}){await ready;if(disposed||!isCurrent())throw new Error('The bike preview has closed.');const ratio=renderer.getPixelRatio();renderer.setPixelRatio(stillPixelRatio);draw();return new Promise((resolve,reject)=>canvas.toBlob(blob=>{if(!disposed){renderer.setPixelRatio(ratio);requestDraw();}blob?resolve(blob):reject(new Error('The image could not be created.'));},type,quality));},
+      async exportBlob({type='image/png',quality=.94,width,height,fit=false}={}){
+        await ready;if(disposed||!isCurrent())throw new Error('The bike preview has closed.');
+        const size=renderer.getSize(new T.Vector2()),ratio=renderer.getPixelRatio();
+        const explicitSize=Number.isFinite(width)&&Number.isFinite(height)&&width>0&&height>0;
+        const output=document.createElement('canvas');
+        output.width=explicitSize?Math.min(4096,Math.round(width)):Math.floor(size.x*stillPixelRatio);
+        output.height=explicitSize?Math.min(4096,Math.round(height)):Math.floor(size.y*stillPixelRatio);
+        const context=output.getContext('2d');if(!context)throw new Error('This browser could not create the photo.');
+        const photoCamera=camera.clone();photoCamera.aspect=output.width/output.height;photoCamera.updateProjectionMatrix();
+        if(fit){
+          const view=getView(),distance=fitDistance(view.yaw,view.polar,photoCamera,target,false);
+          photoCamera.position.copy(target).add(new T.Vector3().setFromSpherical(new T.Spherical(distance,view.polar,view.yaw)));
+          photoCamera.lookAt(target);
+        }
+        const highlights=highlightMeshes.map(mesh=>[mesh,mesh.visible]);
+        try{
+          for(const [mesh]of highlights)mesh.visible=false;
+          renderer.setPixelRatio(1);renderer.setSize(output.width,output.height,false);
+          renderer.render(scene,photoCamera);
+          // Copy synchronously: later scene changes cannot alter this photo,
+          // and the live canvas/camera are restored before PNG encoding starts.
+          context.drawImage(canvas,0,0);
+        }finally{
+          for(const [mesh,visible]of highlights)mesh.visible=visible;
+          renderer.setPixelRatio(ratio);renderer.setSize(size.x,size.y,false);draw();
+        }
+        return new Promise((resolve,reject)=>output.toBlob(blob=>blob?resolve(blob):reject(new Error('The image could not be created.')),type,quality));
+      },
       dispose(){if(disposed)return;disposed=true;buildNumber++;cancelFlight();if(hoverFrame)cancelAnimationFrame(hoverFrame);if(frame)cancelAnimationFrame(frame);resizeObserver.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',pointerCancel);canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('webglcontextlost',lost);document.removeEventListener('visibilitychange',visibility);clearHighlight();highlightMaterial.dispose();model?.dispose();clearScenery();if(groundMapTexture)groundMapTexture.dispose();groundGeometry.dispose();groundMaterial.dispose();contactTexture.dispose();contactMaterial.dispose();contactGeometry.dispose();key.shadow.dispose();environment.dispose();renderer.renderLists.dispose();renderer.dispose();renderer.forceContextLoss();canvas.remove();scene.clear();}
     };
     failCleanup=()=>handle.dispose();

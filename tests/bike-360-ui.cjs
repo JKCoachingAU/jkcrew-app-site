@@ -163,6 +163,44 @@ async function optionUpdates(page){
   }
   await part(page,'brakes','Front end');await page.locator('[data-bike-brake="front"]').check();await page.locator('[data-bike-brake="rear"]').check();await settle(page);equal(await page.evaluate(()=>testDraft().configuration.brakeStyle),'dual','Both independent brake controls update the live model configuration');await closeSheet(page);
 }
+async function photoSourceChecks(page){
+  await closeSheet(page);await setView(page,{yaw:2.6,polar:1.32});
+  const before=await page.evaluate(()=>({view:testHandle.getView(),width:testHandle.canvas.width,height:testHandle.canvas.height,config:JSON.stringify(testDraft().configuration)}));
+  await page.locator('[data-bike-preview]').click();
+  const photo=page.locator('[data-bike-model-photo]');await photo.waitFor();
+  const readPhoto=async()=>PNG.sync.read(Buffer.from(await photo.evaluate(async image=>{await image.decode();const blob=await fetch(image.src).then(r=>r.blob());return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(blob);});}),'base64'));
+  const readModel=async()=>PNG.sync.read(Buffer.from(await page.evaluate(async()=>{const blob=await testHandle.exportBlob({width:2048,height:1365,fit:true});return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(blob);});}),'base64'));
+  const initial=await readPhoto();
+  equal([initial.width,initial.height],[2048,1365],'Photo Studio captures a high-resolution 3D bike');
+  equal(hash(initial),hash(await readModel()),'The photo pixels match the updated 360 model with customised parts and viewing angle');
+  equal(await page.locator('[data-bike-preview-art] svg').count(),0,'The live photo contains no older SVG bike');
+  await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false}));
+  const downloadPromise=page.waitForEvent('download');await page.locator('[data-bike-export]').click();const download=await downloadPromise;
+  equal(hash(PNG.sync.read(fs.readFileSync(await download.path()))),hash(initial),'The downloaded PNG is exactly the bike shown in Photo Studio');
+  await page.locator('[data-bike-scene="street"]').click();await photo.waitFor();
+  const street=await readPhoto();check(hash(street)!==hash(initial),'Changing the scene updates the photo');
+  equal(hash(street),hash(await readModel()),'Scene changes retain the same actual 3D bike and background in both views');
+  equal(await page.evaluate(()=>testDraft().configuration.background),'street','The selected scene persists in the draft');
+  await page.screenshot({path:'/tmp/bike-360-photo-studio.png'});
+  await page.locator('[data-bike-preview-close]').click();await settle(page);
+  sameView(await view(page),before.view,'Photo export preserves the builder camera and zoom');
+  equal(await page.evaluate(()=>[testHandle.canvas.width,testHandle.canvas.height]),[before.width,before.height],'High-resolution capture restores the live drawing buffer');
+  equal(await page.evaluate(()=>{const c={...testDraft().configuration};c.background='studio';return JSON.stringify(c);}),before.config,'Photo export preserves every part and colour');
+  // A GPU/export failure must offer retry instead of silently displaying the old bike.
+  await page.evaluate(()=>{window.testExport=testHandle.exportBlob;testHandle.exportBlob=async()=>{throw new Error('Simulated capture failure');};});
+  await page.locator('[data-bike-preview]').click();await page.locator('[data-bike-preview-retry]').waitFor();
+  equal(await page.locator('[data-bike-preview-art] svg,[data-bike-model-photo]').count(),0,'Capture failure never substitutes the old bike');
+  check(await page.locator('[data-bike-export]').isDisabled(),'A failed photo cannot be saved');
+  await page.evaluate(()=>testHandle.exportBlob=testExport);await page.locator('[data-bike-preview-retry]').click();await photo.waitFor();
+  equal(hash(await readPhoto()),hash(await readModel()),'Retry recovers the correct 3D photo');
+  await page.locator('[data-bike-preview-close]').click();
+  // A late capture cannot resurrect a closed photo dialog.
+  await page.evaluate(()=>{window.testCaptureRelease=null;testHandle.exportBlob=async opts=>{await new Promise(resolve=>window.testCaptureRelease=resolve);return testExport(opts);};});
+  await page.locator('[data-bike-preview]').click();await page.waitForFunction(()=>testCaptureRelease);
+  await page.locator('[data-bike-preview-close]').click();await page.evaluate(()=>{testHandle.exportBlob=testExport;testCaptureRelease();});await settle(page);
+  equal(await page.locator('.bike-photo-preview').count(),0,'Closing during capture prevents stale photo UI');
+  console.log('PASS: matching 3D/photo pixels, PNG download, scenes, camera restoration and capture recovery.');
+}
 async function captureAndMeasure(page){
   await page.setViewportSize({width:390,height:844});await settle(page);await resetView(page);await part(page,'frame','Frame');
   const timing=await page.evaluate(async()=>{const updates=[];for(const value of ['#428CFF','#F26879','#F1F4F8']){const start=performance.now();document.querySelector('[data-bike-colour="'+value+'"]').click();await testLastUpdate;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));updates.push(Math.round(performance.now()-start));}return {cold3DLoadMs:Math.round(testMounts[0].loadMs),colourEditsMs:updates,stats:testHandle.getStats()};});
@@ -211,7 +249,7 @@ async function run(){
     equal(await page.locator('[data-bike-view-toggle]').count(),0,'The updated 360 bike is the default without a photographic view switch');
     equal(await page.locator('.bike-three-canvas').count(),1,'Opening the builder starts exactly one 3D renderer');
     if(process.env.JKCREW_360_CAPTURE_ONLY){await captureAndMeasure(page);return;}
-    await checksForModel(page);await componentDetailChecks(page);await assemblyChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
+    await checksForModel(page);await componentDetailChecks(page);await assemblyChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);await photoSourceChecks(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
     const draftBeforeLoss=await page.evaluate(()=>JSON.stringify(testDraft()));await page.evaluate(()=>testHandle.canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());await page.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await page.locator('[data-bike-3d-retry]').isVisible(),'A real GPU context loss offers a usable fallback and retry');equal(await page.evaluate(()=>JSON.stringify(testDraft())),draftBeforeLoss,'A GPU interruption preserves the exact local draft');await page.locator('[data-bike-3d-retry]').click();await ready(page);equal(await page.locator('.bike-three-canvas').count(),1,'Retry restores exactly one live renderer');await captureAndMeasure(page);
     await page.evaluate(()=>{JKCrewBikeGarage.destroy();document.querySelector('#view').innerHTML='<p>Outside the garage</p>';});equal(await page.locator('canvas.bike-three-canvas').count(),0,'Leaving the garage removes the canvas');check(await page.evaluate(()=>testMounts.every(m=>!m.resolved||m.disposed)),'Leaving the garage disposes every mounted renderer');await page.close();
     const failed=await create();await failed.route('**/bike-three-model.js*',route=>route.abort());await failed.evaluate(()=>testMount('fallback-owner'));await failed.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await failed.locator('[data-bike-3d-retry]').isVisible(),'A failed dependency offers a 360 retry and usable photo fallback');equal(await failed.locator('.bike-three-canvas').count(),0,'Failed initialisation leaves no dead canvas');equal(await failed.evaluate(()=>testCalls.filter(c=>c.method!=='get_bike_garage').length),0,'Fallback does not write account data');await failed.close();
