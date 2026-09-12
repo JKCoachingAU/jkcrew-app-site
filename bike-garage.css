@@ -352,3 +352,9 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-part-reference{display:flex;flex-direction:column;gap:2px}
 .bike-camera-menu[open]>summary{background:var(--bike-selected,#e1efed)}
 @media(prefers-reduced-motion:reduce){.bike-garage .bike-swatch,.bike-garage .bike-finishes button,.bike-garage .bike-style-options button,.bike-garage .bike-seat-tile,.bike-saved-card,.bike-shop-grid a{transition:none!important}.bike-garage .bike-swatch:hover,.bike-garage .bike-swatch:active,.bike-garage .bike-finishes button:hover,.bike-garage .bike-style-options button:hover,.bike-garage .bike-finishes button:active,.bike-garage .bike-style-options button:active,.bike-saved-card:hover,.bike-shop-grid a:hover{transform:none!important}}
+
+/* Keep view selection beside the photo action, clear of the editing toolbar. */
+.bike-stage-bottom .bike-view-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;max-width:none;padding:0;background:transparent;pointer-events:auto}
+.bike-garage .bike-view-actions [data-bike-view-toggle]{flex:0 0 auto;width:auto;min-height:44px;padding:0 12px;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap}
+.bike-stage-bottom>div:first-child{flex:0 1 auto;min-width:0}
+@media(max-height:440px) and (orientation:landscape){.bike-stage-bottom .bike-view-actions{display:flex;margin-left:auto}}

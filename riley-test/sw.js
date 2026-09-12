@@ -1,36 +1,36 @@
 const CACHE_PREFIX = "jkcrew-riley-shell-";
-const RELEASE_VERSION = "2.14.108";
+const RELEASE_VERSION = "2.14.109";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.108",
-  "./app.js?v=2.14.108",
-  "./daily-completion.js?v=2.14.108",
-  "./daily-completion.css?v=2.14.108",
-  "./progress-sharing.js?v=2.14.108",
-  "./progress-sharing.css?v=2.14.108",
-  "./battle-rematches.js?v=2.14.108",
-  "./battle-rematches.css?v=2.14.108",
-  "./bike-parts-catalog.js?v=2.14.108",
-  "./bike-config.js?v=2.14.108",
-  "./bike-seat-designs.js?v=2.14.108",
-  "./bike-photo-masks.js?v=2.14.108",
-  "./bike-renderer.js?v=2.14.108",
-  "./bike-preview.js?v=2.14.108",
-  "./bike-preview.css?v=2.14.108",
-  "./bike-three.js?v=2.14.108",
-  "./bike-garage.js?v=2.14.108",
-  "./bike-garage.css?v=2.14.108",
-  "./manifest.webmanifest?v=2.14.108",
+  "./styles.css?v=2.14.109",
+  "./app.js?v=2.14.109",
+  "./daily-completion.js?v=2.14.109",
+  "./daily-completion.css?v=2.14.109",
+  "./progress-sharing.js?v=2.14.109",
+  "./progress-sharing.css?v=2.14.109",
+  "./battle-rematches.js?v=2.14.109",
+  "./battle-rematches.css?v=2.14.109",
+  "./bike-parts-catalog.js?v=2.14.109",
+  "./bike-config.js?v=2.14.109",
+  "./bike-seat-designs.js?v=2.14.109",
+  "./bike-photo-masks.js?v=2.14.109",
+  "./bike-renderer.js?v=2.14.109",
+  "./bike-preview.js?v=2.14.109",
+  "./bike-preview.css?v=2.14.109",
+  "./bike-three.js?v=2.14.109",
+  "./bike-garage.js?v=2.14.109",
+  "./bike-garage.css?v=2.14.109",
+  "./manifest.webmanifest?v=2.14.109",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.108",
+  "./icons/badges/prestige-01.png?v=2.14.109",
 ];
 
 // Public bike photos are fetched only when the garage needs them, then cached.
@@ -65,7 +65,7 @@ const BIKE_PHOTO_ASSETS = [
 
 // 3D code is optional public content, cached after opening Bike Garage.
 const BIKE_3D_ASSETS = [
-  "./bike-three-model.js?v=2.14.108",
+  "./bike-three-model.js?v=2.14.109",
   "./vendor/three.module.min.js",
   "./vendor/three.core.min.js",
   "./vendor/OrbitControls.js",

@@ -1,6 +1,6 @@
-# JKCREW Bike Garage — 2.14.108
+# JKCREW Bike Garage — 2.14.109
 
-A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It offers an original, fully modelled 360° BMX viewer with part/colour controls, and a separate photographic studio for backgrounds and PNG export.
+A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It opens with the original photographic BMX and live part/colour controls. A compact **360° view** button opens the rotating model; **Photo view** returns to the photograph. Switching views keeps the current design and undo history, cancels stale loads and releases the outgoing GPU renderer. WebGL loads only when requested. Photo Studio remains available for backgrounds and PNG export.
 
 The bike is the main surface in an immersive workspace. A compact bottom dock opens Paint, Front end, Wheels or Details; all part controls are closed on entry. Tapping the active category again, Hide controls, or Escape closes the options. The sheet has one bounded scroller and remembers its position when reopened. The name and Save action remain available. App top/bottom bars make room for the viewer only while Bike Garage is open; Back returns to normal navigation. Safe-area padding and visual-viewport sizing support phones, tablets, landscape and the onscreen keyboard.
 
@@ -22,7 +22,7 @@ Each account has three private saved slots. Explicit saving keeps designs across
 
 If a save succeeds remotely but its reply is lost, refreshing recovers that exact saved build without duplicating it or discarding newer local edits. Requests have bounded timeouts, and refreshing cannot race an in-progress save. A memory draft remains available during the current visit when browser storage is blocked.
 
-A closed inspiration section links to 13 verified real seat and component references from Albe’s, Dan’s Comp and LUXBMX. The garage remains a visual customiser; its original looks do not imply exact branded parts, fit or availability. There is no checkout. It has no points, XP, reward, training or invitation write paths. The existing share-card feature remains disabled.
+Real-parts shopping links and frame/fork geometry selectors are hidden. The garage remains a visual customiser; its original looks do not imply exact branded parts, fit or availability. There is no checkout. It has no points, XP, reward, training or invitation write paths. The existing share-card feature remains disabled.
 
 ## Integration
 

@@ -45,6 +45,7 @@ const JKCrewBikeGarage = (() => {
     let alive = true, config = copy(defaults), name = 'My dream bike', slot = null, revision = 0, savedFingerprint = '', pendingSave = null, history = [], future = [], group = 'Frame', part = 'frame';
     let builds = [], loaded = false, loading = false, busy = false, loadSequence = 0, status = '', statusKind = '', draftAvailable = true, fullscreen = null;
     let controlsOpen = false, optionsScroll = 0;
+    let selectedView = 'photo';
     let bike3D = null, loading3D = false, failed3D = false, view3DRequest = 0, timer3D = 0;
     let photoSequence = 0, photoReady = false, seatCategory = 'All', seatPage = 0, layoutFrame = 0;
     const selectedParts = Object.fromEntries(Object.entries(groups).map(([label, parts]) => [label, parts[0]]));
@@ -102,6 +103,10 @@ const JKCrewBikeGarage = (() => {
       root.querySelector('[data-bike-new]').disabled = busy;
       root.querySelector('[data-bike-preview]').disabled = busy || !photoReady;
       root.querySelectorAll('[data-bike-colour],[data-bike-style],[data-bike-finish],[data-bike-option],[data-bike-seat-design],[data-bike-brake],input[type="color"]').forEach(button => button.disabled = busy || !photoReady);
+      const viewToggle=root.querySelector('[data-bike-view-toggle]');
+      viewToggle.textContent=selectedView==='3d'?'Photo view':'360° view';
+      viewToggle.setAttribute('aria-label',selectedView==='3d'?'Switch to photographic view':'Switch to 360° view');
+      viewToggle.disabled=busy;
       root.querySelectorAll('[data-bike-camera],[data-bike-autorotate]').forEach(button => button.disabled = busy || !bike3D);
       root.querySelectorAll('[data-bike-load],[data-bike-remove]').forEach(button => button.disabled = busy || !loaded);
       root.querySelectorAll('[data-bike-reload],[data-bike-retry]').forEach(button => button.disabled = busy || loading);
@@ -109,7 +114,8 @@ const JKCrewBikeGarage = (() => {
     }
     function paint() {
       if(!valid())return;
-      if(!globalThis.JKCrewBike3D||failed3D){paintPhoto();return;}
+      if(selectedView==='photo'||failed3D){paintPhoto();return;}
+      if(!globalThis.JKCrewBike3D){fallback3D();return;}
       const artwork=root.querySelector('[data-bike-art]'),loading=root.querySelector('[data-bike-photo-status]');
       root.querySelector('[data-bike-design-title]').textContent=name.trim()||'My dream bike';
       root.querySelector('[data-bike-frame-colour]').style.backgroundColor=config.colors.frame;
@@ -128,9 +134,23 @@ const JKCrewBikeGarage = (() => {
         root.querySelector('[data-bike-camera-menu]').hidden=false;updateStatus();
       }).catch(()=>{if(valid()&&request===view3DRequest)fallback3D();});
     }
+    function switchView(view) {
+      if(!valid()||busy)return;
+      // Invalidate both async loaders before replacing their shared surface.
+      ++view3DRequest;++photoSequence;clearTimeout(timer3D);
+      bike3D?.dispose();bike3D=null;loading3D=false;failed3D=false;
+      selectedView=view;photoReady=false;
+      const artwork=root.querySelector('[data-bike-art]');
+      artwork.innerHTML='';artwork.dataset.view=view;
+      const cameraMenu=root.querySelector('[data-bike-camera-menu]');
+      cameraMenu.hidden=true;cameraMenu.open=false;
+      root.querySelector('[data-bike-autorotate]').checked=false;
+      root.querySelector('[data-bike-3d-retry]').hidden=true;
+      paint();
+    }
     function fallback3D() {
       if(!valid()||failed3D)return;
-      failed3D=true;loading3D=false;++view3DRequest;clearTimeout(timer3D);bike3D?.dispose();bike3D=null;
+      failed3D=true;selectedView='photo';loading3D=false;++view3DRequest;clearTimeout(timer3D);bike3D?.dispose();bike3D=null;
       root.querySelector('[data-bike-art]').dataset.view='photo';
       root.querySelector('[data-bike-camera-menu]').hidden=true;root.querySelector('[data-bike-camera-menu]').open=false;
       root.querySelector('[data-bike-3d-retry]').hidden=false;
@@ -141,6 +161,7 @@ const JKCrewBikeGarage = (() => {
       const sequence = ++photoSequence;
       photoReady = JKCrewBikeArt.isReady(config);
       const artwork = root.querySelector('[data-bike-art]');
+      artwork.dataset.view='photo';
       const photoStatus = root.querySelector('[data-bike-photo-status]');
       artwork.setAttribute('aria-busy', String(!photoReady));
       photoStatus.hidden = photoReady;
@@ -335,7 +356,7 @@ const JKCrewBikeGarage = (() => {
     }
     root.innerHTML=`<section class="bike-garage" data-bike-workshop data-controls-open="false">
       <header class="bike-garage-header"><div class="bike-header-title"><button type="button" class="bike-back" data-bike-back aria-label="Back to JKCREW">←</button><div><h1>Bike Garage</h1></div></div><button type="button" class="bike-collection-open" data-bike-collection-open>My garage <span data-bike-collection-count>0</span></button></header>
-      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art aria-busy="true"></div><div class="bike-photo-status" data-bike-photo-status role="status"><span>Loading your bike…</span></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><button type="button" data-bike-preview aria-label="Open photo studio" title="Backgrounds & save photo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 5l1-2h6l1 2h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><circle cx="12" cy="12" r="4"/></svg></button></div><div class="bike-edit-tools"><button type="button" data-bike-undo aria-label="Undo last change">↶ <span>Undo</span></button><button type="button" data-bike-redo aria-label="Redo change">↷ <span>Redo</span></button><button type="button" data-bike-shuffle aria-label="Surprise me" title="Surprise me">✦</button><details class="bike-camera-menu" data-bike-camera-menu hidden><summary aria-label="Camera views" title="Camera views">⌖</summary><div class="bike-camera-picker" aria-label="Camera views">${(globalThis.JKCrewBike3D?.cameraPresets||[]).map(preset=>`<button type="button" data-bike-camera="${preset.id}">${html(preset.label)}</button>`).join('')}<label class="bike-camera-autorotate"><input type="checkbox" data-bike-autorotate><span>Showroom auto-rotate</span></label></div></details><button type="button" data-bike-3d-retry hidden aria-label="Retry 360° view" title="Retry 360° view">↻</button></div></div>
+      <div class="bike-workshop-grid"><div class="bike-stage"><div class="bike-stage-top"><span><i data-bike-frame-colour></i> CUSTOM BUILD</span><button type="button" data-bike-new>+ Blank bike</button></div><div class="bike-stage-art" data-bike-art aria-busy="true"></div><div class="bike-photo-status" data-bike-photo-status role="status"><span>Loading your bike…</span></div><div class="bike-stage-bottom"><div><h2 data-bike-design-title></h2><span data-bike-part-hint></span></div><div class="bike-view-actions"><button type="button" data-bike-view-toggle aria-label="Switch to 360° view">360° view</button><button type="button" data-bike-preview aria-label="Open photo studio" title="Backgrounds & save photo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 5l1-2h6l1 2h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><circle cx="12" cy="12" r="4"/></svg></button></div></div><div class="bike-edit-tools"><button type="button" data-bike-undo aria-label="Undo last change">↶ <span>Undo</span></button><button type="button" data-bike-redo aria-label="Redo change">↷ <span>Redo</span></button><button type="button" data-bike-shuffle aria-label="Surprise me" title="Surprise me">✦</button><details class="bike-camera-menu" data-bike-camera-menu hidden><summary aria-label="Camera views" title="Camera views">⌖</summary><div class="bike-camera-picker" aria-label="Camera views">${(globalThis.JKCrewBike3D?.cameraPresets||[]).map(preset=>`<button type="button" data-bike-camera="${preset.id}">${html(preset.label)}</button>`).join('')}<label class="bike-camera-autorotate"><input type="checkbox" data-bike-autorotate><span>Showroom auto-rotate</span></label></div></details><button type="button" data-bike-3d-retry hidden aria-label="Retry 360° view" title="Retry 360° view">↻</button></div></div>
       <section class="bike-controls" aria-label="Customise your bike"><div class="bike-options-sheet" id="bike-options-sheet" data-bike-sheet hidden><div class="bike-sheet-heading"><div data-bike-part-navigation></div><button type="button" data-bike-sheet-close aria-label="Hide controls">⌄</button></div><div class="bike-control-scroll" data-bike-controls tabindex="0" aria-label="Part options"></div></div><div class="bike-control-navigation" data-bike-navigation></div></section></div>
       <div class="bike-save-bar"><label class="bike-name-field"><span>NAME YOUR BUILD</span><input type="text" maxlength="40" data-bike-name value="${html(name)}" autocomplete="off"></label><div class="bike-save-actions"><button type="button" class="bike-save-copy" data-bike-retry hidden aria-label="Refresh garage" title="Refresh garage">↻</button><button type="button" class="bike-save-copy" data-bike-save-copy hidden aria-label="Save as new" title="Save as new">⧉</button><button type="button" class="bike-primary" data-bike-save>Save to garage</button></div><p class="bike-save-status" data-bike-status role="status" aria-live="polite"></p></div>
       <dialog class="bike-collection-dialog" aria-label="My bike garage"><header><div><span class="bike-eyebrow">YOUR COLLECTION</span><h2>Saved bikes</h2></div><button type="button" data-bike-collection-close aria-label="Close my garage">×</button></header><div class="bike-collection-body"><p class="bike-collection-status" data-bike-collection-status role="status" aria-live="polite" hidden></p>
@@ -350,7 +371,8 @@ const JKCrewBikeGarage = (() => {
       if(button.hasAttribute('data-bike-collection-close'))return closeCollection();
       if(button.hasAttribute('data-bike-photo-retry'))return paint();
       if(button.dataset.bikeCamera){bike3D?.setCameraPreset(button.dataset.bikeCamera);root.querySelector('[data-bike-camera-menu]').open=false;return;}
-      if(button.hasAttribute('data-bike-3d-retry')){failed3D=false;button.hidden=true;root.querySelector('[data-bike-art]').innerHTML='';return paint();}
+      if(button.hasAttribute('data-bike-view-toggle'))return switchView(selectedView==='3d'?'photo':'3d');
+      if(button.hasAttribute('data-bike-3d-retry'))return switchView('3d');
       if(button.dataset.bikePart)return select(button.dataset.bikePart);
       if(button.hasAttribute('data-bike-sheet-close'))return closeControls();
       if(button.dataset.bikeGroup){if(controlsOpen&&group===button.dataset.bikeGroup)return closeControls();group=button.dataset.bikeGroup;return select(selectedParts[group]||groups[group][0]);}
