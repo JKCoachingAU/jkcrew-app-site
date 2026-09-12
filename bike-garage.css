@@ -42,6 +42,13 @@ body:has(#view[data-view="bikeGarage"]) #install-app{display:none}
 .bike-edit-tools{position:relative;z-index:2;display:flex;gap:6px;padding:7px 12px;border-top:1px solid #d7dce3;background:#eef0f3c7}
 .bike-garage .bike-edit-tools button{flex:1;min-width:0;padding:7px 6px;border-radius:8px;font-size:12px;white-space:nowrap;background:#ffffff7d}
 .bike-garage .bike-edit-tools button:last-child{flex:1.35}
+.bike-camera-menu{position:relative;flex:1;display:flex}
+.bike-garage .bike-camera-menu>summary{flex:1;min-width:0;padding:7px 6px;border-radius:8px;font-size:12px;white-space:nowrap;background:#ffffff7d;list-style:none;cursor:pointer}
+.bike-camera-menu>summary::-webkit-details-marker{display:none}
+.bike-camera-picker{position:absolute;z-index:12;top:calc(100% + 6px);left:0;display:flex;flex-direction:column;gap:4px;min-width:180px;padding:8px;border:1px solid var(--bike-line);border-radius:12px;background:var(--bike-surface);box-shadow:0 12px 28px #0006}
+.bike-garage .bike-camera-picker button{width:100%;justify-content:flex-start;padding:8px 10px;font-size:12px;background:var(--bike-field)}
+.bike-camera-autorotate{display:flex;align-items:center;gap:8px;margin-top:2px;padding:8px 10px;border-top:1px solid var(--bike-line);color:var(--bike-ink);font-size:12px;font-weight:600;cursor:pointer}
+.bike-camera-autorotate input{appearance:auto;accent-color:var(--bike-accent);cursor:pointer}
 .bike-photo-status{position:absolute;inset:60px 8px 115px;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:12px;border-radius:10px;background:#f3f5f8f5;color:#566273;font-size:13px;line-height:1.4;text-align:center}
 .bike-garage .bike-photo-status button{min-height:44px;background:#fff;color:#374454;border-color:#aab6c5}
 
@@ -240,6 +247,9 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-garage .bike-edit-tools button{flex:none;width:44px;height:44px;min-height:44px;padding:0;background:#ffffffa8;border-color:#bfc7d180;font-size:19px;pointer-events:auto}
 .bike-edit-tools span{display:none}
 .bike-garage .bike-edit-tools button:last-child{flex:none;font-size:20px}
+.bike-camera-menu{flex:none;pointer-events:auto}
+.bike-garage .bike-camera-menu>summary{width:44px;height:44px;min-height:44px;padding:0;background:#ffffffa8;border:1px solid #bfc7d180;border-radius:10px;font-size:19px;display:flex;align-items:center;justify-content:center}
+.bike-camera-picker{top:0;left:calc(100% + 6px)}
 .bike-photo-status{inset:70px 60px 80px;background:#f3f5f8ed}
 .bike-controls{border:0;border-radius:0;max-height:none;min-height:0}
 .bike-control-navigation{order:2;padding:6px 8px;border:0;border-top:1px solid var(--bike-line)}
@@ -323,7 +333,22 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-stage-top>span:first-child{display:none}
 .bike-stage-top{justify-content:flex-end}
 .bike-edit-tools{top:8px;left:8px;flex-direction:row;gap:4px}
+.bike-camera-picker{top:calc(100% + 6px);left:0}
 .bike-stage-art[data-view="3d"]{padding:0}
 .bike-garage .bike-stage-top [data-bike-new]{max-width:96px;min-height:44px;padding:6px 8px}
 @media(max-width:370px){.bike-garage .bike-stage-top [data-bike-new]{font-size:10px;padding:6px}.bike-edit-tools{gap:2px}}
 #app #view[data-view="bikeGarage"] .bike-stage-bottom h2{color:#2c3440}
+
+/* Premium polish: tactile hover/press feedback on the choices that carry
+   the most weight (colour, finish, component model, saved builds) without
+   touching layout, so it reads as considered rather than re-skinned. */
+.bike-garage .bike-swatch,.bike-garage .bike-finishes button,.bike-garage .bike-style-options button,.bike-garage .bike-seat-tile,.bike-garage .bike-part-picker button,.bike-garage .bike-camera-picker button{transition:transform .13s ease,box-shadow .13s ease,background .15s,border-color .15s}
+.bike-garage .bike-swatch:hover:not(:disabled){transform:translateY(-1px) scale(1.04)}
+.bike-garage .bike-swatch:active:not(:disabled){transform:scale(.96)}
+.bike-garage .bike-finishes button:hover:not(:disabled),.bike-garage .bike-style-options button:hover:not(:disabled){transform:translateY(-1px)}
+.bike-garage .bike-finishes button:active:not(:disabled),.bike-garage .bike-style-options button:active:not(:disabled){transform:translateY(0) scale(.98)}
+.bike-saved-card,.bike-shop-grid a{transition:transform .15s ease,border-color .15s ease}
+.bike-saved-card:hover,.bike-shop-grid a:hover{transform:translateY(-2px)}
+.bike-part-reference{display:flex;flex-direction:column;gap:2px}
+.bike-camera-menu[open]>summary{background:var(--bike-selected,#e1efed)}
+@media(prefers-reduced-motion:reduce){.bike-garage .bike-swatch,.bike-garage .bike-finishes button,.bike-garage .bike-style-options button,.bike-garage .bike-seat-tile,.bike-saved-card,.bike-shop-grid a{transition:none!important}.bike-garage .bike-swatch:hover,.bike-garage .bike-swatch:active,.bike-garage .bike-finishes button:hover,.bike-garage .bike-style-options button:hover,.bike-garage .bike-finishes button:active,.bike-garage .bike-style-options button:active,.bike-saved-card:hover,.bike-shop-grid a:hover{transform:none!important}}

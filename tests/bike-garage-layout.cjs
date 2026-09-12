@@ -27,7 +27,7 @@ async function settle(page) {
 async function boot(page) {
   await page.goto('https://jkcrew.fixture/garage');
   for(const file of ['styles.css','bike-garage.css','bike-preview.css'])await page.addStyleTag({content:fs.readFileSync(path.join(root,file),'utf8')});
-  for(const file of ['bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js','bike-preview.js','bike-garage.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+  for(const file of ['bike-parts-catalog.js','bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js','bike-preview.js','bike-garage.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
   await page.evaluate(()=>{
     window.layoutCalls=[];window.layoutOwner='layout-owner';window.confirm=()=>true;
     const builds=[1,2,3].map(slot=>({slot,name:`Saved layout bike ${slot}`,configuration:JKCrewBikeConfig.normalize({}),revision:1,updated_at:'2026-09-12T00:00:00Z'}));
@@ -133,20 +133,20 @@ async function checkLayout(page,role,width,height,theme) {
   console.log(`PASS: ${label} collapsed bike space, dock toggle/focus, independent options scrolling and visible Save.`);
 }
 async function checkStageActionRow(page) {
-  // The renderer has its own3D interaction suite. Here expose the existing Reset
-  // button to reproduce its ready-state footprint without mocking camera behaviour.
-  const reset=page.locator('[data-bike-view-reset]'),wasHidden=await reset.evaluate(el=>el.hidden);
-  await reset.evaluate(el=>el.hidden=false);
+  // The renderer has its own 3D interaction suite. Here expose the camera menu
+  // to reproduce its ready-state footprint without mocking camera behaviour.
+  const camera=page.locator('[data-bike-camera-menu]'),wasHidden=await camera.evaluate(el=>el.hidden);
+  await camera.evaluate(el=>el.hidden=false);
   for(const [width,height] of [[320,650],[390,844],[844,390]]){
     await closeSheet(page);await page.setViewportSize({width,height});await settle(page);
     for(const expanded of [false,true]){
       if(expanded)await choosePart(page,'Details','seat');
       const label=`four stage actions/${width}x${height}/${expanded?'open':'closed'}`;
-      for(const selector of ['[data-bike-undo]','[data-bike-redo]','[data-bike-shuffle]','[data-bike-view-reset]','[data-bike-new]','[data-bike-preview]'])await hitTest(page.locator(selector),label+'/'+selector);
+      for(const selector of ['[data-bike-undo]','[data-bike-redo]','[data-bike-shuffle]','[data-bike-camera-menu] > summary','[data-bike-new]','[data-bike-preview]'])await hitTest(page.locator(selector),label+'/'+selector);
       await page.screenshot({path:`/tmp/jkcrew-garage-dock-four-actions-${width}x${height}-${expanded?'open':'closed'}.png`});
     }
   }
-  await reset.evaluate((el,hidden)=>el.hidden=hidden,wasHidden);await closeSheet(page);
+  await camera.evaluate((el,hidden)=>el.hidden=hidden,wasHidden);await closeSheet(page);
 }
 async function checkCollection(page) {
   await closeSheet(page);await page.setViewportSize({width:390,height:844});await settle(page);

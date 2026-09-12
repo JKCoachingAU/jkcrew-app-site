@@ -8,7 +8,7 @@ const {PNG}=require(require.resolve('pngjs',{paths:[path.dirname(require.resolve
 const root=path.resolve(__dirname,'..');
 const threeRoot=process.env.JKCREW_3D_SOURCE_DIR||root;
 const nav=[['◇','Command'],['●','Session'],['✦','Riders'],['⚡','Challenges'],['▤','Coach tools'],['•','More']].map(([icon,label])=>`<button type="button" class="nav-btn"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');
-const modules=['bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js','bike-preview.js','bike-three.js','bike-garage.js'];
+const modules=['bike-parts-catalog.js','bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js','bike-preview.js','bike-three.js','bike-garage.js'];
 let checks=0;
 function check(value,message){assert(value,message);checks++;}
 function equal(actual,expected,message){assert.deepEqual(actual,expected,message);checks++;}
@@ -42,6 +42,7 @@ async function ready(page){await page.waitForFunction(()=>document.querySelector
 async function view(page){return page.evaluate(()=>testHandle.getView());}
 function sameView(actual,expected,message){check(['yaw','polar','distance'].every(key=>Math.abs(actual[key]-expected[key])<.00001)&&actual.target.every((n,i)=>Math.abs(n-expected.target[i])<.00001),message);}
 async function setView(page,value){await page.evaluate(value=>testHandle.setView(value),value);await settle(page);}
+async function resetView(page){await page.evaluate(()=>testHandle.resetView());await settle(page);}
 async function image(page){await settle(page);return PNG.sync.read(await page.locator('.bike-three-canvas').screenshot({animations:'disabled',style:'.bike-stage-top,.bike-stage-bottom,.bike-edit-tools{visibility:hidden!important}'}));}
 function hash(png){return createHash('sha256').update(png.data).digest('hex');}
 function redBounds(png){let minX=png.width,maxX=-1,minY=png.height,maxY=-1,count=0;for(let y=0;y<png.height;y++)for(let x=0;x<png.width;x++){const i=(y*png.width+x)*4,[r,g,b]=png.data.subarray(i,i+3);if(r>90&&r>g*1.35&&r>b*1.25){count++;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}}return {minX,maxX,minY,maxY,count,width:maxX-minX+1,height:maxY-minY+1};}
@@ -98,7 +99,7 @@ async function interaction(page){
   for(const gap of [45,55,65,75])await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:touches(gap)});
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await settle(page);
   check((await view(page)).distance<distance*.9,'Two real touch points pinch the camera closer');check(await page.locator('[data-bike-sheet]').isHidden(),'Pinching does not accidentally select a part');await cdp.detach();
-  await page.locator('[data-bike-view-reset]').click();await settle(page);
+  await resetView(page);
   check((await view(page)).distance>1.2,'Reset fits the whole bike after zooming');
 }
 async function geometryViews(page){
@@ -108,12 +109,12 @@ async function geometryViews(page){
   const side=redBounds(shots.right),front=redBounds(shots.front);
   check(side.count>100&&front.count>20,'Paint is rendered on the actual model from both directions');check(front.width<side.width*.65,'Front-on tubes have real foreshortening, not a rotated flat photograph');
   const before=await page.evaluate(()=>JSON.stringify(testDraft().configuration));
-  for(const [width,height]of [[1024,768],[390,844],[844,390]]){const old=await view(page);await page.setViewportSize({width,height});await settle(page);const resized=await view(page);check(Math.abs(resized.yaw-old.yaw)<.00001&&Math.abs(resized.polar-old.polar)<.00001,`${width}x${height}: resize preserves the viewing angle`);await checkFit(page,`${width}x${height}/automatic fit`);await page.locator('[data-bike-view-reset]').click();await settle(page);const png=await image(page),bounds=redBounds(png);check(bounds.count>20&&bounds.minX>2&&bounds.maxX<png.width-3&&bounds.minY>2&&bounds.maxY<png.height-3,`${width}x${height}: fitted paint stays inside the resized canvas`);await checkFit(page,`${width}x${height}/reset`);fs.writeFileSync(`/tmp/bike-360-${width}x${height}.png`,PNG.sync.write(png));}
+  for(const [width,height]of [[1024,768],[390,844],[844,390]]){const old=await view(page);await page.setViewportSize({width,height});await settle(page);const resized=await view(page);check(Math.abs(resized.yaw-old.yaw)<.00001&&Math.abs(resized.polar-old.polar)<.00001,`${width}x${height}: resize preserves the viewing angle`);await checkFit(page,`${width}x${height}/automatic fit`);await resetView(page);const png=await image(page),bounds=redBounds(png);check(bounds.count>20&&bounds.minX>2&&bounds.maxX<png.width-3&&bounds.minY>2&&bounds.maxY<png.height-3,`${width}x${height}: fitted paint stays inside the resized canvas`);await checkFit(page,`${width}x${height}/reset`);fs.writeFileSync(`/tmp/bike-360-${width}x${height}.png`,PNG.sync.write(png));}
   equal(await page.evaluate(()=>JSON.stringify(testDraft().configuration)),before,'View changes and resize preserve the configuration');
   const exported=await page.evaluate(async()=>{const blob=await testHandle.exportBlob();return {type:blob.type,size:blob.size};});check(exported.type==='image/png'&&exported.size>10000,'The actual 3D view exports a nonempty PNG without a server');
 }
 async function optionUpdates(page){
-  await page.setViewportSize({width:800,height:800});await settle(page);await page.locator('[data-bike-view-reset]').click();await settle(page);
+  await page.setViewportSize({width:800,height:800});await settle(page);await resetView(page);
   for(const [name,group,key,value]of [['drivetrain','Details','driveSide','lhd'],['pegs','Wheels','pegs','four'],['stem','Front end','stemStyle','front-load'],['bars','Front end','barStyle','four-piece']]){
     await part(page,name,group);const camera=await view(page),before=hash(await image(page));await page.locator(`[data-bike-style="${value}"]`).click();await settle(page);
     equal(await page.evaluate(key=>testDraft().configuration[key],key),value,`${key}: editing stores the selected option`);sameView(await view(page),camera,`${key}: rebuilding geometry preserves the camera`);check(hash(await image(page))!==before,`${key}: the visible 3D geometry updates`);
@@ -121,7 +122,7 @@ async function optionUpdates(page){
   await part(page,'brakes','Front end');await page.locator('[data-bike-brake="front"]').check();await page.locator('[data-bike-brake="rear"]').check();await settle(page);equal(await page.evaluate(()=>testDraft().configuration.brakeStyle),'dual','Both independent brake controls update the live model configuration');await closeSheet(page);
 }
 async function captureAndMeasure(page){
-  await page.setViewportSize({width:390,height:844});await settle(page);await page.locator('[data-bike-view-reset]').click();await settle(page);await part(page,'frame','Frame');
+  await page.setViewportSize({width:390,height:844});await settle(page);await resetView(page);await part(page,'frame','Frame');
   const timing=await page.evaluate(async()=>{const updates=[];for(const value of ['#428CFF','#F26879','#F1F4F8']){const start=performance.now();document.querySelector('[data-bike-colour="'+value+'"]').click();await testLastUpdate;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));updates.push(Math.round(performance.now()-start));}return {cold3DLoadMs:Math.round(testMounts[0].loadMs),colourEditsMs:updates,stats:testHandle.getStats()};});
   check(timing.colourEditsMs.length===3&&timing.colourEditsMs.every(n=>n>=0),'Three actual colour edits are measured through model update and rendered frames');await settle(page);await closeSheet(page);await page.screenshot({path:'/tmp/bike-360-final-phone-closed.png'});await category(page,'Frame');await page.screenshot({path:'/tmp/bike-360-final-phone-open.png'});await closeSheet(page);
   const titleColour=await page.locator('[data-bike-design-title]').evaluate(el=>getComputedStyle(el).color);equal(titleColour,'rgb(44, 52, 64)','The title keeps readable dark text on the light 3D stage');

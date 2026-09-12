@@ -6,12 +6,20 @@ const JKCrewBikeConfig = (() => {
   const metalParts = Object.freeze(['frame','fork','bars','rims','hubs','cranks','sprocket','seatpost','stem','headset','pegs']);
   const finishOptions = Object.freeze(['gloss','matte','chrome','raw','jetfuel']);
   const seatDesignIds = Object.freeze(['solid', ...Array.from({length:50}, (_, index) => `design-${String(index + 1).padStart(2,'0')}`)]);
+  // Component "model" choices, added for the premium rebuild. These are
+  // additive and never rename or remove an existing field, so every design
+  // saved by the earlier release still normalises and renders correctly —
+  // it just picks up the new defaults below for parts it never specified.
   const options = Object.freeze({
     barStyle: ['two-piece','four-piece'], tyreStyle: ['white','black','tan-wall','white-wall'],
     seatStyle: ['slim','padded'], pegs: ['none','rear','both','four'], decal: ['none','jkcrew','lightning'],
     framePaint: ['solid','fade'], pedalMaterial: ['plastic','metal'], brakeStyle: ['none','front','rear','dual'],
     spokeStyle: ['standard','rainbow'], stemStyle: ['top-load','front-load'], seatDesign: seatDesignIds,
-    driveSide: ['rhd','lhd'], background: ['studio','street','skatepark','warehouse','rooftop']
+    driveSide: ['rhd','lhd'], background: ['studio','street','skatepark','warehouse','rooftop'],
+    frameModel: ['compact','standard','long','tall'], forkModel: ['lightweight','standard','heavy-duty'],
+    barModel: ['street-low','classic-mid','tall-ak'], tireTread: ['slick','all-round','knobby'],
+    hubStyle: ['cassette','freecoaster'], crankModel: ['three-piece','two-piece'],
+    sprocketStyle: ['cutout','guard'], gripStyle: ['flangeless','flanged']
   });
   const defaults = Object.freeze({
     version: 3,
@@ -23,7 +31,9 @@ const JKCrewBikeConfig = (() => {
     finishes: Object.freeze(Object.fromEntries(metalParts.map(part => [part, hardwareParts.includes(part) ? 'chrome' : 'gloss']))),
     framePaint: 'solid', frameFadeColor: '#AD8AFF', pedalMaterial: 'plastic',
     brakeStyle: 'none', spokeStyle: 'standard', stemStyle: 'top-load', seatDesign: 'solid',
-    driveSide: 'rhd', background: 'studio'
+    driveSide: 'rhd', background: 'studio',
+    frameModel: 'standard', forkModel: 'standard', barModel: 'classic-mid', tireTread: 'all-round',
+    hubStyle: 'cassette', crankModel: 'three-piece', sprocketStyle: 'cutout', gripStyle: 'flanged'
   });
   const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined;

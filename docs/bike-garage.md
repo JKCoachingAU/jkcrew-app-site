@@ -1,4 +1,4 @@
-# JKCREW Bike Garage — 2.14.103
+# JKCREW Bike Garage — 2.14.104
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It offers an original, fully modelled 360° BMX viewer with part/colour controls, and a separate photographic studio for backgrounds and PNG export.
 
@@ -47,7 +47,7 @@ A closed inspiration section links to 13 verified real seat and component refere
 
 ## Validation
 
-The 2.14.103 viewer adds actual WebGL tests for a complete orbit, front/rear geometry and occlusion, touch pinch, raycast selection, drag suppression, all hardware options, resize framing, camera-preserving colour changes/undo, renderer disposal, failed dependencies and context-loss recovery. The layout suite covers 20 coach/rider × dark/light phone/tablet/desktop cases, closed/open sheets, scroll retention and directly reachable actions. Existing garage CRUD, legacy drafts and saving checks pass with the new dock.
+The 2.14.104 viewer adds actual WebGL tests for a complete orbit, front/rear geometry and occlusion, touch pinch, raycast selection, drag suppression, all hardware options, resize framing, camera-preserving colour changes/undo, renderer disposal, failed dependencies and context-loss recovery. The layout suite covers 20 coach/rider × dark/light phone/tablet/desktop cases, closed/open sheets, scroll retention and directly reachable actions. Existing garage CRUD, legacy drafts and saving checks pass with the new dock.
 
 The 2.14.102 hardware fix passes 124 pixel/registration checks in `tests/bike-hardware-graphics.cjs`, including confirmed failures against the former stem-collar and pedal-spill rendering. It covers both stem/bar styles, both pedal materials and drivetrains, isolated recolouring, and connected transparent cutouts. Existing part/save compatibility, 164 photo-export assertions, smoke and startup/cache checks pass.
 

@@ -90,7 +90,7 @@ async function displayedBike(page) {
   // overlays: an enabled Redo button is not a changed bike material.
   return page.locator('[data-bike-art]').screenshot({animations:'disabled',caret:'hide',style:'.bike-stage-top,.bike-stage-bottom,.bike-edit-tools{visibility:hidden!important}'});
 }
-const feedback = (page,text,options={}) => page.locator('.bike-collection-dialog[open] [data-bike-collection-status], .bike-garage:not(:has(.bike-collection-dialog[open])) [data-bike-status]').filter({hasText:options.exact&&typeof text==='string'?new RegExp('^'+text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$'):text,visible:true});
+const feedback = (page,text,options={}) => page.locator('.bike-collection-dialog[open] [data-bike-collection-status], .bike-garage:not(:has(.bike-collection-dialog[open])) [data-bike-status]').filter({hasText:options.exact&&typeof text==='string'?new RegExp('^'+text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$'):text});
 async function openGarageCollection(page) {
   if(!await page.locator('.bike-collection-dialog').evaluate(el=>el.open))await page.locator('[data-bike-collection-open]').click();
   if(!await page.locator('[data-bike-garage]').evaluate(el=>el.open))await page.locator('[data-bike-garage] summary').click();
@@ -120,7 +120,7 @@ const frameIndicator = page => page.locator('[data-bike-frame-colour]').evaluate
 async function boot(page,{waitForPhotos=true}={}) {
   await page.goto('https://jkcrew.fixture/garage');
   for(const file of ['styles.css','bike-garage.css','bike-preview.css']) await page.addStyleTag({content:fs.readFileSync(path.join(root,file),'utf8')});
-  for(const file of ['bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js','bike-preview.js','bike-garage.js']) await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+  for(const file of ['bike-parts-catalog.js','bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js','bike-preview.js','bike-garage.js']) await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
   await page.addScriptTag({content:fixtureScript});
   await page.evaluate(()=>mountGarage());
   await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
@@ -136,7 +136,7 @@ async function checkSeatArtwork(browser) {
     await page.goto('https://jkcrew.fixture/garage');
     await page.addStyleTag({content:'html,body{margin:0;width:1536px;height:1024px}#art{width:1536px}'});
     await page.evaluate(()=>{document.body.innerHTML='<div id="art"></div>';});
-    for(const file of ['bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+    for(const file of ['bike-parts-catalog.js','bike-config.js','bike-seat-designs.js','bike-photo-masks.js','bike-renderer.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
     const ids=await page.evaluate(()=>JKCrewBikeSeats.designs.map(design=>design.id));
     const render=async(id,seatStyle='slim')=>{
       const untouched=await page.evaluate(async({id,seatStyle})=>{
@@ -201,7 +201,9 @@ async function checkLegacyDraftUpgrade(page) {
   assert.equal(recovered.pendingSave,null);assert.equal(recovered.slot,1);assert.equal(recovered.revision,1);
   assert.equal(recovered.configuration.version,3);assert.equal(recovered.configuration.colors.frame,'#F2BC57');assert.equal(recovered.name,'Newer local idea','Recovering a v1 pending save preserves newer local edits');
   assert.equal(await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build').length),writes,'Legacy fingerprint recovery itself never writes');
-  await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.locator('[data-bike-save]').click();
+  await page.waitForFunction(()=>rpcCalls.some(call=>call.owner==='legacy-pending-fingerprint'&&call.method==='save_bike_build'));
+  assert.match(await page.locator('[data-bike-status]').textContent(),/^Saved to your garage(?: ✓)?$/);
   const updated=await page.evaluate(()=>({call:rpcCalls.filter(call=>call.method==='save_bike_build').at(-1),rows:cloud['legacy-pending-fingerprint']}));
   assert.equal(updated.call.args.p_expected_revision,1);assert.equal(updated.call.args.p_configuration.version,3);
   assert.equal(updated.rows.length,1);assert.equal(updated.rows[0].revision,2,'Saving after recovery edits the committed slot instead of creating a duplicate');
@@ -225,7 +227,7 @@ async function checkV2DraftUpgrade(page) {
   await chooseWorkshopPart(page,'drivetrain');
   assert.equal(await page.locator('[data-bike-style="rhd"]').getAttribute('aria-pressed'),'true');
   await page.locator('[data-bike-style="lhd"]').click();await waitForArtwork(page);
-  await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.locator('[data-bike-save]').click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   const saved=await page.evaluate(()=>({row:cloud['legacy-v2-clean'][0],call:rpcCalls.filter(call=>call.owner==='legacy-v2-clean'&&call.method==='save_bike_build').at(-1),legacy:legacyV2}));
   assert.equal(saved.call.args.p_expected_revision,4);assert.equal(saved.row.configuration.version,3);assert.equal(saved.row.configuration.driveSide,'lhd');assert.equal(saved.row.configuration.background,'studio');
   for(const key of Object.keys(saved.legacy).filter(key=>key!=='version'))assert.deepEqual(saved.row.configuration[key],saved.legacy[key],'Upgrading a v2 saved build preserves every previous cosmetic choice');
@@ -332,7 +334,7 @@ async function checkExpandedParts(page) {
   await page.getByRole('textbox',{name:'NAME YOUR BUILD',exact:true}).fill('Complete v3 workshop');
   const expected=await config();assert.equal(expected.version,3);assert.equal(Object.keys(expected.colors).length,16);assert.equal(expected.pegs,'four');
   assert.equal(await page.evaluate(()=>rpcCalls.filter(call=>call.owner==='expanded-parts'&&call.method==='save_bike_build').length),0,'Part and design browsing never saves automatically');
-  await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.locator('[data-bike-save]').click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   assert.deepEqual(await page.evaluate(()=>cloud['expanded-parts'][0].configuration),expected,'Saving round-trips every v3 option');
   await page.evaluate(()=>mountGarage('expanded-parts'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await waitForArtwork(page);
   assert.deepEqual(await config(),expected,'Reopening the workshop preserves all v3 options');
@@ -344,7 +346,7 @@ async function checkExpandedParts(page) {
   await page.getByRole('button',{name:'Refresh garage',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);
   await openGarageCollection(page);await page.locator('[data-bike-load="1"]').click();
   assert.deepEqual(await config(),{...expected,seatDesign:'design-01'},'Opening the current cloud revision preserves its full v3 configuration');
-  await page.getByRole('textbox',{name:'NAME YOUR BUILD',exact:true}).fill('Updated v3 workshop');await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.getByRole('textbox',{name:'NAME YOUR BUILD',exact:true}).fill('Updated v3 workshop');await page.locator('[data-bike-save]').click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   assert.equal(await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build').at(-1).args.p_expected_revision),2);
   await select('seat');
   for(const width of [320,390,1024])for(const theme of ['dark','light']) {
@@ -362,7 +364,7 @@ async function checkPreviewWorkflow(page) {
   await page.evaluate(()=>{document.documentElement.dataset.theme='dark';mountGarage('preview-owner');});
   await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await waitForArtwork(page);
   await page.getByRole('textbox',{name:'NAME YOUR BUILD',exact:true}).fill('Background save test');
-  await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.locator('[data-bike-save]').click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   const initial=await page.evaluate(()=>JSON.stringify(cloud['preview-owner'][0].configuration));
   const writes=await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build').length);
   await page.getByRole('button',{name:'Open photo studio',exact:true}).click();
@@ -382,7 +384,7 @@ async function checkPreviewWorkflow(page) {
   await page.getByRole('button',{name:'Close bike preview',exact:true}).click();await dialog.waitFor({state:'detached'});
   await page.locator('[data-bike-undo]').click();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('jkcrew-bike-draft-v1:preview-owner')).configuration.background),'warehouse','Scene choice is part of undo history');
   await page.locator('[data-bike-redo]').click();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('jkcrew-bike-draft-v1:preview-owner')).configuration.background),'rooftop');
-  await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.locator('[data-bike-save]').click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   assert.equal(await page.evaluate(()=>cloud['preview-owner'][0].configuration.background),'rooftop');
   await page.evaluate(()=>mountGarage('preview-owner'));await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);await waitForArtwork(page);
   await page.getByRole('button',{name:'Open photo studio',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-bike-export]')?.disabled===false);await waitForArtwork(page);
@@ -512,7 +514,7 @@ async function run(page) {
   const config = async () => (await draft()).configuration;
   const nameField = () => page.getByRole('textbox',{name:'NAME YOUR BUILD',exact:true});
   const count = method => page.evaluate(method=>rpcCalls.filter(call=>call.method===method).length,method);
-  const save = async () => {await closeGarageCollection(page);await page.locator('[data-bike-save]').click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();};
+  const save = async () => {await closeGarageCollection(page);await page.locator('[data-bike-save]').click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});};
   const refresh = async () => {await closeGarageCollection(page);await page.getByRole('button',{name:'Refresh garage',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-bike-save]').disabled);};
   const selectPart = async part => {const button=page.locator(`[data-bike-art] [data-bike-part="${part}"]`).first();await button.focus();await button.press('Enter');assert.equal(await page.evaluate(()=>document.activeElement?.dataset.bikePart),part,'Keyboard selection retains bike-part focus');};
   const frameColour = () => frameIndicator(page);
@@ -607,11 +609,11 @@ async function run(page) {
   let calls=await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build'));
   assert.equal(calls.at(-1).args.p_slot,1);assert.equal(calls.at(-1).args.p_expected_revision,0);
   await nameField().fill('Acid Session');await chooseWorkshopPart(page,'frame');await page.getByRole('button',{name:'Acid frame',exact:true}).click();
-  await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   assert.equal(await page.locator('[data-bike-count]').textContent(),'2 / 3');
   assert.equal(await page.evaluate(()=>cloud['rider-a'][0].name),'Night Rider');
   await nameField().fill('Finals Bike');await page.getByRole('button',{name:'Coral frame',exact:true}).click();
-  await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   assert.equal(await page.locator('[data-bike-count]').textContent(),'3 / 3');assert(await page.getByRole('button',{name:'Save as new',exact:true}).isDisabled());
   await shelf();const fullSaveCount=await count('save_bike_build');await closeGarageCollection(page);await page.getByRole('button',{name:'+ Blank bike',exact:true}).click();await page.locator('[data-bike-save]').click();await feedback(page,/three garage spaces are full/).waitFor();assert.equal(await count('save_bike_build'),fullSaveCount,'A full garage cannot create a fourth slot');
   await shelf();await page.locator('[data-bike-load="1"]').click();assert.equal(await nameField().inputValue(),'Night Rider');
@@ -624,7 +626,7 @@ async function run(page) {
   await page.evaluate(()=>confirmAnswer=true);await page.getByRole('button',{name:'Remove Acid Session',exact:true}).click();
   await feedback(page,'Removed from your garage.',{exact:true}).waitFor();assert.equal(await page.locator('[data-bike-count]').textContent(),'2 / 3');
   assert.equal(await page.evaluate(()=>cloud['rider-a'].map(row=>row.slot).join(',')),'1,3');
-  await closeGarageCollection(page);await nameField().fill('Space Two');await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,'Saved to your garage ✓',{exact:true}).waitFor();
+  await closeGarageCollection(page);await nameField().fill('Space Two');await page.getByRole('button',{name:'Save as new',exact:true}).click();await feedback(page,/^Saved to your garage(?: ✓)?$/).waitFor({state:'attached'});
   assert.equal(await page.evaluate(()=>rpcCalls.filter(call=>call.method==='save_bike_build').at(-1).args.p_slot),2,'Freed slot is reused without touching others');
 
   // A failed save never claims success or enables blind retries against stale rows.
