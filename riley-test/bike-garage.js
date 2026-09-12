@@ -47,6 +47,8 @@ const JKCrewBikeGarage = (() => {
     let controlsOpen = false, optionsScroll = 0;
     let bike3D = null, loading3D = false, failed3D = false, view3DRequest = 0, timer3D = 0;
     let photoSequence = 0, photoReady = false, seatCategory = 'All', seatPage = 0, layoutFrame = 0;
+    let thumbnailSequence=0,thumbnailViewer=null,thumbnailHost=null;
+    const thumbnails=new Map();
     const selectedParts = Object.fromEntries(Object.entries(groups).map(([label, parts]) => [label, parts[0]]));
     const valid = () => alive && root.isConnected && isCurrent();
     const snapshot = () => ({ name, configuration: copy(config) });
@@ -250,9 +252,48 @@ const JKCrewBikeGarage = (() => {
       if (!valid()) return;
       root.querySelector('[data-bike-count]').textContent = `${builds.length} / 3`;
       root.querySelector('[data-bike-collection-count]').textContent = String(builds.length);
-      root.querySelector('[data-bike-saved-list]').innerHTML = builds.length ? builds.map(build => `<article class="bike-saved-card ${slot===build.slot?'is-current':''}"><div class="bike-saved-art">${JKCrewBikeArt.render(normalize(build.configuration),{idPrefix:`garage-slot-${build.slot}`})}</div><div class="bike-saved-title"><span>DESIGN 0${build.slot}</span><h3>${html(build.name)}</h3></div><div class="bike-saved-actions"><button type="button" data-bike-load="${build.slot}">${slot===build.slot?'Open design':'Edit design'}</button><button type="button" data-bike-remove="${build.slot}" aria-label="Remove ${html(build.name)}">Remove</button></div></article>`).join('') : `<div class="bike-garage-empty"><strong>Your first build belongs here.</strong><p>Save a design to keep it on your JKCREW account.</p></div>`;
+      root.querySelector('[data-bike-saved-list]').innerHTML = builds.length ? builds.map(build => `<article class="bike-saved-card ${slot===build.slot?'is-current':''}"><div class="bike-saved-art"><span data-bike-thumbnail="${build.slot}">Preparing preview…</span></div><div class="bike-saved-title"><span>DESIGN 0${build.slot}</span><h3>${html(build.name)}</h3></div><div class="bike-saved-actions"><button type="button" data-bike-load="${build.slot}">${slot===build.slot?'Open design':'Edit design'}</button><button type="button" data-bike-remove="${build.slot}" aria-label="Remove ${html(build.name)}">Remove</button></div></article>`).join('') : `<div class="bike-garage-empty"><strong>Your first build belongs here.</strong><p>Save a design to keep it on your JKCREW account.</p></div>`;
+      if(root.querySelector('.bike-collection-dialog').open)void renderThumbnails();
       root.querySelector('[data-bike-reload]').hidden = loaded;
       updateStatus();
+    }
+    function stopThumbnails(){
+      ++thumbnailSequence;thumbnailViewer?.dispose();thumbnailViewer=null;thumbnailHost?.remove();thumbnailHost=null;
+    }
+    async function renderThumbnails(){
+      stopThumbnails();const sequence=thumbnailSequence;
+      const current=()=>valid()&&sequence===thumbnailSequence&&root.querySelector('.bike-collection-dialog').open;
+      const wanted=new Set(builds.map(build=>JSON.stringify(normalize(build.configuration))));
+      for(const [key,url]of thumbnails)if(!wanted.has(key)){URL.revokeObjectURL(url);thumbnails.delete(key);}
+      let viewer=null,host=null;
+      try{
+        for(const build of builds){
+          if(!current())return;
+          const configuration=normalize(build.configuration),key=JSON.stringify(configuration);
+          const card=root.querySelector(`[data-bike-thumbnail="${build.slot}"]`);if(!card)continue;
+          let url=thumbnails.get(key);
+          if(!url){
+            if(!globalThis.JKCrewBike3D)throw new Error('3D preview unavailable');
+            if(!viewer){
+              host=document.createElement('div');host.dataset.bikeThumbnailRenderer='';host.setAttribute('aria-hidden','true');
+              host.style.cssText='position:fixed;left:-10000px;top:0;width:480px;height:320px;visibility:hidden;pointer-events:none';
+              document.body.append(host);thumbnailHost=host;
+              viewer=await JKCrewBike3D.mount({element:host,configuration,isCurrent:current});
+              if(!current())return;thumbnailViewer=viewer;
+            }else await viewer.update(configuration);
+            const blob=await viewer.exportBlob({width:480,height:320,fit:true});
+            if(!current())return;
+            url=URL.createObjectURL(blob);thumbnails.set(key,url);
+          }
+          const image=document.createElement('img');image.src=url;image.alt=build.name+' — saved bike';image.dataset.bikeSavedModel='';
+          card.replaceWith(image);
+        }
+      }catch{
+        if(current())for(const card of root.querySelectorAll('[data-bike-thumbnail]'))card.textContent='Open design to preview';
+      }finally{
+        viewer?.dispose();host?.remove();
+        if(thumbnailViewer===viewer)thumbnailViewer=null;if(thumbnailHost===host)thumbnailHost=null;
+      }
     }
     async function load() {
       if (busy || loading || !valid()) return;
@@ -326,7 +367,7 @@ const JKCrewBikeGarage = (() => {
       const dialog=root.querySelector('.bike-collection-dialog');
       if(dialog.open)return;
       root.querySelector('[data-bike-garage]').open=true;
-      dialog.showModal();
+      dialog.showModal();void renderThumbnails();
     }
     function closeCollection() {
       const dialog=root.querySelector('.bike-collection-dialog');
@@ -335,6 +376,9 @@ const JKCrewBikeGarage = (() => {
     function preview() {
       if(fullscreen||busy||!photoReady||!valid())return;
       if(!globalThis.JKCrewBikePreview?.mount){message('The bike preview is not ready. Refresh the app and try again.','error');return;}
+      const photoView=bike3D?.getView(),sourceCanvas=bike3D?.canvas;
+      const aspect=sourceCanvas?sourceCanvas.clientWidth/sourceCanvas.clientHeight:1.5;
+      const width=aspect>=1?2048:Math.round(2048*aspect),height=aspect>=1?Math.round(2048/aspect):2048;
       let handle;
       handle=JKCrewBikePreview.mount({
         configuration:copy(config),name:name.trim()||'My dream bike',isCurrent:valid,
@@ -343,7 +387,7 @@ const JKCrewBikeGarage = (() => {
           if(!source||!valid())throw new Error('The bike preview has closed.');
           await source.update(snapshot);
           if(source!==bike3D||!valid())throw new Error('The bike preview has changed.');
-          return source.exportBlob({width:2048,height:1365,fit:true});
+          return source.exportBlob({width,height,view:photoView});
         }:null,
         onBackgroundChange(background){
           if(!valid()||busy||typeof background!=='string')return null;
@@ -424,7 +468,7 @@ const JKCrewBikeGarage = (() => {
     root.querySelector('[data-bike-name]').addEventListener('input',event=>{if(!busy){if(!nameEditRecorded){history.push(snapshot());if(history.length>60)history.shift();future=[];nameEditRecorded=true;}name=event.target.value.slice(0,40);status='';persist();paint();}},{signal:controller.signal});
     root.addEventListener('keydown',event=>{const target=event.target.closest('[data-bike-part]');if(target&&['Enter',' '].includes(event.key)){event.preventDefault();select(target.dataset.bikePart);}},{signal:controller.signal});
     const collection=root.querySelector('.bike-collection-dialog');
-    collection.addEventListener('close',()=>{if(valid())root.querySelector('[data-bike-collection-open]')?.focus({preventScroll:true});},{signal:controller.signal});
+    collection.addEventListener('close',()=>{stopThumbnails();if(valid())root.querySelector('[data-bike-collection-open]')?.focus({preventScroll:true});},{signal:controller.signal});
     root.addEventListener('keydown',event=>{
       const menu=root.querySelector('.bike-part-menu[open], .bike-camera-menu[open]');
       if(event.key==='Escape'&&menu){event.preventDefault();menu.open=false;menu.querySelector('summary').focus({preventScroll:true});}
@@ -451,7 +495,7 @@ const JKCrewBikeGarage = (() => {
     window.addEventListener('resize',scheduleLayout,{signal:controller.signal});
     window.visualViewport?.addEventListener('resize',scheduleLayout,{signal:controller.signal});
     window.addEventListener('beforeunload',event=>{if(valid()&&dirty()&&!draftAvailable){event.preventDefault();event.returnValue='';}},{signal:controller.signal});
-    active={dispose(){alive=false;++view3DRequest;clearTimeout(timer3D);bike3D?.dispose();bike3D=null;controller.abort();observer.disconnect();cancelAnimationFrame(layoutFrame);if(collection.open)collection.close();if(fullscreen){fullscreen.destroy();fullscreen=null;}}};
+    active={dispose(){alive=false;stopThumbnails();for(const url of thumbnails.values())URL.revokeObjectURL(url);thumbnails.clear();++view3DRequest;clearTimeout(timer3D);bike3D?.dispose();bike3D=null;controller.abort();observer.disconnect();cancelAnimationFrame(layoutFrame);if(collection.open)collection.close();if(fullscreen){fullscreen.destroy();fullscreen=null;}}};
     paint();controls();garage();fitWorkspace();void load();
   }
   return {mount,destroy,teaserHtml,normalize,defaults:copy(defaults)};

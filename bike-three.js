@@ -290,7 +290,7 @@
     controls.addEventListener('end',()=>requestDraw(24));
     const handle={canvas,ready,update,selectPart:selectedPart,getView,setView,resetView,setCameraPreset,setAutoRotate,
       getStats:()=>({renderedFrames,pixelRatio:renderer.getPixelRatio(),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures}),
-      async exportBlob({type='image/png',quality=.94,width,height,fit=false}={}){
+      async exportBlob({type='image/png',quality=.94,width,height,fit=false,view:photoView=null}={}){
         await ready;if(disposed||!isCurrent())throw new Error('The bike preview has closed.');
         const size=renderer.getSize(new T.Vector2()),ratio=renderer.getPixelRatio();
         const explicitSize=Number.isFinite(width)&&Number.isFinite(height)&&width>0&&height>0;
@@ -299,8 +299,13 @@
         output.height=explicitSize?Math.min(4096,Math.round(height)):Math.floor(size.y*stillPixelRatio);
         const context=output.getContext('2d');if(!context)throw new Error('This browser could not create the photo.');
         const photoCamera=camera.clone();photoCamera.aspect=output.width/output.height;photoCamera.updateProjectionMatrix();
+        if(photoView){
+          const photoTarget=new T.Vector3(...photoView.target);
+          photoCamera.position.copy(photoTarget).add(new T.Vector3().setFromSpherical(new T.Spherical(photoView.distance,photoView.polar,photoView.yaw)));
+          photoCamera.lookAt(photoTarget);
+        }
         if(fit){
-          const view=getView(),distance=fitDistance(view.yaw,view.polar,photoCamera,target,false);
+          const view=photoView||getView(),distance=fitDistance(view.yaw,view.polar,photoCamera,target,false);
           photoCamera.position.copy(target).add(new T.Vector3().setFromSpherical(new T.Spherical(distance,view.polar,view.yaw)));
           photoCamera.lookAt(target);
         }

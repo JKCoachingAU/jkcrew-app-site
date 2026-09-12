@@ -175,7 +175,7 @@ body:has(#view[data-view="bikeGarage"]) #install-app{display:none}
 .bike-saved-card{min-width:0;overflow:hidden;border:1px solid var(--bike-line);border-radius:12px;background:var(--bike-field)}
 .bike-saved-card.is-current{border-color:var(--bike-accent)}
 .bike-saved-art{padding:6px;background:radial-gradient(ellipse at 50% 35%,#fff,#e5e8ed)}
-.bike-saved-art svg{display:block;width:100%;height:auto}
+.bike-saved-art svg,.bike-saved-art img{display:block;width:100%;height:auto}
 .bike-saved-title{padding:12px 12px 5px}
 .bike-saved-title>span{color:var(--bike-muted);font:500 9px/1 'Roboto Mono',monospace;letter-spacing:1px}
 .bike-saved-title h3{margin:6px 0;font:600 17px/1.3 'Barlow',sans-serif;overflow-wrap:anywhere}
@@ -372,3 +372,5 @@ html[data-theme=light] #app #view[data-view="bikeGarage"] .bike-part-picker{bord
 .bike-palette{gap:6px}
 @media(min-width:1000px){.bike-control-scroll:has(>.bike-finishes){display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-content:start;align-items:start;gap:12px}.bike-control-scroll:has(>.bike-finishes)>*{grid-column:1/-1}.bike-control-scroll:has(>.bike-finishes)>.bike-colour-section,.bike-control-scroll:has(>.bike-finishes)>.bike-finishes{grid-column:auto;margin-top:0}.bike-control-scroll:has(>.bike-finishes)>.bike-colour-section .bike-palette{grid-template-columns:repeat(6,minmax(0,1fr))}.bike-control-scroll:has(>.bike-finishes)>.bike-colour-section:only-child{grid-column:1/-1}.bike-control-scroll:has(>.bike-finishes) .bike-finishes>div{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:370px){.bike-part-menu-hint{padding:0 8px;font-size:11px;gap:5px}.bike-sheet-heading{gap:6px}.bike-garage [data-bike-sheet-close]{min-width:52px;padding:0 6px}}
+
+.bike-saved-art [data-bike-thumbnail]{display:grid;place-items:center;aspect-ratio:3/2;color:#334155;font-size:13px}

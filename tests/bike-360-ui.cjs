@@ -15,7 +15,7 @@ function equal(actual,expected,message){assert.deepEqual(actual,expected,message
 const fixture=`<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${['styles.css','bike-garage.css','bike-preview.css'].map(file=>`<link rel="stylesheet" href="/${file}">`).join('')}</head><body><div id="app"><div class="app-shell rider-shell"><aside class="sidebar"><div class="sidebar-brand logo-sidebar-brand"><img src="/icons/jkc-logo.png" alt="JK Coaching"><span>JK Coaching</span></div><div class="role-pill">Rider account</div><nav class="nav-list">${nav}</nav></aside><div class="main-wrap"><header class="topbar"><div class="topbar-title"><img class="topbar-logo" src="/icons/jkc-logo.png" alt="">JKCREW live</div><div class="topbar-actions"><span class="sync-status"><i></i><b>Saved</b></span></div></header><main id="view" class="content" data-view="bikeGarage"></main></div><nav class="bottom-nav">${nav}</nav></div></div><button id="install-app" type="button" class="install-app">Install JK Coaching</button>${modules.map(file=>`<script src="/${file}?v=bike-360-regression"></script>`).join('')}<script>
 window.testCalls=[];window.testMounts=[];window.testMountPromises=[];window.testOwner='orbit-owner';window.testRows=[];
 const actual3D=JKCrewBike3D;
-globalThis.JKCrewBike3D={...actual3D,mount(options){const record={disposed:false,resolved:false,started:performance.now()};testMounts.push(record);const pending=actual3D.mount(options).then(handle=>{record.resolved=true;record.loadMs=performance.now()-record.started;const update=handle.update;handle.update=config=>{window.testLastUpdate=update(config);return testLastUpdate;};const dispose=handle.dispose;handle.dispose=()=>{record.disposed=true;dispose();};window.testHandle=handle;return handle;});testMountPromises.push(pending);return pending;}};
+globalThis.JKCrewBike3D={...actual3D,mount(options){const record={disposed:false,resolved:false,started:performance.now(),thumbnail:Boolean(options.element.dataset.bikeThumbnailRenderer!==undefined),configuration:JSON.stringify(options.configuration)};testMounts.push(record);const pending=actual3D.mount(options).then(handle=>{record.resolved=true;record.loadMs=performance.now()-record.started;const update=handle.update;handle.update=config=>{window.testLastUpdate=update(config);return testLastUpdate;};const dispose=handle.dispose;handle.dispose=()=>{record.disposed=true;dispose();};if(!record.thumbnail)window.testHandle=handle;return handle;});testMountPromises.push(pending);return pending;}};
 window.testClient={rpc:async(method,args)=>{testCalls.push({method,args});if(method==='get_bike_garage')return {data:{builds:testRows}};if(method==='save_bike_build'){const row={slot:args.p_slot,name:args.p_name,configuration:args.p_configuration,revision:args.p_expected_revision+1,updated_at:new Date().toISOString()};testRows=[row];return {data:row};}throw new Error('Unexpected fixture RPC '+method);}};
 window.testMount=(owner='orbit-owner')=>{testOwner=owner;JKCrewBikeGarage.mount({root:document.querySelector('#view'),client:testClient,userId:owner,isCurrent:()=>testOwner===owner,onBack:()=>{}});};
 window.testDraft=()=>JSON.parse(localStorage.getItem('jkcrew-bike-draft-v1:'+testOwner)||'null');
@@ -165,13 +165,16 @@ async function optionUpdates(page){
 }
 async function photoSourceChecks(page){
   await closeSheet(page);await setView(page,{yaw:2.6,polar:1.32});
-  const before=await page.evaluate(()=>({view:testHandle.getView(),width:testHandle.canvas.width,height:testHandle.canvas.height,config:JSON.stringify(testDraft().configuration)}));
+  const screen=await image(page);
+  const before=await page.evaluate(()=>{const c=testHandle.canvas,aspect=c.clientWidth/c.clientHeight;window.testPhotoOptions={width:aspect>=1?2048:Math.round(2048*aspect),height:aspect>=1?Math.round(2048/aspect):2048,view:testHandle.getView()};return {view:testHandle.getView(),width:c.width,height:c.height,config:JSON.stringify(testDraft().configuration),photoSize:[testPhotoOptions.width,testPhotoOptions.height]};});
   await page.locator('[data-bike-preview]').click();
   const photo=page.locator('[data-bike-model-photo]');await photo.waitFor();
   const readPhoto=async()=>PNG.sync.read(Buffer.from(await photo.evaluate(async image=>{await image.decode();const blob=await fetch(image.src).then(r=>r.blob());return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(blob);});}),'base64'));
-  const readModel=async()=>PNG.sync.read(Buffer.from(await page.evaluate(async()=>{const blob=await testHandle.exportBlob({width:2048,height:1365,fit:true});return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(blob);});}),'base64'));
+  const readModel=async()=>PNG.sync.read(Buffer.from(await page.evaluate(async()=>{const blob=await testHandle.exportBlob(testPhotoOptions);return await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(blob);});}),'base64'));
   const initial=await readPhoto();
-  equal([initial.width,initial.height],[2048,1365],'Photo Studio captures a high-resolution 3D bike');
+  equal([initial.width,initial.height],before.photoSize,'Photo Studio preserves the viewport aspect at high resolution');
+  const liveBounds=redBounds(screen),photoBounds=redBounds(initial);
+  check(Math.abs(liveBounds.width/screen.width-photoBounds.width/initial.width)<.005&&Math.abs(liveBounds.height/screen.height-photoBounds.height/initial.height)<.005,'Photo projection matches the visible bike size without automatic reframing');
   equal(hash(initial),hash(await readModel()),'The photo pixels match the updated 360 model with customised parts and viewing angle');
   equal(await page.locator('[data-bike-preview-art] svg').count(),0,'The live photo contains no older SVG bike');
   await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false}));
@@ -200,6 +203,23 @@ async function photoSourceChecks(page){
   await page.locator('[data-bike-preview-close]').click();await page.evaluate(()=>{testHandle.exportBlob=testExport;testCaptureRelease();});await settle(page);
   equal(await page.locator('.bike-photo-preview').count(),0,'Closing during capture prevents stale photo UI');
   console.log('PASS: matching 3D/photo pixels, PNG download, scenes, camera restoration and capture recovery.');
+}
+async function savedPreviewChecks(page){
+  await page.locator('[data-bike-save]').click();await page.waitForFunction(()=>testRows.length===1);
+  const before=await page.evaluate(()=>({view:testHandle.getView(),draft:JSON.stringify(testDraft()),configuration:JSON.stringify(testRows[0].configuration)}));
+  await page.locator('[data-bike-collection-open]').click();
+  const thumb=page.locator('[data-bike-saved-model]');await thumb.waitFor();
+  check(await thumb.evaluate(async image=>{await image.decode();return image.naturalWidth===480&&image.naturalHeight===320;}),'Saved-bike cards contain a rendered 3D thumbnail');
+  equal(await page.locator('.bike-saved-art svg').count(),0,'My garage never shows the legacy photographic bike');
+  equal(await page.evaluate(()=>testMounts.filter(m=>m.thumbnail).at(-1).configuration),before.configuration,'Thumbnail uses the saved bike configuration, not unsaved editor changes');
+  await page.waitForFunction(()=>testMounts.filter(m=>m.thumbnail).every(m=>m.disposed));
+  equal(await page.locator('[data-bike-thumbnail-renderer]').count(),0,'Thumbnail generation releases its temporary GPU renderer');
+  sameView(await view(page),before.view,'Generating thumbnails does not move the live bike');
+  equal(await page.evaluate(()=>JSON.stringify(testDraft())),before.draft,'Generating thumbnails leaves the rider draft unchanged');
+  const count=await page.evaluate(()=>testMounts.length);
+  await page.locator('[data-bike-collection-close]').click();await page.locator('[data-bike-collection-open]').click();await thumb.waitFor();
+  equal(await page.evaluate(()=>testMounts.length),count,'Reopening saved bikes reuses cached photos without another renderer');
+  await page.locator('[data-bike-collection-close]').click();
 }
 async function captureAndMeasure(page){
   await page.setViewportSize({width:390,height:844});await settle(page);await resetView(page);await part(page,'frame','Frame');
@@ -249,7 +269,7 @@ async function run(){
     equal(await page.locator('[data-bike-view-toggle]').count(),0,'The updated 360 bike is the default without a photographic view switch');
     equal(await page.locator('.bike-three-canvas').count(),1,'Opening the builder starts exactly one 3D renderer');
     if(process.env.JKCREW_360_CAPTURE_ONLY){await captureAndMeasure(page);return;}
-    await checksForModel(page);await componentDetailChecks(page);await assemblyChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);await photoSourceChecks(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
+    await checksForModel(page);await componentDetailChecks(page);await assemblyChecks(page);console.log('PASS: original 3D mesh volume, drivetrain, pegs, brakes and stems.');await interaction(page);console.log('PASS: real orbit/tap/pinch and camera-preserving edits.');await geometryViews(page);await optionUpdates(page);await photoSourceChecks(page);await savedPreviewChecks(page);console.log('PASS: four physical views, resized fit, live option geometry and PNG export.');
     const draftBeforeLoss=await page.evaluate(()=>JSON.stringify(testDraft()));await page.evaluate(()=>testHandle.canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());await page.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await page.locator('[data-bike-3d-retry]').isVisible(),'A real GPU context loss offers a usable fallback and retry');equal(await page.evaluate(()=>JSON.stringify(testDraft())),draftBeforeLoss,'A GPU interruption preserves the exact local draft');await page.locator('[data-bike-3d-retry]').click();await ready(page);equal(await page.locator('.bike-three-canvas').count(),1,'Retry restores exactly one live renderer');await captureAndMeasure(page);
     await page.evaluate(()=>{JKCrewBikeGarage.destroy();document.querySelector('#view').innerHTML='<p>Outside the garage</p>';});equal(await page.locator('canvas.bike-three-canvas').count(),0,'Leaving the garage removes the canvas');check(await page.evaluate(()=>testMounts.every(m=>!m.resolved||m.disposed)),'Leaving the garage disposes every mounted renderer');await page.close();
     const failed=await create();await failed.route('**/bike-three-model.js*',route=>route.abort());await failed.evaluate(()=>testMount('fallback-owner'));await failed.waitForFunction(()=>document.querySelector('[data-bike-art][data-view="photo"] .jkcrew-bike-art')&&document.querySelector('[data-bike-art]').getAttribute('aria-busy')==='false');check(await failed.locator('[data-bike-3d-retry]').isVisible(),'A failed dependency offers a 360 retry and usable photo fallback');equal(await failed.locator('.bike-three-canvas').count(),0,'Failed initialisation leaves no dead canvas');equal(await failed.evaluate(()=>testCalls.filter(c=>c.method!=='get_bike_garage').length),0,'Fallback does not write account data');await failed.close();
