@@ -92,7 +92,7 @@ async function checkLayout(page,role,width,height,theme) {
   await page.setViewportSize({width,height});
   await page.evaluate(({role,theme})=>{document.querySelector('.app-shell').className=`app-shell ${role}-shell`;document.documentElement.dataset.theme=theme;},{role,theme});
   await settle(page);await sheetState(page,false,label+'/closed');await fitsShell(page,label+'/closed');
-  for(const control of ['[data-bike-back]','[data-bike-new]','[data-bike-shuffle]','[data-bike-preview]','[data-bike-view-toggle]','[data-bike-group="Frame"]','[data-bike-group="Front end"]','[data-bike-group="Wheels"]','[data-bike-group="Details"]','[data-bike-save]'])await hitTest(page.locator(control),`${label}/closed/${control}`);
+  for(const control of ['[data-bike-back]','[data-bike-new]','[data-bike-shuffle]','[data-bike-preview]','[data-bike-group="Frame"]','[data-bike-group="Front end"]','[data-bike-group="Wheels"]','[data-bike-group="Details"]','[data-bike-save]'])await hitTest(page.locator(control),`${label}/closed/${control}`);
   const output=`/tmp/jkcrew-garage-dock-${role}-${width}x${height}-${theme}`;
   if(role==='coach')await page.screenshot({path:output+'-closed.png'});
   await choosePart(page,'Frame','frame');await choosePart(page,'Details','seat');
