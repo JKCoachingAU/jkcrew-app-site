@@ -1,4 +1,4 @@
-# JKCREW Bike Garage — 2.14.106
+# JKCREW Bike Garage — 2.14.107
 
 A cosmetic BMX customiser built into JKCREW. Riders open **Profile → Build your dream bike**; coaches open **More → Bike Garage**. It offers an original, fully modelled 360° BMX viewer with part/colour controls, and a separate photographic studio for backgrounds and PNG export.
 
@@ -6,7 +6,7 @@ The bike is the main surface in an immersive workspace. A compact bottom dock op
 
 The 3D model has physical geometry on both sides: frame tubing, forks, bars, machined stem forms, crossed spokes, nipples, hubs, chain, cranks, level platforms, saddle and pegs. Drag rotates horizontally through a full turn, pinch/wheel zooms, arrow keys rotate, plus/minus zoom and Home/Reset restore framing. Rotation and zoom are temporary view state; changing a part, its colour, the bike name or undoing an edit preserves the view. A click/tap selects a part, while a drag or multi-touch gesture does not. Geometry is original JKCREW work rendered using locally hosted, pinned Three.js modules. The engine/model load on demand and never delay app-shell installation or sign-in. If 3D cannot load or WebGL is unavailable, the existing photographic editor remains usable with a clear Photo view message and a Retry 360° view action.
 
-Colours appear before finish options. The part menu gives direct access to every part without a wrapping wall of buttons. Each category remembers the last part selected during the visit. Editing a colour or option preserves the settings scroll position; selecting another part starts its settings at the top. **My garage** opens a separate drawer containing saved builds and a closed inspiration section. Closing it preserves the unfinished design and restores focus; load/remove errors remain visible in the drawer.
+Colours appear before finish options. The part menu gives direct access to every part without a wrapping wall of buttons. Each category remembers the last part selected during the visit. Editing a colour or option preserves the settings scroll position; selecting another part starts its settings at the top. **My garage** opens a separate drawer containing saved builds. Closing it preserves the unfinished design and restores focus; load/remove errors remain visible in the drawer.
 
 New bikes start as an all-white BMX with a clean frame and no pegs. The **Blank bike** button above the preview starts a fresh design, asking before replacing unsaved work. Existing saved colours and drafts are retained. The 3D viewer uses a studio setting, physical materials and ground shadows. Photo Studio retains the generated photographs, material textures, shading and reflections for finished side-view pictures.
 
@@ -46,6 +46,8 @@ A closed inspiration section links to 13 verified real seat and component refere
 - Client modules and delivery assets are included in both app paths and their separate service-worker caches.
 
 ## Validation
+
+Release 2.14.107 removes the frame-geometry and fork-model selectors, per-part shop references, seat-inspiration shop links and real-parts shopping section. Frame and fork colour/finish controls remain. Existing saved geometry values are preserved for compatibility, and Surprise me no longer changes those hidden values.
 
 The 2.14.106 model uses the supplied BMX reference photographs to replace open-loop chain geometry with a continuous roller chain, including instanced side plates, rollers and rivets. Both stems now have separate clamp bodies with circular handlebar bores and recessed socket bolts; the bar stays straight through its clamp. Crank eyes have spindle/pedal bores, platforms have bevelled edges and four windows, the saddle has a lower pivotal mount, and tyre blocks follow the round carcass. Rubber no longer uses a glossy clearcoat, painted parts have less metallic reflection, and machined surfaces use smooth bevel normals. Side-profile and cockpit presets frame their intended subjects. Existing config keys and saved bike data are unchanged. Geometry regressions cover chain joins all the way around both drive sides, open stem bores and rubber materials, in addition to the existing controls, saving, export and frame-scheduling checks.
 

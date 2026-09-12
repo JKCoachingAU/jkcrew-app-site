@@ -156,7 +156,7 @@ async function checkCollection(page) {
   const opener=page.locator('[data-bike-collection-open]');await opener.click();
   const dialog=page.locator('.bike-collection-dialog');assert(await dialog.isVisible());
   assert(await dialog.locator('[data-bike-garage]').evaluate(el=>el.open),'My garage opens inside its collection drawer');
-  assert.equal(await dialog.locator('.bike-parts-inspiration').evaluate(el=>el.open),false,'Inspiration stays closed');
+  assert.equal(await dialog.locator('.bike-parts-inspiration').count(),0,'Real-parts shopping section is removed');
   assert(await dialog.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight+1&&r.left>=0&&r.right<=innerWidth+1;}),'Collection dialog is bounded by the phone viewport');
   await dialog.locator('[data-bike-remove="3"]').click();
   const status=dialog.locator('[data-bike-collection-status]');await status.filter({hasText:/Could not remove/}).waitFor();

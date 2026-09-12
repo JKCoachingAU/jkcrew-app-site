@@ -9,13 +9,9 @@ const JKCrewBikeGarage = (() => {
   const labels = {frame:'Frame',fork:'Forks',bars:'Handlebars',grips:'Grips',rims:'Rims',hubs:'Hubs',tyres:'Tyres',seat:'Seat',seatpost:'Seat post',stem:'Stem',headset:'Headset',spokes:'Spokes',nipples:'Spoke nipples',pedals:'Pedals',cranks:'Cranks',sprocket:'Sprocket',pegs:'Pegs',brakes:'Brakes',drivetrain:'Drivetrain',decal:'Frame graphic'};
   const finishLabels = {gloss:'Gloss',matte:'Matte',chrome:'Chrome',raw:'Raw',jetfuel:'Jet fuel'};
   const catalogue = value => (globalThis.JKCrewBikeParts?.[value] || []).map(item => [item.id, item.name, item.tagline]);
-  // Each editable part can carry one or more independent choice rows — a
-  // colour-style choice (existing) alongside a real-part "model" choice
-  // (new). Every button carries its own config key, so parts with two rows
-  // (bars, tyres) stay unambiguous.
+  // Each style button carries its own config key so independent choices
+  // such as bar shape and height remain unambiguous.
   const styleGroups = {
-    frame: [['frameModel', catalogue('frameModels'), 'FRAME GEOMETRY']],
-    fork: [['forkModel', catalogue('forkModels'), 'FORK']],
     bars: [['barStyle',[['two-piece','Two piece',''],['four-piece','Four piece','']],'CROSSBAR'], ['barModel', catalogue('barModels'), 'HEIGHT & WIDTH']],
     grips: [['gripStyle', catalogue('gripStyles'), 'FLANGE']],
     tyres: [['tyreStyle',[['white','All white',''],['black','All black',''],['tan-wall','Tan wall',''],['white-wall','White wall','']],'TYRE COLOUR'], ['tireTread', catalogue('tireTreads'), 'TREAD PATTERN']],
@@ -30,9 +26,6 @@ const JKCrewBikeGarage = (() => {
     cranks: [['crankModel', catalogue('crankModels'), 'CRANK TYPE']],
     spokes: [['spokeStyle',[['standard','Solid colour',''],['rainbow','Titanium rainbow','']],'SPOKES']],
   };
-  function partReferences(part) {
-    return (globalThis.JKCrewBikeParts?.references || []).filter(ref => ref.part === part);
-  }
   const copy = value => JSON.parse(JSON.stringify(value));
   const html = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const hex = value => /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value).toUpperCase() : null;
@@ -180,7 +173,7 @@ const JKCrewBikeGarage = (() => {
         <label class="bike-seat-filter"><span>Browse designs</span><select data-bike-seat-category aria-label="Seat design collection">${['All',...new Set(JKCrewBikeSeats.designs.map(design=>design.category))].map(category=>`<option ${category===seatCategory?'selected':''}>${html(category)}</option>`).join('')}</select></label>
         <div class="bike-seat-grid">${designs.slice(seatPage*8,seatPage*8+8).map(design=>`<button type="button" class="bike-seat-tile" data-bike-seat-design="${design.id}" aria-pressed="${config.seatDesign===design.id}" aria-label="${html(design.name)} seat design"><span class="bike-seat-thumb" aria-hidden="true">${JKCrewBikeSeats.thumbnail(design.id)}</span><span>${html(design.name)}</span>${config.seatDesign===design.id?'<b aria-hidden="true">✓</b>':''}</button>`).join('')}</div>
         <div class="bike-seat-pagination"><button type="button" data-bike-seat-page="-1" aria-label="Previous seat designs" ${seatPage===0?'disabled':''}>←</button><span>${seatPage+1} / ${pages} · ${designs.length} designs</span><button type="button" data-bike-seat-page="1" aria-label="Next seat designs" ${seatPage===pages-1?'disabled':''}>→</button></div>
-        ${chosen?`<p class="bike-design-note"><strong>${html(chosen.name)}</strong> · Original JKCREW look${chosen.sourceUrl?`<a href="${html(chosen.sourceUrl)}" target="_blank" rel="noopener noreferrer">See the real ${html(chosen.sourceTitle||'seat inspiration')} ↗</a>`:''}</p>`:''}</div>`;
+        ${chosen?`<p class="bike-design-note"><strong>${html(chosen.name)}</strong> · Original JKCREW look</p>`:''}</div>`;
     }
     function controls() {
       if (!valid()) return;
@@ -197,7 +190,6 @@ const JKCrewBikeGarage = (() => {
       root.querySelector('[data-bike-navigation]').innerHTML=`
         <div class="bike-part-tabs" aria-label="Bike sections">${Object.keys(groups).map(label=>`<button type="button" data-bike-group="${label}" aria-pressed="${controlsOpen&&group===label}" aria-expanded="${controlsOpen&&group===label}" aria-controls="bike-options-sheet"><i aria-hidden="true">${groupIcons[label]}</i>${groupLabels[label]}</button>`).join('')}</div>`;
       root.querySelector('[data-bike-part-navigation]').innerHTML=`${groups[group].length>1?`<details class="bike-part-menu"><summary aria-label="Choose a part, currently ${labels[part]}"><span><small>EDITING</small><strong>${labels[part]}</strong></span><span class="bike-part-menu-hint">Change part <b aria-hidden="true">⌄</b></span></summary><div class="bike-part-picker" aria-label="Choose a part">${partButtons}</div></details>`:`<div class="bike-part-current"><span><small>EDITING</small><strong>${labels[part]}</strong></span><span class="bike-part-menu-hint">Tap a part on your bike</span></div>`}`;
-      const referenceRows=partReferences(part);
       scrollArea.innerHTML=`
         ${styleRows.map(([key,options,rowLabel])=>{
           const active=options.find(([id])=>config[key]===id);
@@ -213,7 +205,6 @@ const JKCrewBikeGarage = (() => {
         ${part==='pegs'&&config.pegs==='both'?'<p class="bike-control-tip">Front and rear pegs on the side opposite your chain.</p>':''}
         ${part==='pegs'&&config.pegs==='four'?'<p class="bike-control-tip">Front and rear pegs on both sides.</p>':''}
         ${['chrome','raw','jetfuel'].includes(finish)?`<p class="bike-control-tip">${finish==='jetfuel'?'Iridescent blue, purple and gold metal.':finish==='raw'?'Exposed steel with a brushed finish.':'Bright polished metal.'}</p>`:''}
-        ${referenceRows.length?`<div class="bike-part-reference">${referenceRows.map(ref=>`<p class="bike-design-note"><strong>${html(ref.title)}</strong> · ${html(ref.shop)}<a href="${html(ref.url)}" target="_blank" rel="noopener noreferrer">See the real part ↗</a></p>`).join('')}</div>`:''}
         <p class="bike-control-tip bike-tap-tip">Tap any part on the bike to customise it.</p>`;
       root.querySelector('[data-bike-sheet]').hidden=!controlsOpen;
       root.querySelector('[data-bike-workshop]').dataset.controlsOpen=String(controlsOpen);
@@ -349,7 +340,6 @@ const JKCrewBikeGarage = (() => {
       <div class="bike-save-bar"><label class="bike-name-field"><span>NAME YOUR BUILD</span><input type="text" maxlength="40" data-bike-name value="${html(name)}" autocomplete="off"></label><div class="bike-save-actions"><button type="button" class="bike-save-copy" data-bike-retry hidden aria-label="Refresh garage" title="Refresh garage">↻</button><button type="button" class="bike-save-copy" data-bike-save-copy hidden aria-label="Save as new" title="Save as new">⧉</button><button type="button" class="bike-primary" data-bike-save>Save to garage</button></div><p class="bike-save-status" data-bike-status role="status" aria-live="polite"></p></div>
       <dialog class="bike-collection-dialog" aria-label="My bike garage"><header><div><span class="bike-eyebrow">YOUR COLLECTION</span><h2>Saved bikes</h2></div><button type="button" data-bike-collection-close aria-label="Close my garage">×</button></header><div class="bike-collection-body"><p class="bike-collection-status" data-bike-collection-status role="status" aria-live="polite" hidden></p>
       <details class="bike-garage-shelf" data-bike-garage><summary><span><span class="bike-eyebrow">YOUR COLLECTION</span><strong>My garage <small data-bike-count>0 / 3</small></strong></span><b aria-hidden="true">+</b></summary><div class="bike-garage-toolbar"><p>Three spaces. Endless ideas.</p><button type="button" data-bike-reload>Retry loading garage</button></div><div class="bike-saved-grid" data-bike-saved-list></div></details>
-      <details class="bike-parts-inspiration"><summary><span><span class="bike-eyebrow">FROM THE BMX SHOPS</span><strong>Real parts. Fresh ideas.</strong></span><b aria-hidden="true">+</b></summary><p>Explore the real parts and hardware behind the inspiration. Every shape, colour and seat design in your garage is an original JKCREW build — generalised from, not copied from, these real products.</p><div class="bike-shop-grid">${[...JKCrewBikeSeats.references,...(globalThis.JKCrewBikeParts?.references||[])].map(ref=>`<a href="${html(ref.url)}" target="_blank" rel="noopener noreferrer"><span>${html(ref.shop)} · ${html(ref.part)}</span><strong>${html(ref.title)} <b aria-hidden="true">↗</b></strong><small>${html(ref.description)}</small></a>`).join('')}</div></details>
       <p class="bike-garage-footnote">Dream builds, made by you. Saved designs are private to your account.</p>
       </div></dialog>
     </section>`;
@@ -381,7 +371,7 @@ const JKCrewBikeGarage = (() => {
         config.seatDesign=pick(JKCrewBikeConfig.seatDesignIds);
         const parts=globalThis.JKCrewBikeParts;
         if(parts){
-          config.frameModel=pick(parts.frameModels).id;config.forkModel=pick(parts.forkModels).id;config.barModel=pick(parts.barModels).id;
+          config.barModel=pick(parts.barModels).id;
           config.tireTread=pick(parts.tireTreads).id;config.hubStyle=pick(parts.hubStyles).id;config.crankModel=pick(parts.crankModels).id;
           config.sprocketStyle=pick(parts.sprocketStyles).id;config.gripStyle=pick(parts.gripStyles).id;
         }
