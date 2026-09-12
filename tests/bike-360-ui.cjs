@@ -296,4 +296,5 @@ async function run(){
     equal(errors,[],'No uncaught browser errors');console.log(`PASS: ${checks} real 3D geometry, orbit, touch, camera, configuration, lifecycle and fallback checks; no production requests or writes.`);
   }finally{await browser.close();await local.close();}
 }
-run().catch(error=>{console.error(error.stack||error);process.exitCode=1;});
+module.exports={server,ready,settle};
+if(require.main===module)run().catch(error=>{console.error(error.stack||error);process.exitCode=1;});

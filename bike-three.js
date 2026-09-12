@@ -32,7 +32,7 @@
     warehouse:{sky:'#453b34',fog:'#453b34',ground:'#585049',key:'#ffcf94',fill:'#8f9db8',keyIntensity:2.35,fillIntensity:.95},
     rooftop:{sky:'#e7a980',fog:'#d99a7c',ground:'#6c6a6e',key:'#ffb27a',fill:'#7d8fc4',keyIntensity:2.5,fillIntensity:1.35},
   };
-  async function mount({element,configuration,onSelect,onError,onAutoRotateChange,isCurrent=()=>true}={}){
+  async function mount({element,configuration,onSelect,onError,onBackgroundError,onAutoRotateChange,isCurrent=()=>true}={}){
     if(!element?.appendChild)throw new TypeError('The 3D viewer needs a container.');
     let T,OrbitControls,RoomEnvironment,createBike;
     try{const d=await modules();[T,{OrbitControls},{RoomEnvironment},{createBike}]=d;}catch(error){if(isCurrent())onError?.(error);throw error;}
@@ -66,75 +66,69 @@
     const groundGeometry=new T.PlaneGeometry(80,80),ground=new T.Mesh(groundGeometry,groundMaterial);ground.rotation.x=-Math.PI/2;ground.position.y=-.002;ground.receiveShadow=true;scene.add(ground);
     const contactCanvas=document.createElement('canvas');contactCanvas.width=contactCanvas.height=128;const contactContext=contactCanvas.getContext('2d'),gradient=contactContext.createRadialGradient(64,64,2,64,64,64);gradient.addColorStop(0,'rgba(20,24,30,.42)');gradient.addColorStop(.38,'rgba(20,24,30,.17)');gradient.addColorStop(1,'rgba(20,24,30,0)');contactContext.fillStyle=gradient;contactContext.fillRect(0,0,128,128);const contactTexture=new T.CanvasTexture(contactCanvas),contactMaterial=new T.MeshBasicMaterial({map:contactTexture,transparent:true,depthWrite:false}),contactGeometry=new T.PlaneGeometry(.22,.12);for(const x of [-.54,.505]){const contact=new T.Mesh(contactGeometry,contactMaterial);contact.rotation.x=-Math.PI/2;contact.position.set(x,.0002,0);scene.add(contact);}
     let model=null,disposed=false,frame=0,framesLeft=0,buildNumber=0,currentFingerprint='',selected='',ready=Promise.resolve(),hasFit=false,lastFitDistance=0,lastWidth=0,lastHeight=0,currentBackground='studio';
-    const temporaryMaterials=[],temporaryGeometries=[],temporaryTextures=[];
-    let groundMapTexture=null;
-    const scenery=new T.Group();scene.add(scenery);
-    function clearScenery(){for(const g of temporaryGeometries)g.dispose();for(const m of temporaryMaterials)m.dispose();for(const t of temporaryTextures)t.dispose();temporaryGeometries.length=temporaryMaterials.length=temporaryTextures.length=0;scenery.clear();}
-    function sceneryBox(position,size,color){const g=new T.BoxGeometry(...size),m=new T.MeshStandardMaterial({color,roughness:.9});temporaryGeometries.push(g);temporaryMaterials.push(m);const obj=new T.Mesh(g,m);obj.position.set(...position);obj.castShadow=obj.receiveShadow=true;scenery.add(obj);return obj;}
-    function canvasTexture(size,draw){const cnv=document.createElement('canvas');cnv.width=cnv.height=size;draw(cnv.getContext('2d'),size);const tex=new T.CanvasTexture(cnv);tex.colorSpace=T.SRGBColorSpace;temporaryTextures.push(tex);return tex;}
-    // A full 360° textured cylinder around the bike so every background
-    // reads correctly from any orbit angle, not just from one "front" side.
-    function cyclorama(radius,height,draw,repeatX=3){
-      const tex=canvasTexture(512,draw);tex.wrapS=T.RepeatWrapping;tex.repeat.set(repeatX,1);
-      const g=new T.CylinderGeometry(radius,radius,height,56,1,true),m=new T.MeshStandardMaterial({map:tex,side:T.BackSide,roughness:1,fog:true});
-      temporaryGeometries.push(g);temporaryMaterials.push(m);
-      const mesh=new T.Mesh(g,m);mesh.position.y=height/2-.01;scenery.add(mesh);return mesh;
-    }
-    // A soft dusk sky dome (rooftop) — the skyline silhouette is baked into
-    // the same panoramic texture, so it too is correct from every angle.
-    function skyDome(radius,draw){
-      const tex=canvasTexture(512,draw);tex.wrapS=T.RepeatWrapping;
-      const g=new T.SphereGeometry(radius,40,20,0,TAU2),m=new T.MeshBasicMaterial({map:tex,side:T.BackSide,fog:false});
-      temporaryGeometries.push(g);temporaryMaterials.push(m);
-      const mesh=new T.Mesh(g,m);scenery.add(mesh);return mesh;
-    }
     const TAU2=Math.PI*2;
-    function setGroundTexture(draw,repeat=16){
-      if(groundMapTexture){groundMapTexture.dispose();groundMapTexture=null;}
-      groundMapTexture=draw?canvasTexture(256,draw):null;
-      if(groundMapTexture){groundMapTexture.wrapS=groundMapTexture.wrapT=T.RepeatWrapping;groundMapTexture.repeat.set(repeat,repeat);}
-      groundMaterial.map=groundMapTexture;groundMaterial.needsUpdate=true;
+    const photoGroundMaterial=new T.ShadowMaterial({color:'#18202b',opacity:.24,depthWrite:false});
+    const backgroundTextures=new Map(),backgroundLoads=new Map();
+    let backgroundSequence=0,backgroundReady=null,backgroundError=null;
+    function loadBackground(name){
+      if(backgroundTextures.has(name))return Promise.resolve(backgroundTextures.get(name));
+      if(backgroundLoads.has(name))return backgroundLoads.get(name).promise;
+      const controller=new AbortController(),signal=controller.signal;
+      const timer=setTimeout(()=>controller.abort(),12000);
+      const promise=(async()=>{
+        let url='';
+        try{
+          const response=await fetch(new URL(`images/bike-garage/scene-${name}-v4.webp`,baseURL),{signal,credentials:'omit'});
+          if(!response.ok)throw new Error('The background photo could not load.');
+          const blob=await response.blob();
+          if(!blob.size||blob.size>8*1024*1024)throw new Error('The background photo could not be prepared.');
+          url=URL.createObjectURL(blob);
+          const image=await new Promise((resolve,reject)=>{
+            const image=new Image();
+            const finish=error=>{image.onload=image.onerror=null;signal.removeEventListener('abort',cancel);if(error){image.src='';reject(error);}else resolve(image);};
+            const cancel=()=>finish(new DOMException('Background loading stopped','AbortError'));
+            image.onload=()=>finish();image.onerror=()=>finish(new Error('The background photo could not be decoded.'));
+            signal.addEventListener('abort',cancel,{once:true});
+            if(signal.aborted)cancel();else image.src=url;
+          });
+          if(disposed||signal.aborted)throw new DOMException('The bike preview has closed.','AbortError');
+          const texture=new T.Texture(image);texture.colorSpace=T.SRGBColorSpace;texture.needsUpdate=true;
+          backgroundTextures.set(name,texture);return texture;
+        }finally{clearTimeout(timer);if(url)URL.revokeObjectURL(url);backgroundLoads.delete(name);}
+      })();
+      backgroundLoads.set(name,{controller,promise});return promise;
     }
-    // Each background swaps the studio cyc for a lightweight, fully-surround
-    // 3D environment and re-tints the lighting to match its mood — the 3D
-    // orbit view now honours the same background choice as Photo Studio,
-    // instead of ignoring it.
+    // Use the same photograph as the scene picker behind the actual 3D bike.
+    // A transparent ground catches its shadow without covering the photograph.
+    // The fixed backdrop also remains visible when the bike is rotated or zoomed.
     function background(name){
-      clearScenery();
-      const mood=BACKGROUND_MOOD[name]||BACKGROUND_MOOD.studio;
-      currentBackground=BACKGROUND_MOOD[name]?name:'studio';
-      scene.background=new T.Color(mood.sky);scene.fog.color.set(mood.fog);
-      key.color.set(mood.key);key.intensity=mood.keyIntensity;fill.color.set(mood.fill);fill.intensity=mood.fillIntensity;
-      groundMaterial.color.set(mood.ground);
-      if(currentBackground==='studio'){setGroundTexture(null);scene.fog.near=5;scene.fog.far=13;return;}
-      scene.fog.near=2.6;scene.fog.far=currentBackground==='rooftop'?11:7.4;
-      if(currentBackground==='street'){
-        setGroundTexture((ctx,s)=>{ctx.fillStyle='#8b9096';ctx.fillRect(0,0,s,s);for(let i=0;i<420;i++){ctx.fillStyle=`rgba(0,0,0,${.03+Math.random()*.05})`;ctx.beginPath();ctx.arc(Math.random()*s,Math.random()*s,.6+Math.random()*1.6,0,TAU2);ctx.fill();}ctx.strokeStyle='#d8d3c4';ctx.lineWidth=3;ctx.setLineDash([10,9]);ctx.beginPath();ctx.moveTo(s*.5,0);ctx.lineTo(s*.5,s);ctx.stroke();},20);
-        cyclorama(3.3,3.1,(ctx,s)=>{ctx.fillStyle='#c9c2b4';ctx.fillRect(0,0,s,s);for(let x=0;x<s;x+=s/24)ctx.fillRect(x,0,1,s);for(let y=0;y<s;y+=s/9)ctx.fillRect(0,y,s,1);
-          const blocks=[['#9c5b6b',.06],['#6a7f97',.10],['#c9a24a',.05],['#516b58',.07]];
-          for(const [color,cover] of blocks){ctx.fillStyle=color;const w=s*cover*3,h=s*.32;ctx.fillRect(Math.random()*(s-w),s*.42+Math.random()*(s*.2),w,h);}
-          ctx.fillStyle='#3a3f46';ctx.fillRect(0,s*.82,s,s*.18);},4);
-      }else if(currentBackground==='skatepark'){
-        setGroundTexture((ctx,s)=>{ctx.fillStyle='#aab0b6';ctx.fillRect(0,0,s,s);for(let i=0;i<260;i++){ctx.fillStyle=`rgba(255,255,255,${.02+Math.random()*.04})`;ctx.beginPath();ctx.arc(Math.random()*s,Math.random()*s,1+Math.random()*3,0,TAU2);ctx.fill();}for(let x=0;x<s;x+=s/5){ctx.strokeStyle='rgba(60,66,72,.18)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,s);ctx.stroke();}},14);
-        cyclorama(3.3,2.9,(ctx,s)=>{ctx.fillStyle='#c4cad0';ctx.fillRect(0,0,s,s);ctx.fillStyle='#aeb6bc';ctx.fillRect(0,s*.62,s,s*.06);for(let x=0;x<s;x+=s/5){ctx.strokeStyle='rgba(70,78,86,.22)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,s*.68);ctx.stroke();}ctx.fillStyle='#8f97a0';ctx.fillRect(0,s*.68,s,s*.32);},4);
-      }else if(currentBackground==='warehouse'){
-        setGroundTexture((ctx,s)=>{ctx.fillStyle='#585049';ctx.fillRect(0,0,s,s);for(let i=0;i<300;i++){ctx.fillStyle=`rgba(0,0,0,${.04+Math.random()*.08})`;ctx.beginPath();ctx.arc(Math.random()*s,Math.random()*s,1+Math.random()*4,0,TAU2);ctx.fill();}},12);
-        cyclorama(3.1,3.4,(ctx,s)=>{ctx.fillStyle='#6b5f52';ctx.fillRect(0,0,s,s);ctx.fillStyle='#5a5045';for(let y=0;y<s*.6;y+=s/18){for(let x=(y/(s/18))%2*s/12;x<s;x+=s/6)ctx.fillRect(x,y,s/6-2,s/18-2);}
-          ctx.fillStyle='#2c2723';ctx.fillRect(0,0,s,s*.05);for(let x=0;x<s;x+=s/6){ctx.fillRect(x,0,s*.02,s*.28);}
-          ctx.fillStyle='#3a332c';ctx.fillRect(0,s*.66,s,s*.34);},5);
-      }else if(currentBackground==='rooftop'){
-        setGroundTexture((ctx,s)=>{ctx.fillStyle='#6c6a6e';ctx.fillRect(0,0,s,s);for(let i=0;i<240;i++){ctx.fillStyle=`rgba(0,0,0,${.03+Math.random()*.06})`;ctx.beginPath();ctx.arc(Math.random()*s,Math.random()*s,1+Math.random()*3,0,TAU2);ctx.fill();}},10);
-        skyDome(6,(ctx,s)=>{const g=ctx.createLinearGradient(0,0,0,s);g.addColorStop(0,'#4a4f7c');g.addColorStop(.42,'#c97a72');g.addColorStop(.62,'#e7a980');g.addColorStop(1,'#8a8078');ctx.fillStyle=g;ctx.fillRect(0,0,s,s);
-          ctx.fillStyle='rgba(35,32,45,.85)';for(let i=0;i<9;i++){const w=s*(.05+Math.random()*.07),h=s*(.14+Math.random()*.2),x=(i/9)*s+Math.random()*10;ctx.fillRect(x,s*.66-h,w,h);for(let wy=s*.66-h+6;wy<s*.65;wy+=8)for(let wx=x+4;wx<x+w-4;wx+=7)if(Math.random()>.5){ctx.fillStyle='rgba(255,214,150,.5)';ctx.fillRect(wx,wy,2.5,3);ctx.fillStyle='rgba(35,32,45,.85)';}}
-          ctx.fillStyle='#55535f';ctx.fillRect(0,s*.66,s,s*.34);});
-        // A low parapet ledge ring, close enough to read from every angle.
-        {const g=new T.TorusGeometry(1.85,.05,8,48),m=new T.MeshStandardMaterial({color:'#8a8a86',roughness:.85});temporaryGeometries.push(g);temporaryMaterials.push(m);const ring=new T.Mesh(g,m);ring.rotation.x=Math.PI/2;ring.position.y=.14;scenery.add(ring);}
-      }
+      name=BACKGROUND_MOOD[name]?name:'studio';
+      if(name===currentBackground&&backgroundReady&&!backgroundError)return backgroundReady;
+      const sequence=++backgroundSequence,mood=BACKGROUND_MOOD[name];
+      currentBackground=name;backgroundError=null;canvas.dataset.backgroundStatus='loading';
+      backgroundReady=(name==='studio'?Promise.resolve(null):loadBackground(name)).then(texture=>{
+        if(disposed||!isCurrent()||sequence!==backgroundSequence)return;
+        scene.background=texture||new T.Color(mood.sky);scene.fog=texture?null:new T.Fog(mood.fog,5,13);
+        key.color.set(mood.key);key.intensity=mood.keyIntensity;fill.color.set(mood.fill);fill.intensity=mood.fillIntensity;
+        ground.material=texture?photoGroundMaterial:groundMaterial;groundMaterial.color.set(mood.ground);
+        canvas.dataset.backgroundStatus='ready';renderer.shadowMap.needsUpdate=true;requestDraw();
+      }).catch(error=>{
+        if(disposed||!isCurrent()||sequence!==backgroundSequence)return;
+        backgroundError=error;canvas.dataset.backgroundStatus='error';
+        onBackgroundError?.(error);
+      });
+      return backgroundReady;
+    }
+    function fitBackground(aspect){
+      const texture=scene.background;if(!texture?.isTexture)return;
+      const imageAspect=texture.image.width/texture.image.height;
+      texture.repeat.set(Math.min(1,aspect/imageAspect),Math.min(1,imageAspect/aspect));
+      texture.offset.set((1-texture.repeat.x)/2,(1-texture.repeat.y)/2);
     }
     function getView(){return {yaw:controls.getAzimuthalAngle(),polar:controls.getPolarAngle(),distance:camera.position.distanceTo(controls.target),target:[controls.target.x,controls.target.y,controls.target.z]};}
     function updateReadout(){const view=getView();canvas.dataset.yaw=String(view.yaw);canvas.dataset.polar=String(view.polar);canvas.dataset.distance=String(view.distance);canvas.dataset.ready=model?'true':'false';canvas.dataset.drawCalls=String(renderer.info.render.calls);canvas.dataset.triangles=String(renderer.info.render.triangles);canvas.dataset.background=currentBackground;}
     let renderingTick=false,renderedFrames=0,lastTickTime=0;
-    function draw(){if(disposed||!isCurrent())return;renderer.render(scene,camera);renderedFrames++;updateReadout();}
+    function draw(){if(disposed||!isCurrent())return;fitBackground(camera.aspect);renderer.render(scene,camera);renderedFrames++;updateReadout();}
     function tick(now){
       frame=0;if(disposed||!isCurrent()||document.hidden)return;
       // OrbitControls emits change synchronously from update(). Keep that
@@ -264,8 +258,20 @@
       requestDraw(6);
     }
     function selectedPart(part){selected=typeof part==='string'?part:'';canvas.dataset.selectedPart=selected;applyHighlight(selected);}
-    function update(config){if(disposed||!isCurrent())return Promise.resolve();const normalized=global.JKCrewBikeConfig.normalize(config),fingerprint=JSON.stringify(normalized);if(fingerprint===currentFingerprint)return ready;const backgroundChanged=normalized.background!==currentBackground;currentFingerprint=fingerprint;if(model?.updateColours(normalized)){if(backgroundChanged){background(normalized.background);renderer.shadowMap.needsUpdate=true;}requestDraw();return ready;}const build=++buildNumber;
-      let next;try{next=createBike(normalized);}catch(error){currentFingerprint='';if(!model)throw error;if(isCurrent())onError?.(error);return Promise.resolve();}clearHighlight();const old=model;model=next;scene.add(model.group);if(old){scene.remove(old.group);old.dispose();}background(normalized.background);renderer.shadowMap.needsUpdate=true;requestDraw();ready=model.ready.then(()=>{if(!disposed&&build===buildNumber){selectedPart(selected);draw();}},error=>{if(!disposed&&isCurrent())onError?.(error);});return ready;
+    function update(config){
+      if(disposed||!isCurrent())return Promise.resolve();
+      const normalized=global.JKCrewBikeConfig.normalize(config),fingerprint=JSON.stringify(normalized);
+      if(fingerprint===currentFingerprint&&!backgroundError)return ready;
+      currentFingerprint=fingerprint;
+      if(!model?.updateColours(normalized)){
+        let next;try{next=createBike(normalized);}catch(error){currentFingerprint='';if(!model)throw error;if(isCurrent())onError?.(error);return Promise.resolve();}
+        clearHighlight();const old=model;model=next;scene.add(model.group);if(old){scene.remove(old.group);old.dispose();}
+      }
+      const build=++buildNumber;
+      ready=Promise.all([model.ready,background(normalized.background)]).then(()=>{
+        if(!disposed&&build===buildNumber){renderer.shadowMap.needsUpdate=true;selectedPart(selected);draw();}
+      },error=>{if(!disposed&&isCurrent())onError?.(error);});
+      requestDraw();return ready;
     }
     const raycaster=new T.Raycaster(),pointer=new T.Vector2(),pointers=new Map();let tap=null,multitouch=false,hoverFrame=0;
     function partUnderPointer(clientX,clientY){
@@ -292,6 +298,7 @@
       getStats:()=>({renderedFrames,pixelRatio:renderer.getPixelRatio(),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures}),
       async exportBlob({type='image/png',quality=.94,width,height,fit=false,view:photoView=null}={}){
         await ready;if(disposed||!isCurrent())throw new Error('The bike preview has closed.');
+        if(backgroundError)throw backgroundError;
         const size=renderer.getSize(new T.Vector2()),ratio=renderer.getPixelRatio();
         const explicitSize=Number.isFinite(width)&&Number.isFinite(height)&&width>0&&height>0;
         const output=document.createElement('canvas');
@@ -313,7 +320,7 @@
         try{
           for(const [mesh]of highlights)mesh.visible=false;
           renderer.setPixelRatio(1);renderer.setSize(output.width,output.height,false);
-          renderer.render(scene,photoCamera);
+          fitBackground(photoCamera.aspect);renderer.render(scene,photoCamera);
           // Copy synchronously: later scene changes cannot alter this photo,
           // and the live canvas/camera are restored before PNG encoding starts.
           context.drawImage(canvas,0,0);
@@ -323,10 +330,11 @@
         }
         return new Promise((resolve,reject)=>output.toBlob(blob=>blob?resolve(blob):reject(new Error('The image could not be created.')),type,quality));
       },
-      dispose(){if(disposed)return;disposed=true;buildNumber++;cancelFlight();if(hoverFrame)cancelAnimationFrame(hoverFrame);if(frame)cancelAnimationFrame(frame);resizeObserver.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',pointerCancel);canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('webglcontextlost',lost);document.removeEventListener('visibilitychange',visibility);clearHighlight();highlightMaterial.dispose();model?.dispose();clearScenery();if(groundMapTexture)groundMapTexture.dispose();groundGeometry.dispose();groundMaterial.dispose();contactTexture.dispose();contactMaterial.dispose();contactGeometry.dispose();key.shadow.dispose();environment.dispose();renderer.renderLists.dispose();renderer.dispose();renderer.forceContextLoss();canvas.remove();scene.clear();}
+      dispose(){if(disposed)return;disposed=true;buildNumber++;cancelFlight();if(hoverFrame)cancelAnimationFrame(hoverFrame);if(frame)cancelAnimationFrame(frame);resizeObserver.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',pointerCancel);canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('webglcontextlost',lost);document.removeEventListener('visibilitychange',visibility);clearHighlight();highlightMaterial.dispose();model?.dispose();backgroundSequence++;for(const load of backgroundLoads.values())load.controller.abort();for(const texture of backgroundTextures.values())texture.dispose();backgroundTextures.clear();groundGeometry.dispose();groundMaterial.dispose();photoGroundMaterial.dispose();contactTexture.dispose();contactMaterial.dispose();contactGeometry.dispose();key.shadow.dispose();environment.dispose();renderer.renderLists.dispose();renderer.dispose();renderer.forceContextLoss();canvas.remove();scene.clear();}
     };
     failCleanup=()=>handle.dispose();
-    try{await update(configuration);if(!isCurrent())throw new DOMException('The bike view has changed.','AbortError');resize();draw();handle.ready=ready;return handle;}catch(error){handle.dispose();if(error.name!=='AbortError')onError?.(error);throw error;}
+    // Optional scenery must not hold the garage's model-startup timeout open.
+    try{update(configuration);await model.ready;if(!isCurrent())throw new DOMException('The bike view has changed.','AbortError');resize();draw();handle.ready=ready;return handle;}catch(error){handle.dispose();if(error.name!=='AbortError')onError?.(error);throw error;}
     }catch(error){failCleanup();throw error;}
   }
   global.JKCrewBike3D=Object.freeze({mount,cameraPresets:CAMERA_PRESETS.map(({id,label})=>Object.freeze({id,label}))});

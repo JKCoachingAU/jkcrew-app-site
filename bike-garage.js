@@ -59,6 +59,7 @@ const JKCrewBikeGarage = (() => {
     const key = `jkcrew-bike-draft-v1:${userId}`;
     let alive = true, config = copy(defaults), name = 'My dream bike', slot = null, revision = 0, savedFingerprint = '', pendingSave = null, history = [], future = [], group = 'Frame', part = 'frame';
     let builds = [], loaded = false, loading = false, busy = false, loadSequence = 0, status = '', statusKind = '', draftAvailable = true, fullscreen = null;
+    const backgroundFailureMessage='The background photo could not load. Open Photo Studio to try again.';
     let controlsOpen = false, optionsScroll = 0;
     let bike3D = null, loading3D = false, failed3D = false, view3DRequest = 0, timer3D = 0;
     let photoSequence = 0, photoReady = false, seatCategory = 'All', seatPage = 0, layoutFrame = 0;
@@ -138,7 +139,7 @@ const JKCrewBikeGarage = (() => {
       const request=++view3DRequest;
       timer3D=setTimeout(()=>{if(valid()&&request===view3DRequest)fallback3D();},12000);
       artwork.setAttribute('aria-busy','true');loading.innerHTML='<span>Preparing your 360° bike…</span>';updateStatus();
-      JKCrewBike3D.mount({element:artwork,configuration:copy(config),onSelect:id=>{if(valid())select(id);},onAutoRotateChange:on=>{if(valid()){const box=root.querySelector('[data-bike-autorotate]');if(box)box.checked=on;}},isCurrent:()=>valid()&&request===view3DRequest&&!failed3D,onError:()=>{if(request===view3DRequest)fallback3D();}}).then(handle=>{
+      JKCrewBike3D.mount({element:artwork,configuration:copy(config),onBackgroundError:()=>{if(valid())message(backgroundFailureMessage,'error');},onSelect:id=>{if(valid())select(id);},onAutoRotateChange:on=>{if(valid()){const box=root.querySelector('[data-bike-autorotate]');if(box)box.checked=on;}},isCurrent:()=>valid()&&request===view3DRequest&&!failed3D,onError:()=>{if(request===view3DRequest)fallback3D();}}).then(handle=>{
         if(!valid()||failed3D||request!==view3DRequest){handle?.dispose();return;}
         clearTimeout(timer3D);
         bike3D=handle;loading3D=false;bike3D.update(copy(config));photoReady=true;
@@ -402,6 +403,7 @@ const JKCrewBikeGarage = (() => {
           if(!source||!valid())throw new Error('The bike preview has closed.');
           await source.update(snapshot);
           if(source!==bike3D||!valid())throw new Error('The bike preview has changed.');
+          if(status===backgroundFailureMessage&&source.canvas.dataset.backgroundStatus==='ready')message('');
           return source.exportBlob({width,height,view:photoView});
         }:null,
         onBackgroundChange(background){

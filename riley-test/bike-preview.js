@@ -104,7 +104,7 @@ const JKCrewBikePreview = (() => {
       const mine=++sequence,snapshot=JKCrewBikeConfig.normalize(config);
       photoFile=null;exportButton.disabled=true;downloadButton.hidden=true;retry.hidden=true;
       if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl='';
-      art.replaceChildren();art.setAttribute('aria-busy','true');message('Preparing your photo…');
+      art.innerHTML='<p class="bike-photo-placeholder">Preparing your bike photo…</p>';art.setAttribute('aria-busy','true');message('Preparing your photo…');
       try {
         let blob;
         if(capture){
@@ -121,13 +121,17 @@ const JKCrewBikePreview = (() => {
         }
         if(!current()||mine!==sequence)return;
         const filename=(String(name).trim().replace(/[^a-z0-9_-]+/gi,'-').slice(0,50)||'my-dream-bike')+'-jkcrew.png';
-        photoFile=new File([blob],filename,{type:'image/png'});fileUrl=URL.createObjectURL(blob);exportButton.disabled=false;
-        if(capture){const image=document.createElement('img');image.src=fileUrl;image.alt=name+' — your finished bike';image.dataset.bikeModelPhoto='';art.replaceChildren(image);}
+        const nextUrl=URL.createObjectURL(blob);
+        let image;
+        try{if(capture)image=await decodeImage(nextUrl,signal);}catch(error){URL.revokeObjectURL(nextUrl);throw error;}
+        if(!current()||mine!==sequence){URL.revokeObjectURL(nextUrl);return;}
+        photoFile=new File([blob],filename,{type:'image/png'});fileUrl=nextUrl;exportButton.disabled=false;
+        if(image){image.alt=name+' — your finished bike';image.dataset.bikeModelPhoto='';art.replaceChildren(image);}
         art.setAttribute('aria-busy','false');
         message('Photo ready · High-resolution PNG');
       } catch(error) {
         if(!current()||mine!==sequence)return;
-        art.setAttribute('aria-busy','false');retry.hidden=false;message('Could not prepare the photo. Check your connection and try again.',true);
+        art.innerHTML='<p class="bike-photo-placeholder">The photo could not load.<br>Choose Try again below.</p>';art.setAttribute('aria-busy','false');retry.hidden=false;message('Could not prepare the photo. Check your connection and try again.',true);
       }
     }
     function download() {
