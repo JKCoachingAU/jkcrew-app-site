@@ -8,7 +8,7 @@ The module reads the current global `state` and `client` only when an action run
 
 ## Integration
 
-- Render `trainingProgressButtonHtml(athleteId, riderName)` on the rider's own Session screen. A coach may use the same hook on each rider's Session Viewer card. Other rider accounts and parents do not receive the button.
+- Render `trainingProgressButtonHtml(athleteId, riderName)` on the rider's own Session screen. Coach Session Viewer cards use compact category counters instead of this button. Other rider accounts and parents do not receive the button.
 - Call `bindTrainingProgressActions(root)` after rendering. Repeated binding is safe.
 - After a successful recorded activity or realtime activity refresh, call `void refreshOpenTrainingProgress(athleteId)`. It does nothing unless that rider's summary is open and reads fresh data. Calls for another rider do nothing. Opening the summary and returning to the tab also read fresh data.
 - From the saved Daily result's **Share result** click handler, call `showTrainingSharePreview({dailyResult: persistedResult})` with the authoritative `confirm_daily_finish` response. It must contain `athlete_id`, `rider_name`, `local_date`, `seconds`, `completion_points`, `pb_comparable`, PB fields and clearly labelled `weekly_score`/`rank_number` where available.
