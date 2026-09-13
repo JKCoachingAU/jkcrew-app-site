@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.122";
+const RELEASE_VERSION = "2.14.123";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -422,7 +422,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.122" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.123" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10063,13 +10063,14 @@ function sessionViewerRiderCountersHtml(entry) {
     ["bonus", "Bonus"],
   ];
   const contestPrep = isContestPrepProfile(entry.athlete);
-  return `<span class="viewer-rider-counters">${categories.map(([category, defaultLabel]) => {
+  return `<div class="viewer-rider-counters">${categories.map(([category, defaultLabel]) => {
     const assignments = sessionViewerAssignmentsForList(entry, category);
     const complete = assignments.filter(isAssignmentComplete).length;
     const label = contestPrep ? categoryDisplayInfo(category, true).label : defaultLabel;
     const description = `${label}: ${complete} of ${assignments.length} complete${category === "percentage" ? " · 10 attempts per set" : ""}`;
-    return `<span class="viewer-category-counter viewer-list-tone-${category}" data-viewer-counter="${category}" title="${escapeHtml(description)}"><strong>${complete}<small>/${assignments.length}</small></strong><span>${escapeHtml(label)}</span></span>`;
-  }).join("")}</span>`;
+    const isOpen = state.sessionViewerOpenAthleteId === entry.athlete.id && state.sessionViewerActiveList === category;
+    return `<button class="viewer-category-counter viewer-list-tone-${category}" type="button" data-viewer-counter="${category}" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open ${label} for ${entry.athlete.display_name}. ${description}`)}" title="${escapeHtml(description)}"><strong>${complete}<small>/${assignments.length}</small></strong><span>${escapeHtml(label)}</span></button>`;
+  }).join("")}</div>`;
 }
 
 function sessionViewerRiderCardHtml(entry, activeGroupSession) {
@@ -10082,12 +10083,15 @@ function sessionViewerRiderCardHtml(entry, activeGroupSession) {
   const finish = participant?.daily_finish_seconds != null ? ` · Timer finished ${formatTime(participant.daily_finish_seconds)}` : "";
   const finishButton = activeGroupSession ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}" data-rider-name="${escapeHtml(athlete.display_name)}" ${participant?.daily_finish_seconds == null && (!daily.length || complete < daily.length) ? "disabled" : ""}>${participant?.daily_finish_seconds != null ? "View Daily result" : "Finish Daily Tricks"}</button>` : "";
   return `<article class="viewer-rider-accordion status-${status} ${isOpen ? "open" : ""}">
-    <button class="viewer-rider-card ${isOpen ? "active" : ""}" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}">
-      <span class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))}${finish}</small></span></span>
+    <div class="viewer-rider-card ${isOpen ? "active" : ""}">
+      <button class="viewer-rider-toggle" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(athlete.id)}">
+        <span class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))}${finish}</small></span></span>
+        <span class="accordion-caret">${isOpen ? "Close" : "Open"}<b aria-hidden="true">${isOpen ? "−" : "+"}</b></span>
+      </button>
       ${sessionViewerRiderCountersHtml(entry)}
-      <span class="viewer-card-footer"><span class="viewer-rider-status"><i aria-hidden="true"></i>Daily · ${statusLabel}</span><span class="accordion-caret">${isOpen ? "Close" : "Open"}<b aria-hidden="true">${isOpen ? "−" : "+"}</b></span></span>
+      <span class="viewer-card-footer"><span class="viewer-rider-status"><i aria-hidden="true"></i>Daily · ${statusLabel}</span></span>
       <span class="viewer-progress"><span style="width:${percent}%"></span></span>
-    </button>
+    </div>
     ${finishButton ? `<div class="viewer-training-actions">${finishButton}</div>` : ""}
     ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
   </article>`;
@@ -10192,7 +10196,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}
     ${extraRiderForm}
     <section class="session-viewer-layout">
-      <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div><div class="eyebrow">The crew</div><h2>Riders in session</h2><div class="panel-meta">Tap a rider to open their training lists.</div></div><div class="field viewer-search-filter"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
+      <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div><div class="eyebrow">The crew</div><h2>Riders in session</h2><div class="panel-meta">Tap a number to open that list, or a rider to see all lists.</div></div><div class="field viewer-search-filter"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>
     ${sessionGroupBattlesHtml(groupBattles, coachGroupLabel(state.sessionViewerGroup))}`;
   bindSessionViewerActions();
@@ -10268,7 +10272,7 @@ function sessionViewerPlanList(entry, activeGroupSession) {
     const count = sessionViewerListCount(entry, tab.id);
     return `<button class="viewer-list-tab viewer-list-tone-${tab.id} ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}" aria-expanded="${tab.id === activeList}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
   }).join("");
-  return `<div class="viewer-inline-list viewer-list-tone-${activeList}">
+  return `<div class="viewer-inline-list viewer-list-tone-${activeList}" id="viewer-plan-${escapeHtml(entry.athlete.id)}" data-viewer-plan="${escapeHtml(entry.athlete.id)}">
     <div class="viewer-list-tabs" role="group" aria-label="Rider trick lists">${tabs}</div>
     ${activeList ? sessionViewerListContent(entry, activeGroupSession, activeList) : `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>`}
   </div>`;
@@ -10411,6 +10415,7 @@ function bindSessionViewerActions() {
   document.querySelector("#pause-group-session")?.addEventListener("click", toggleViewerGroupSessionPause);
   document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
   document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
+  document.querySelectorAll("[data-viewer-counter]").forEach((button) => button.addEventListener("click", openSessionViewerCounter));
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
   document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
@@ -10621,6 +10626,39 @@ async function recordViewerPercentageAttempt(event) {
   }
 }
 
+async function openSessionViewerCounter(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const athleteId = button.dataset.viewerCounterAthlete;
+  const listId = button.dataset.viewerCounter;
+  if (state.view !== "sessionViewer" || !button.isConnected || !athleteId || !sessionViewerListTabs.some((tab) => tab.id === listId)) return;
+  const group = state.sessionViewerGroup;
+  const venue = state.sessionViewerVenue;
+  const search = state.sessionViewerSearch;
+  state.sessionViewerOpenAthleteId = athleteId;
+  state.sessionViewerActiveList = listId;
+  const refresh = refreshSessionViewerLight();
+  const renderVersion = state.sessionViewerRenderVersion;
+  const selectionIsCurrent = () => state.view === "sessionViewer" && state.sessionViewerRenderVersion === renderVersion
+    && state.sessionViewerOpenAthleteId === athleteId && state.sessionViewerActiveList === listId
+    && state.sessionViewerGroup === group && state.sessionViewerVenue === venue && state.sessionViewerSearch === search;
+  try {
+    await refresh;
+  } catch (error) {
+    if (selectionIsCurrent()) notify(messageFrom(error), "error");
+    return;
+  }
+  if (!selectionIsCurrent()) return;
+  const plan = document.getElementById(`viewer-plan-${athleteId}`);
+  const selectedTab = plan?.querySelector(`[data-viewer-list-tab="${listId}"].active`);
+  if (!selectedTab) return;
+  selectedTab.focus({ preventScroll: true });
+  const tabStrip = selectedTab.parentElement;
+  tabStrip.scrollLeft += selectedTab.getBoundingClientRect().left - tabStrip.getBoundingClientRect().left;
+  plan.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
+}
+
 function selectViewerListTab(event) {
   const selectedList = event.currentTarget.dataset.viewerListTab || "";
   state.sessionViewerActiveList = state.sessionViewerActiveList === selectedList ? "" : selectedList;
@@ -10746,6 +10784,7 @@ function bindSessionViewerFastActions() {
     state.sessionViewerActiveList = "";
     refreshSessionViewerLight();
   }));
+  document.querySelectorAll("[data-viewer-counter]").forEach((button) => button.addEventListener("click", openSessionViewerCounter));
   document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
   document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
   document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
