@@ -11,6 +11,7 @@
   --purple: #a855f7;
   --red: #ff4567;
   --yellow: #f7d154;
+  --percentage-tone: #7de25b;
   --display: "Barlow Condensed", sans-serif;
   --body: "Barlow", sans-serif;
   --mono: "Roboto Mono", monospace;
@@ -36,6 +37,7 @@ html[data-theme="light"] {
   --purple: #6d4fd8;
   --red: #c43d58;
   --yellow: #987015;
+  --percentage-tone: #287427;
 }
 body {
   margin: 0;
@@ -5628,7 +5630,7 @@ html.contest-merge-open body { overflow: hidden; }
 .viewer-list-tone-one_bang { --viewer-list-tone: var(--rider-violet, #8a54ff); }
 .viewer-list-tone-dialled { --viewer-list-tone: var(--rider-blue, #3a9cff); }
 .viewer-list-tone-lines { --viewer-list-tone: var(--rider-coral, #ff6c55); }
-.viewer-list-tone-percentage { --viewer-list-tone: #b985ff; }
+.viewer-list-tone-percentage { --viewer-list-tone: var(--percentage-tone); }
 .viewer-list-tone-foam_pit { --viewer-list-tone: #46c7ff; }
 .viewer-list-tone-bonus { --viewer-list-tone: var(--rider-gold, #f7c83e); }
 .viewer-list-tab.active {
@@ -7835,7 +7837,7 @@ html[data-theme="light"] .success-burst {
 .coach-shell .coach-live-row.activity-bonus .live-dot,
 .coach-shell .coach-live-row.activity-points .live-dot { background: var(--coach-gold); box-shadow: 0 0 14px rgba(247, 200, 62, 0.62); }
 .coach-shell .coach-live-row.activity-dialled .live-dot { background: var(--coach-purple); box-shadow: 0 0 14px rgba(146, 84, 255, 0.62); }
-.coach-shell .coach-live-row.activity-percentage .live-dot { background: var(--coach-blue); box-shadow: 0 0 14px rgba(58, 156, 255, 0.62); }
+.coach-shell .coach-live-row.activity-percentage .live-dot { background: var(--percentage-tone); box-shadow: 0 0 14px color-mix(in srgb, var(--percentage-tone) 62%, transparent); }
 
 .coach-shell .group-column { --coach-tone: var(--group-accent, var(--coach-aqua)); }
 .coach-shell .group-monday { --group-accent: var(--coach-purple); }
@@ -8219,7 +8221,7 @@ html[data-theme="light"] .success-burst {
 .rider-shell [data-assignment-section="dialled"] { --rider-tone: var(--rider-blue); }
 .rider-shell [data-assignment-section="one-bang"] { --rider-tone: var(--rider-violet); }
 .rider-shell [data-assignment-section="lines"] { --rider-tone: var(--rider-coral); }
-.rider-shell [data-assignment-section="percentage"] { --rider-tone: #b985ff; }
+.rider-shell [data-assignment-section="percentage"] { --rider-tone: var(--percentage-tone); }
 .rider-shell [data-assignment-section="foam"] { --rider-tone: #46c7ff; }
 .rider-shell [data-assignment-section="bonus"] { --rider-tone: var(--rider-gold); }
 .rider-shell #view[data-view="session"] .bonus-assignment-group {
@@ -9141,7 +9143,7 @@ html[data-theme="light"] .rider-shell textarea {
 .parent-shell .parent-readonly .daily-venue-group { --parent-category: var(--parent-aqua); }
 .parent-shell .parent-readonly [data-assignment-section="dialled"] { --parent-category: var(--parent-blue); }
 .parent-shell .parent-readonly [data-assignment-section="one-bang"] { --parent-category: var(--parent-violet); }
-.parent-shell .parent-readonly [data-assignment-section="percentage"] { --parent-category: var(--parent-aqua); }
+.parent-shell .parent-readonly [data-assignment-section="percentage"] { --parent-category: var(--percentage-tone); }
 .parent-shell .parent-readonly [data-assignment-section="foam"],
 .parent-shell .parent-readonly [data-assignment-section="foam_pit"] { --parent-category: var(--parent-blue); }
 .parent-shell .parent-readonly [data-assignment-section="bonus"] { --parent-category: var(--parent-gold); }
@@ -11840,7 +11842,6 @@ html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-l
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-one_bang { --viewer-list-tone: #7040c4; }
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-dialled { --viewer-list-tone: #235bc7; }
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-lines { --viewer-list-tone: #b94229; }
-html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-percentage { --viewer-list-tone: #7642b7; }
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-foam_pit { --viewer-list-tone: #006e9e; }
 html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] .viewer-list-tone-bonus { --viewer-list-tone: #86610a; }
 
