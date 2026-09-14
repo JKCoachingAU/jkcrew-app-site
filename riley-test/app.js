@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.123";
+const RELEASE_VERSION = "2.14.124";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -118,7 +118,169 @@ const state = {
   loadingOverlaySlowTimer: null,
   loadingOverlayToken: 0,
   startupPromptsPending: false,
+  riderAccess: null,
+  riderAccessCheckedAt: 0,
+  riderAccessRequest: null,
+  riderAccessTimer: null,
 };
+
+const RIDER_ACCESS_MESSAGE = "You don't have access to this feature, contact your coach";
+
+function riderFeaturesDisabled() {
+  return state.profile?.role === "athlete" && state.riderAccess?.features_disabled === true;
+}
+
+function riderFeatureAccessUnknown() {
+  return state.profile?.role === "athlete" && !state.riderAccess;
+}
+
+function showRiderAccessMessage() {
+  notify(riderFeaturesDisabled() ? RIDER_ACCESS_MESSAGE : "Unable to check feature access. Reconnect and try again.", "error");
+}
+
+async function refreshRiderFeatureAccess({ force = false, enforce = true } = {}) {
+  if (state.profile?.role !== "athlete" || !state.user?.id) return true;
+  if (!force && state.riderAccess && Date.now() - state.riderAccessCheckedAt < 10000) return !riderFeaturesDisabled();
+  const userId = state.user.id;
+  if (!state.riderAccessRequest) {
+    const request = (async () => {
+      const { data, error } = await withTimeout(client.rpc("get_rider_feature_access"), "Feature access check", 10000);
+      if (error) throw error;
+      const access = (Array.isArray(data) ? data : [data]).find(row => row?.athlete_id === userId);
+      if (!access || typeof access.features_disabled !== "boolean") throw new Error("Feature access could not be verified.");
+      if (state.user?.id !== userId) return;
+      state.riderAccess = access;
+      state.riderAccessCheckedAt = Date.now();
+    })();
+    state.riderAccessRequest = request;
+    request.finally(() => { if (state.riderAccessRequest === request) state.riderAccessRequest = null; }).catch(() => {});
+  }
+  try { await state.riderAccessRequest; }
+  catch (error) {
+    if (state.user?.id !== userId) return false;
+    state.riderAccessCheckedAt = 0;
+    console.warn("Feature access check unavailable", error);
+    return false;
+  }
+  if (state.user?.id !== userId) return false;
+  if (enforce && riderFeaturesDisabled() && document.querySelector("#view") && !document.querySelector("#rider-access-dashboard")) {
+    closeRestrictedRiderFeatures();
+    await navigate("home", { accessChecked: true });
+  } else if (enforce && !riderFeaturesDisabled() && document.querySelector("#rider-access-dashboard")) {
+    await navigate("home", { accessChecked: true });
+    if (!state.realtimeChannel) void setupRealtimeSync().catch(error => console.warn("Realtime reconnect unavailable", error));
+  }
+  return !riderFeaturesDisabled();
+}
+
+function closeRestrictedRiderFeatures() {
+  clearInterval(state.timer);
+  teardownRealtimeSync();
+  state.athleteHomeRenderVersion += 1;
+  state.sessionRenderVersion += 1;
+  state.startupPromptsPending = false;
+  dismissDailyFinishForNavigation();
+  closeTrainingProgressViews();
+  closeAthleteReviewViewer();
+  closeContestEventModal();
+  stopRunPlayback();
+  disconnectLiveRun();
+  if (typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
+  document.querySelectorAll('.parent-notification-backdrop, .battle-intro-backdrop, .push-setup-modal-backdrop, .coaching-viewer-backdrop, .contest-event-backdrop, [role="dialog"], #live-run-invitation').forEach(element => element.remove());
+}
+
+function startRiderFeatureAccessWatch() {
+  clearInterval(state.riderAccessTimer);
+  if (state.profile?.role !== "athlete") return;
+  state.riderAccessTimer = setInterval(() => {
+    if (document.visibilityState !== "hidden") void refreshRiderFeatureAccess({ force: true });
+  }, 15000);
+}
+
+function guardRiderFeatureInteraction(event) {
+  if (!riderFeaturesDisabled() && !riderFeatureAccessUnknown()) return;
+  const target = event.target?.closest?.('button, a, input, select, textarea, summary, [role="button"], form');
+  if (!target || !document.querySelector("#view")) return;
+  if (target.matches('[data-view="home"], #sign-out, [data-rider-access-logout], [data-rider-access-retry]')) return;
+  if (event.type === "keydown" && !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (["click", "submit", "keydown"].includes(event.type)) showRiderAccessMessage();
+}
+
+// Capture before delegated feature handlers, including keyboard and inline home actions.
+["click", "submit", "pointerdown", "keydown", "input", "change"].forEach(type => window.addEventListener(type, guardRiderFeatureInteraction, true));
+window.addEventListener("focus", () => { void refreshRiderFeatureAccess({ force: true }); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void refreshRiderFeatureAccess({ force: true });
+});
+
+async function renderRestrictedRiderHome() {
+  const renderVersion = ++state.athleteHomeRenderVersion;
+  const message = riderFeaturesDisabled() ? RIDER_ACCESS_MESSAGE : "Unable to check feature access. Reconnect and try again.";
+  document.querySelector("#view").innerHTML = `<section class="athlete-scoreboard panel" id="rider-access-dashboard">
+    <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your profile and progress are safe.</p></div></div>
+    <div id="rider-access-week" class="rider-access-week"></div>
+    ${xpProgressHtml(riderXpSummary(state.profile))}
+  </section><section class="panel rider-access-notice" aria-labelledby="rider-access-title">
+    <div class="eyebrow">Feature access</div><h2 id="rider-access-title">${riderFeaturesDisabled() ? "Dashboard access only" : "Check your connection"}</h2>
+    <p role="status">${escapeHtml(message)}</p>
+    <div class="rider-access-actions"><button class="secondary-btn" type="button" data-rider-access-retry>Check access again</button><button class="secondary-btn" type="button" data-rider-access-logout>Sign out</button></div>
+  </section>`;
+  document.querySelector("[data-rider-access-retry]").addEventListener("click", async () => {
+    const allowed = await refreshRiderFeatureAccess({ force: true, enforce: false });
+    if (allowed) await navigate("home", { accessChecked: true });
+    else showRiderAccessMessage();
+  });
+  document.querySelector("[data-rider-access-logout]").addEventListener("click", signOutCurrentDevice);
+  const rows = await getAthleteHomeLeaderboard().catch(() => []);
+  if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
+  const own = rows.find(row => row.athlete_id === state.user?.id);
+  const summary = document.querySelector("#rider-access-week");
+  if (summary && own) summary.textContent = `${Number(own.weekly_points || 0)} points this week`;
+}
+
+function riderAccessToggleHtml(athlete, access = {}) {
+  const disabled = access.features_disabled === true;
+  return `<button class="rider-access-toggle ${disabled ? "is-disabled" : ""}" type="button" data-rider-access-toggle="${escapeHtml(athlete.id)}" data-disable-rider="${!disabled}" aria-label="${disabled ? "Enable" : "Disable"} features for ${escapeHtml(athlete.display_name)}" title="${disabled ? "Restore feature access" : "Keep dashboard access; disable other features"}">${disabled ? "Enable" : "Disable"}</button>`;
+}
+
+async function toggleRiderFeatureAccess(event) {
+  const button = event.currentTarget;
+  const athleteId = button.dataset.riderAccessToggle;
+  const disable = button.dataset.disableRider === "true";
+  const buttons = [...document.querySelectorAll("[data-rider-access-toggle]")].filter(item => item.dataset.riderAccessToggle === athleteId);
+  if (!isCoachRole(state.profile?.role) || buttons.some(item => item.disabled)) return;
+  const restores = buttons.map(item => setButtonBusy(item, "Saving…"));
+  try {
+    const { data, error } = await client.rpc("set_rider_feature_access", { p_athlete_id: athleteId, p_disabled: disable });
+    if (error) throw error;
+    const access = (Array.isArray(data) ? data : [data]).find(row => row?.athlete_id === athleteId);
+    if (!access || access.features_disabled !== disable) throw new Error("Access change could not be confirmed. Please try again.");
+    restores.forEach(restore => restore());
+    buttons.forEach(item => {
+      item.dataset.disableRider = String(!disable);
+      item.textContent = disable ? "Enable" : "Disable";
+      item.classList.toggle("is-disabled", disable);
+      const row = item.closest(".student-chip-wrap");
+      row?.classList.toggle("features-disabled", disable);
+      const name = row?.querySelector(".student-chip strong")?.textContent || "rider";
+      item.setAttribute("aria-label", `${disable ? "Enable" : "Disable"} features for ${name}`);
+      item.title = disable ? "Restore feature access" : "Keep dashboard access; disable other features";
+      row?.querySelector(".rider-access-label")?.remove();
+      if (disable) {
+        const label = document.createElement("small");
+        label.className = "rider-access-label";
+        label.textContent = "Dashboard only";
+        row?.querySelector(".student-chip span")?.append(label);
+      }
+    });
+    notify(disable ? "Features disabled. This rider can still view their dashboard." : "Feature access restored.");
+  } catch (error) {
+    restores.forEach(restore => restore());
+    notify(messageFrom(error), "error");
+  }
+}
 
 window.addEventListener("beforeunload", (event) => {
   if (!state.videoReviewRecording && !state.videoReviewRecordingStarting && !state.videoReviewRecordedReplies.size) return;
@@ -422,7 +584,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.123" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.124" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1284,6 +1446,7 @@ async function handleSession(session) {
   state.sessionReadyUserId = "";
   cancelScreenLoading();
   clearInterval(state.timer);
+  clearInterval(state.riderAccessTimer);
   teardownRealtimeSync();
   document.querySelector("#live-run-invitation")?.remove();
   const nextUserId = session?.user?.id || "";
@@ -1300,6 +1463,9 @@ async function handleSession(session) {
   state.session = session;
   state.user = session?.user || null;
   state.profile = null;
+  state.riderAccess = null;
+  state.riderAccessCheckedAt = 0;
+  state.riderAccessRequest = null;
   state.activeTraining = null;
   state.attempts = [];
   if (!state.user) {
@@ -1334,6 +1500,7 @@ async function handleSession(session) {
       data = recovered;
     }
     state.profile = data;
+    await refreshRiderFeatureAccess({ force: true, enforce: false });
     recordMyAppOpen();
     applyTheme(data.app_theme);
     const pushView = new URL(window.location.href).searchParams.get("push");
@@ -1350,6 +1517,7 @@ async function handleSession(session) {
   state.startupPromptsPending = true;
   renderShell();
   state.sessionReadyUserId = state.user.id;
+  startRiderFeatureAccessWatch();
   void navigate(state.view);
   // Realtime is an enhancement, not a gate to opening the app. On a slow
   // mobile connection the roster query used to leave a successful login on
@@ -1689,8 +1857,10 @@ function renderShell() {
   }));
   document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
   setSyncStatus();
-  refreshNotificationCentre({ renderNav: false });
-  refreshBoardChatUnread();
+  if (!riderFeaturesDisabled() && !riderFeatureAccessUnknown()) {
+    refreshNotificationCentre({ renderNav: false });
+    refreshBoardChatUnread();
+  }
 }
 
 async function refreshBoardChatUnread() {
@@ -1701,6 +1871,7 @@ async function refreshBoardChatUnread() {
 }
 
 function mountStartupPrompts() {
+  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
 }
 
@@ -2127,6 +2298,18 @@ function resetPageExpansions({ expandedNavGroup = "" } = {}) {
 }
 
 async function navigate(view, options = {}) {
+  if (state.profile?.role === "athlete" && !options.accessChecked) {
+    const allowed = await refreshRiderFeatureAccess({ force: true, enforce: false });
+    if (!allowed && view !== "home") {
+      showRiderAccessMessage();
+      if (!document.querySelector("#rider-access-dashboard")) {
+        closeRestrictedRiderFeatures();
+        return navigate("home", { accessChecked: true });
+      }
+      return;
+    }
+  }
+  if (state.profile?.role === "athlete" && view !== "home" && (riderFeaturesDisabled() || riderFeatureAccessUnknown())) return showRiderAccessMessage();
   const previousView = state.view;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
   if (view !== previousView) dismissDailyFinishForNavigation();
@@ -2215,6 +2398,10 @@ async function navigate(view, options = {}) {
   try {
     if (!renders[view]) throw new Error("That screen is not available.");
     await renders[view]();
+    if ((riderFeaturesDisabled() || riderFeatureAccessUnknown()) && !document.querySelector("#rider-access-dashboard")) {
+      closeRestrictedRiderFeatures();
+      return navigate("home", { accessChecked: true });
+    }
     navigationCompleted = loadingToken === state.loadingOverlayToken && state.view === view;
   } catch (error) {
     if (loadingToken !== state.loadingOverlayToken || state.view !== view) return;
@@ -2237,7 +2424,7 @@ async function navigate(view, options = {}) {
   } finally {
     if (finishScreenLoading(loadingToken)) document.querySelector("#view")?.removeAttribute("aria-busy");
   }
-  if (navigationCompleted) void refreshLiveRunInvites();
+  if (navigationCompleted && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()) void refreshLiveRunInvites();
   if (navigationCompleted && state.startupPromptsPending) {
     state.startupPromptsPending = false;
     mountStartupPrompts();
@@ -2290,6 +2477,7 @@ function realtimeFilter(column, values = []) {
 
 async function setupRealtimeSync() {
   if (!state.user?.id || !state.session?.access_token) return;
+  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   client.realtime.setAuth(state.session.access_token);
   const athleteIds = await realtimeVisibleAthleteIds();
   if (!state.user?.id || !state.session?.access_token) return;
@@ -2425,6 +2613,7 @@ function clearCoachCaches({ roster = false, command = true, sessionViewer = true
 
 function scheduleRealtimeRefresh(reason = "sync") {
   if (!state.user?.id || !state.profile) return;
+  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   if (state.syncRefreshTimer) clearTimeout(state.syncRefreshTimer);
   state.syncRefreshTimer = setTimeout(async () => {
     state.syncRefreshTimer = null;
@@ -5991,7 +6180,14 @@ function parseBattleFormat(value = "1") {
 }
 
 function battlePrizePoints(battle = {}) {
-  return Math.min(20, Math.max(1, Number(battle.reward_points || 5))) * (battleTeamNumbers(battle).length - 1);
+  return Math.min(30, Math.max(1, Number(battle.reward_points || 5))) * (battleTeamNumbers(battle).length - 1);
+}
+
+function battleStakeSummary(battle = {}) {
+  const stake = Math.min(30, Math.max(1, Number(battle.reward_points || 5)));
+  const size = Number(battle.battle_size) || 1;
+  if (stake % size !== 0) return `${battlePrizePoints(battle)} points to the winning side · winner takes all`;
+  return `${stake / size} points per rider · ${stake * battleTeamNumbers(battle).length}-point pool · winning team splits evenly (${battlePrizePoints(battle) / size} net points each)`;
 }
 
 function battleTeamScore(battle, teamNumber) {
@@ -6013,7 +6209,7 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
   const pendingActions = battle.status === "pending" && mine?.response === "pending"
     ? `<div class="battle-actions compact-battle-actions"><button class="battle-response-btn accept" type="button" data-battle-response="accepted" data-battle-id="${battle.id}" aria-label="Accept battle" title="Accept battle">✓</button><button class="battle-response-btn decline" type="button" data-battle-response="declined" data-battle-id="${battle.id}" aria-label="Decline battle" title="Decline battle">×</button></div>`
     : "";
-  const rewardPoints = Math.min(20, Math.max(1, Number(battle.reward_points || 5)));
+  const rewardPoints = Math.min(30, Math.max(1, Number(battle.reward_points || 5)));
   const forfeitAction = battle.status === "accepted" && !mine?.forfeited_at
     ? `<button class="battle-forfeit-btn" type="button" data-forfeit-battle="${battle.id}" data-reward-points="${rewardPoints}" data-team-count="${battleTeamNumbers(battle).length}">Forfeit battle</button>`
     : "";
@@ -6026,7 +6222,7 @@ function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory 
   return `<article class="battle-card ${battle.status}">
     <div class="battle-format-chip">${battleFormatLabel(battle)} · ${battlePrizePoints(battle)} pts to win</div>
     <div class="battle-riders battle-team-versus ${battleTeamNumbers(battle).length === 3 ? "three-teams" : ""}">${[myTeam, ...battleTeamNumbers(battle).filter((team) => team !== myTeam)].map((team) => battleTeamHtml(participants, team, myTeam)).join("<b>VS</b>")}</div>
-    ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(battleParticipantFirstName(rivals[0]))}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses · ${rewardPoints} pts to win</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>${battlePrizePoints(battle)} points to the winning side · winner takes all</strong></div>`}
+    ${headToHead ? `<div class="battle-head-to-head"><span>Against ${escapeHtml(battleParticipantFirstName(rivals[0]))}</span><strong>${headToHead.wins} wins · ${headToHead.losses} losses · ${rewardPoints} pts to win</strong></div>` : `<div class="battle-head-to-head"><span>Team battle</span><strong>${escapeHtml(battleStakeSummary(battle))}</strong></div>`}
     <div class="battle-status"><span class="status-chip">${escapeHtml(battle.status)}</span><small>${escapeHtml(statusCopy)}</small></div>
     ${pendingActions}
     ${forfeitAction}
@@ -6189,7 +6385,7 @@ async function respondWeeklyRiderBattle(event) {
 
 async function forfeitWeeklyRiderBattle(event) {
   const button = event.currentTarget;
-  const rewardPoints = Math.min(20, Math.max(1, Number(button.dataset.rewardPoints || 5)));
+  const rewardPoints = Math.min(30, Math.max(1, Number(button.dataset.rewardPoints || 5)));
   const threeTeams = Number(button.dataset.teamCount) === 3;
   if (!window.confirm(threeTeams ? `Your whole team will withdraw and lose its ${rewardPoints}-point stake if a winner is decided. The other sides keep competing. Forfeit?` : `Forfeit this battle? The other team will win and the ${rewardPoints} battle points will be split using the normal battle rules.`)) return;
   const restoreButton = setButtonBusy(button, "Forfeiting...");
@@ -6568,6 +6764,7 @@ document.addEventListener("click", event => {
 
 
 async function renderAthleteHome() {
+  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return renderRestrictedRiderHome();
   const renderVersion = ++state.athleteHomeRenderVersion;
   const [leaderboard, riderBattles, activeSession] = await Promise.all([
     getAthleteHomeLeaderboard(),
@@ -9207,7 +9404,7 @@ function coachBattleTeamHtml(battle, teamNumber) {
 
 function coachBattleCardHtml(battle) {
   const duration = Number(battle.duration_days || 7);
-  const rewardPoints = Math.min(20, Math.max(1, Number(battle.reward_points || 5)));
+  const rewardPoints = Math.min(30, Math.max(1, Number(battle.reward_points || 5)));
   const participants = battle.participants || [];
   const pendingRiders = participants.filter((participant) => participant.response === "pending" && participant.coach_can_respond);
   const archived = Boolean(battle.archived_at);
@@ -9232,6 +9429,7 @@ function coachBattleCardHtml(battle) {
     </summary>
     <div class="coach-battle-card-body">
       <div class="coach-battle-view-head"><span class="status-chip">${escapeHtml(statusLabel)}</span><b>${battleFormatLabel(battle)} · ${battlePrizePoints(battle)} pts to win</b><small>${escapeHtml(duration)} day${duration === 1 ? "" : "s"} · ${escapeHtml(timing)}</small></div>
+      <p class="battle-stake-summary">${escapeHtml(battleStakeSummary(battle))}</p>
       <div class="coach-battle-riders ${teams.length === 3 ? "three-teams" : ""}">
         ${teams.map((team) => coachBattleTeamHtml(battle, team)).join("<span>VS</span>")}
       </div>
@@ -12266,11 +12464,14 @@ async function savePlannedWeeklyAssignments(event) {
 }
 
 async function renderCrew() {
-  const [roster, { data: allAthletes, error }] = await Promise.all([
+  const [roster, { data: allAthletes, error }, accessResult] = await Promise.all([
     getCoachRoster(),
     client.from("profiles").select("id, display_name, level, avatar").eq("role", "athlete").order("display_name"),
+    client.rpc("get_rider_feature_access"),
   ]);
   if (error) throw error;
+  if (accessResult.error) throw accessResult.error;
+  const accessById = new Map((accessResult.data || []).map(row => [row.athlete_id, row]));
   const [commandData, liveActivity] = roster.length ? await Promise.all([
     getCoachCommandData(roster),
     getCoachLiveActivity(roster),
@@ -12282,12 +12483,14 @@ async function renderCrew() {
     const athletes = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(groupId));
     const students = athletes.length ? athletes.map((athlete) => {
       const status = statuses.get(athlete.id) || {};
+      const access = accessById.get(athlete.id) || {};
       return `
-      <div class="student-chip-wrap">
+      <div class="student-chip-wrap ${access.features_disabled ? "features-disabled" : ""}">
         <button class="student-chip" type="button" draggable="true" data-athlete-id="${athlete.id}" data-open-student="${athlete.id}">
           ${avatarHtml(athlete, "student-chip-avatar")}
-          <span><strong>${escapeHtml(athlete.display_name)}</strong></span>
+          <span><strong>${escapeHtml(athlete.display_name)}</strong>${access.features_disabled ? '<small class="rider-access-label">Dashboard only</small>' : ""}</span>
         </button>
+        ${riderAccessToggleHtml(athlete, access)}
         ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
       </div>`;
     }).join("") : `<div class="empty compact-empty">${groupId === injuredGroupId ? "Drop injured athletes here." : "Drop students here."}</div>`;
@@ -12337,6 +12540,7 @@ async function renderCrew() {
     });
   });
   document.querySelectorAll("[data-remove-athlete-group]").forEach((button) => button.addEventListener("click", () => removeAthleteFromGroup(button.dataset.removeAthleteGroup, button.dataset.removeGroup)));
+  document.querySelectorAll("[data-rider-access-toggle]").forEach(button => button.addEventListener("click", toggleRiderFeatureAccess));
 }
 
 async function addAthleteToGroup(athleteId, groupName) {

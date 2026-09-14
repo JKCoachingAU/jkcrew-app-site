@@ -65,7 +65,7 @@ async function assertPayout(id, size, count, stake, winningTeam) {
     create table profiles(id uuid primary key default gen_random_uuid(), role text, display_name text, ghost_mode boolean default false, avatar jsonb default '{}', level integer default 1);
     create table coach_athletes(coach_id uuid, athlete_id uuid, primary key(coach_id, athlete_id));
     create table weekly_rider_battles(id uuid primary key default gen_random_uuid(), challenger_id uuid references profiles, opponent_id uuid references profiles, week_start date, status text default 'pending', duration_days integer default 7, starts_at timestamptz, ends_at timestamptz, winner_id uuid, reward_points integer default 5, responded_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), created_by uuid, battle_size integer default 1, winning_team integer, forfeited_by uuid, forfeited_at timestamptz, archived_at timestamptz, archived_by uuid,
-      constraint weekly_rider_battles_winning_team_check check(winning_team in (1, 2)), check(battle_size between 1 and 3), check(reward_points between 1 and 20));
+      constraint weekly_rider_battles_winning_team_check check(winning_team in (1, 2)), check(battle_size between 1 and 3), constraint weekly_rider_battles_reward_points_check check(reward_points between 1 and 20));
     create unique index weekly_rider_battles_active_pair_idx on weekly_rider_battles(week_start, least(challenger_id::text, opponent_id::text), greatest(challenger_id::text, opponent_id::text)) where status in ('pending', 'accepted');
     create table weekly_rider_battle_participants(battle_id uuid references weekly_rider_battles on delete cascade, athlete_id uuid references profiles, team_number integer, response text default 'pending', responded_at timestamptz, baseline_points integer default 0, is_winner boolean, points_delta integer default 0, created_at timestamptz default now(), primary key(battle_id, athlete_id), constraint weekly_rider_battle_participants_team_number_check check(team_number in (1, 2)));
     create table push_notification_queue(recipient_id uuid, notification_type text, title text, body text, url text, payload jsonb, dedupe_key text unique);
@@ -91,6 +91,7 @@ async function assertPayout(id, size, count, stake, winningTeam) {
   const functions = async () => (await sql("select n.nspname, p.proname, pg_get_functiondef(p.oid) definition, p.proacl::text privileges from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public', 'private') and p.proname in ('request_rider_battle_v2', 'request_rider_battle_v3', 'settle_expired_rider_battles', 'forfeit_rider_battle', 'create_three_sided_rider_battle') order by n.nspname,p.proname")).rows;
   const originalFunctions = await functions();
   await db.exec(migration('20260911042341_expand_rider_battles_to_six_per_team.sql'));
+  await db.exec(migration('20260914101000_support_five_point_stakes_for_large_teams.sql'));
   assert.deepEqual(await oldRows(), before);
   const changedFunctions = await functions();
   for (const original of originalFunctions) {
@@ -126,7 +127,7 @@ async function assertPayout(id, size, count, stake, winningTeam) {
     await rejects(() => createCurrent([riders.slice(0,6), riders.slice(6,12), [null, ...riders.slice(13,18)]]), /only appear once/);
     await rejects(() => createCurrent([riders.slice(0,6), riders.slice(6,12), [outsider, ...riders.slice(13,18)]]), /your crew/);
     await rejects(() => createCurrent([riders.slice(0,6), riders.slice(6,12), [ghost, ...riders.slice(13,18)]]), /unavailable/);
-    for (const stake of [0, 21]) await rejects(() => createCurrent(teams(6), stake), /battle value/);
+    for (const stake of [0, 31]) await rejects(() => createCurrent(teams(6), stake), /battle value/);
     for (const days of [0, 8]) await rejects(() => createCurrent(teams(6), 5, days), /battle length/);
     assert.equal((await sql('select count(*)::int n from weekly_rider_battles')).rows[0].n, 0);
     assert.equal((await sql('select count(*)::int n from push_notification_queue')).rows[0].n, 0);
@@ -134,7 +135,7 @@ async function assertPayout(id, size, count, stake, winningTeam) {
 
   for (let size = 1; size <= 6; size++) for (const count of [2, 3]) {
     await test(`${Array(count).fill(size).join('v')} winner takes every losing stake with exact remainders and idempotency`, async () => {
-      for (const stake of [1, 5, 7, 20]) {
+      for (const stake of [1, 5, 7, 20, ...(size >= 5 ? [size * 5] : [])]) {
         await db.exec('savepoint payout_case');
         const id = await create(size, count, stake);
         await accept(id); await score(id, count === 3 ? [2, 4, 8] : [2, 8]);
@@ -147,6 +148,52 @@ async function assertPayout(id, size, count, stake, winningTeam) {
     });
   }
 
+  await test('larger team stakes remain capped per team size in both RPC and table constraints', async () => {
+    for (let size = 1; size <= 6; size++) {
+      await db.exec('savepoint stake_limit');
+      const maximum = Math.max(20, size * 5);
+      await auth(coach);
+      await rejects(() => createCurrent(teams(size), maximum + 1), /battle value/);
+      const id = await create(size, 3, maximum);
+      await rejects(() => sql('update weekly_rider_battles set reward_points=$2 where id=$1', [id, maximum + 1]), /reward_points_check/);
+      if (size >= 5) await rejects(() => sql('update weekly_rider_battles set battle_size=4 where id=$1', [id]), /reward_points_check/);
+      await db.exec('rollback to savepoint stake_limit');
+    }
+  });
+  await test('5v5v5 transfers exactly five per losing rider and ten net per winner', async () => {
+    const id = await create(5, 3, 25);
+    await accept(id); await score(id, [8, 4, 2]);
+    await sql('select settle_expired_rider_battles()');
+    await assertPayout(id, 5, 3, 25, 1);
+    const rows = (await sql('select team_number, points_delta from weekly_rider_battle_participants where battle_id=$1', [id])).rows;
+    assert(rows.every(row => row.points_delta === (row.team_number === 1 ? 10 : -5)));
+    assert.equal(rows.filter(row => row.team_number === 1).reduce((sum, row) => sum + 5 + row.points_delta, 0), 75);
+    assert.equal((await sql('select get_coach_rider_battles_v2() feed')).rows[0].feed[0].reward_points, 25);
+    await auth(riders[0]);
+    assert.equal((await sql('select get_my_rider_battles() feed')).rows[0].feed[0].reward_points, 25);
+  });
+  await test('backdated Monday 9am through Thursday 7:30pm includes exact start and excludes exact end', async () => {
+    const requested = (await sql(`select
+      timestamptz '2026-09-14 09:00:00 Australia/Brisbane' = timestamptz '2026-09-13 23:00:00+00' start_ok,
+      timestamptz '2026-09-17 19:30:00 Australia/Brisbane' = timestamptz '2026-09-17 09:30:00+00' end_ok,
+      extract(epoch from (timestamptz '2026-09-17 19:30:00 Australia/Brisbane' - timestamptz '2026-09-14 09:00:00 Australia/Brisbane'))/3600 hours`)).rows[0];
+    assert.equal(requested.start_ok, true); assert.equal(requested.end_ok, true); assert.equal(Number(requested.hours), 82.5);
+    const id = await create(5, 3, 25); await accept(id);
+    // Use the previous Monday so the same exact clock window is expired whenever this test runs.
+    await sql(`update weekly_rider_battles set
+      starts_at = (date_trunc('week', timezone('Australia/Brisbane', now())) - interval '7 days' + interval '9 hours') at time zone 'Australia/Brisbane',
+      ends_at = (date_trunc('week', timezone('Australia/Brisbane', now())) - interval '4 days' + interval '19 hours 30 minutes') at time zone 'Australia/Brisbane'
+      where id=$1`, [id]);
+    await sql(`insert into assignment_point_awards(athlete_id, points, created_at)
+      select $2, score.points, score.created_at from weekly_rider_battles battle
+      cross join lateral (values (100, battle.starts_at - interval '1 millisecond'), (3, battle.starts_at),
+        (4, battle.ends_at - interval '1 millisecond'), (100, battle.ends_at)) score(points, created_at)
+      where battle.id=$1`, [id, riders[0]]);
+    assert.equal((await sql('select private.jkcrew_rider_battle_points($1,$2) points', [id, riders[0]])).rows[0].points, 7);
+    await sql('select settle_expired_rider_battles()');
+    await assertPayout(id, 5, 3, 25, 1);
+    assert.equal((await sql('select private.jkcrew_rider_battle_points($1,$2) points', [id, riders[0]])).rows[0].points, 7);
+  });
   await test('6v6v6 top tie awards nobody and transfers no points', async () => {
     const id = await create(); await accept(id); await score(id, [8, 8, 2]);
     await sql('select settle_expired_rider_battles()');
@@ -189,5 +236,5 @@ async function assertPayout(id, size, count, stake, winningTeam) {
     assert.equal((await sql("select has_function_privilege('authenticated',$1,'execute') allowed", [functionName])).rows[0].allowed, true);
   }
   await db.close();
-  console.log(`PASS ${checks} database scenarios, including 48 exact payout combinations; no live database used.`);
+  console.log(`PASS ${checks} database scenarios, including 52 exact payout combinations; no live database used.`);
 })().catch(error => { console.error(error); process.exit(1); });

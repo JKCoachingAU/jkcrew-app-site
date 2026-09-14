@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['battleContributionsHtml','battleTeamNumbers','battleFormatLabel','battleFormatOptionsHtml','parseBattleFormat','battlePrizePoints','battleTeamScore','battleParticipantFirstName','battleTeamHtml','weeklyBattleCardHtml','coachBattleTeamHtml','coachBattleCardHtml','riderHeadToHeadRecord','riderBattleRecord','riderBattleSelectionSize','updateRiderBattlePicker','requestWeeklyRiderBattle','coachBattleRiderSelect','showCoachBattleBuilder','renderChallenges'];
+const names=['battleContributionsHtml','battleTeamNumbers','battleFormatLabel','battleFormatOptionsHtml','parseBattleFormat','battlePrizePoints','battleStakeSummary','battleTeamScore','battleParticipantFirstName','battleTeamHtml','weeklyBattleCardHtml','coachBattleTeamHtml','coachBattleCardHtml','riderHeadToHeadRecord','riderBattleRecord','riderBattleSelectionSize','updateRiderBattlePicker','requestWeeklyRiderBattle','coachBattleRiderSelect','showCoachBattleBuilder','renderChallenges'];
 const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);}).join('\n');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH});
@@ -19,6 +19,7 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  ${code}
  renderChallenges();`;
  await page.addScriptTag({content:harness});
+ await page.evaluate(() => { const battle={battle_size:5,team_count:3,reward_points:25}; if(battlePrizePoints(battle)!==50 || !battleStakeSummary(battle).includes('75-point pool') || !battleStakeSummary(battle).includes('10 net points each')) throw new Error('Five points per rider payout display'); });
  await page.click('#toggle-battle-rider-list');
  await page.selectOption('#rider-battle-size','1v1v1');
  assert.equal(await page.locator('#rider-battle-third-team').isVisible(),true);

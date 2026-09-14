@@ -20,6 +20,8 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       window.liveRun = null;
       for (const name of ['stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites', 'setSyncStatus', 'refreshNotificationCentre', 'refreshBoardChatUnread', 'showNotificationDrawer', 'dismissDailyFinishForNavigation']) window[name] = () => {};
       window.isCoachRole = role => role === 'coach';
+      window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = () => false;
+      window.refreshRiderFeatureAccess = async () => true;
       window.coachPrimaryView = window.parentPrimaryView = window.athletePrimaryView = view => view;
       window.escapeHtml = value => String(value || '');
       window.navNotificationBadge = window.avatarHtml = () => '';
@@ -42,7 +44,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       window.sessionViewerListCount = () => 1;
       window.sessionViewerListContent = (_entry, _session, list) => '<div data-list-content="' + list + '">Training tricks</div>';
       window.refreshSessionViewerLight = () => {
-        document.querySelector('#viewer-tabs').innerHTML = sessionViewerPlanList({}, null);
+        document.querySelector('#viewer-tabs').innerHTML = sessionViewerPlanList({ athlete: { id: 'rider' } }, null);
         document.querySelectorAll('[data-viewer-list-tab]').forEach(button => button.addEventListener('click', selectViewerListTab));
       };
       window.mount = () => {
