@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.126";
+const RELEASE_VERSION = "2.14.127";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -585,7 +585,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.126" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.127" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2587,6 +2587,12 @@ function isRelevantRealtimePayload(table, payload = {}) {
 
 function invalidateCachesForRealtime(table) {
   if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
+  if (table === "coach_group_session_participants") {
+    state.sessionViewerActiveSessionCache = null;
+    // A saved finish on another device must replace the participant snapshot,
+    // including any older read that was already in flight.
+    state.sessionViewerRenderVersion += 1;
+  }
   if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "weekly_trick_assignments", "coach_group_session_participants"].includes(table)) {
     invalidateSessionViewerData();
   }
@@ -3432,7 +3438,13 @@ async function getActiveCoachGroupSession() {
     .order("started_at", { ascending: false })
     .limit(1);
   if (error) throw error;
-  return data?.[0] || null;
+  const session = data?.[0] || null;
+  if (!session) return null;
+  const results = await loadDailyFinishResults((session.coach_group_session_participants || []).map(participant => participant.training_session_id));
+  return { ...session, coach_group_session_participants: (session.coach_group_session_participants || []).map(participant => {
+    const result = results.get(participant.training_session_id);
+    return result ? { ...participant, daily_result: result, daily_finish_seconds: result.seconds, daily_finished_at: result.completed_at } : participant;
+  }) };
 }
 
 async function getSessionViewerPlanData(athletes = [], { force = false } = {}) {
@@ -3925,13 +3937,13 @@ function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTrainin
     ? `<div class="hub-timer"><span>${dailySaved ? "Daily time saved" : "Daily timer"}</span><strong id="trick-timer">${formatTime(activeTraining.daily_completed_seconds ?? Math.max(0, Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000)))}</strong></div>`
     : `<div class="hub-timer ready"><span>Ready</span><strong>GO</strong></div>`;
   const actionHtml = activeTraining
-    ? `<button class="secondary-btn start-session-btn" id="finish-daily-tricks" type="button" ${!dailySaved && (!selectedDaily.length || dailyDone < selectedDaily.length) ? "disabled" : ""}>${dailySaved ? "View Daily result" : "Finish Daily Tricks"}</button>`
+    ? `<button class="secondary-btn start-session-btn" id="finish-daily-tricks" type="button" ${!dailySaved && !selectedDaily.length ? "disabled" : ""}>${dailySaved ? "View Daily result" : "Finish Daily Tricks"}</button>`
     : `<button class="primary-btn start-session-btn" id="create-session" type="button">Start Daily Tricks</button>`;
   return `<section class="panel daily-session-hub">
     <div class="daily-hub-main">
       <div>
         <div class="panel-title">Daily Tricks timer</div>
-        <div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} · ${dailyDone}/${selectedDaily.length} complete today · full list within 20 minutes earns points</div>
+        <div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} · ${dailyDone}/${selectedDaily.length} landed today · finish anytime; complete the full list to earn a Daily point</div>
       </div>
       ${timerHtml}
     </div>
@@ -7513,19 +7525,25 @@ async function loadActiveSession({ canApply = () => true } = {}) {
     state.attempts = [];
     return;
   }
-  const { data: attempts, error: attemptsError } = await client.from("trick_attempts").select("*").eq("session_id", activeTraining.id).order("created_at", { ascending: false });
+  const [{ data: attempts, error: attemptsError }, finishResults] = await Promise.all([
+    client.from("trick_attempts").select("*").eq("session_id", activeTraining.id).order("created_at", { ascending: false }),
+    loadDailyFinishResults([activeTraining.id]),
+  ]);
   if (attemptsError) throw attemptsError;
   if (state.user?.id !== userId || !canApply()) return;
-  state.activeTraining = activeTraining;
+  state.activeTraining = dailyTrainingWithFinish(activeTraining, finishResults.get(activeTraining.id));
   state.attempts = attempts || [];
 }
 
 async function getActiveSession() {
+  const userId = state.user.id;
   const { data, error } = await client.from("training_sessions").select("id,started_at,total_points,daily_completed_seconds,daily_completed_at,daily_venue").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
   if (error) throw error;
   const session = data?.[0] || null;
   const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
-  return session && dateForTimezone(riderTimeZone, new Date(session.started_at)) === dateForTimezone(riderTimeZone) ? session : null;
+  if (!session || dateForTimezone(riderTimeZone, new Date(session.started_at)) !== dateForTimezone(riderTimeZone)) return null;
+  const results = await loadDailyFinishResults([session.id]);
+  return state.user?.id === userId ? dailyTrainingWithFinish(session, results.get(session.id)) : null;
 }
 
 async function renderSession({ forceParkKing = false, forceAssignments = false, preserveScroll = false } = {}) {
@@ -10413,9 +10431,9 @@ function sessionViewerRiderCardHtml(entry, activeGroupSession) {
   const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
   const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
   const status = daily.length && complete === daily.length ? "complete" : complete > 0 ? "progress" : "ready";
-  const statusLabel = status === "complete" ? participant?.daily_finish_seconds != null ? "Daily result saved" : "Ready to confirm" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
+  const statusLabel = participant?.daily_finish_seconds != null ? participant.daily_result?.all_completed === false ? "Practice finished" : "Daily result saved" : status === "complete" ? "Ready to confirm" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
   const finish = participant?.daily_finish_seconds != null ? ` · Timer finished ${formatTime(participant.daily_finish_seconds)}` : "";
-  const finishButton = activeGroupSession ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}" data-rider-name="${escapeHtml(athlete.display_name)}" ${participant?.daily_finish_seconds == null && (!daily.length || complete < daily.length) ? "disabled" : ""}>${participant?.daily_finish_seconds != null ? "View Daily result" : "Finish Daily Tricks"}</button>` : "";
+  const finishButton = activeGroupSession ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}" data-rider-name="${escapeHtml(athlete.display_name)}" ${participant?.daily_finish_seconds == null && !daily.length ? "disabled" : ""}>${participant?.daily_finish_seconds != null ? "View Daily result" : "Finish Daily Tricks"}</button>` : "";
   return `<article class="viewer-rider-accordion status-${status} ${isOpen ? "open" : ""}">
     <div class="viewer-rider-card ${isOpen ? "active" : ""}">
       <button class="viewer-rider-toggle" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(athlete.id)}">
@@ -11095,6 +11113,7 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
   const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, { force });
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || !rosterGrid.isConnected
     || state.sessionViewerGroup !== requestedGroup || state.sessionViewerVenue !== requestedVenue || state.sessionViewerSearch !== requestedSearch) return;
+  state.sessionViewerActiveSessionCache = activeGroupSession;
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
       const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };

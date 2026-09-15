@@ -4,17 +4,19 @@ const assert = require('node:assert/strict');
 const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
 const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const dailyCompletion = fs.readFileSync(path.join(root, 'daily-completion.js'), 'utf8');
 const extract = name => {
-  const start = app.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
+  const source = ['loadDailyFinishResults', 'dailyTrainingWithFinish'].includes(name) ? dailyCompletion : app;
+  const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
   assert(start >= 0, `Actual ${name} exists`);
-  const rest = app.slice(start);
+  const rest = source.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
 const names = [
   'cacheGet', 'cacheSet', 'cacheClear', 'getWeeklyAssignments',
   'canRefreshRiderSession', 'requestRiderSessionRefresh',
   'bindRiderSessionRefreshEvents', 'riderSessionRefreshButtonHtml', 'bindRiderSessionRefreshButton',
-  'renderSession', 'loadActiveSession', 'dailyVenues', 'newestDailyListForVenue', 'selectedVenueFor',
+  'renderSession', 'loadActiveSession', 'loadDailyFinishResults', 'dailyTrainingWithFinish', 'dailyVenues', 'newestDailyListForVenue', 'selectedVenueFor',
   'assignmentsForVenue', 'dailyVenueGroups', 'assignmentGroups',
   'extraTricks', 'extraTricksSection', 'bindExtraTrickActions',
   'rememberSessionExpansions', 'bindDailyVenueAccordions', 'bindSessionAssignmentAccordions',
@@ -54,6 +56,7 @@ const names = [
         rpc: async (name, args) => {
           qa.calls.push({ name, args });
           if (name === 'ensure_current_week_assignments') return { error: null };
+          if (name === 'get_daily_finish_results') return { data: [] };
           if (name !== 'get_effective_weekly_assignments') throw Error(`Unexpected RPC ${name}`);
           const result = qa.fail ? { error: Error('List fetch unavailable') } : { data: qaRows() };
           return qa.hold ? new Promise(resolve => qa.held.push({ resolve, result })) : result;
@@ -77,6 +80,7 @@ const names = [
         },
       };
       window.getAthleteCountryCode = async () => 'DE';
+      window.withTimeout = promise => promise;
       window.weekStartDateForCountry = () => '2026-09-13';
       window.normalizeAssignmentProgress = (_assignment, progress) => progress || {};
       window.reconcileAwardedProgress = (_assignment, progress) => progress;

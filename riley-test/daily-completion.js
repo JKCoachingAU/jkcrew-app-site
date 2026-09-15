@@ -18,6 +18,21 @@ function normalizedDailyResult(result) {
   return result?.result_id ? { ...result, id: result.result_id, leaderboard_position: result.rank_number } : null;
 }
 
+async function loadDailyFinishResults(sessionIds = []) {
+  const ids = [...new Set(sessionIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const { data, error } = await withTimeout(client.rpc("get_daily_finish_results", { p_session_ids: ids }), "Load Daily results", 15000);
+  if (error) throw error;
+  return new Map((Array.isArray(data) ? data : []).map(result => [result.session_id, result]));
+}
+
+function dailyTrainingWithFinish(session, result) {
+  if (!session || result?.session_id !== session.id) return session;
+  // Runtime timer snapshot only. Partial finishes never populate the database's
+  // full-completion fields, so existing awards and historical totals stay honest.
+  return { ...session, daily_result: result, daily_completed_seconds: result.seconds, daily_completed_at: result.completed_at, daily_venue: result.venue };
+}
+
 function dismissDailyFinishForNavigation() {
   dailyFinishUi.epoch += 1;
   dailyFinishUi.queued = [];
@@ -96,12 +111,13 @@ function showDailyFinishConfirmation(candidate, context) {
   if (candidate.athlete_id !== context.athleteId) return;
   context = { ...context, riderName: candidate.rider_name || context.riderName };
   const seconds = dailyFinishNumber(candidate.seconds);
+  const partial = candidate.all_completed === false;
   const current = dailyFinishModal(`
     <div class="eyebrow">DAILY TRICKS · ${escapeHtml(context.riderName)}</div>
     <h2 id="daily-finish-title">Daily Tricks finished?</h2>
-    <p class="daily-confirm-copy">You’ve ticked every trick. Ready to lock in your time?</p>
+    <p class="daily-confirm-copy">${partial ? `${Number(candidate.completed_count)}/${Number(candidate.total_count)} tricks landed. Finish Daily practice and move on?` : "You’ve ticked every trick. Ready to lock in your time?"}</p>
     ${seconds !== null ? `<div class="daily-finish-time"><strong>${formatTime(seconds)}</strong><span>${context.manual ? "Time at your finish tap" : "Time at your final trick"}</span></div>` : ""}
-    <p class="daily-finish-note">Reading this popup won’t add to your result. Go back to keep the timer running and correct your list.</p>
+    <p class="daily-finish-note">${partial ? "Unfinished tricks stay unticked. This saves your practice time with no Daily completion points, bonus or personal best. Your other training stays open." : "Reading this popup won’t add to your result. Go back to keep the timer running and correct your list."}</p>
     <div class="daily-finish-error" role="alert" hidden></div>
     <div class="daily-finish-actions"><button class="primary-btn" type="button" data-confirm-daily>Yes — finish Daily Tricks</button><button class="secondary-btn" type="button" data-cancel-daily>Go back</button></div>`, context);
   current.candidate = candidate;
@@ -112,6 +128,7 @@ function showDailyFinishConfirmation(candidate, context) {
 function dailySavedResultHtml(result, context) {
   const seconds = dailyFinishNumber(result.seconds);
   const sharingEnabled = typeof TRAINING_SHARE_CARDS_ENABLED !== "undefined" && TRAINING_SHARE_CARDS_ENABLED;
+  const partial = result.all_completed === false;
   const comparable = result.pb_comparable === true;
   const previousPb = comparable ? dailyFinishNumber(result.previous_pb_seconds) : null;
   const personalBest = comparable ? dailyFinishNumber(result.pb_seconds) : null;
@@ -126,13 +143,13 @@ function dailySavedResultHtml(result, context) {
   return `<div class="daily-result-mark ${newPb ? "new-pb" : ""}" aria-hidden="true">✦</div>
     <div class="eyebrow">DAILY TRICKS · RESULT SAVED</div>
     <h2 id="daily-finish-title">${escapeHtml(result.rider_name || context.riderName)}</h2>
-    ${newPb || firstPb ? `<strong class="daily-pb-banner">${firstPb ? "FIRST PERSONAL BEST" : "NEW PERSONAL BEST"}</strong>` : `<p class="daily-result-tagline">Daily Tricks. Done.</p>`}
-    <div class="daily-finish-time"><strong>${seconds === null ? "—" : formatTime(seconds)}</strong><span>Daily Tricks completion time</span></div>
+    ${newPb || firstPb ? `<strong class="daily-pb-banner">${firstPb ? "FIRST PERSONAL BEST" : "NEW PERSONAL BEST"}</strong>` : `<p class="daily-result-tagline">${partial ? `Daily practice finished · ${Number(result.completed_count)}/${Number(result.total_count)} landed` : "Daily Tricks. Done."}</p>`}
+    <div class="daily-finish-time"><strong>${seconds === null ? "—" : formatTime(seconds)}</strong><span>${partial ? "Time spent on Daily Tricks" : "Daily Tricks completion time"}</span></div>
     <div class="daily-result-stats">
       <div><strong>${completionPoints === null ? "—" : `+${completionPoints}`}</strong><span>Daily completion points</span></div>
       <div><strong>${weeklyScore === null ? "—" : weeklyScore}</strong><span>Weekly score</span></div>
     </div>
-    ${comparable ? `<div class="daily-pb-comparison"><div><span>Personal best · same list</span><strong>${personalBest === null ? "Not available" : formatTime(personalBest)}</strong></div><p>${escapeHtml(comparison)}</p></div>` : `<p class="daily-finish-note">Earlier saved Daily result. A compatible PB comparison and completion point breakdown aren’t available for this result.</p>`}
+    ${partial ? `<p class="daily-finish-note">Unfinished tricks are still unticked. No Daily completion point, bonus or personal best was awarded.</p>` : comparable ? `<div class="daily-pb-comparison"><div><span>Personal best · same list</span><strong>${personalBest === null ? "Not available" : formatTime(personalBest)}</strong></div><p>${escapeHtml(comparison)}</p></div>` : `<p class="daily-finish-note">Earlier saved Daily result. A compatible PB comparison and completion point breakdown aren’t available for this result.</p>`}
     ${rank !== null && rank > 0 ? `<p class="daily-result-rank">Leaderboard position <strong>#${rank}</strong></p>` : ""}
     <p class="daily-finish-note">Keep going with One Bangs, Dialled, Lines or your other training. Your Daily result is saved.</p>
     <div class="daily-finish-actions"><button class="primary-btn" type="button" data-keep-riding>Keep riding</button>${sharingEnabled ? `<button class="secondary-btn" type="button" data-share-daily>Share result</button>` : ""}</div>`;
@@ -154,7 +171,7 @@ async function refreshAfterDailyFinish(result, context) {
   cacheClear(`schedule:${context.athleteId}:`);
   cacheClear("leaderboard"); cacheClear("park-king:"); cacheClear("coach-command:");
   if (context.athleteId === state.user?.id && state.activeTraining?.id === result.session_id) {
-    state.activeTraining = { ...state.activeTraining, daily_completed_seconds: result.seconds, daily_completed_at: result.completed_at, daily_venue: result.venue };
+    state.activeTraining = dailyTrainingWithFinish(state.activeTraining, result);
     clearInterval(state.timer); state.timer = null;
     updateTimer();
   }
@@ -215,7 +232,7 @@ async function requestDailyFinish(button, viewer = false) {
     const response = Array.isArray(data) ? data[0] : data;
     if (response?.result) showSavedDailyResult(response.result, context);
     else if (response?.completion_candidate) showDailyFinishConfirmation(normalizedDailyCandidate(response.completion_candidate), context);
-    else notify(response?.message || "Tick every Daily Trick before finishing.", "error");
+    else notify(response?.message || "Couldn't prepare your Daily finish. Please try again.", "error");
   } catch (error) { notify(messageFrom(error), "error"); }
   finally { dailyFinishUi.requests.delete(key); restore(); }
 }

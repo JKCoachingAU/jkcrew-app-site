@@ -68,6 +68,7 @@ const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
   await db.query('insert into push_subscriptions values($1,true)',[id(coach)]);
   await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260911085353_confirm_daily_tricks_and_today_progress.sql'),'utf8'));
   await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260911100447_make_daily_standings_read_only.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260915214800_allow_partial_daily_finish.sql'),'utf8'));
   assert.deepEqual(await q('select * from profiles order by id'),before,'Migration preserves existing rider/PB data');
   assert.equal((await action(10)).completion_candidate,null);
   const tap=await scalar("select clock_timestamp()-interval '2 seconds'");

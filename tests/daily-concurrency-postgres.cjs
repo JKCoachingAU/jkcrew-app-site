@@ -75,6 +75,9 @@ async function main() {
   const schema = behavior.match(/await db\.exec\(`([\s\S]*?)`\);/)[1]
     .replace(/create role (anon|authenticated|service_role);/g, (_, name) => `do $$begin if not exists(select 1 from pg_roles where rolname='${name}') then create role ${name}; end if; end$$;`);
   batch(schema);
+  batch(`grant usage on schema private to authenticated;
+    create table percentage_attempts(id uuid primary key default gen_random_uuid(),assignment_id uuid,athlete_id uuid,attempt_number integer,landed boolean,created_at timestamptz default now(),unique(assignment_id,attempt_number));
+    create table assignment_attempts(id uuid primary key default gen_random_uuid(),assignment_id uuid,athlete_id uuid,session_id uuid,attempted_at timestamptz default now());`);
   const source = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/daily-production-functions.json'), 'utf8')).functions;
   const ordered = ['jkcrew_country_timezone(text)', 'jkcrew_week_bounds(text,timestamp with time zone)', 'private.jkcrew_venue_key(text)', 'level_badge(integer)', 'sync_xp_award(uuid,text,text,integer,text,uuid,uuid,text,text,uuid,jsonb)', 'sync_assignment_progress_xp()', 'sync_daily_pb_xp()', 'sync_daily_completion_timing()', 'record_assignment_action(uuid,text)', 'record_assignment_action_at_venue(uuid,text,text)', 'finish_group_session_daily(uuid,uuid,integer)', 'get_weekly_leaderboard()'];
   batch(ordered.map(signature => source.find(row => row.signature === signature).definition + ';').join('\n'));
@@ -88,19 +91,24 @@ async function main() {
   batch('create trigger tricktionary_progress_history after insert or update of progress_date,completed_at,streak_count on assignment_progress for each row execute function private.sync_tricktionary_progress_history();');
   batch(fs.readFileSync(path.join(root, 'supabase/migrations/20260911085353_confirm_daily_tricks_and_today_progress.sql'), 'utf8'));
   batch(fs.readFileSync(path.join(root, 'supabase/migrations/20260911100447_make_daily_standings_read_only.sql'), 'utf8'));
+  batch(fs.readFileSync(path.join(root, 'supabase/migrations/20260914104325_rider_scoring_pause.sql'), 'utf8'));
+  batch(fs.readFileSync(path.join(root, 'supabase/migrations/20260915214800_allow_partial_daily_finish.sql'), 'utf8'));
+  batch(`create or replace function get_earned_badges(uuid) returns jsonb language plpgsql as $$begin raise exception 'Unexpected badge synchronization';end$$;`);
   control = new Connection('control');
   const version = await control.query('select version();');
-  batch(`insert into profiles(id,role,display_name) values('${id(1)}','coach','Concurrency Coach');`);
-  const setup = async (n, group = null) => {
+  batch(`insert into profiles(id,role,display_name) values('${id(1)}','coach','Concurrency Coach'),('${id(2)}','coach','Second Concurrency Coach');`);
+  const setup = async (n, group = null, completed = 2) => {
     const first = n * 10, second = first + 1, session = n * 100;
     batch(`insert into profiles(id,role,display_name) values('${id(n)}','athlete','Concurrency Rider ${n}');
-      insert into coach_athletes values('${id(1)}','${id(n)}');
+      insert into coach_athletes values('${id(1)}','${id(n)}'),('${id(2)}','${id(n)}');
       insert into weekly_trick_assignments(id,coach_id,athlete_id,week_start,trick_name,category,venue) select '${id(first)}','${id(1)}','${id(n)}',week_start_date,'First trick','daily','Test park' from jkcrew_week_bounds('AU');
       insert into weekly_trick_assignments(id,coach_id,athlete_id,week_start,trick_name,category,venue) select '${id(second)}','${id(1)}','${id(n)}',week_start_date,'Second trick','daily','Test park' from jkcrew_week_bounds('AU');
       insert into training_sessions(id,athlete_id,started_at) values('${id(session)}','${id(n)}',greatest(now()-interval '5 minutes',((now() at time zone 'Australia/Brisbane')::date)::timestamp at time zone 'Australia/Brisbane'));
       ${group ? `insert into coach_group_session_participants(group_session_id,athlete_id,training_session_id) values('${id(group)}','${id(n)}','${id(session)}');` : ''}
-      ${acting(1)}${rpc('record_daily_trick_action', [id(first), 'landed', 'Test park'])}`);
-    const candidate = json(batch(`${acting(1)}${rpc('record_daily_trick_action', [id(second), 'landed', 'Test park'])}`)).completion_candidate;
+      ${completed ? acting(1) + rpc('record_daily_trick_action', [id(first), 'landed', 'Test park']) : ''}`);
+    const candidate = json(batch(`${acting(1)}${completed === 2
+      ? rpc('record_daily_trick_action', [id(second), 'landed', 'Test park'])
+      : rpc('prepare_daily_finish', [id(n), id(session), 'Test park'])}`)).completion_candidate;
     assert(candidate?.candidate_id);
     return { rider: n, first, second, session, candidate };
   };
@@ -147,6 +155,62 @@ async function main() {
   assert.equal(finishedResult.completion_points, 2);
   assert.deepEqual(await state(finishFirst), { awards: 2, points: 2, xp_rows: 1, confirmed: 1, tick: null });
   report.push('confirmation first: correction waits; saved result/rewards remain and the later untick is recorded');
+
+  const samePartial = await setup(20, null, 1);
+  const partialCoach = new Connection('partial_coach'), otherCoach = new Connection('partial_other_coach');
+  const partialResult = json(await partialCoach.query(`begin; ${acting(1)}${confirm(samePartial)}`));
+  const waitingPartial = otherCoach.query(`${acting(2)}${confirm(samePartial)}`);
+  await waitForLock(otherCoach); await partialCoach.query('commit;');
+  assert.deepEqual(json(await waitingPartial), partialResult, 'Two coaches receive the exact same saved partial result');
+  assert.equal(partialResult.all_completed, false); assert.equal(partialResult.completed_count, 1);
+  assert.equal(partialResult.completion_points, 0); assert.equal(partialResult.completion_xp, 0);
+  assert.deepEqual({ ...(await state(samePartial)), tick: null }, { awards: 0, points: 0, xp_rows: 0, confirmed: 1, tick: null });
+  assert.equal(await control.query(`select daily_completed_at is null and daily_completed_seconds is null and ended_at is null from training_sessions where id='${id(samePartial.session)}';`), 't');
+  report.push('same partial candidate: independent linked coaches wait on the real row lock, one zero-reward result, overall training remains active');
+
+  const landingFirst = await setup(21, null, 1);
+  const landing = new Connection('partial_last_landing'), stalePartial = new Connection('partial_stale_confirm');
+  const finalLanding = json(await landing.query(`begin; ${acting(landingFirst.rider)}${rpc('record_daily_trick_action', [id(landingFirst.second), 'landed', 'Test park'])}`));
+  const waitingStalePartial = stalePartial.query(`${acting(2)}${confirm(landingFirst)}`).then(value => ({ value }), error => ({ error }));
+  await waitForLock(stalePartial); await landing.query('commit;');
+  assert.match((await waitingStalePartial).error?.message || '', /Daily list changed/);
+  assert.deepEqual({ ...(await state(landingFirst)), tick: null }, { awards: 0, points: 0, xp_rows: 0, confirmed: 0, tick: null });
+  landingFirst.candidate = finalLanding.completion_candidate;
+  assert.equal(json(await landing.query(confirm(landingFirst))).completion_points, 2, 'The new full candidate remains usable after rejecting the stale partial');
+  report.push('last landing first: pending partial confirmation waits then rejects without rewards; the fresh full candidate still confirms normally');
+
+  const partialFirst = await setup(22, null, 1);
+  const partialFinisher = new Connection('partial_finish_first'), lateLanding = new Connection('partial_late_landing');
+  const savedPartial = json(await partialFinisher.query(`begin; ${acting(1)}${confirm(partialFirst)}`));
+  const waitingLanding = lateLanding.query(`${acting(partialFirst.rider)}${rpc('record_daily_trick_action', [id(partialFirst.second), 'landed', 'Test park'])}`);
+  await waitForLock(lateLanding); await partialFinisher.query('commit;'); await waitingLanding;
+  assert.deepEqual(json(await partialFinisher.query(confirm(partialFirst))), savedPartial);
+  assert.equal(savedPartial.all_completed, false);
+  assert.deepEqual({ ...(await state(partialFirst)), tick: null }, { awards: 0, points: 0, xp_rows: 0, confirmed: 1, tick: null });
+  assert.equal(await control.query(`select count(*) from assignment_progress where athlete_id='${id(partialFirst.rider)}' and progress_date is not null;`), '2');
+  report.push('partial confirmation first: later last tick waits, saves its landing, and cannot rewrite or reward the immutable partial result');
+
+  const partialCorrection = await setup(23, null, 1);
+  const partialUnticking = new Connection('partial_untick_first'), correctedPartial = new Connection('partial_after_untick');
+  await partialUnticking.query(`begin; ${acting(2)}${rpc('record_daily_trick_action', [id(partialCorrection.first), 'unlanded', 'Test park'])}`);
+  const waitingCorrectedPartial = correctedPartial.query(`${acting(1)}${confirm(partialCorrection)}`).then(value => ({ value }), error => ({ error }));
+  await waitForLock(correctedPartial); await partialUnticking.query('commit;');
+  assert.match((await waitingCorrectedPartial).error?.message || '', /Daily list changed/);
+  assert.deepEqual(await state(partialCorrection), { awards: 0, points: 0, xp_rows: 0, confirmed: 0, tick: null });
+  report.push('partial correction first: another coach’s in-flight confirmation waits, then rejects the stale count with no rewards');
+
+  const partialGroup = 8000;
+  batch(`insert into coach_group_sessions(id,coach_id,venue,started_at) values('${id(partialGroup)}','${id(1)}','Test park',greatest(now()-interval '5 minutes',((now() at time zone 'Australia/Brisbane')::date)::timestamp at time zone 'Australia/Brisbane'));`);
+  const groupPartial = await setup(24, partialGroup, 0), groupComplete = await setup(25, partialGroup);
+  const partialGroupConn = new Connection('group_partial'), completeGroupConn = new Connection('group_full_after_partial');
+  const groupPartialResult = json(await partialGroupConn.query(`begin; ${acting(1)}${confirm(groupPartial)}`));
+  const waitingFullGroup = completeGroupConn.query(`${acting(groupComplete.rider)}${confirm(groupComplete)}`);
+  await waitForLock(completeGroupConn); await partialGroupConn.query('commit;');
+  assert.equal(groupPartialResult.completed_count, 0); assert.equal(groupPartialResult.completion_points, 0);
+  assert.equal(json(await waitingFullGroup).completion_points, 3);
+  assert.equal(await control.query(`select count(*) from assignment_point_awards where award_key='group-first-finish:${id(partialGroup)}';`), '1');
+  assert.equal(await control.query(`select daily_finished_at is null and daily_finish_seconds is null from coach_group_session_participants where group_session_id='${id(partialGroup)}' and athlete_id='${id(groupPartial.rider)}';`), 't');
+  report.push('group partial/full overlap: zero-progress partial releases the real group lock without consuming the first-full-finish bonus');
 
   console.log(JSON.stringify({ status: 'PASS', server: version, separate_backend_connections: connections.length, cases: report }, null, 2));
 }

@@ -94,6 +94,16 @@ const progress = {
     await page.evaluate(()=>{document.documentElement.dataset.theme='dark';fixture.today_points=15;fixture.today_xp=165;fixture.completed_categories[1].items.push({id:'ob2',trick_name:'Can can'});return refreshOpenTrainingProgress('rider')});
     assert.equal(await page.locator('.training-progress-stats strong').first().textContent(),'15');
     assert(await page.locator('.training-progress-category li').filter({hasText:'Can can'}).isVisible());
+    await page.evaluate(() => {
+      fixture.daily_results = [{...dailyFixture, all_completed:false, completed_count:1, total_count:2, completion_points:0, completion_xp:0, pb_comparable:false, is_new_pb:false, is_first_pb:false}];
+      fixture.improvements = [];
+      return refreshOpenTrainingProgress('rider');
+    });
+    assert((await page.locator('.training-progress-daily').textContent()).includes('Daily practice finished · 1/2 landed.'), 'Partial practice is distinguished from full completion');
+    assert.equal(await page.locator('.training-progress-daily-result b').textContent(), '+0');
+    assert.equal(await page.locator('.training-progress-pb,.training-progress-improvements').count(), 0, 'Partial practice cannot claim a personal best');
+    assert.equal(await page.locator('.training-progress-category li').filter({hasText:'Barspin box'}).count(), 0, 'An unfinished trick is not invented in completed history');
+    await page.evaluate(() => {fixture.daily_results = [dailyFixture]; return refreshOpenTrainingProgress('rider');});
     // A stale request cannot repaint a newer activity response.
     await page.evaluate(()=>{rpcQueue.push('deferred');void refreshOpenTrainingProgress('rider');});
     await page.evaluate(()=>{fixture.today_points=16;return refreshOpenTrainingProgress('rider');});
