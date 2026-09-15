@@ -14,7 +14,7 @@ const extract = name => {
 const names = [...new Set([
   'getCoachWeeklyChallenges', 'coachWeeklyChallengeHtml', 'renderCoachBattleViewer', 'refreshCoachBattleScores',
   'coachArchivedBattleSection', 'coachBattleSection', 'coachBattleCardHtml', 'coachBattleTeamHtml',
-  'battleTeamNumbers', 'battleTeamScore', 'battleFormatLabel', 'battlePrizePoints', 'battleParticipantFirstName', 'battleContributionsHtml',
+  'battleTeamNumbers', 'battleTeamScore', 'battleFormatLabel', 'battlePrizePoints','battleStakeSummary', 'battleParticipantFirstName', 'battleParticipantTeamPoints','battleContributionsHtml',
   ...[...app.matchAll(/^(?:async )?function ((?:coachWeekly|coachChallenge|captureCoachBattle|restoreCoachBattle)\w*)\(/gm)].map(match => match[1])
 ])];
 const code = 'let battleScoreRefreshRunning = false;\n' + names.map(extract).join('\n');

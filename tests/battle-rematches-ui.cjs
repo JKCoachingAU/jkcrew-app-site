@@ -4,7 +4,7 @@ const screenshotDir=process.env.JKCREW_SCREENSHOT_DIR;
 if(screenshotDir)fs.mkdirSync(screenshotDir,{recursive:true});
 const capture=async(page,name)=>{if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,name+'.png'),animations:'disabled'});};
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['battleContributionsHtml','battleTeamNumbers','battleFormatLabel','battleFormatOptionsHtml','parseBattleFormat','battlePrizePoints','battleTeamScore','battleParticipantFirstName','battleTeamHtml','weeklyBattleCardHtml','coachBattleTeamHtml','coachBattleCardHtml','riderHeadToHeadRecord','riderBattleRecord','riderBattleSelectionSize','updateRiderBattlePicker','requestWeeklyRiderBattle','coachBattleRiderSelect','showCoachBattleBuilder','renderChallenges'];
+const names=['battleParticipantTeamPoints','battleContributionsHtml','battleTeamNumbers','battleFormatLabel','battleFormatOptionsHtml','parseBattleFormat','battlePrizePoints','battleStakeSummary','battleTeamScore','battleParticipantFirstName','battleTeamHtml','weeklyBattleCardHtml','coachBattleTeamHtml','coachBattleCardHtml','riderHeadToHeadRecord','riderBattleRecord','riderBattleSelectionSize','updateRiderBattlePicker','requestWeeklyRiderBattle','coachBattleRiderSelect','showCoachBattleBuilder','renderChallenges'];
 const extracted=names.map(name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);}).join('\n');
 (async()=>{
   const browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH});

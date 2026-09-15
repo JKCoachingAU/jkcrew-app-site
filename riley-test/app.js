@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.124";
+const RELEASE_VERSION = "2.14.125";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -584,7 +584,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.124" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.125" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2784,8 +2784,30 @@ document.addEventListener("keydown", event => {
   void showPointsReceipt(event.target);
 }, true);
 
-function battleContributionsHtml(team) {
-  return `<div class="battle-contributions" aria-label="Rider contributions">${team.map(rider => `<div><span>${escapeHtml(rider.display_name || "Rider")}</span><b>${Number(rider.battle_points ?? rider.weekly_points ?? 0)} pts</b></div>`).join("")}</div>`;
+function battleParticipantTeamPoints(participant = {}, teamNumber = participant.team_number) {
+  if (participant.forfeited_at) return 0;
+  const allocations = participant.score_allocations;
+  const points = allocations && typeof allocations === "object" && !Array.isArray(allocations)
+    ? Number(allocations[String(teamNumber)] ?? 0)
+    : Number(participant.team_number) === Number(teamNumber) ? Number(participant.battle_points ?? participant.weekly_points ?? 0) : 0;
+  return Number.isFinite(points) ? points : 0;
+}
+
+function battleContributionsHtml(participants, teamNumber) {
+  const roster = participants.filter(rider => Number(rider.team_number) === Number(teamNumber));
+  const guests = participants.filter(rider => Number(rider.team_number) !== Number(teamNumber) && battleParticipantTeamPoints(rider, teamNumber) > 0);
+  return `<div class="battle-contributions" aria-label="Rider contributions">${[...roster, ...guests].map(rider => {
+    const guest = Number(rider.team_number) !== Number(teamNumber);
+    const credits = Object.entries(rider.forfeited_at ? {} : rider.score_allocations || {})
+      .filter(([team, points]) => /^[1-3]$/.test(team) && Number(team) !== Number(teamNumber) && Number(points) > 0)
+      .map(([team, points]) => `${Number(points)} pts credited to Team ${team}`);
+    let note = guest ? "Session contribution" : credits.join(" · ");
+    if (note && /^\d{4}-\d{2}-\d{2}$/.test(rider.score_allocation_date || "")) {
+      const date = new Date(`${rider.score_allocation_date}T12:00:00Z`);
+      if (Number.isFinite(date.getTime())) note += ` · ${date.toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" })}`;
+    }
+    return `<div${guest ? ' class="battle-session-contribution"' : ""}><span>${escapeHtml(rider.display_name || "Rider")}${note ? `<br><small>${escapeHtml(note)}</small>` : ""}</span><b>${battleParticipantTeamPoints(rider, teamNumber)} pts</b></div>`;
+  }).join("")}</div>`;
 }
 
 async function getPointHistory(athleteId) {
@@ -6191,13 +6213,13 @@ function battleStakeSummary(battle = {}) {
 }
 
 function battleTeamScore(battle, teamNumber) {
-  return (battle.participants || []).filter((rider) => rider.team_number === teamNumber).reduce((sum, rider) => sum + Number(rider.battle_points ?? rider.weekly_points ?? 0), 0);
+  return (battle.participants || []).reduce((sum, rider) => sum + battleParticipantTeamPoints(rider, teamNumber), 0);
 }
 
 function battleTeamHtml(participants = [], teamNumber, myTeamNumber) {
   const team = participants.filter((participant) => participant.team_number === teamNumber);
-  const score = team.reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
-  return `<div class="battle-team ${teamNumber === myTeamNumber ? "my-team" : ""}"><small>${teamNumber === myTeamNumber ? "Your team" : `Team ${teamNumber}`}</small><div class="battle-team-avatars" data-team-size="${team.length}">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(battleParticipantFirstName(participant))).join(" + ")}</strong><b>${score} pts</b>${team.some((rider) => rider.forfeited_at) ? "<small>Forfeited</small>" : ""}${battleContributionsHtml(team)}</div>`;
+  const score = battleTeamScore({ participants }, teamNumber);
+  return `<div class="battle-team ${teamNumber === myTeamNumber ? "my-team" : ""}"><small>${teamNumber === myTeamNumber ? "Your team" : `Team ${teamNumber}`}</small><div class="battle-team-avatars" data-team-size="${team.length}">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(battleParticipantFirstName(participant))).join(" + ")}</strong><b>${score} pts</b>${team.some((rider) => rider.forfeited_at) ? "<small>Forfeited</small>" : ""}${battleContributionsHtml(participants, teamNumber)}</div>`;
 }
 
 function weeklyBattleCardHtml(battle, _pointsByRider = new Map(), battleHistory = []) {
@@ -9398,8 +9420,8 @@ async function renderContests() {
 
 function coachBattleTeamHtml(battle, teamNumber) {
   const team = (battle.participants || []).filter((participant) => participant.team_number === teamNumber);
-  const score = team.reduce((sum, participant) => sum + Number(participant.battle_points ?? participant.weekly_points ?? 0), 0);
-  return `<div class="coach-battle-team"><div class="battle-team-avatars" data-team-size="${team.length}">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(participant.display_name)).join(" + ")}</strong><small>${team.map((participant) => participant.response === "accepted" ? "✓" : participant.response === "declined" ? "×" : "…").join(" ")} · ${score} pts${team.some((rider) => rider.forfeited_at) ? " · Forfeited" : ""}</small>${battleContributionsHtml(team)}</div>`;
+  const score = battleTeamScore(battle, teamNumber);
+  return `<div class="coach-battle-team"><div class="battle-team-avatars" data-team-size="${team.length}">${team.map((participant) => avatarHtml(participant, "avatar")).join("")}</div><strong>${team.map((participant) => escapeHtml(participant.display_name)).join(" + ")}</strong><small>${team.map((participant) => participant.response === "accepted" ? "✓" : participant.response === "declined" ? "×" : "…").join(" ")} · ${score} pts${team.some((rider) => rider.forfeited_at) ? " · Forfeited" : ""}</small>${battleContributionsHtml(battle.participants || [], teamNumber)}</div>`;
 }
 
 function coachBattleCardHtml(battle) {

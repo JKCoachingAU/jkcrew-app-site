@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['battleContributionsHtml','battleTeamNumbers','battleFormatLabel','battleFormatOptionsHtml','parseBattleFormat','battlePrizePoints','battleStakeSummary','battleTeamScore','battleParticipantFirstName','battleTeamHtml','weeklyBattleCardHtml','coachBattleTeamHtml','coachBattleCardHtml','riderHeadToHeadRecord','riderBattleRecord','riderBattleSelectionSize','updateRiderBattlePicker','requestWeeklyRiderBattle','coachBattleRiderSelect','showCoachBattleBuilder','renderChallenges'];
+const names=['battleParticipantTeamPoints','battleContributionsHtml','battleTeamNumbers','battleFormatLabel','battleFormatOptionsHtml','parseBattleFormat','battlePrizePoints','battleStakeSummary','battleTeamScore','battleParticipantFirstName','battleTeamHtml','weeklyBattleCardHtml','coachBattleTeamHtml','coachBattleCardHtml','riderHeadToHeadRecord','riderBattleRecord','riderBattleSelectionSize','updateRiderBattlePicker','requestWeeklyRiderBattle','coachBattleRiderSelect','showCoachBattleBuilder','renderChallenges'];
 const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);}).join('\n');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH});
@@ -146,6 +146,64 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
  }
  assert.equal(await page.evaluate(()=>battlePrizePoints(battle)),10);
+ // A rider can contribute one session's points to another team without
+ // changing their roster membership, personal score or settlement stake.
+ await page.evaluate(()=>{
+   window.allocatedBattle={id:'session-credit',status:'accepted',battle_size:5,team_count:3,reward_points:25,participants:roster.slice(0,15).map((r,i)=>({...r,display_name:i===0?'Mylee':r.display_name,athlete_id:r.id,team_number:Math.floor(i/5)+1,battle_points:i===0?14:i===5?3:i===10?7:0,response:'accepted'}))};
+   window.unallocatedScores=[1,2,3].map(team=>battleTeamScore(allocatedBattle,team));
+   allocatedBattle.participants[0].score_allocations={'1':0,'2':14};
+   allocatedBattle.participants[0].score_allocation_date='2026-09-15';
+   window.allocationSnapshot=JSON.stringify(allocatedBattle);
+ });
+ assert.deepEqual(await page.evaluate(()=>unallocatedScores),[14,3,7],'Older feeds still use personal battle scores');
+ assert.deepEqual(await page.evaluate(()=>[1,2,3].map(team=>battleTeamScore(allocatedBattle,team))),[0,17,7],'Exactly14 points move fromTeam1 toTeam2');
+ assert.equal(await page.evaluate(()=>[1,2,3].reduce((sum,team)=>sum+battleTeamScore(allocatedBattle,team),0)),24,'Allocation conserves total battle points');
+ assert.deepEqual(await page.evaluate(()=>[
+   battleParticipantTeamPoints({team_number:1,weekly_points:4},1),
+   battleParticipantTeamPoints({team_number:1,weekly_points:4},2),
+   battleParticipantTeamPoints({team_number:1,battle_points:0,weekly_points:9},1),
+   battleParticipantTeamPoints({team_number:1,battle_points:14,score_allocations:{'2':14}},1),
+ ]),[4,0,0,0],'Legacy weekly fallback and explicit/missing zero allocations do not double-count');
+ for(const width of [320,1024]){
+   await page.setViewportSize({width,height:844});
+   await page.evaluate(()=>{
+     state.user.id='r0';document.querySelector('#view').innerHTML=weeklyBattleCardHtml(allocatedBattle)+coachBattleCardHtml(allocatedBattle);
+     document.querySelector('details.coach-battle-view-card').open=true;
+   });
+   assert.deepEqual(await page.locator('.battle-team > b').allTextContents(),['0 pts','17 pts','7 pts'],'Rider cards use allocated scores');
+   assert((await page.locator('.coach-battle-summary-matchup > small').textContent()).includes('0–17–7 pts'),'Closed coach summary matches rider scores');
+   for(const selector of ['.battle-team','.coach-battle-team']){
+     const teams=page.locator(selector);
+     assert.equal(await teams.locator('.battle-team-avatars[data-team-size="5"] .avatar').count(),15,'All15 riders stay in their original5v5v5 roster');
+     assert(!(await teams.nth(1).locator(':scope > strong').innerText()).includes('Mylee'),'Guest contribution does not add a rider to the Tuesday roster');
+     const monday=teams.nth(0).locator('.battle-contributions > div').filter({hasText:'Mylee'});
+     assert.equal(await monday.locator('b').innerText(),'0 pts');
+     assert((await monday.innerText()).includes('14 pts credited to Team 2'),'Original team explains the credit');
+     const tuesday=teams.nth(1).locator('.battle-session-contribution');
+     assert.equal(await tuesday.count(),1);
+     assert.equal(await tuesday.locator('b').innerText(),'14 pts');
+     assert((await tuesday.innerText()).includes('Mylee')&&(await tuesday.innerText()).includes('Session contribution'),'Receiving team identifies the guest contribution');
+     assert((await tuesday.innerText()).includes('15 Sept'),'The session date is shown without timezone drift');
+     assert.equal(await teams.nth(2).locator('.battle-session-contribution').count(),0);
+   }
+   const coachScores=await page.locator('.coach-battle-team > small').allTextContents();
+   for(const [index,score] of [0,17,7].entries())assert(coachScores[index].includes('· '+score+' pts'),'Expanded coach team score matches summary');
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Allocation explanations fit '+width+'px');
+   if(process.env.JKCREW_QA_SCREENSHOTS)await page.screenshot({path:path.join(process.env.JKCREW_QA_SCREENSHOTS,'jkcrew-session-credit-'+width+'.png'),fullPage:true});
+ }
+ assert.equal(await page.evaluate(()=>JSON.stringify(allocatedBattle)),await page.evaluate(()=>allocationSnapshot),'Rendering preserves all participant identities, raw scores and stakes');
+ assert.equal(await page.evaluate(()=>allocatedBattle.participants[0].battle_points),14,'Mylee retains her personal14 points');
+ assert.equal(await page.evaluate(()=>battleStakeSummary(allocatedBattle).includes('75-point pool')&&battleStakeSummary(allocatedBattle).includes('10 net points each')),true,'Prize split stays unchanged');
+ await page.evaluate(()=>{
+   allocatedBattle.participants[0].forfeited_at='2026-09-16T00:00:00Z';
+   document.querySelector('#view').innerHTML=weeklyBattleCardHtml(allocatedBattle)+coachBattleCardHtml(allocatedBattle);
+   document.querySelector('details.coach-battle-view-card').open=true;
+ });
+ assert.deepEqual(await page.evaluate(()=>[1,2,3].map(team=>battleTeamScore(allocatedBattle,team))),[0,3,7],'Forfeited sources stop contributing to every team, matching settlement');
+ assert.equal(await page.locator('.battle-session-contribution').count(),0,'Forfeited guest contribution is not shown');
+ assert(!(await page.locator('#view').textContent()).includes('14 pts credited'),'Forfeited rider does not advertise points that no longer count');
+ assert.equal(await page.evaluate(()=>allocatedBattle.participants[0].battle_points),14,'Forfeit display preserves the raw personal score');
+ assert.equal(await page.evaluate(()=>battleParticipantTeamPoints({team_number:1,battle_points:8,forfeited_at:'2026-09-16T00:00:00Z'},1)),0,'Unallocated forfeited riders also match settlement eligibility');
  // Long six-person teams must stay readable even when a tablet sidebar leaves
  // only 650px of content. Check avatars against their own team (cards clip).
  for(const theme of ['dark','light'])for(const width of [320,390,1024]){
@@ -186,5 +244,5 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  }
  // Losing to a third side must not count as losing to the other losing side.
  assert.deepEqual(await page.evaluate(()=>riderHeadToHeadRecord([{participants:[{athlete_id:'r0',team_number:1,is_winner:false},{athlete_id:'r1',team_number:2,is_winner:false},{athlete_id:'r2',team_number:3,is_winner:true}]}],'r1')),{wins:0,losses:0});
- assert.deepEqual(errors,[]);console.log('PASS: rider and coach formats through 6v6v6, exact 18-rider requests, duplicate/range checks, hidden-seat exclusion, full-shell touch scrolling, mobile/tablet layout and head-to-head records.');await browser.close();
+ assert.deepEqual(errors,[]);console.log('PASS: rider and coach formats through 6v6v6, exact 18-rider requests, day-only team contribution display without roster/stake changes, legacy score fallback, duplicate/range checks, hidden-seat exclusion, full-shell touch scrolling, mobile/tablet layout and head-to-head records.');await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

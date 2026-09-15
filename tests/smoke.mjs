@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.124";
+const version = "2.14.125";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -996,8 +996,8 @@ assert.deepEqual(
 assert.equal(battleIdentity({ athlete_id: "riley", display_name: "Riley Chen", avatar: {} }, {}).display_name, "Riley Chen", "Riders without a photo must keep their real name");
 assert(functionBody("battleTeamHtml").includes("battleParticipantFirstName(participant)"), "Battle teams must render first names instead of generic labels");
 assert(functionBody("battleTeamHtml").includes('avatarHtml(participant, "avatar")'), "Battle teams must render each participant's profile picture or initials fallback");
-assert(functionBody("battleTeamHtml").includes("participant.battle_points ?? participant.weekly_points"), "Rider battle cards must use battle-window points instead of reset weekly points");
-assert(functionBody("coachBattleTeamHtml").includes("participant.battle_points ?? participant.weekly_points"), "Coach battle cards must use battle-window points instead of reset weekly points");
+assert(functionBody("battleParticipantTeamPoints").includes("participant.battle_points ?? participant.weekly_points") && functionBody("battleTeamHtml").includes("battleTeamScore"), "Rider battle cards must use allocated battle-window points with legacy fallback");
+assert(functionBody("coachBattleTeamHtml").includes("battleTeamScore"), "Coach battle cards must use the same allocated battle-window points as the summary");
 assert(battleScoreMigration.includes("private.jkcrew_rider_battle_points"), "Battle scoring must use a private battle-window points helper");
 assert(battleScoreMigration.includes("'battle_points', private.jkcrew_rider_battle_points"), "Battle RPCs must expose battle-window points to the app");
 assert(battleScoreMigration.includes("sum(private.jkcrew_rider_battle_points"), "Battle settlement must decide winners from the full battle window");
