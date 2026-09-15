@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.125";
+const RELEASE_VERSION = "2.14.126";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -104,6 +104,7 @@ const state = {
   pendingPercentageAttempts: new Map(),
   coachRosterIds: new Set(),
   sessionRenderVersion: 0,
+  riderSessionRefresh: null,
   athleteHomeRenderVersion: 0,
   sessionViewerRenderVersion: 0,
   sessionViewerDataVersion: 0,
@@ -584,7 +585,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.125" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.126" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2545,10 +2546,12 @@ async function setupRealtimeSync() {
       scheduleRealtimeRefresh(table);
     });
   });
+  state.realtimeChannel = channel;
   channel.subscribe((status) => {
+    // Realtime does not replay changes missed while the app was asleep/offline.
+    if (status === "SUBSCRIBED" && state.realtimeChannel === channel) void requestRiderSessionRefresh({ force: true });
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime progress sync status:", status);
   });
-  state.realtimeChannel = channel;
 }
 
 window.addEventListener("online", () => setSyncStatus());
@@ -2619,7 +2622,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
     state.syncRefreshTimer = null;
     if (!state.user?.id || !state.profile) return;
     try {
-      if (state.view === "session") await renderSession();
+      if (state.view === "session") await requestRiderSessionRefresh({ force: true });
       else if (state.view === "coaching" && state.profile.role === "athlete") await renderAthleteCoaching();
       else if (state.view === "videoReviews" && isCoachRole(state.profile.role)) await renderVideoReviews();
       else if (state.view === "sessionViewer") await refreshSessionViewerLight();
@@ -2902,14 +2905,14 @@ async function getPublicRiderBattleRecord(athleteId) {
   return (Array.isArray(data) ? data[0] : data) || { wins: 0, losses: 0, win_percent: 0 };
 }
 
-async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = true } = {}) {
+async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = true, force = false } = {}) {
   const athleteCountryCode = await getAthleteCountryCode(athleteId);
   const weekStart = weekStartDateForCountry(athleteCountryCode);
   const cacheKey = `schedule:${athleteId}:${weekStart}:${includeAssignmentAttempts ? "full" : "summary"}`;
-  const cached = state.view === "session" ? null : cacheGet(cacheKey, 6500);
+  const cached = force || state.view === "session" ? null : cacheGet(cacheKey, 6500);
   if (cached) return cached;
   const existingRequest = state.inFlight.get(cacheKey);
-  if (existingRequest) return existingRequest;
+  if (existingRequest && !force) return existingRequest;
   const request = (async () => {
     if (state.user?.id) {
       const { error: rolloverError } = await client.rpc("ensure_current_week_assignments", {
@@ -2953,7 +2956,7 @@ async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = tru
       entries.push(attempt);
       assignmentAttemptsById.set(attempt.assignment_id, entries);
     });
-    return cacheSet(cacheKey, {
+    const result = {
       assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => {
         const contextualAssignment = { ...assignment, athlete_country_code: athleteCountryCode };
         const normalizedProgress = normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id));
@@ -2962,8 +2965,11 @@ async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = tru
       awards: awards || [],
       percentageAttempts: percentageAttempts || [],
       assignmentAttempts: assignmentAttempts || [],
-    });
-  })().finally(() => state.inFlight.delete(cacheKey));
+    };
+    // An older request must not overwrite a newer, explicitly refreshed sheet.
+    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, result);
+    return result;
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
   state.inFlight.set(cacheKey, request);
   return request;
 }
@@ -7431,18 +7437,86 @@ function scoreAdjustmentPanel(rows = []) {
   </section>`;
 }
 
-async function loadActiveSession() {
-  const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", state.user.id).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
+function canRefreshRiderSession(userId = state.user?.id, navigationToken = state.loadingOverlayToken) {
+  return Boolean(userId && state.user?.id === userId && state.profile?.role === "athlete"
+    && state.view === "session" && state.loadingOverlayToken === navigationToken
+    && document.visibilityState !== "hidden" && navigator.onLine !== false
+    && !riderFeaturesDisabled() && !riderFeatureAccessUnknown());
+}
+
+async function requestRiderSessionRefresh({ force = false } = {}) {
+  const userId = state.user?.id;
+  const navigationToken = state.loadingOverlayToken;
+  if (!canRefreshRiderSession(userId, navigationToken)) return false;
+  const pending = state.riderSessionRefresh;
+  if (pending?.userId === userId && pending.navigationToken === navigationToken) {
+    // A save/reconnect during a read needs one more read after it finishes.
+    if (force) pending.repeat = true;
+    return pending.promise;
+  }
+  const refresh = { userId, navigationToken, repeat: false, promise: null };
+  refresh.promise = (async () => {
+    let rendered = false;
+    do {
+      refresh.repeat = false;
+      if (!canRefreshRiderSession(userId, navigationToken)) return false;
+      rendered = await renderSession({ forceAssignments: true, preserveScroll: true });
+    } while (refresh.repeat && canRefreshRiderSession(userId, navigationToken));
+    return Boolean(rendered && canRefreshRiderSession(userId, navigationToken));
+  })().catch((error) => {
+    console.warn("Rider list refresh failed", error);
+    return false;
+  }).finally(() => {
+    if (state.riderSessionRefresh === refresh) state.riderSessionRefresh = null;
+  });
+  state.riderSessionRefresh = refresh;
+  return refresh.promise;
+}
+
+function bindRiderSessionRefreshEvents() {
+  // A pre-sleep request may still be pending; queue a fresh read after it too.
+  const refresh = () => { void requestRiderSessionRefresh({ force: true }); };
+  window.addEventListener("focus", refresh);
+  window.addEventListener("pageshow", refresh);
+  window.addEventListener("online", refresh);
+  document.addEventListener("visibilitychange", refresh);
+}
+
+function riderSessionRefreshButtonHtml() {
+  return `<button id="rider-session-refresh" class="secondary-btn compact-btn" type="button" aria-label="Refresh training list">↻ Refresh list</button>`;
+}
+
+function bindRiderSessionRefreshButton() {
+  document.querySelector("#rider-session-refresh")?.addEventListener("click", async (event) => {
+    const userId = state.user?.id;
+    const navigationToken = state.loadingOverlayToken;
+    const restore = setButtonBusy(event.currentTarget, "Refreshing…");
+    try {
+      const refreshed = await requestRiderSessionRefresh({ force: true });
+      if (canRefreshRiderSession(userId, navigationToken)) notify(refreshed ? "Training list is up to date." : "Couldn't refresh your list. Please try again.", refreshed ? "success" : "error");
+    } finally { restore(); }
+  });
+}
+
+bindRiderSessionRefreshEvents();
+
+async function loadActiveSession({ canApply = () => true } = {}) {
+  const userId = state.user.id;
+  const { data, error } = await client.from("training_sessions").select("*").eq("athlete_id", userId).is("ended_at", null).order("started_at", { ascending: false }).limit(1);
   if (error) throw error;
-  state.activeTraining = data?.[0] || null;
+  if (state.user?.id !== userId || !canApply()) return;
+  let activeTraining = data?.[0] || null;
   const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
-  if (state.activeTraining && dateForTimezone(riderTimeZone, new Date(state.activeTraining.started_at)) !== dateForTimezone(riderTimeZone)) state.activeTraining = null;
-  if (!state.activeTraining) {
+  if (activeTraining && dateForTimezone(riderTimeZone, new Date(activeTraining.started_at)) !== dateForTimezone(riderTimeZone)) activeTraining = null;
+  if (!activeTraining) {
+    state.activeTraining = null;
     state.attempts = [];
     return;
   }
-  const { data: attempts, error: attemptsError } = await client.from("trick_attempts").select("*").eq("session_id", state.activeTraining.id).order("created_at", { ascending: false });
+  const { data: attempts, error: attemptsError } = await client.from("trick_attempts").select("*").eq("session_id", activeTraining.id).order("created_at", { ascending: false });
   if (attemptsError) throw attemptsError;
+  if (state.user?.id !== userId || !canApply()) return;
+  state.activeTraining = activeTraining;
   state.attempts = attempts || [];
 }
 
@@ -7454,15 +7528,22 @@ async function getActiveSession() {
   return session && dateForTimezone(riderTimeZone, new Date(session.started_at)) === dateForTimezone(riderTimeZone) ? session : null;
 }
 
-async function renderSession({ forceParkKing = false } = {}) {
+async function renderSession({ forceParkKing = false, forceAssignments = false, preserveScroll = false } = {}) {
+  const userId = state.user?.id;
+  const navigationToken = state.loadingOverlayToken;
   const renderVersion = ++state.sessionRenderVersion;
+  const canApply = () => state.user?.id === userId && state.view === "session"
+    && state.loadingOverlayToken === navigationToken && renderVersion === state.sessionRenderVersion
+    && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()
+    && (!preserveScroll || canRefreshRiderSession(userId, navigationToken));
+  if (!userId || !canApply()) return;
   const recentStartIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const [schedule, leaderboard, todayTrainingResult] = await Promise.all([
-    getWeeklyAssignments(state.user.id),
+    getWeeklyAssignments(userId, { force: forceAssignments }),
     getLeaderboard(),
-    client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at,daily_venue").eq("athlete_id", state.user.id).gte("started_at", recentStartIso).order("started_at", { ascending: false }).limit(8),
+    client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at,daily_venue").eq("athlete_id", userId).gte("started_at", recentStartIso).order("started_at", { ascending: false }).limit(8),
   ]);
-  if (state.view !== "session" || renderVersion !== state.sessionRenderVersion) return;
+  if (!canApply()) return;
   const { assignments, awards } = schedule;
   const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
   const selectedVenue = selectedVenueFor(assignments);
@@ -7477,15 +7558,29 @@ async function renderSession({ forceParkKing = false } = {}) {
   });
   const requestedVenueKey = venueIdentityKey(selectedVenue);
   const parkKingPromise = contestPrepSession ? Promise.resolve(null) : getParkKing(selectedVenue, { force: forceParkKing });
-  await loadActiveSession();
+  await loadActiveSession({ canApply });
   const parkKing = await parkKingPromise;
-  if (state.view !== "session" || renderVersion !== state.sessionRenderVersion || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
+  if (!canApply() || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
+  rememberSessionExpansions();
+  const scrollPosition = { left: window.scrollX, top: window.scrollY, behavior: "instant" };
+  const extraForm = preserveScroll ? document.querySelector("#extra-trick-form") : null;
+  const workingOnOpen = document.querySelector("#view .extra-tricks-panel")?.open || false;
+  const focusedDraft = extraForm?.contains(document.activeElement) ? document.activeElement : null;
+  const restoreView = () => {
+    if (!preserveScroll) return;
+    const workingOn = document.querySelector("#view .extra-tricks-panel");
+    if (workingOn) workingOn.open = workingOnOpen;
+    // Keep the live draft node, including its values and existing submit handler.
+    if (extraForm) document.querySelector("#extra-trick-form")?.replaceWith(extraForm);
+    focusedDraft?.focus({ preventScroll: true });
+    window.scrollTo(scrollPosition);
+  };
   clearHelpVideoPreview();
   clearInterval(state.timer); state.timer = null;
   if (!state.activeTraining) {
     document.querySelector("#view").innerHTML = `
       ${statBar}
-      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Today's <span>training</span></h1><p>Time your Daily Tricks. One Bangs, Dialled, Lines and other training stay untimed.</p></div></div>
+      <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Today's <span>training</span></h1><p>Time your Daily Tricks. One Bangs, Dialled, Lines and other training stay untimed.</p></div>${riderSessionRefreshButtonHtml()}</div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
@@ -7502,14 +7597,16 @@ async function renderSession({ forceParkKing = false } = {}) {
     bindSessionQuickJumps();
     bindSheetRulesButton();
     bindTrainingProgressActions();
-    return;
+    bindRiderSessionRefreshButton();
+    restoreView();
+    return true;
   }
   state.trickStartedAt = new Date(state.activeTraining.started_at).getTime();
   const attemptsHtml = state.attempts.length ? state.attempts.map((attempt) => `
     <div class="list-row"><div><strong>${escapeHtml(attempt.trick_name)}</strong><small>${escapeHtml(attempt.category)}${attempt.category === "daily" && attempt.duration_seconds != null ? ` · ${formatTime(attempt.duration_seconds)}` : ""}</small></div><div class="points">+${attempt.points}</div></div>`).join("") : `<div class="empty">Your landed tricks will appear here.</div>`;
   document.querySelector("#view").innerHTML = `
     ${statBar}
-    <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div>${riderSessionRefreshButtonHtml()}</div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
     ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
     ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
@@ -7528,13 +7625,29 @@ async function renderSession({ forceParkKing = false } = {}) {
   bindSessionQuickJumps();
   bindSheetRulesButton();
   bindTrainingProgressActions();
+  bindRiderSessionRefreshButton();
   updateTimer();
   if (state.activeTraining.daily_completed_seconds == null) state.timer = setInterval(updateTimer, 1000);
+  restoreView();
+  return true;
+}
+
+function rememberSessionExpansions() {
+  for (const [selector, key, openSet] of [
+    [".daily-venue-accordion[data-daily-venue]", "dailyVenue", state.sessionOpenDailyVenues],
+    [".session-assignment-accordion[data-assignment-section]", "assignmentSection", state.sessionOpenAssignmentSections],
+  ]) {
+    document.querySelectorAll(`#view ${selector}`).forEach((details) => {
+      if (details.open) openSet.add(details.dataset[key]);
+      else openSet.delete(details.dataset[key]);
+    });
+  }
 }
 
 function bindDailyVenueAccordions() {
   document.querySelectorAll(".daily-venue-accordion[data-daily-venue]").forEach((details) => {
     details.addEventListener("toggle", () => {
+      if (!details.isConnected || state.view !== "session") return;
       const venue = details.dataset.dailyVenue;
       if (!venue) return;
       if (details.open) state.sessionOpenDailyVenues.add(venue);
@@ -7546,6 +7659,7 @@ function bindDailyVenueAccordions() {
 function bindSessionAssignmentAccordions() {
   document.querySelectorAll(".session-assignment-accordion[data-assignment-section]").forEach((details) => {
     details.addEventListener("toggle", () => {
+      if (!details.isConnected || state.view !== "session") return;
       const section = details.dataset.assignmentSection;
       if (!section) return;
       if (details.open) state.sessionOpenAssignmentSections.add(section);

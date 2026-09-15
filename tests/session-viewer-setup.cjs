@@ -42,6 +42,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         window.getSessionViewerPlanData = async roster => qaHoldPlan ? new Promise(resolve => qaPendingPlans.push({ resolve, data: qaPlan(), riders: roster.map(row => row.id) })) : qaPlan();
         window.client = { rpc: async name => { if (name !== 'get_coach_rider_battles_v2') throw Error(`Unexpected RPC: ${name}`); return { data: [] }; } };
         window.isCoachRole = role => role === 'coach' || role === 'admin';
+        window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = () => false;
         window.escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
         window.normalizeAssignmentProgress = (_assignment, progress) => progress;
         window.isAssignmentComplete = row => Boolean(row.progress?.completed_at);
