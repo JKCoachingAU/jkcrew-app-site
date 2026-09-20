@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.132";
+const RELEASE_VERSION = "2.14.133";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -590,7 +590,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.132" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.133" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2508,6 +2508,9 @@ async function navigate(view, options = {}) {
 
 function teardownRealtimeSync() {
   clearInterval(liveRunDiscoveryTimer);
+  clearTimeout(liveRunWaitingExpiryTimer);
+  document.querySelector("#live-run-invites")?.remove();
+  document.querySelector("#live-run-invitation")?.remove();
   disconnectLiveRun();
   if (state.syncRefreshTimer) {
     clearTimeout(state.syncRefreshTimer);
@@ -9693,6 +9696,34 @@ async function saveLiveRun() {
 }
 
 const seenLiveRunInvites = new Set();
+let liveRunWaitingExpiryTimer = null;
+
+function liveRunIncomingCall(session, userId = state.user?.id, now = Date.now()) {
+  return Boolean(userId && session?.status === "active" && session.call_status === "ringing" &&
+    session.invitation_status === "pending" && Date.parse(session.ring_expires_at) > now &&
+    Date.parse(session.expires_at) > now && session.created_by !== userId &&
+    ((session.created_by === session.athlete_id && session.coach_id === userId) ||
+      (session.created_by === session.coach_id && session.athlete_id === userId)));
+}
+
+function pruneLiveRunWaiting() {
+  // A ringing request expires even when Realtime or the next network fetch is unavailable.
+  document.querySelectorAll("[data-live-run-expires]").forEach(element => {
+    if (element.dataset.liveRunUser !== state.user?.id || !(Number(element.dataset.liveRunExpires) > Date.now())) element.remove();
+  });
+  const card = document.querySelector("#live-run-invites");
+  if (card && !card.querySelector(".run-live-invite")) card.remove();
+}
+
+function scheduleLiveRunWaitingExpiry() {
+  clearTimeout(liveRunWaitingExpiryTimer);
+  pruneLiveRunWaiting();
+  const deadlines = [...document.querySelectorAll("[data-live-run-expires]")].map(element => Number(element.dataset.liveRunExpires));
+  if (deadlines.length) liveRunWaitingExpiryTimer = setTimeout(() => {
+    scheduleLiveRunWaitingExpiry();
+  }, Math.min(2147483647, Math.max(1, Math.min(...deadlines) - Date.now() + 20)));
+}
+
 function liveRunInviteSeen(id) {
   const key = `${state.user?.id}:${id}`;
   if (seenLiveRunInvites.has(key)) return true;
@@ -9700,8 +9731,7 @@ function liveRunInviteSeen(id) {
 }
 
 function showLiveRunInvitation(session, force = false) {
-  if (!state.user?.id || session.created_by === state.user.id || session.invitation_status !== "pending" ||
-      Date.parse(session.ring_expires_at || session.expires_at) <= Date.now() || document.hidden || (!force && liveRunInviteSeen(session.id))) return;
+  if (!liveRunIncomingCall(session) || document.hidden || (!force && liveRunInviteSeen(session.id))) return;
   if (document.querySelector("#live-run-invitation")) return;
   seenLiveRunInvites.add(`${state.user.id}:${session.id}`);
   try {
@@ -9711,9 +9741,11 @@ function showLiveRunInvitation(session, force = false) {
   } catch {}
   const popup = document.createElement("aside");
   popup.id = "live-run-invitation"; popup.className = "live-run-invitation"; popup.dataset.sessionId = session.id;
+  popup.dataset.liveRunExpires = String(Math.min(Date.parse(session.ring_expires_at), Date.parse(session.expires_at)));
+  popup.dataset.liveRunUser = state.user.id;
   popup.setAttribute("role", "alertdialog"); popup.setAttribute("aria-labelledby", "live-run-invite-title");
   popup.innerHTML = `<div class="eyebrow">Incoming video call</div><h2 id="live-run-invite-title">Build a run together?</h2><p>${escapeHtml(session.caller_name || (session.created_by === session.athlete_id ? session.athlete_name || "Your rider" : session.coach_name || "Your coach"))} is calling. Accept to connect audio, video and your shared run builder.</p><strong>${escapeHtml(session.title || "Shared run")}</strong><div class="actions"><button type="button" class="primary-btn" data-accept-session>Accept call</button><button type="button" class="secondary-btn" data-decline-session>Decline</button><button type="button" class="secondary-btn" data-later-session>Not now</button></div>`;
-  document.body.append(popup); playNotificationSound("update");
+  document.body.append(popup); scheduleLiveRunWaitingExpiry(); playNotificationSound("update");
   popup.querySelector("[data-later-session]").onclick = () => popup.remove();
   popup.querySelector("[data-accept-session]").onclick = async event => {
     const restore = setButtonBusy(event.currentTarget, "Opening…");
@@ -9728,37 +9760,50 @@ function showLiveRunInvitation(session, force = false) {
 
 async function openLiveRunInvitation(id) {
   const userId = state.user?.id;
-  const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,athlete_id,created_by,invitation_status,status,expires_at,call_status,ring_expires_at,caller_name,coach_name").eq("id", id).single();
+  const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,athlete_id,coach_id,created_by,invitation_status,status,expires_at,call_status,ring_expires_at,caller_name,coach_name").eq("id", id).single();
   if (userId !== state.user?.id) return;
-  if (error || !data || data.status !== "active" || Date.parse(data.expires_at) <= Date.now()) return notify("This live session is no longer available.");
-  if (data.invitation_status === "pending" && data.created_by !== userId) { document.querySelector("#live-run-invitation")?.remove(); showLiveRunInvitation(data, true); }
+  if (error || !data || data.status !== "active" || !(Date.parse(data.expires_at) > Date.now()) ||
+      (data.invitation_status === "pending" && data.created_by !== userId && !liveRunIncomingCall(data, userId))) return notify("This live session is no longer available.");
+  if (liveRunIncomingCall(data, userId)) { document.querySelector("#live-run-invitation")?.remove(); showLiveRunInvitation(data, true); }
   else await joinLiveRun(id);
 }
 
 async function refreshLiveRunInvites() {
+  pruneLiveRunWaiting();
   if (liveRunDiscoveryBusy || !state.user?.id || !(state.profile?.role === "athlete" || isCoachRole(state.profile?.role)) ||
     document.hidden) return;
-  const userId = state.user.id, view = state.view, host = document.querySelector("#view");
+  const userId = state.user.id, view = state.view, host = document.querySelector("#view"), coachView = isCoachRole(state.profile.role);
   if (!host) return;
   liveRunDiscoveryBusy = true;
   try {
-    const { data, error } = await client.from("run_live_sessions").select("id,title,athlete_name,athlete_id,coach_id,created_by,invitation_status,expires_at,updated_at,call_status,ring_expires_at,caller_name,coach_name")
-      .eq(isCoachRole(state.profile.role) ? "coach_id" : "athlete_id", userId).eq("status", "active")
-      .gt("expires_at", new Date().toISOString()).order("updated_at", { ascending: false }).limit(20);
+    const now = new Date().toISOString();
+    let query = client.from("run_live_sessions").select("id,title,athlete_name,athlete_id,coach_id,created_by,invitation_status,status,expires_at,updated_at,call_status,ring_expires_at,caller_name,coach_name")
+      .eq(coachView ? "coach_id" : "athlete_id", userId).eq("status", "active").gt("expires_at", now);
+    // Stored drafts and accepted calls are not a queue of riders waiting for their coach.
+    if (coachView) query = query.eq("call_status", "ringing").eq("invitation_status", "pending").gt("ring_expires_at", now);
+    const { data, error } = await query.order("updated_at", { ascending: false }).limit(20);
     if (error || userId !== state.user?.id) return;
-    const validCalls = (data || []).filter(s => s.call_status !== "ringing" || Date.parse(s.ring_expires_at) > Date.now());
+    const validCalls = (data || []).filter(s => s.status === "active" && Date.parse(s.expires_at) > Date.now() &&
+      ["idle", "ringing", "active"].includes(s.call_status || "idle") &&
+      (s.call_status !== "ringing" || Date.parse(s.ring_expires_at) > Date.now()));
+    const incomingCalls = validCalls.filter(s => liveRunIncomingCall(s, userId));
     const popup = document.querySelector("#live-run-invitation");
-    if (popup && !validCalls.some(s => s.id === popup.dataset.sessionId && s.invitation_status === "pending")) popup.remove();
-    const invitation = validCalls.find(s => s.created_by !== userId && s.invitation_status === "pending" && !liveRunInviteSeen(s.id));
+    if (popup && !incomingCalls.some(s => s.id === popup.dataset.sessionId)) popup.remove();
+    const invitation = incomingCalls.find(s => !liveRunInviteSeen(s.id));
     if (invitation) showLiveRunInvitation(invitation);
     if (view !== state.view || !["home","command","contests","student"].includes(view) || document.querySelector("#run-builder-live") || !host.isConnected) return;
+    const displayedCalls = coachView ? incomingCalls : validCalls;
     let card = host.querySelector("#live-run-invites");
-    if (!validCalls.length) { card?.remove(); return; }
+    if (!displayedCalls.length) { card?.remove(); return; }
     if (!card) { card = document.createElement("section"); card.id = "live-run-invites"; card.className = "panel run-live-invites"; host.prepend(card); }
-    const html = `<div><div class="eyebrow">Private rider + coach sessions</div><h2>Build together</h2></div>${validCalls.map(s => `<div class="run-live-invite"><div><strong>${escapeHtml(s.athlete_name)}</strong><small>${escapeHtml(s.title)}</small></div><button type="button" class="secondary-btn compact-btn" data-join-live-run="${s.id}" data-accept-live-run="${s.created_by !== userId && s.invitation_status === "pending"}">${s.created_by !== userId && s.invitation_status === "pending" ? "Accept session" : "Open live run"}</button></div>`).join("")}`;
+    const html = `<div><div class="eyebrow">Private rider + coach sessions</div><h2>${coachView ? "Riders waiting for you" : "Build together"}</h2></div>${displayedCalls.map(s => {
+      const incoming = liveRunIncomingCall(s, userId);
+      const deadline = s.call_status === "ringing" ? ` data-live-run-expires="${Math.min(Date.parse(s.ring_expires_at), Date.parse(s.expires_at))}" data-live-run-user="${escapeHtml(userId)}"` : "";
+      return `<div class="run-live-invite"${deadline}><div><strong>${escapeHtml(s.athlete_name)}</strong><small>${coachView ? "Waiting for you to join" : escapeHtml(s.title)}</small></div><button type="button" class="${incoming ? "primary-btn" : "secondary-btn"} compact-btn" data-join-live-run="${s.id}" data-accept-live-run="${incoming}">${incoming ? "Accept call" : "Open live run"}</button></div>`;
+    }).join("")}`;
     if (card.innerHTML !== html) { card.innerHTML = html; card.querySelectorAll("[data-join-live-run]").forEach(button => { button.onclick = async () => { const restore = setButtonBusy(button, "Opening…"); try { await joinLiveRun(button.dataset.joinLiveRun, button.dataset.acceptLiveRun === "true"); } finally { restore(); } }; }); }
   } catch (error) { console.warn("Live run list temporarily unavailable", error); }
-  finally { liveRunDiscoveryBusy = false; }
+  finally { liveRunDiscoveryBusy = false; scheduleLiveRunWaitingExpiry(); }
 }
 
 function setupLiveRunDiscovery(channel) {
