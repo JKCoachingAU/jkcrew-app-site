@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.143";
+const RELEASE_VERSION = "2.14.144";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -591,7 +591,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.143" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.144" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -12976,10 +12976,27 @@ function runBuilderPlaybackEditorHtml(points = []) {
   return `<div class="run-sidebar-section run-playback-ready"><div class="eyebrow">Step 3 · Watch it back</div><strong>RUN READY</strong><p>Press Play Run under the course. Playback follows the travel and trick times you set.</p><div class="run-playback-edit-actions"><button class="secondary-btn" type="button" data-run-builder-stage="tricks">EDIT TRICKS</button><button class="secondary-btn" type="button" data-run-builder-stage="route">EDIT ROUTE</button></div><small>${points.length} ${points.length === 1 ? "point" : "points"} in this run</small></div>`;
 }
 
+function runBuilderPhotoSetupHtml(builder = {}) {
+  return `<div class="run-photo-setup">
+    <div class="run-photo-setup-main">
+      <span class="run-photo-setup-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="38" height="32" rx="6" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="18" r="3" fill="currentColor"/><path d="m8 34 11-10 7 6 8-12 7 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <div><h3>Start with your park</h3><p>Choose a clear photo of the course. You’ll draw your route directly on it.</p></div>
+      <button type="button" class="primary-btn" id="choose-run-photo" aria-describedby="run-photo-help"><span aria-hidden="true">＋</span> Choose park photo</button>
+      <small id="run-photo-help">From your camera or photo library · up to 8 MB</small>
+      <input id="run-photo" name="photo" type="file" accept="image/*" hidden>
+    </div>
+    <div class="run-photo-setup-details">
+      <div class="field"><label for="run-title">Run name <span>optional</span></label><input id="run-title" name="title" value="${escapeHtml(builder.title || "")}" placeholder="e.g. My competition run"></div>
+      <div class="run-photo-next"><span class="eyebrow">After your photo</span><ol><li><b>1</b><span>Draw your route</span></li><li><b>2</b><span>Add tricks & timing</span></li><li><b>3</b><span>Watch & save your run</span></li></ol></div>
+    </div>
+  </div>`;
+}
+
 function runBuilderPanel(runs = [], options = {}) {
   const builder = state.runBuilder || { points: [] };
   if (builder.loadingCourse || builder.courseLoadError) return runBuilderLoadingHtml(builder);
   const points = builder.points || [];
+  const needsPhoto = !builder.imageDataUrl;
   const stage = runBuilderStage(builder);
   const selectedIndex = points.length ? Math.max(0, Math.min(points.length - 1, Number(builder.selectedPointIndex ?? points.length - 1))) : -1;
   const selectedPoint = selectedIndex >= 0 ? points[selectedIndex] : null;
@@ -12992,7 +13009,10 @@ function runBuilderPanel(runs = [], options = {}) {
   const builderImageSource = options.preserveExistingImage
     ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
     : builder.imageDataUrl;
-  const body = `${state.profile?.role === "athlete" ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs · yours + coach’s</button></div>` : ""}<div data-live-run-bar>${liveRunBarHtml()}</div><div data-live-run-workspace>${liveRunWorkspaceHtml()}</div><form id="run-builder-form" class="run-builder-form">
+  const liveTools = `<div data-live-run-bar>${liveRunBarHtml()}</div><div data-live-run-workspace>${liveRunWorkspaceHtml()}</div>`;
+  const setupFirst = needsPhoto && !liveRun;
+  const body = `${state.profile?.role === "athlete" ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs · yours + coach’s</button></div>` : ""}${setupFirst ? "" : liveTools}<form id="run-builder-form" class="run-builder-form">
+      ${needsPhoto ? runBuilderPhotoSetupHtml(builder) : `
       ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
       ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
@@ -13003,7 +13023,7 @@ function runBuilderPanel(runs = [], options = {}) {
       </div>
       <div class="visual-run-builder">
         <div class="run-map-stage">
-          <div id="run-map" class="run-map run-map-${stage} ${builder.imageDataUrl ? "" : "empty-map"}">${builder.imageDataUrl ? runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback") : `<div class="run-map-empty"><strong>ADD YOUR PARK PHOTO</strong><span>Then draw the route first, add every trick, and watch the finished run back.</span></div>`}</div>
+          <div id="run-map" class="run-map run-map-${stage}">${runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback")}</div>
           ${stage !== "playback" ? runSegmentEditorHtml(points, builder.selectedSegmentIndex) : ""}
           <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Tap a line to edit its time · drag dots to adjust` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Tap a line to edit its time · add tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
           ${stage === "route" && selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output>${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
@@ -13018,13 +13038,14 @@ function runBuilderPanel(runs = [], options = {}) {
         </aside>
       </div>
       ${stage === "tricks" ? runTimingEditorHtml(points) : ""}
-
+      `}
     </form>
+    ${setupFirst ? liveTools : ""}
     ${options.showRunList === false ? "" : `<div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`}`;
   if (options.collapsed) {
     return closedPanelAccordion("Contest Run Planner", "The same visual dot-and-curve planner used by riders", body, "run-builder-panel");
   }
-  return `<section class="panel run-builder-live run-builder-stage-${stage}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">Contest Run Planner</div><div class="panel-meta">${stageCopy}</div></div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
+  return `<section class="panel run-builder-live ${needsPhoto ? "run-builder-setup" : `run-builder-stage-${stage}`}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">Run Builder</div>${needsPhoto ? "" : `<div class="panel-meta">${stageCopy}</div>`}</div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
     ${body}
   </section>`;
 }
@@ -14906,6 +14927,7 @@ function bindRunBuilderActions(root = document) {
   paintRunSegmentSelection();
 
   root.querySelector("#crop-run-image")?.addEventListener("click", openRunCrop);
+  root.querySelector("#choose-run-photo")?.addEventListener("click", () => root.querySelector("#run-photo")?.click());
   root.querySelector("#run-photo")?.addEventListener("change", setRunBuilderPhoto);
   root.querySelector("#run-map")?.addEventListener("click", addRunBuilderPoint);
   root.querySelectorAll("[data-run-point-index]").forEach((marker) => marker.addEventListener("pointerdown", startRunPointDrag));

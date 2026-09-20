@@ -17,7 +17,7 @@ const names = [...new Set([
 ].map(match => match[1]).concat([
   'bindRunTimingControls', 'runSegmentEditorHtml', 'paintRunSegmentSelection', 'selectRunSegment',
   'runTimeBudget', 'runTimeBudgetHtml', 'paintRunTimeBudget', 'currentRunFormState',
-  'refreshMountedRunBuilder', 'runBuilderRefreshView', 'runBuilderPanel', 'runBuilderStepsHtml',
+  'refreshMountedRunBuilder', 'runBuilderRefreshView', 'runBuilderPanel', 'runBuilderPhotoSetupHtml', 'runBuilderStepsHtml',
   'runBuilderRouteEditorHtml', 'runBuilderPlaybackEditorHtml', 'runTimingEditorHtml',
   'bindRunBuilderActions', 'runBuilderLoadingHtml', 'updateRunBuilderTrick', 'updateRunTiming',
   'updateRunFinalType', 'updateSelectedRunPoint', 'rememberRunEdit', 'restoreRunEdit',

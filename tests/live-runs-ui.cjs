@@ -6,6 +6,7 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
 const names=[...new Set([
  ...fs.readFileSync(path.join(__dirname,'run-framing.cjs'),'utf8').match(/const names = (\[[^;]+\]);/)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]))];
 names.push(...['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','updateRunFinalType','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy','setRunBuilderPhoto','runPhotoToDataUrl','fileToDataUrl'].filter(n=>!names.includes(n)));
+names.push('runBuilderPhotoSetupHtml');
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('function runBuilderLoadingHtml('));
 (async()=>{
