@@ -1,5 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
+const sync=require('../live-run-sync.js');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const names=[...new Set([
@@ -8,7 +9,7 @@ names.push(...['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan',
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('function runBuilderLoadingHtml('));
 (async()=>{
- let session=null,draft=null,saves=0,failPatch=false,signalSeq=0,busyStart=false,failStart=false,failAccept=false;const requests=[],signals=[],callRequests=new Map();
+ let session=null,draft=null,saves=0,failPatch=false,signalSeq=0,busyStart=false,failStart=false,failAccept=false;const requests=[],signals=[],callRequests=new Map(),receipts=new Map();let holdEdits=false,releaseEdits=[],delayEditResponse=null;
  const browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
  const errors=[];
  async function pageFor(role){
@@ -18,6 +19,29 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    requests.push({role,kind,args});
    if(kind==='read')return {data:structuredClone(session)};
    if(kind==='list')return {data:session?.status==='active'?[structuredClone(session)]:[]};
+   if(kind==='live_run_edit'){
+    if(holdEdits&&args.p_ops.length)await new Promise(resolve=>releaseEdits.push(resolve));
+    if(args.p_ops.length && failPatch===true){failPatch=false;return{error:{message:'Simulated connection drop'}};}
+    draft.points=sync.ensureIds(draft.points||[]);
+    const receipt=receipts.get(args.p_request_id);
+    if(receipt){assert.deepEqual(receipt.ops,args.p_ops,'Receipt reuses exact original operations');return {data:{session:structuredClone(session),draft:structuredClone(draft),applied:receipt.applied,conflicts:receipt.conflicts}};}
+    let local=structuredClone(draft),base=structuredClone(draft);
+    for(const op of args.p_ops){
+     if(op.op==='set'){base[op.key]=op.before;local[op.key]=op.value;}
+     if(op.op==='point'){const i=base.points.findIndex(p=>p.id===op.id);if(i<0){base.points.push(op.before);local.points.push(op.value);}else{base.points[i]=op.before;local.points[i]=op.value;}}
+     if(op.op==='delete'){const i=base.points.findIndex(p=>p.id===op.id);if(i>=0)base.points[i]=op.before;else base.points.push(op.before);local.points=local.points.filter(p=>p.id!==op.id);}
+     if(op.op==='insert'){const i=op.after===null?0:local.points.findIndex(p=>p.id===op.after)+1;local.points.splice(i,0,op.value);}
+    }
+    const merged=sync.rebase(base,local,draft),applied=!merged.conflicts.length;
+    if(args.p_ops.length){
+     if(applied){draft=merged.draft;session.version++;session.title=draft.title;}
+     receipts.set(args.p_request_id,{ops:structuredClone(args.p_ops),applied,conflicts:merged.conflicts});
+     if(failPatch==='after'){failPatch=false;return{error:{message:'Simulated lost acknowledgement'}};}
+    }
+    const result={data:{session:structuredClone(session),draft:structuredClone(draft),applied,conflicts:merged.conflicts}};
+    if(args.p_ops.length&&delayEditResponse){const delayed=delayEditResponse;delayEditResponse=null;await delayed;}
+    return result;
+   }
    const a=args.p_action;
    const wire=value=>JSON.parse(JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item));
    const ok=()=>({data:{session:wire(session),...(['create','start','get','claim','accept'].includes(a)?{draft:wire(draft)}:{})}});
@@ -58,6 +82,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
   await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
   await page.addStyleTag({content:fs.readFileSync(path.join(root,'live-run-call.css'),'utf8')});
   await page.addScriptTag({content:fs.readFileSync(path.join(root,'live-run-call.js'),'utf8')});
+  await page.addScriptTag({content:fs.readFileSync(path.join(root,'live-run-sync.js'),'utf8')});
   await page.addScriptTag({content:`
    const bindRiderSavedRuns=()=>{};
  const state={user:{id:${JSON.stringify(role==='coach'?'coach':'rider')}},profile:{role:${JSON.stringify(role)}},view:'contests',draggedRunPoint:null,runPointMapClickBlockUntil:0,runPointDragClickBlockUntil:0};
@@ -109,8 +134,8 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  coach.once('dialog',dialog=>dialog.accept());await coach.click('#live-run-invitation [data-accept-session]');
  const acceptance=requests.filter(r=>r.args?.p_action==='accept');assert.equal(acceptance.length,2);assert.equal(acceptance[0].args.p_client_id,acceptance[1].args.p_client_id,'Retry preserves the accepted device identity');
  await coach.waitForFunction(()=>inspect().live?.session.id==='shared');
- assert(await coach.locator('#run-title').isDisabled());
- await rider.waitForFunction(()=>inspect().live.session.call_status==='active');
+ await coach.waitForFunction(()=>liveRunCanEdit());assert(await coach.locator('#run-title').isEnabled());
+ await rider.waitForFunction(()=>inspect().live.session.call_status==='active'&&liveRunCanEdit());
  // Native fake-device WebRTC connects through only the fixture's signalling relay.
  await Promise.all([rider,coach].map(p=>p.waitForFunction(()=>inspectMedia()?.connectionState==='connected'&&inspectMedia().remoteTracks===2)));
  for(const p of [rider,coach]){assert.equal(await p.evaluate(()=>inspectMedia().localTracks),2);assert(await p.evaluate(()=>nativePeers.length>0&&nativePeers.every(peer=>peer instanceof NativePC)));}
@@ -122,16 +147,13 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  const marker=await rider.locator('[data-run-point-index="1"]').boundingBox();
  await rider.mouse.move(marker.x+marker.width/2,marker.y+marker.height/2);await rider.mouse.down();await rider.mouse.move(marker.x+35,marker.y+20,{steps:4});await rider.mouse.up();
  try { await coach.waitForFunction(()=>inspect().draft.points[1].x>45); } catch(e) { console.log('Drag debug',marker,await rider.evaluate(()=>({points:inspect().draft.points,live:inspect().live})),await coach.evaluate(()=>({points:inspect().draft.points,live:inspect().live})));throw e; }
- assert(!requests.filter(r=>r.args?.p_action==='patch').some(r=>'imageDataUrl' in r.args.p_patch),'Normal edits do not resend park photo');
+ assert(!requests.filter(r=>r.kind==='live_run_edit').some(r=>r.args.p_ops.some(op=>op.key==='imageDataUrl')),'Normal edits do not resend park photo');
  await coach.click('[data-run-expand]');
  await rider.fill('#run-title','Finals with coach');
  await coach.waitForFunction(()=>inspect().draft.title==='Finals with coach');
  assert(await coach.locator('.run-fullscreen-playback').isVisible(),'Live updates keep fullscreen open');
  await coach.click('.run-fullscreen-close');
- await rider.click('[data-live-run-action="release"]');
- await coach.waitForFunction(()=>!inspect().live.session.editor_id);
- await coach.click('[data-live-run-action="claim"]');
- await coach.waitForFunction(()=>inspect().live.session.editor_id==='coach'&&!inspect().live.error);
+ assert(await coach.locator('#run-title').isEnabled(),'Coach edits immediately without a handover');
  await coach.locator('[data-run-builder-stage="tricks"]').last().evaluate(el=>el.scrollIntoView({block:'center'}));
  await coach.locator('[data-run-builder-stage="tricks"]').last().click();
  await coach.fill('[data-run-trick-index="1"]','Barspin');
@@ -143,7 +165,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await lineTime.fill('12');await lineTime.press('Tab');
  assert.equal(await coach.locator('.run-timing-row [data-run-time-index="1"][data-run-time-key="travelSeconds"]').inputValue(),'12');
  try { await rider.waitForFunction(()=>inspect().draft.points[1].label==='Barspin'&&inspect().draft.points[1].travelSeconds===12); } catch(e) { console.log('SYNC DEBUG',JSON.stringify({rider:await rider.evaluate(()=>inspect()),coach:await coach.evaluate(()=>inspect()),requests:requests.slice(-8)},null,2));throw e; }
- assert(await rider.locator('#run-title').isDisabled(),'Rider becomes a viewer during coach editing');
+ assert(await rider.locator('#run-title').isEnabled(),'Rider remains an editor while the coach edits');
  await coach.locator('[data-run-final-type]').selectOption('trick');await coach.fill('[data-run-trick-index="2"]','Flair');await coach.fill('[data-run-time-index="2"][data-run-time-key="holdSeconds"]','3');
  await rider.waitForFunction(()=>inspect().draft.points[2].isTrick&&inspect().draft.points[2].label==='Flair'&&inspect().draft.points[2].holdSeconds===3);
  await coach.click('[data-run-mode="playback"]');await coach.click('[data-run-expand]');
@@ -164,11 +186,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await coach.waitForFunction(()=>!inspect().live.error&&!inspect().live.unsynced);
  await rider.waitForFunction(()=>inspect().draft.title.endsWith('Version two.'));
  if(process.env.JKCREW_SCREENSHOT){await coach.evaluate(()=>window.scrollTo(0,0));await coach.screenshot({path:process.env.JKCREW_SCREENSHOT,fullPage:true});}
- // Handover then the rider saves the latest coach edits exactly once.
- await coach.click('[data-live-run-action="release"]');
- await rider.waitForFunction(()=>!inspect().live.session.editor_id);
- await rider.click('[data-live-run-action="claim"]');
- await rider.waitForFunction(()=>inspect().live.session.editor_id==='rider');
+ // The rider saves the merged draft without taking an editor lease.
  await rider.click('[data-run-mode="playback"]');
  await rider.click('#run-builder-form button[type="submit"]');
  await rider.waitForFunction(()=>inspect().live?.session.saved_run_id==='saved-run');
@@ -176,18 +194,47 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  assert.equal(await rider.evaluate(()=>inspect().live.session.call_status),'active');
  assert.equal(saves,1);assert.equal(draft.points[1].label,'Barspin');assert.equal(draft.points[1].travelSeconds,12);assert.equal(draft.title,'Safer finals. Version two.');
  await coach.waitForFunction(()=>inspect().live.session.saved_run_id==='saved-run');
- assert(await coach.locator('#run-title').isDisabled(),'Other participant remains viewer, not disconnected');
+ assert(await coach.locator('#run-title').isEnabled(),'Other participant remains connected and editable');
  assert(await coach.locator('.run-live-save-receipt').isVisible(),'Both participants see saved confirmation');
  await rider.click('#run-builder-form button[type="submit"]');assert.equal(saves,1,'Retry updates the same saved row');
  // Coach can also save; saving remains independent from ending the call.
- await rider.click('[data-live-run-action="release"]');await coach.waitForFunction(()=>!inspect().live.session.editor_id);
- await coach.click('[data-live-run-action="claim"]');await coach.waitForFunction(()=>inspect().live.session.editor_id==='coach');
+ assert(await coach.locator('#run-title').isEnabled(),'Coach saves without a handover');
  await coach.fill('#run-title','Coach saved final');await rider.waitForFunction(()=>inspect().draft.title==='Coach saved final');
  await coach.click('#run-builder-form button[type="submit"]');await coach.waitForFunction(()=>inspect().live.session.saved_version===inspect().live.session.version);
  assert.equal(saves,1);assert.equal(session.athlete_id,'rider');assert.equal(draft.contestItemId,'event-one');assert.equal(session.call_status,'active');
  assert.equal(await coach.evaluate(()=>mediaDestroyed),0);
  for(const p of [rider,coach]){assert.equal(await p.evaluate(()=>inspectMedia().connectionState),'connected','Actual media stays connected through handover, editing and both saves');assert.equal(await p.evaluate(()=>inspectMedia().remoteTracks),2);assert.equal(await p.evaluate(()=>mediaMounted),1,'Saving does not remount or reacquire media');}
  if(process.env.JKCREW_SCREENSHOT)await rider.screenshot({path:'/tmp/jkcrew-live-run-builder-connected-mobile.png'});
+ // Simultaneous edits on different properties of the SAME dot must both survive.
+ for(const p of [rider,coach]){await p.click('[data-run-mode="route"]');await p.locator('[data-run-builder-stage="tricks"]').last().click();}
+ holdEdits=true;
+ await Promise.all([rider.fill('[data-run-trick-index="1"]','360'),coach.fill('[data-run-time-index="1"][data-run-time-key="holdSeconds"]','4')]);
+ await rider.waitForFunction(()=>Boolean(liveRun.sending));await coach.waitForFunction(()=>Boolean(liveRun.sending));
+ holdEdits=false;releaseEdits.splice(0).forEach(resolve=>resolve());
+ for(const p of [rider,coach])await p.waitForFunction(()=>inspect().draft.points[1].label==='360'&&inspect().draft.points[1].holdSeconds===4&&!liveRun.error&&!liveRun.conflict);
+ // A field being typed into keeps its actual DOM node/focus when another field changes.
+ await rider.locator('[data-run-trick-index="1"]').focus();await rider.evaluate(()=>window.focusedTrick=document.activeElement);
+ await coach.fill('[data-run-time-index="1"][data-run-time-key="travelSeconds"]','9');
+ await rider.waitForFunction(()=>inspect().draft.points[1].travelSeconds===9);
+ assert(await rider.evaluate(()=>document.activeElement===window.focusedTrick&&window.focusedTrick.isConnected),'Remote edits preserve focused input and keyboard');
+ // More typing while the preceding request is in flight is rebased after its ACK.
+ let releaseResponse;delayEditResponse=new Promise(resolve=>releaseResponse=resolve);
+ await rider.fill('[data-run-trick-index="1"]','Tail');await rider.waitForFunction(()=>Boolean(liveRun.sending));
+ await rider.fill('[data-run-trick-index="1"]','Tailwhip');releaseResponse();
+ for(const p of [rider,coach])await p.waitForFunction(()=>inspect().draft.points[1].label==='Tailwhip'&&!liveRun.error&&!liveRun.conflict);
+ // Same-field overlaps stop only edits, preserve both versions, and keep media connected.
+ holdEdits=true;
+ await Promise.all([rider.fill('[data-run-trick-index="1"]','Flair whip'),coach.fill('[data-run-trick-index="1"]','Double whip')]);
+ await rider.waitForFunction(()=>Boolean(liveRun.sending));await coach.waitForFunction(()=>Boolean(liveRun.sending));
+ holdEdits=false;releaseEdits.splice(0).forEach(resolve=>resolve());
+ await Promise.race([rider,coach].map(p=>p.waitForFunction(()=>Boolean(liveRun.conflict))));
+ const conflicted=await rider.evaluate(()=>Boolean(liveRun.conflict))?rider:coach;
+ const myValue=await conflicted.locator('[data-run-trick-index="1"]').inputValue();
+ assert.equal(await conflicted.evaluate(()=>inspectMedia().connectionState),'connected');
+ await conflicted.click('[data-live-run-action="resolve-mine"]');
+ for(const p of [rider,coach])await p.waitForFunction(value=>inspect().draft.points[1].label===value&&!liveRun.conflict&&!liveRun.error,myValue);
+ assert(await rider.locator('#run-title').isEnabled());assert(await coach.locator('#run-title').isEnabled());
+ console.log('Concurrent edits, typing preservation, delayed ACK, overlap resolution and active media passed');
  // Choosing a missing course leaves the existing draft intact with a visible retry state.
  coach.once('dialog',d=>d.accept());await coach.locator('[data-live-event]').selectOption('event-two');
  await coach.waitForFunction(()=>document.querySelector('.live-run-workspace').textContent.includes('no course photo'));
@@ -213,5 +260,5 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await rider.click('[data-live-run-action="leave"]');await rider.waitForFunction(()=>inspect().live===null);assert.equal(session.call_status,'cancelled');
  assert(await rider.evaluate(()=>mediaStreams.flatMap(stream=>stream.getTracks()).every(track=>track.readyState==='ended')),'Cancelling the new call releases media');
  assert.deepEqual(errors,[]);
- await browser.close();console.log('PASS: actual connected two-device WebRTC retained through live drawing, private-session discovery, fullscreen updates, edit handover, coach trick/timing edits, failed-write recovery, rider and coach saves, correct rider/event, failed course preservation/correct-event upload, busy/lost-ACK recovery, delayed acceptance, repeat call and separate call ending.');
+ await browser.close();console.log('PASS: actual connected two-device WebRTC retained through live drawing, private-session discovery, fullscreen updates, simultaneous edits with conflicts and keyboard preservation, coach trick/timing edits, failed-write recovery, rider and coach saves, correct rider/event, failed course preservation/correct-event upload, busy/lost-ACK recovery, delayed acceptance, repeat call and separate call ending.');
 })().catch(e=>{console.error(e);process.exit(1);});

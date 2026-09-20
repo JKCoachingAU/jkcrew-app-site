@@ -23,7 +23,7 @@ const names = [...new Set([
   'updateRunFinalType', 'updateSelectedRunPoint', 'rememberRunEdit', 'restoreRunEdit',
   'setRunBuilderStage', 'selectRunPoint', 'startRunPointDrag', 'stopRunPointDrag',
   'focusRunBuilderTrick', 'advanceRunBuilderTrick', 'deleteSelectedRunPoint', 'clearRunBuilder',
-  'liveRunOwnsEditor', 'liveRunCanEdit', 'liveRunBarHtml', 'paintLiveRunControls',
+  'liveRunWorkspaceHtml', 'liveRunOwnsEditor', 'liveRunShared', 'liveRunSharedActive', 'liveRunCanEdit', 'liveRunBarHtml', 'paintLiveRunControls',
   'bindLiveRunControls', 'withTimeout', 'setButtonBusy',
   ...['bindRunRemovalActions', 'refreshRunRemovalView', 'archiveRunPlan'].filter(name => app.includes('function ' + name + '(')),
 ]))];

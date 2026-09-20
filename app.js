@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.134";
+const RELEASE_VERSION = "2.14.135";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -590,7 +590,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.134" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.135" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9284,7 +9284,7 @@ function bindContestEventActions(events = [], attendance = [], runs = [], roster
   bindCoachContestMergeActions(events, attendance);
 }
 
-// Live run collaboration: one leased editor, two private participants.
+// Live run collaboration: concurrent edits for accepted calls; leases for legacy sessions.
 let liveRun = null, liveRunDiscoveryTimer = null, liveRunDiscoveryBusy = false, liveRunStarting = false, liveRunJoining = false;
 
 function liveRunFingerprint(value) {
@@ -9305,7 +9305,16 @@ function liveRunOwnsEditor(l = liveRun) {
     l.session.editor_client === l.clientId && Date.parse(l.session.lease_until) > Date.now());
 }
 
+function liveRunShared(l = liveRun) {
+  return Boolean(l && l.session.call_status && l.session.call_status !== "idle");
+}
+
+function liveRunSharedActive(l = liveRun) {
+  return Boolean(l && l.session.status === "active" && l.session.call_status === "active" && l.session.invitation_status === "accepted");
+}
+
 function liveRunCanEdit() {
+  if (liveRunShared()) return liveRunSharedActive() && liveRun.sharedReady && !liveRun.error && !liveRun.conflict && !liveRun.busy && navigator.onLine;
   return !liveRun || (liveRun.session.call_status !== "ringing" && !["ended","declined","cancelled","missed"].includes(liveRun.session.call_status) && liveRunOwnsEditor() && !liveRun.error && !liveRun.busy && navigator.onLine);
 }
 
@@ -9351,7 +9360,7 @@ function liveRunWorkspaceHtml() {
   return `<div class="live-run-workspace"><label>Contest / event<select data-live-event ${locked || l.eventsLoading ? "disabled" : ""}><option value="">${l.eventsLoading ? "Loading events…" : "Choose an event"}</option>${!selected && b.contestItemId ? `<option value="${escapeHtml(b.contestItemId)}" selected>Selected event</option>` : ""}${events.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === b.contestItemId ? "selected" : ""}>${escapeHtml(e.title)}</option>`).join("")}</select></label>
     <label>Course<select data-live-course ${locked || !b.contestItemId ? "disabled" : ""}><option value="event" ${b.courseSource === "event" ? "selected" : ""}>Event course photo</option><option value="upload" ${b.courseSource !== "event" ? "selected" : ""}>My course photo</option></select></label>
     <button type="button" class="secondary-btn compact-btn" data-live-run-action="course" ${locked || !b.contestItemId ? "disabled" : ""}>${b.courseSource === "event" ? "Load event course" : "Choose course photo"}</button>
-    <p role="status">${escapeHtml(l.workspaceError || (!l.eventsLoading && !events.length ? "No active events found. Add the contest in Events, then retry." : b.imageDataUrl ? "Course and route edits are shared. Pass editing when it’s the other person’s turn." : "Choose the event and course, then draw your run on the map below."))} ${l.workspaceError || (!l.eventsLoading && !events.length) ? `<button type="button" data-live-run-action="events">Retry events</button>` : ""}${l.workspaceError && l.pendingCourseEvent ? `<button type="button" data-live-run-action="course-upload">Use my photo for ${escapeHtml(events.find(e => e.id === l.pendingCourseEvent)?.title || "the selected event")}</button>` : ""}</p></div>`;
+    <p role="status">${escapeHtml(l.workspaceError || (!l.eventsLoading && !events.length ? "No active events found. Add the contest in Events, then retry." : b.imageDataUrl ? "You can both edit the route, tricks and timing together. Changes appear live." : "Choose the event and course, then draw your run on the map below."))} ${l.workspaceError || (!l.eventsLoading && !events.length) ? `<button type="button" data-live-run-action="events">Retry events</button>` : ""}${l.workspaceError && l.pendingCourseEvent ? `<button type="button" data-live-run-action="course-upload">Use my photo for ${escapeHtml(events.find(e => e.id === l.pendingCourseEvent)?.title || "the selected event")}</button>` : ""}</p></div>`;
 }
 
 async function loadLiveRunEvents(l = liveRun) {
@@ -9391,13 +9400,13 @@ async function changeLiveRunCourse(eventId, source, loadPhoto = true) {
 
 function liveRunBarHtml() {
   if (!liveRun) return `<div class="run-live-bar"><div><strong>Live Run Builder</strong><small>Video call your ${isCoachRole(state.profile?.role) ? "rider" : "coach"} and build the same run together.</small></div><button type="button" class="secondary-btn compact-btn" data-live-run-action="start">Start video call</button></div>`;
-  const l = liveRun, s = l.session, mine = liveRunOwnsEditor(l);
+  const l = liveRun, s = l.session, mine = liveRunOwnsEditor(l), shared = liveRunShared(l);
   const editor = s.editor_id === s.athlete_id ? (s.athlete_name || "Rider") : s.coach_name || "Coach";
   const available = !s.editor_client || Date.parse(s.lease_until) <= Date.now();
   const ringing = s.call_status === "ringing", ended = s.status !== "active" || ["ended","cancelled","declined","missed"].includes(s.call_status);
-  const status = l.error || (!navigator.onLine ? "Connection lost · edits kept on this device" : ended ? "Call finished · your draft is kept here" : ringing ? "Ringing · waiting for acceptance" : l.busy ? "Saving / connecting…" : l.sending ? "Syncing edits…" : mine ? "Your turn to edit · changes synced" : available ? "Choose Edit run when you’re ready" : `${editor} is editing · live view`);
-  return `<div class="run-live-bar ${l.error ? "has-error" : "is-live"}"><div><strong>Live Run Builder · ${escapeHtml(s.athlete_name || "Private run")}</strong><small role="status">${escapeHtml(status)}</small><small>Save Run keeps your call open. End Call is separate.</small>${s.saved_run_id ? `<small class="run-live-save-receipt">✓ Saved to this rider’s contest runs${s.saved_version != null && s.version > s.saved_version ? " · new edits to save" : ""}</small>` : ""}</div><div class="run-live-actions">
-    ${l.error ? `<button type="button" data-live-run-action="retry">Retry sync</button>${l.unsynced ? `<button type="button" data-live-run-action="local">Keep my edits as a private draft</button><button type="button" data-live-run-action="latest">Load shared version</button>` : ""}` : !ended && !ringing ? `<button type="button" data-live-run-action="${mine ? "release" : "claim"}" ${l.busy || (!mine && !available) ? "disabled" : ""}>${mine ? "Pass editing" : "Edit run"}</button>` : ""}
+  const status = l.conflict ? "You both changed the same part · choose which changes to keep" : l.error || (!navigator.onLine ? "Connection lost · edits kept on this device" : ended ? "Call finished · your draft is kept here" : ringing ? "Ringing · waiting for acceptance" : l.busy ? "Saving / connecting…" : l.sending ? "Syncing edits…" : shared ? (l.sharedReady ? "Both editing live · changes synced" : "Connecting shared editing…") : mine ? "Your turn to edit · changes synced" : available ? "Choose Edit run when you’re ready" : `${editor} is editing · live view`);
+  return `<div class="run-live-bar ${l.error || l.conflict ? "has-error" : "is-live"}"><div><strong>Live Run Builder · ${escapeHtml(s.athlete_name || "Private run")}</strong><small role="status">${escapeHtml(status)}</small><small>Save Run keeps your call open. End Call is separate.</small>${s.saved_run_id ? `<small class="run-live-save-receipt">✓ Saved to this rider’s contest runs${s.saved_version != null && s.version > s.saved_version ? " · new edits to save" : ""}</small>` : ""}</div><div class="run-live-actions">
+    ${l.conflict ? `<span class="run-live-conflict-detail">${escapeHtml(l.conflict.label)}</span><button type="button" data-live-run-action="resolve-mine">Use my changes</button><button type="button" data-live-run-action="resolve-shared">Use shared changes</button><button type="button" data-live-run-action="local">Keep a private draft</button>` : l.error ? `<button type="button" data-live-run-action="retry">Retry sync</button>${l.unsynced ? `<button type="button" data-live-run-action="local">Keep my edits as a private draft</button><button type="button" data-live-run-action="latest">Load shared version</button>` : ""}` : !shared && !ended && !ringing ? `<button type="button" data-live-run-action="${mine ? "release" : "claim"}" ${l.busy || (!mine && !available) ? "disabled" : ""}>${mine ? "Pass editing" : "Edit run"}</button>` : ""}
     <button type="button" data-live-run-action="leave">${ended ? "Keep draft & close call" : ringing ? "Cancel call" : "End call"}</button>
   </div></div>`;
 }
@@ -9459,8 +9468,234 @@ function applyLiveRunDraft(draft, session) {
   scroll.forEach(([name, top]) => [...document.querySelectorAll("#run-builder-live [class]")].find(el => el.className === name)?.scrollTo(0, top));
 }
 
+async function sharedLiveRunRequest(l, pending = null) {
+  const { data, error } = await withTimeout(client.rpc("live_run_edit", {
+    p_session_id: l.session.id, p_client_id: l.clientId,
+    p_request_id: pending?.id || crypto.randomUUID(),
+    p_version: pending?.version ?? l.session.version,
+    p_ops: pending?.ops || [],
+  }), "Shared run editing", 15000);
+  if (error) throw error;
+  return data;
+}
+
+function sharedLiveRunConflictLabel(paths) {
+  const labels = new Set(paths.map(path => {
+    const parts = String(path).split(".");
+    if (parts[0] === "points") {
+      const index = state.runBuilder?.points?.findIndex(point => point.id === parts[1]);
+      return index >= 0 ? `Dot ${index + 1}${parts[2] ? ` · ${parts[2] === "label" ? "trick" : /Seconds/.test(parts[2]) ? "timing" : "route"}` : ""}` : "Route dots";
+    }
+    return ({title:"Run name",notes:"Notes",venue:"Venue",planType:"Run type",view:"Photo framing"})[path] || "Event / course / route";
+  }));
+  return [...labels].join(", ");
+}
+
+function acceptSharedLiveRun(l, result, base = l.base) {
+  if (liveRun !== l || !result?.draft || result.session.version < l.session.version) return;
+  // Never replace the map under an active pointer gesture. Rebase its final
+  // coordinates against this same acknowledgement as soon as the finger lifts.
+  if (state.draggedRunPoint != null) { l.deferredResult = { result, base }; return; }
+  const local = liveRunSnapshot(), remote = result.draft;
+  const merged = window.JKLiveRunSync.rebase(base, local, remote);
+  const conflicts = [...new Set([...(merged.conflicts || []), ...(result.conflicts || [])])];
+  // A course can change away and back between reads. The server's route
+  // generation is authoritative even when the two photo snapshots look equal.
+  if (result.conflicts?.includes("course")) {
+    for (const key of ["contestItemId", "courseSource", "imageDataUrl", "view", "points"]) {
+      merged.draft[key] = structuredClone(local[key]);
+      merged.sharedDraft[key] = structuredClone(remote[key]);
+    }
+  }
+  const foreignChange = !window.JKLiveRunSync.equal(base, remote);
+  l.session = result.session; l.base = structuredClone(remote); l.sharedReady = true;
+  l.error = null;
+  l.conflict = conflicts.length ? { ...merged, label: sharedLiveRunConflictLabel(conflicts) } : null;
+  l.unsynced = !window.JKLiveRunSync.equal(merged.draft, remote);
+  if (!window.JKLiveRunSync.equal(local, merged.draft)) paintSharedLiveRunDraft(merged.draft, result.session);
+  // Old whole-draft undo snapshots must never restore over the other person's
+  // work. Acknowledgements of our own writes preserve the local undo history.
+  if (foreignChange) { runUndoStack = []; runRedoStack = []; paintSharedRunHistory(); }
+  observeLiveRunSession(l, result.session);
+  document.querySelector(".run-fullscreen-playback")?.dispatchEvent(new Event("run-live-update"));
+}
+
+function paintSharedRunHistory() {
+  document.querySelector('[data-run-history="undo"]')?.toggleAttribute("disabled", !runUndoStack.length);
+  document.querySelector('[data-run-history="redo"]')?.toggleAttribute("disabled", !runRedoStack.length);
+}
+
+function paintSharedLiveRunDraft(draft, session) {
+  const previous = state.runBuilder || {}, active = document.activeElement;
+  const selectedId = previous.points?.[previous.selectedPointIndex]?.id;
+  const segmentId = previous.points?.[previous.selectedSegmentIndex]?.id;
+  const sameStructure = previous.imageDataUrl === draft.imageDataUrl &&
+    window.JKLiveRunSync.equal(previous.view, draft.view) &&
+    window.JKLiveRunSync.equal(previous.points?.map(p => [p.id, Boolean(p.isTrick)]), draft.points?.map(p => [p.id, Boolean(p.isTrick)]));
+  state.runBuilder = { ...previous, ...structuredClone(draft), id:null,
+    athleteId:session.athlete_id, athleteName:session.athlete_name, liveSessionId:session.id };
+  if (selectedId) state.runBuilder.selectedPointIndex = draft.points.findIndex(p => p.id === selectedId);
+  if (segmentId) state.runBuilder.selectedSegmentIndex = draft.points.findIndex(p => p.id === segmentId);
+  const root = document.querySelector("#run-builder-live");
+  if (!root) return;
+  if (!sameStructure) {
+    // Preserve focus by stable dot identity when insertions renumber the list.
+    let selector = active?.id ? `#${CSS.escape(active.id)}` : null;
+    const rawValue = active?.value;
+    let preserveRaw = active?.id === "run-title" && String(draft.title).trim() === String(rawValue).trim();
+    const oldIndex = active?.dataset.runTrickIndex ?? active?.dataset.runTimeIndex;
+    if (oldIndex != null) {
+      const id = previous.points?.[Number(oldIndex)]?.id, index = draft.points.findIndex(p => p.id === id);
+      const key = active.hasAttribute("data-run-trick-index") ? "label" : active.dataset.runTimeKey;
+      preserveRaw = index >= 0 && window.JKLiveRunSync.equal(previous.points[Number(oldIndex)]?.[key], draft.points[index]?.[key]);
+      selector = index < 0 ? null : active.hasAttribute("data-run-trick-index") ? `[data-run-trick-index="${index}"]` : `[data-run-time-index="${index}"][data-run-time-key="${active.dataset.runTimeKey}"]`;
+    } else if (active?.hasAttribute("data-run-limit")) {
+      selector = "[data-run-limit]"; preserveRaw = previous.points[0]?.timeLimitSeconds === draft.points[0]?.timeLimitSeconds;
+    } else if (active?.hasAttribute("data-selected-run-label")) {
+      selector = "[data-selected-run-label]"; preserveRaw = previous.points[previous.selectedPointIndex]?.label === draft.points[state.runBuilder.selectedPointIndex]?.label;
+    }
+    const cursor = active && "selectionStart" in active ? [active.selectionStart, active.selectionEnd] : null;
+    const scroll = [...root.querySelectorAll(".run-trick-editor-list,.run-builder-sidebar")].map(el => [el.className,el.scrollTop]);
+    refreshMountedRunBuilder();
+    if (selector) {
+      const next = document.querySelector(selector);
+      if (next && preserveRaw) next.value = rawValue;
+      next?.focus({preventScroll:true});
+      if (cursor && next?.setSelectionRange) try { next.setSelectionRange(...cursor); } catch {}
+    }
+    scroll.forEach(([name,top]) => [...document.querySelectorAll("#run-builder-live [class]")].find(el => el.className === name)?.scrollTo(0,top));
+    return;
+  }
+  // Update remote values in place. Retain the focused field, keyboard, cursor,
+  // pointer targets and nested scroll position during simultaneous typing.
+  const set = (el, value, prior) => {
+    if (!el) return;
+    const next = String(value ?? "");
+    if (el === active && prior !== undefined && window.JKLiveRunSync.equal(value, prior)) return;
+    if (el === active && (el.value.trim() === next.trim() || (el.type === "number" && el.value !== "" && Number(el.value) === Number(next)))) return;
+    if (el.value !== next) el.value = next;
+  };
+  set(root.querySelector("#run-title"),draft.title); set(root.querySelector("#run-notes"),draft.notes);
+  set(root.querySelector('[name="venue"]'),draft.venue); set(root.querySelector('[name="planType"]'),draft.planType);
+  root.querySelectorAll("[data-run-trick-index]").forEach(el => set(el,draft.points[Number(el.dataset.runTrickIndex)]?.label));
+  root.querySelectorAll("[data-run-time-index]").forEach(el => {
+    const index = Number(el.dataset.runTimeIndex), timing = runTiming(draft.points)[index];
+    const oldTiming = runTiming(previous.points)[index];
+    set(el, el.dataset.runTimeKey === "holdSeconds" ? timing?.hold : Math.round((timing?.travel || 0)*10)/10,
+      el.dataset.runTimeKey === "holdSeconds" ? oldTiming?.hold : Math.round((oldTiming?.travel || 0)*10)/10);
+  });
+  root.querySelectorAll("[data-run-limit]").forEach(el => set(el,draft.points[0]?.timeLimitSeconds || 60,previous.points[0]?.timeLimitSeconds || 60));
+  const point = draft.points[state.runBuilder.selectedPointIndex];
+  set(root.querySelector("[data-selected-run-label]"), point?.label);
+  root.querySelectorAll("[data-selected-run-bend]").forEach(el => set(el,point?.bend || 0));
+  root.querySelectorAll("[data-selected-run-bend-output]").forEach(el => { el.textContent = point?.bend || 0; });
+  root.querySelector(".run-line-overlay")?.remove();
+  updateRunBuilderMapDom();
+  root.querySelectorAll(".run-marker").forEach(el => {
+    const index = Number(el.dataset.runPointIndex), p = draft.points[index];
+    if (p) { el.dataset.runPointLabel = p.label || "NO TRICK"; el.setAttribute("aria-label",`${index + 1}. ${p.label || `Point ${index + 1}`}`); }
+  });
+  paintRunTimeBudget(draft.points);
+  const budget = runTimeBudget(draft.points);
+  root.querySelectorAll("[data-run-total], [data-run-segment-total]").forEach(el => { el.textContent = `${budget.total} seconds planned · ${budget.message}`; });
+  root.querySelectorAll("[data-run-map-preview]").forEach(el => { el.dataset.runTiming = JSON.stringify(runTiming(draft.points)); });
+  root.querySelectorAll("[data-run-playback-controls]").forEach(el => setRunPlaybackDuration(el,budget.total));
+  paintLiveRunControls();
+}
+
+async function bootstrapSharedLiveRun(l) {
+  const result = await sharedLiveRunRequest(l);
+  if (liveRun !== l) return;
+  // No controls are editable before this authoritative ID bootstrap.
+  l.session = result.session; l.base = structuredClone(result.draft); l.sharedReady = true;
+  paintSharedLiveRunDraft(result.draft,result.session);
+}
+
+async function flushSharedLiveRun(l) {
+  if (!l || liveRun !== l) return;
+  if (l.sending) { await l.sending; return flushSharedLiveRun(l); }
+  if (l.deferredResult) return;
+  if (!l.sharedReady || !liveRunSharedActive(l)) return;
+  if (l.conflict) throw new Error("Choose which overlapping edits to keep before saving.");
+  if (l.error || !navigator.onLine) throw new Error("Your edits are kept here. Reconnect to sync them.");
+  if (!l.pending) {
+    const snapshot = liveRunSnapshot(), ops = window.JKLiveRunSync.diff(l.base,snapshot);
+    if (!ops.length) return;
+    l.pending = {id:crypto.randomUUID(), version:l.session.version, ops, snapshot};
+  }
+  const pending = l.pending;
+  l.sending = (async () => {
+    try {
+      const result = await sharedLiveRunRequest(l,pending);
+      if (liveRun !== l) return;
+      l.pending = null;
+      acceptSharedLiveRun(l,result,result.applied ? pending.snapshot : l.base);
+      if (l.conflict) throw new Error("You both edited the same part. Choose whose changes to keep.");
+    } catch (error) {
+      if (liveRun === l) { l.unsynced = true; if (!l.conflict) l.error = "Edits kept on this device · retry to reconnect"; }
+      throw error;
+    } finally { l.sending = null; if (liveRun === l) paintLiveRunControls(); }
+  })();
+  paintLiveRunControls();
+  return l.sending;
+}
+
+async function pollSharedLiveRun(l) {
+  if (!l || l.polling || l.busy || l.sending || l.pending || l.error || l.conflict || l.deferredResult || liveRun !== l) return;
+  l.polling = true;
+  try {
+    const {data:session,error} = await client.from("run_live_sessions").select("*").eq("id",l.session.id).single();
+    if (error) throw error;
+    if (liveRun !== l || l.busy || l.sending || l.pending) return;
+    observeLiveRunSession(l,session);
+    if (!liveRunSharedActive(l)) { l.session = {...l.session,...session}; return; }
+    if (!l.sharedReady) await bootstrapSharedLiveRun(l);
+    else if (session.version > l.session.version) {
+      const result = await sharedLiveRunRequest(l);
+      if (liveRun === l && !l.busy && !l.sending && !l.pending) acceptSharedLiveRun(l,result);
+    }
+  } catch(error) { if (liveRun === l) l.error = messageFrom(error); }
+  finally { l.polling = false; if (liveRun === l) paintLiveRunControls(); }
+}
+
+async function resolveSharedLiveRun(l, action) {
+  if (!l || liveRun !== l) return;
+  if (l.sending) await l.sending;
+  if (liveRun !== l) return;
+  l.error = null;
+  if (action === "resolve-mine" || action === "resolve-shared") {
+    const conflict = l.conflict;
+    if (!conflict) return;
+    // The next write still compares against the last shared values. If the peer
+    // changes them again before this choice arrives, ask again rather than force.
+    const chosen = action === "resolve-mine" ? conflict.draft : conflict.sharedDraft;
+    l.conflict = null; l.pending = null;
+    document.activeElement?.blur();
+    paintSharedLiveRunDraft(chosen,l.session);
+    await flushSharedLiveRun(l);
+    return;
+  }
+  if (l.pending && action !== "latest") await flushSharedLiveRun(l); // same receipt ID after a lost acknowledgement
+  if (l.conflict) return;
+  const result = await sharedLiveRunRequest(l);
+  if (liveRun !== l) return;
+  if (action === "latest") {
+    if (!window.confirm("Replace your unsynced changes with the shared run?")) return;
+    l.pending = null; l.conflict = null; l.unsynced = false;
+    l.session = result.session; l.base = structuredClone(result.draft); l.sharedReady = true;
+    document.activeElement?.blur(); paintSharedLiveRunDraft(result.draft,result.session);
+  } else if (!l.sharedReady) {
+    l.session = result.session; l.base = structuredClone(result.draft); l.sharedReady = true;
+    paintSharedLiveRunDraft(result.draft,result.session);
+  } else {
+    acceptSharedLiveRun(l,result);
+    if (!l.conflict) await flushSharedLiveRun(l);
+  }
+}
+
 async function flushLiveRun(l = liveRun) {
   if (!l || liveRun !== l) return;
+  if (liveRunShared(l)) return flushSharedLiveRun(l);
   if (l.sending) { await l.sending; return flushLiveRun(l); }
   const snapshot = liveRunSnapshot();
   const patch = Object.fromEntries(Object.entries(snapshot).filter(([key, value]) => liveRunFingerprint(value) !== liveRunFingerprint(l.base[key])));
@@ -9484,6 +9719,7 @@ async function flushLiveRun(l = liveRun) {
 }
 
 async function pollLiveRun(l = liveRun) {
+  if (liveRunShared(l)) return pollSharedLiveRun(l);
   if (!l || l.polling || l.busy || l.sending || l.error || liveRun !== l) return;
   l.polling = true;
   try {
@@ -9523,14 +9759,21 @@ function connectLiveRun(result, clientId) {
     if (!navigator.onLine) { paintLiveRunControls(); return; }
     l.ticking = true;
     try {
-      if (liveRunOwnsEditor(l) && (!l.session.call_status || ["idle","active"].includes(l.session.call_status))) {
+      if (liveRunShared(l)) {
+        if (l.deferredResult && state.draggedRunPoint == null) {
+          const deferred = l.deferredResult; l.deferredResult = null;
+          acceptSharedLiveRun(l, deferred.result, deferred.base);
+        }
+        if (liveRunSharedActive(l) && !l.sharedReady) await bootstrapSharedLiveRun(l);
+        if (liveRunSharedActive(l) && l.sharedReady && !l.conflict && !l.deferredResult) await flushLiveRun(l);
+      } else if (liveRunOwnsEditor(l) && (!l.session.call_status || ["idle","active"].includes(l.session.call_status))) {
         await flushLiveRun(l);
         if (Date.now() - l.lastHeartbeat > 15000 && liveRun === l && !l.busy) {
           const response = await liveRunRequest("heartbeat", l);
           if (liveRun === l && !l.busy) { l.session = response.session; l.lastHeartbeat = Date.now(); }
         }
       }
-      if (Date.now() - l.lastPoll > 2000) { l.lastPoll = Date.now(); await pollLiveRun(l); }
+      if (Date.now() - l.lastPoll > (liveRunShared(l) ? 900 : 2000)) { l.lastPoll = Date.now(); await pollLiveRun(l); }
     } catch (error) { if (liveRun === l) { l.error ||= messageFrom(error); paintLiveRunControls(); } }
     finally { l.ticking = false; }
   }, 300);
@@ -9620,6 +9863,7 @@ async function handleLiveRunAction(action) {
       const button = document.querySelector('[data-live-run-action="start"]');
       const restore = setButtonBusy(button, "Connecting…");
       try {
+        state.runBuilder.points = window.JKLiveRunSync.ensureIds(state.runBuilder.points || []);
         const clientId = state.runBuilder.liveStartKey || crypto.randomUUID(), draft = liveRunSnapshot();
         state.runBuilder.liveStartKey = clientId;
         const result = await liveRunCallRequest("start", {clientId}, {p_message_id:clientId,p_payload:{mode:"video",draft},p_athlete_id:athleteId,p_coach_id:coachId});
@@ -9653,6 +9897,10 @@ async function handleLiveRunAction(action) {
       return;
     }
     l.busy = true; paintLiveRunControls();
+    if (liveRunShared(l) && ["retry", "latest", "resolve-mine", "resolve-shared"].includes(action)) {
+      await resolveSharedLiveRun(l, action);
+      return;
+    }
     if (action === "release") {
       await flushLiveRun(l);
       const result = await liveRunRequest("release", l);
@@ -9685,12 +9933,20 @@ async function handleLiveRunAction(action) {
 async function saveLiveRun() {
   const l = liveRun;
   if (!l || l.busy) return;
-  if (!liveRunCanEdit()) return notify("Choose Edit run before saving the shared plan.");
+  if (!liveRunCanEdit()) return notify(liveRunShared(l) ? "Connect and resolve any edit conflicts before saving." : "Choose Edit run before saving the shared plan.");
   l.busy = true; paintLiveRunControls();
   try {
     if (l.error || !navigator.onLine) throw new Error("Reconnect and sync the shared run before saving.");
     if (l.session.call_status === "active" && !state.runBuilder?.contestItemId) throw new Error("Choose the contest / event before saving this shared run.");
     await flushLiveRun(l);
+    // Read the newest merged draft before saving; a racing edit is still
+    // rejected by the database version check instead of being overwritten.
+    if (liveRunShared(l)) {
+      const latest = await sharedLiveRunRequest(l);
+      acceptSharedLiveRun(l, latest);
+      if (l.conflict) throw new Error("Choose which overlapping edits to keep before saving.");
+      await flushLiveRun(l);
+    }
     const result = await liveRunRequest("save", l);
     if (liveRun !== l) return;
     l.session = result.session;
@@ -12060,7 +12316,12 @@ function openRunCrop() {
   }, { passive: false });
   dialog.querySelector("[data-crop-reset]").onclick = () => { view = runView(); paint(); };
   dialog.querySelector("[data-crop-cancel]").onclick = () => dialog.close();
+  const cropCall = liveRun, cropVersion = liveRun?.session.version;
   dialog.querySelector("[data-crop-save]").onclick = () => {
+    if (cropCall && (liveRun !== cropCall || !liveRunCanEdit() || liveRun.session.version !== cropVersion)) {
+      notify("The shared run changed while framing. Reopen Adjust photo to use the latest version.", "error");
+      dialog.close(); return;
+    }
     rememberRunEdit();
     state.runBuilder.view = { ...view };
     dialog.close();
@@ -14573,7 +14834,15 @@ async function setRunBuilderPhoto(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
   if (file.size > 8 * 1024 * 1024) return notify("Choose a park photo under 8MB.", "error");
-  state.runBuilder = { ...currentRunFormState(), imageDataUrl: await runPhotoToDataUrl(file), coursePhotoLoaded: false, courseSource: "upload", view: runView(), points: (state.runBuilder?.points || []).map(({ view, ...point }) => point) };
+  const call = liveRun, builder = state.runBuilder, userId = state.user?.id;
+  const course = liveRunFingerprint([builder?.contestItemId, builder?.courseSource, builder?.imageDataUrl]);
+  const imageDataUrl = await runPhotoToDataUrl(file);
+  if (state.user?.id !== userId || !state.runBuilder || liveRun !== call) return;
+  if (call && (!liveRunCanEdit() || course !== liveRunFingerprint([state.runBuilder.contestItemId, state.runBuilder.courseSource, state.runBuilder.imageDataUrl]))) {
+    notify("The shared course changed while your photo loaded. Choose the photo again to use it.", "error"); return;
+  }
+  if (!call && builder !== state.runBuilder) return;
+  state.runBuilder = { ...currentRunFormState(), imageDataUrl, coursePhotoLoaded: false, courseSource: "upload", view: runView(), points: (state.runBuilder?.points || []).map(({ view, ...point }) => point) };
   await runBuilderRefreshView();
 }
 
@@ -14591,7 +14860,7 @@ async function addRunBuilderPoint(event) {
   rememberRunEdit();
   state.runBuilder = { ...currentRunFormState(), points: state.runBuilder.points || [] };
   const pointNumber = state.runBuilder.points.length + 1;
-  state.runBuilder.points.push({ x, y, label: "", note: "", bend: 0 });
+  state.runBuilder.points.push({ ...(state.runBuilder.liveSessionId ? { id: crypto.randomUUID() } : {}), x, y, label: "", note: "", bend: 0 });
   state.runBuilder.selectedPointIndex = state.runBuilder.points.length - 1;
   await runBuilderRefreshView();
 }

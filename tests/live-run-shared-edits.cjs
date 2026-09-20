@@ -1,0 +1,124 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
+const {initialize:initializeCalls}=require('./live-run-calls.cjs');
+const root=process.env.JKCREW_ROOT||path.resolve(__dirname,'..');
+async function initialize(db){
+ await initializeCalls(db);
+ await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20260920074338_live_run_shared_edits.sql'),'utf8'));
+}
+const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+async function run(){
+ const db=new PGlite();let checks=0;
+ const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
+ const ok=(value,message)=>{assert(value,message);checks++;};
+ const rejects=async(fn,pattern,message)=>{await assert.rejects(fn,pattern,message);checks++;};
+ try{
+ await initialize(db);
+ const rider=id(1),coach=id(2),stranger=id(3),parent=id(4),riderTab=id(10),coachTab=id(11),wrongTab=id(12),event=id(20);
+ const photo='data:image/png;base64,'+'a'.repeat(80);
+ await db.query("insert into profiles values($1,'athlete','Rider'),($2,'coach','Coach'),($3,'athlete','Stranger'),($4,'parent','Parent')",[rider,coach,stranger,parent]);
+ await db.query('insert into coach_athletes values($1,$2)',[coach,rider]);
+ await db.query("insert into dashboard_items(id,item_type,end_at) values($1,'event',now()+interval '1 day')",[event]);
+ await db.query('insert into event_course_photos values($1,$2)',[event,photo]);
+ const as=async who=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[who||'']);await db.exec('set role authenticated')};
+ const admin=async(sql,args=[])=>{await db.exec('reset role');return db.query(sql,args)};
+ let session,tab=riderTab,next=100;
+ const call=async(action,payload={})=>(await db.query('select live_run_call_action($1,$2,$3,$4,$5,$6,$7,0) result',[action,action==='start'?null:session?.id,tab,id(next++),JSON.stringify(payload),rider,coach])).rows[0].result;
+ const edit=async(ops=[],version=session.version,request=id(next++))=>(await db.query('select live_run_edit($1,$2,$3,$4,$5) result',[session.id,tab,request,version,JSON.stringify(ops)])).rows[0].result;
+ const legacy=async(action,patch={},version=session.version)=>(await db.query('select live_run_action($1,$2,$3,$4,$5) result',[action,session.id,tab,version,JSON.stringify(patch)])).rows[0].result;
+ const set=(key,before,value)=>({op:'set',key,before,value});
+ const point=(before,value)=>({op:'point',id:before.id,before,value:{...before,...value}});
+ const draft={title:'Finals',venue:'Test park',contestItemId:event,courseSource:'upload',imageDataUrl:photo,notes:'',points:[{x:10,y:10},{x:45,y:60,label:'Manual',travelSeconds:12},{x:90,y:90}],view:{scale:2,x:10,y:20}};
+ await as(rider);session=(await call('start',{mode:'video',draft})).session;
+ const initialVersion=session.version;
+ let result=await edit([],null,null);session=result.session;
+ eq(session.version,initialVersion+1,'Bootstrap assigns stable IDs once');ok(result.draft.points.every(p=>/^[0-9a-f-]{36}$/.test(p.id)));eq(new Set(result.draft.points.map(p=>p.id)).size,3);
+ eq((await edit([],null,null)).session.version,session.version,'Repeated bootstrap does not change version');
+ await rejects(()=>edit([set('notes','','Before consent')]),/Accept an active call/);
+ await as(coach);tab=coachTab;await rejects(()=>edit([],null,null),/another tab/,'Unaccepted callee cannot bootstrap or see the caller draft');
+ session=(await call('accept')).session;result=await edit([],null,null);
+ const base=result.draft,baseVersion=session.version;
+ eq(result.applied,true);eq(result.draft.points.length,3);
+ const request=id(next++),firstOps=[set('notes','','Coach notes')];
+ result=await edit(firstOps,baseVersion,request);session=result.session;eq(result.applied,true);eq(result.draft.notes,'Coach notes');
+ await as(rider);tab=riderTab;
+ result=await edit([set('title','Finals','Rider title')],baseVersion);session=result.session;
+ eq(result.applied,true,'Disjoint stale-version fields merge');eq(result.draft.notes,'Coach notes');eq(result.draft.title,'Rider title');
+ result=await edit([set('notes','','Coach notes')],baseVersion);eq(result.applied,true,'Identical concurrent root values converge');eq(result.session.version,session.version,'Converged values do not add a revision');
+ await as(coach);tab=coachTab;
+ const replay=await edit(firstOps,baseVersion,request);eq(replay.replayed,true);eq(replay.session.version,session.version,'Acknowledgement retry does not add a revision');eq(replay.draft.title,'Rider title','Retry returns current authoritative draft');
+ await rejects(()=>edit([set('notes','','Different request')],baseVersion,request),/already used/);
+ await rejects(()=>edit(firstOps,baseVersion+1,request),/already used/,'Changing the version cannot reuse an operation ID');
+ const middle=base.points[1];
+ result=await edit([point(middle,{label:'Barspin'})],baseVersion);session=result.session;
+ await as(rider);tab=riderTab;
+ result=await edit([point(middle,{travelSeconds:5})],baseVersion);session=result.session;
+ eq(result.applied,true);eq(result.draft.points[1].label,'Barspin');eq(result.draft.points[1].travelSeconds,5,'Same-dot independent properties merge');
+ result=await edit([point(middle,{travelSeconds:5})],baseVersion);eq(result.applied,true,'Identical concurrent dot values converge');eq(result.session.version,session.version);
+ const beforeConflict=result.draft,versionBeforeConflict=session.version;
+ result=await edit([set('venue','Test park','Would be rolled back'),point(middle,{label:'Tailwhip'})],baseVersion);
+ eq(result.applied,false);eq(result.conflicts,[`points.${middle.id}.label`]);eq(result.draft,beforeConflict,'The entire conflicting batch leaves draft unchanged');eq(result.session.version,versionBeforeConflict);
+ const currentMiddle=result.draft.points[1];
+ result=await edit([{op:'delete',id:middle.id,before:middle}],baseVersion);eq(result.applied,false,'Delete cannot erase a remotely edited dot');eq(result.draft.points.length,3);
+ result=await edit([{op:'insert',after:base.points[0].id,value:{id:id(500),x:20,y:30,label:'New A'}}],session.version);session=result.session;
+ await as(coach);tab=coachTab;
+ result=await edit([{op:'insert',after:base.points[0].id,value:{id:id(501),x:22,y:32,label:'New B'}}],baseVersion);session=result.session;
+ eq(result.draft.points.map(p=>p.id),[base.points[0].id,id(501),id(500),middle.id,base.points[2].id],'Concurrent same-anchor inserts both survive');
+ result=await edit([{op:'insert',after:null,value:{id:id(502),x:2,y:3}}]);session=result.session;eq(result.draft.points[0].id,id(502),'Null anchor prepends');
+ result=await edit([{op:'insert',after:id(599),value:{id:id(503),x:4,y:5}}]);eq(result.applied,false);eq(result.conflicts,[`points.${id(599)}`]);
+ result=await edit([{op:'insert',after:null,value:{id:id(502),x:5,y:6}}]);eq(result.applied,false,'Duplicate point ID is rejected');
+ result=await edit([{op:'delete',id:currentMiddle.id,before:currentMiddle}]);session=result.session;eq(result.applied,true);eq(result.draft.points.some(p=>p.id===middle.id),false);
+ result=await edit([point(currentMiddle,{label:'Cannot resurrect'})],baseVersion);eq(result.applied,false);eq(result.draft.points.some(p=>p.id===middle.id),false);
+ // A present JSON null is not the same as a missing optional dot property.
+ const sparse=result.draft.points[0];
+ result=await edit([point(sparse,{note:null})]);session=result.session;eq(result.applied,true);
+ result=await edit([point(sparse,{note:'Stale absent'})],baseVersion);eq(result.applied,false);
+ const withNull=result.draft.points[0],withoutNull={...withNull};delete withoutNull.note;
+ result=await edit([{op:'point',id:withNull.id,before:withNull,value:withoutNull}]);session=result.session;eq(result.applied,true);eq(Object.hasOwn(result.draft.points[0],'note'),false,'Removing a property preserves absence');
+ result=await edit([{op:'point',id:withNull.id,before:withNull,value:withoutNull}]);eq(result.applied,true,'Concurrent deletion of the same optional property converges');eq(result.session.version,session.version);
+ const routeBase=result.draft,routeVersion=session.version;
+ result=await edit([set('imageDataUrl',photo,photo+'b')]);session=result.session;
+ eq(result.applied,true);
+ result=await edit([point(routeBase.points[0],{x:9})],routeVersion);eq(result.applied,false);eq(result.conflicts,['course'],'Old coordinates cannot apply to a new course');
+ result=await edit([set('view',routeBase.view,{scale:1})],routeVersion);eq(result.applied,false,'Old view changes also respect the course barrier');
+ result=await edit([set('notes','Coach notes','New note after course')],routeVersion);session=result.session;eq(result.applied,true,'Notes can merge across course replacement');
+ result=await edit([set('imageDataUrl',photo+'b',photo+'c')],routeVersion);eq(result.applied,false,'Course replacement needs exact current global version');
+ // Legacy bound editor patches still advance the course barrier.
+ await as(rider);tab=riderTab;const beforeLegacy=(await edit()).draft;
+ session=(await legacy('patch',{imageDataUrl:photo+'d'})).session;
+ result=await edit([point(beforeLegacy.points[0],{y:17})],session.version-1);eq(result.applied,false,'Legacy course replacement also fences delayed point edits');
+ for(const bad of [[{op:'unknown'}],[set('points',[],[])],[{op:'point',id:base.points[0].id,before:base.points[0],value:{...base.points[0],id:id(700)}}],[{op:'insert',after:null,value:{id:'bad',x:1,y:1}}],[{op:'insert',after:null,value:{id:id(701),x:-1,y:1}}],[set('contestItemId',event,id(404))]])await rejects(()=>edit(bad));
+ await rejects(()=>edit([set('notes','New note after course','x')],session.version+1),/Reload/);
+ await rejects(()=>edit([set('notes','New note after course','x')],session.version,null),/Reload/);
+ for(const who of [null,stranger,parent]){await as(who);await rejects(()=>edit([],null,null),/private|Sign in/);}
+ await as(coach);tab=wrongTab;
+ for(const action of ['get','save','claim','end'])await rejects(()=>legacy(action),/another tab/);
+ await rejects(()=>edit([],null,null),/another tab/);
+ tab=coachTab;await as(coach);
+ // Neither owner nor lease is required for an accepted participant to save.
+ result=await edit();session=result.session;
+ const saved=await legacy('save');session=saved.session;eq(session.saved_version,session.version);eq(session.editor_id,rider,'Coach saves while rider still owns the legacy lease');
+ await as(rider);tab=riderTab;eq((await legacy('save')).session.saved_run_id,session.saved_run_id,'Both participants share one saved row');
+ await rejects(()=>legacy('save',{},session.version-1),/run changed/);
+ result=await edit([set('title','Rider title','Another saved revision')]);session=result.session;
+ eq((await legacy('save')).session.saved_run_id,saved.session.saved_run_id);
+ const snapshot=(await admin('select * from run_plans')).rows;eq(snapshot.length,1);eq(snapshot[0].athlete_id,rider);eq(snapshot[0].coach_id,coach);eq(snapshot[0].points.every(p=>!!p.id),true,'Saved runs retain point identities');
+ await admin("update run_plans set notes='External saved edit',updated_at=clock_timestamp() where id=$1",[saved.session.saved_run_id]);await as(coach);tab=coachTab;
+ result=await edit([set('title','Another saved revision','Protected external saved run')]);session=result.session;await rejects(()=>legacy('save'),/changed outside/);
+ await admin('insert into private.rider_feature_access values($1,true)',[rider]);await as(coach);await rejects(()=>edit([],null,null),/private/);await rejects(()=>edit(firstOps,baseVersion,request),/private/,'Receipt replay cannot bypass revoked access');
+ await admin('delete from private.rider_feature_access');await as(coach);
+ for(const table of ['private.run_live_edit_receipts','private.run_live_drafts'])await rejects(()=>db.query('select * from '+table),/permission denied/);
+ for(const name of ['public.live_run_edit(uuid,uuid,uuid,bigint,jsonb)','private.live_run_edit(uuid,uuid,uuid,bigint,jsonb)'])eq((await db.query("select has_function_privilege('anon',$1,'execute') ok",[name])).rows[0].ok,false);
+ const receipts=(await admin('select request_hash,applied_version from private.run_live_edit_receipts')).rows;ok(receipts.length>0);ok(receipts.every(row=>row.request_hash.length===32),'Receipt hashes are SHA-256, not draft copies');
+ await as(coach);session=(await call('end')).session;await rejects(()=>edit([],null,null),/Accept an active call/);
+ // Legacy idle invitations continue to use a leased writer and rider-only save.
+ await as(rider);tab=riderTab;
+ session=(await db.query('select live_run_action($1,null,$2,null,$3,$4,$5) result',['create',tab,JSON.stringify(draft),rider,coach])).rows[0].result.session;
+ await as(coach);tab=coachTab;session=(await legacy('accept')).session;
+ await rejects(()=>legacy('patch',{notes:'No lease'}),/changed hands/);await rejects(()=>legacy('save'),/rider saves/);
+ await as(rider);tab=riderTab;session=(await legacy('save')).session;eq(session.status,'saved');eq((await legacy('save')).session.saved_run_id,session.saved_run_id);
+ console.log(`PASS: ${checks} shared Live Run DB checks: stable IDs, field merges, atomic conflicts, insert/delete, course barriers, receipts, auth/device guards, shared saves and legacy compatibility.`);
+ }finally{await db.close();}
+}
+module.exports={initialize};if(require.main===module)run().catch(error=>{console.error(error.stack);process.exitCode=1});

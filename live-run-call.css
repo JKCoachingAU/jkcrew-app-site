@@ -7,3 +7,7 @@
 body.has-live-run-call #run-builder-live{margin-bottom:360px}
 .run-call.is-minimized .run-call-videos{display:flex;height:68px;gap:2px}.run-call.is-minimized .run-call-remote{position:relative;width:50%}.run-call.is-minimized .run-call-self{position:relative;inset:auto;width:50%;height:100%;border:0;border-radius:0}.run-call.is-ended .run-call-videos{display:none}
 @media(min-width:1500px){body.has-live-run-call #view:has(#run-builder-live){padding-right:350px}.run-call{bottom:26px}}
+
+/* A conflict stays in the workspace while the call continues. */
+.run-live-conflict-detail { flex-basis: 100%; color: var(--text, #eef5f7); font-size: .82rem; line-height: 1.5; }
+.run-live-actions [data-live-run-action="resolve-mine"] { border-color: var(--teal, #10d4bf); }
