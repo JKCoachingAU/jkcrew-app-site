@@ -285,6 +285,7 @@ async function recordDailyTrainingAction(event, viewer = false) {
   if (button.disabled) return;
   // Capture before the network request or any optimistic rendering.
   const context = dailyFinishContext(button, viewer);
+  const tierTwoWasUnlocked = typeof dailyTierTwoIsUnlocked === "function" && dailyTierTwoIsUnlocked(context);
   const actionKey = viewer ? "viewerAssignmentAction" : "assignmentAction";
   const action = button.dataset[actionKey];
   const row = button.closest(viewer ? ".viewer-trick-row" : ".assignment-row");
@@ -314,6 +315,11 @@ async function recordDailyTrainingAction(event, viewer = false) {
       if (viewer) await refreshSessionViewerLight({ force: true });
       else if (state.view === "home") await renderAthleteHome();
       else await renderSession();
+      // A saved partial finish stays an honest receipt. Finishing the remaining
+      // tricks can still unlock Tier 2 when the server verifies today’s whole list.
+      if (landed && !result?.completion_candidate && typeof refreshDailyTierTwoAfterProgress === "function") {
+        await refreshDailyTierTwoAfterProgress(context, { present: !tierTwoWasUnlocked });
+      }
     }
     if (typeof refreshOpenTrainingProgress === "function") void refreshOpenTrainingProgress(context.athleteId);
   } catch (error) {
