@@ -53,29 +53,59 @@ body[data-theme="light"] #app .other-landed-panel input,[data-theme="light"] .ot
 [data-theme="light"] .other-landed-status.is-error{color:#a12f21}
 @media(max-width:600px){.other-landed-panel>summary{padding:16px;gap:8px}.other-landed-body{padding:0 14px 16px}.other-landed-draft{grid-template-columns:minmax(0,1fr)}.other-landed-draft>[data-other-remove]{justify-self:start}.other-landed-panel form{padding:12px}.other-landed-item-head{flex-wrap:wrap}.other-landed-count{max-width:76px;white-space:normal!important}.other-landed-tools{align-items:start}.other-landed-tools button{flex-shrink:0}.other-landed-form-actions>*{flex:1;min-width:125px}}
 
-.other-landed-coach-queue{border:1px solid #526a704f;border-radius:18px;background:var(--panel,#101d24)}
-.other-landed-queue-head{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 24px;border-bottom:1px solid #667f8833}
-.other-landed-queue-head>div:first-child{min-width:0}
-.other-landed-queue-head h2{margin:0;font-size:23px;line-height:1.2;color:var(--otl-ink)}
-.other-landed-queue-head p{margin:7px 0 0;font-size:14px;line-height:1.5;color:var(--otl-muted)}
-.other-landed-queue-head .other-landed-queue-eyebrow{margin:0 0 8px;color:var(--otl-accent);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-.other-landed-queue-tools{display:flex;align-items:center;gap:12px;flex-shrink:0}
-.other-landed-queue-count{padding:7px 11px;border:1px solid #f2c76155;border-radius:30px;background:#f2c76113;color:#f4d68b;font-size:12px;font-weight:700;white-space:nowrap}
-.other-landed-queue-count.is-empty{border-color:#49d5a944;background:#49d5a910;color:var(--otl-accent)}
-.other-landed-queue-body{display:grid;gap:14px;padding:20px 24px 24px;min-width:0}
+/* Coach review card: one compact surface, without the global panel inset. */
+#app .other-landed-panel.other-landed-coach-queue{position:relative;isolation:isolate;padding:0;margin-bottom:14px;border:1px solid #417b795e;border-radius:20px;background:linear-gradient(118deg,#0f2428 0%,#111b26 58%,#221b32 100%);box-shadow:0 8px 24px #0002}
+#app .other-landed-coach-queue::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,#16d7bd,#49b9dc 48%,#a27aed);pointer-events:none}
+.other-landed-queue-head{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 22px 14px;overflow:hidden}
+.other-landed-queue-head::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(115deg,transparent 30%,#aefff50d 46%,#cab6ff15 50%,transparent 65%);transform:translateX(-115%);animation:other-landed-shimmer 1.2s .2s ease-out 1 both}
+.other-landed-queue-identity{display:flex;align-items:center;gap:13px;min-width:0}
+.other-landed-queue-identity>div{min-width:0}
+.other-landed-queue-mark{display:grid;place-items:center;flex:none;width:46px;height:48px;border:1px solid #72e9d940;border-radius:14px;background:linear-gradient(140deg,#20e3c321,#a77bed20);color:#8df5dd;box-shadow:inset 0 1px #d5fff515}
+.other-landed-queue-mark svg{width:29px;height:29px}
+.other-landed-queue-head h2{margin:0;color:#f0f7fb;font:800 25px/1.05 var(--display,sans-serif);letter-spacing:.01em;text-transform:uppercase}
+.other-landed-queue-head .other-landed-queue-eyebrow{margin:0 0 6px;color:#8edacc;font:600 9px/1.2 var(--mono,monospace);letter-spacing:.13em;text-transform:uppercase}
+#app .other-landed-coach-queue .other-landed-queue-refresh{display:grid;place-items:center;flex:none;width:44px;min-height:44px;padding:0;border:1px solid #a6b8d130;border-radius:12px;color:#c4d2df;background:#c1ceeb08;transition:background .15s,border-color .15s}
+.other-landed-queue-refresh svg{width:19px;height:19px}
+#app .other-landed-coach-queue .other-landed-queue-refresh:hover{background:#c1ceeb13;border-color:#91dac475}
+.other-landed-queue-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 22px;padding:0 0 14px;border-bottom:1px solid #9ab6c025}
+.other-landed-queue-meta p{margin:0;color:#aebdc9;font:500 12px/1.4 var(--body,sans-serif)}
+.other-landed-queue-meta strong{color:#95ebd5;font-weight:700;white-space:nowrap}
+.other-landed-queue-count{flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #c5a0ff3d;border-radius:7px;background:#a77bea13;color:#d4b9fa;font:600 11px/1.2 var(--body,sans-serif);white-space:nowrap}
+.other-landed-queue-count::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.other-landed-queue-count.is-empty{color:#9dadb8;border-color:#a6b8d122;background:#c1ceeb06}
+.other-landed-queue-body{display:grid;gap:12px;padding:16px 22px 20px;min-width:0}
 .other-landed-queue-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:20px}
+.other-landed-coach-queue .other-landed-queue-item{padding:16px;border:1px solid #90aac32b;border-left:2px solid #a585db;border-radius:12px;background:#080f1870}
 .other-landed-queue-content{min-width:0}
-.other-landed-queue-item .other-landed-queue-rider{margin:0 0 5px;color:var(--otl-accent);font-size:13px;font-weight:600;overflow-wrap:anywhere}
-.other-landed-queue-item h3{margin:0;font-size:17px;line-height:1.4;font-family:inherit;font-weight:700;letter-spacing:0;text-transform:none;overflow-wrap:anywhere}
+.other-landed-queue-item .other-landed-queue-rider{margin:0 0 6px;color:#95ebd5;font:600 12px/1.3 var(--body,sans-serif);overflow-wrap:anywhere}
+.other-landed-queue-item h3{margin:0;font:700 18px/1.25 var(--body,sans-serif);letter-spacing:0;text-transform:none;overflow-wrap:anywhere}
 .other-landed-queue-item .other-landed-review-actions{margin:0;flex-wrap:nowrap}
+#app .other-landed-coach-queue .other-landed-review-actions button{border-radius:9px;font-size:13px;background:#ffffff04;border-color:#a6b8d132;color:#b6c5d1}
+#app .other-landed-coach-queue .other-landed-review-actions .other-landed-primary{background:linear-gradient(115deg,#7ae6c9,#5dcfc7);border-color:#83e9d14d;color:#092f2a}
 .other-landed-queue-more{justify-self:center}
-.other-landed-queue-empty{padding:20px 0;text-align:center}
-.other-landed-queue-empty strong{font-size:17px;font-weight:600}
-.other-landed-queue-empty p{margin:7px 0 0;color:var(--otl-muted);font-size:14px;line-height:1.5}
-[data-theme="light"] .other-landed-coach-queue{background:#fff;border-color:#cad9d6}
-[data-theme="light"] .other-landed-queue-count{color:#775009}
-[data-theme="light"] .other-landed-queue-count.is-empty{color:#087f6c}
-@media(max-width:700px){.other-landed-queue-head{padding:18px;align-items:start;flex-wrap:wrap;gap:14px}.other-landed-queue-head h2{font-size:21px}.other-landed-queue-tools{width:100%;justify-content:space-between}.other-landed-queue-body{padding:16px 14px 18px}.other-landed-queue-item{grid-template-columns:minmax(0,1fr);gap:14px}.other-landed-queue-item .other-landed-review-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.other-landed-queue-more{width:100%}}
+.other-landed-queue-empty{display:flex;align-items:center;gap:12px;padding:1px 0;text-align:left}
+.other-landed-queue-empty>span{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:#48d9b312;color:#86d6c2;border:1px solid #68bda22c}
+.other-landed-queue-empty svg{width:19px;height:19px}
+.other-landed-queue-empty strong{color:#dce9ec;font:600 14px/1.3 var(--body,sans-serif)}
+.other-landed-queue-empty p{margin:3px 0 0;color:#95a8b6;font:400 12px/1.4 var(--body,sans-serif)}
+[data-theme="light"] #app .other-landed-panel.other-landed-coach-queue{background:linear-gradient(118deg,#e8f8f1,#edf4f8 58%,#f1eafa);border-color:#9ac8c4;box-shadow:0 8px 24px #3456550c}
+[data-theme="light"] .other-landed-queue-head h2{color:#193333}
+[data-theme="light"] .other-landed-queue-head .other-landed-queue-eyebrow{color:#346f64}
+[data-theme="light"] .other-landed-queue-mark{color:#087a6a;border-color:#a5cdc6;background:linear-gradient(145deg,#cbf4e9,#e7dcf7)}
+[data-theme="light"] #app .other-landed-coach-queue .other-landed-queue-refresh{color:#566574;border-color:#a4b3c855;background:#ffffff70}
+[data-theme="light"] .other-landed-queue-meta{border-color:#abc9c859}
+[data-theme="light"] .other-landed-queue-meta p,[data-theme="light"] .other-landed-queue-empty p{color:#526977}
+[data-theme="light"] .other-landed-queue-meta strong,[data-theme="light"] .other-landed-queue-item .other-landed-queue-rider{color:#087760}
+[data-theme="light"] .other-landed-queue-count{color:#624389;background:#ded1f447;border-color:#b9aacb}
+[data-theme="light"] .other-landed-queue-count.is-empty{color:#526977;background:#ffffff40;border-color:#b3c5cf}
+[data-theme="light"] .other-landed-coach-queue .other-landed-queue-item{background:#ffffffa3;border-color:#bcced8;border-left-color:#a585db}
+[data-theme="light"] #app .other-landed-coach-queue .other-landed-review-actions button{color:#526977;background:#fff9;border-color:#b3c5cf}
+[data-theme="light"] #app .other-landed-coach-queue .other-landed-review-actions .other-landed-primary{background:#087f6c;border-color:#087f6c;color:#fff}
+[data-theme="light"] .other-landed-queue-empty>span{color:#087f6c;background:#edf9f4;border-color:#a5cdc6}
+[data-theme="light"] .other-landed-queue-empty strong{color:#23443f}
+@media(max-width:700px){.other-landed-queue-head{padding:18px 16px 13px;gap:10px}.other-landed-queue-mark{width:40px;height:44px;border-radius:12px}.other-landed-queue-identity{gap:11px}.other-landed-queue-head h2{font-size:24px}.other-landed-queue-meta{margin:0 16px;padding-bottom:13px}.other-landed-queue-body{padding:14px 16px 17px}.other-landed-queue-item{grid-template-columns:minmax(0,1fr);gap:14px}.other-landed-queue-item .other-landed-review-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.other-landed-queue-more{width:100%}}
+@media(max-width:360px){.other-landed-queue-head{padding-left:13px;padding-right:13px}.other-landed-queue-identity{gap:9px}.other-landed-queue-head h2{font-size:22px}.other-landed-queue-mark{width:36px;height:40px}.other-landed-queue-meta{margin:0 13px;gap:8px}.other-landed-queue-meta p{font-size:11px}.other-landed-queue-count{font-size:10px}.other-landed-queue-body{padding-left:13px;padding-right:13px}}
+@media(prefers-reduced-motion:reduce){.other-landed-queue-head::after{animation:none;display:none}#app .other-landed-coach-queue .other-landed-queue-refresh{transition:none}}
 
 /* Rider discovery card. The native disclosure and review workflow stay intact. */
 #app .other-landed-panel.other-landed-panel--rider{padding:0;border:1px solid #42cbb950;border-radius:18px;background:linear-gradient(118deg,#102b2b 0%,#101d27 52%,#231b36 100%);box-shadow:0 10px 28px #00000024;isolation:isolate}

@@ -177,8 +177,9 @@
     let reviewBusy = null, reviewAttempt = null, retry = null;
     const current = () => !destroyed && element.isConnected && isCurrent();
     element.innerHTML = `<section class="other-landed-panel other-landed-coach-queue panel" aria-label="Other Things Landed reviews">
-      <header class="other-landed-queue-head"><div><p class="other-landed-queue-eyebrow">Coach review</p><h2>Other Things Landed</h2><p>Extra landings waiting for your approval.</p></div>
-        <div class="other-landed-queue-tools"><span class="other-landed-queue-count" data-other-queue-count aria-live="polite">Loading…</span><button type="button" data-other-queue-refresh aria-label="Refresh Other Things Landed">Refresh</button></div></header>
+      <header class="other-landed-queue-head"><div class="other-landed-queue-identity"><span class="other-landed-queue-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="m17 5 2.6 7.4L27 15l-7.4 2.6L17 25l-2.6-7.4L7 15l7.4-2.6L17 5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 23v6M3 26h6M25 3v5M22.5 5.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><div><p class="other-landed-queue-eyebrow">Coach review</p><h2>Other Things Landed</h2></div></div>
+        <button type="button" class="other-landed-queue-refresh" data-other-queue-refresh aria-label="Refresh Other Things Landed" title="Refresh landings"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1a8 8 0 0 1 13.5 4M4.4 13.9a8 8 0 0 0 13.5 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></header>
+      <div class="other-landed-queue-meta"><p><strong>+1 point</strong> per approved landing</p><span class="other-landed-queue-count" data-other-queue-count aria-live="polite">Loading…</span></div>
       <div class="other-landed-queue-body"><div class="other-landed-status" role="status" aria-live="polite" data-other-queue-status></div>
         <button type="button" class="other-landed-retry" data-other-queue-retry hidden>Retry</button>
         <div class="other-landed-list" data-other-queue-list aria-label="Landings waiting for review"></div>
@@ -215,7 +216,7 @@
           ${item.note ? `<p class="other-landed-note">${escape(item.note)}</p>` : ''}
           <small>${item.venue ? `${escape(item.venue)} · ` : ''}<time datetime="${escape(item.submitted_at)}">${escape(date(item.submitted_at))}</time></small></div>
         <div class="other-landed-review-actions"><button type="button" class="other-landed-primary" data-other-queue-review="approved" aria-label="Approve ${escape(item.trick_name)} by ${escape(riderName(item.athlete_id))}, plus 1 point" ${reviewBusy ? 'disabled' : ''}>${reviewBusy === item.id ? 'Saving…' : 'Approve · +1'}</button><button type="button" data-other-queue-review="declined" aria-label="Decline ${escape(item.trick_name)} by ${escape(riderName(item.athlete_id))}" ${reviewBusy ? 'disabled' : ''}>Decline</button></div>
-      </article>`).join('') || (total === 0 ? '<div class="other-landed-queue-empty"><strong>All caught up</strong><p>No extra landings are waiting for your review.</p></div>' : '');
+      </article>`).join('') || (total === 0 ? '<div class="other-landed-queue-empty"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6 12 4 4 8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><strong>All caught up</strong><p>New landings will appear here.</p></div></div>' : '');
     }
     async function responseFor(request) {
       let timeout;
