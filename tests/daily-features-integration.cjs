@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const begin=app.indexOf('// Feature modules keep'),end=app.indexOf('async function renderSession({',begin);
-assert(begin>=0&&end>begin);const helpers=app.slice(begin,end);
+assert(begin>=0&&end>begin);const helpers=app.slice(begin,end)+app.slice(app.indexOf('function planAccordionSection('),app.indexOf('async function saveCoachVenueNames('));
 const uiFixture=fs.readFileSync(path.join(__dirname,'daily-tier-two-ui.cjs'),'utf8').match(/const fixture=String.raw`([\s\S]*?)`;/)[1];
 const fixture=String.raw`
 window.cacheKeys=[];window.savedDaily=[];window.disabled=false;window.unknown=false;
@@ -19,7 +19,7 @@ client.rpc=async(name,args)=>{
  if(name==='confirm_daily_finish'){calls.push({name,args});round.eligible=true;return {data:{result_id:'full-result',athlete_id:'rider',session_id:'session-rider',local_date:'2026-09-20',seconds:65,completed_at:new Date().toISOString(),all_completed:true,completed_count:2,total_count:2,completion_points:2,completion_xp:35}};}
  return originalRpc(name,args);
 };
-window.paint=(editor=false)=>{document.querySelector('#view').innerHTML='<section class="daily-session-hub"><details open><summary>Daily list</summary>Tier 1 content</details></section>'+dailyFeatureHosts('rider',editor);mountDailyFeatures();};
+window.paint=(editor=false)=>{document.querySelector('#view').innerHTML='<section class="daily-session-hub"><details open><summary>Daily list</summary>Tier 1 content</details></section>'+dailyFeatureHosts('rider')+(editor?tierTwoEditorSection('rider'):'');mountDailyFeatures();};
 window.renderSession=async()=>paint();window.renderSessionViewer=async()=>paint();window.refreshSessionViewerLight=async()=>paint();window.renderAthleteHome=async()=>paint();
 window.mountCount=()=>dailyFeatureMounts.size;
 window.confirmFull=async()=>{const element=document.createElement('div');element.innerHTML='<button data-confirm-daily>Confirm</button><button data-cancel-daily>Cancel</button><div class="daily-finish-error" hidden></div>';document.body.append(element);const current={element,candidate:{id:'candidate'},saving:false,context:{athleteId:'rider',userId:state.user.id,view:state.view,epoch:dailyFinishUi.epoch,viewer:state.view==='sessionViewer'}};dailyFinishUi.current=current;await confirmDailyFinish(current);element.remove();};
@@ -45,7 +45,7 @@ showSavedDailyResult=(result)=>savedDaily.push(result);
   // Switching to a linked coach uses separate controls and preserves no rider draft.
   await page.evaluate(()=>{state.user={id:'coach'};state.profile={role:'coach'};state.view='sessionViewer';paint();});await page.waitForTimeout(120);eq(await page.evaluate(()=>mountCount()),2);eq(await page.getByRole('button',{name:'Open Tier 2'}).count(),0);await page.locator('[data-other-landed-panel]>summary').click();await page.waitForFunction(()=>calls.some(c=>c.name==='get_other_things_landed'&&c.args.p_athlete_id==='rider'));eq(await page.locator('[data-other-form]').isHidden(),true,'Coach view is approval only');
   await page.evaluate(()=>{state.view='athlete';paint(true);});await page.waitForFunction(()=>document.querySelector('[data-tier-two-template]'));eq(await page.evaluate(()=>mountCount()),3,'Coach rider profile mounts the custom challenge editor');
-  const editorParent=page.locator('[data-tier-two-editor-host]').locator('..');if(await editorParent.evaluate(el=>el.tagName==='DETAILS'))eq(await editorParent.evaluate(el=>el.open),false,'Coach template options start collapsed');
+  const editorParent=page.locator('[data-tier-two-editor-host]').locator('xpath=ancestor::details[1]');if(await editorParent.evaluate(el=>el.tagName==='DETAILS'))eq(await editorParent.evaluate(el=>el.open),false,'Coach template options start collapsed');
   await page.evaluate(()=>{state.view='home';document.querySelector('#view').textContent='Dashboard';});await page.waitForFunction(()=>mountCount()===0);eq(await page.locator('#view').textContent(),'Dashboard','Navigation observer tears down detached modules');
   await page.evaluate(()=>{state.user={id:'rider'};state.profile={role:'athlete'};state.view='session';paint();});await page.waitForFunction(()=>mountCount()===2);
   await page.evaluate(()=>{disabled=true;mountDailyFeatures();});await page.waitForFunction(()=>mountCount()===0);eq(await page.locator('[data-other-landed-panel]').count(),0,'Disabling access tears down controls even before dashboard replaces the DOM');eq(await page.locator('[data-daily-tier-two-host]').textContent(),'');

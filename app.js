@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.128";
+const RELEASE_VERSION = "2.14.129";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -586,7 +586,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.128" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.129" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7553,8 +7553,12 @@ function clearDailyFeatureMounts() {
   for (const mounted of dailyFeatureMounts.values()) mounted.handle.destroy?.();
   dailyFeatureMounts.clear();
 }
-function dailyFeatureHosts(athleteId, templateEditor = false) {
-  return `<div data-daily-tier-two-host="${escapeHtml(athleteId)}"></div><div data-other-landed-host="${escapeHtml(athleteId)}"></div>${templateEditor ? `<details class="panel panel-accordion"><summary>Tier 2 challenge · coach settings</summary><div data-tier-two-editor-host="${escapeHtml(athleteId)}"></div></details>` : ""}`;
+function dailyFeatureHosts(athleteId) {
+  return `<div data-daily-tier-two-host="${escapeHtml(athleteId)}"></div><div data-other-landed-host="${escapeHtml(athleteId)}"></div>`;
+}
+function tierTwoEditorSection(athleteId) {
+  if (!athleteId || !isCoachRole(state.profile?.role)) return "";
+  return planAccordionSection("Tier 2", "Bonus Daily list · unlocks after all Daily tricks · +4 points", `<div data-tier-two-editor-host="${escapeHtml(athleteId)}"></div>`);
 }
 function mountDailyFeatures() {
   if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) { clearDailyFeatureMounts(); return; }
@@ -7565,7 +7569,21 @@ function mountDailyFeatures() {
     const athleteId = host.dataset.otherLandedHost || host.dataset.tierTwoEditorHost || host.dataset.dailyTierTwoHost;
     const key = `${userId}:${view}:${type}:${athleteId}`;
     const previous = dailyFeatureMounts.get(key);
-    if (previous) { if (host !== previous.host) host.replaceWith(previous.host); if (type === "tier") void previous.handle.refresh?.({eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true}); return; }
+    if (previous) {
+      if (host !== previous.host) {
+        if (type === "editor") {
+          let oldPanel = previous.host.closest("details"), newPanel = host.closest("details");
+          while (oldPanel && newPanel) {
+            newPanel.open = oldPanel.open;
+            oldPanel = oldPanel.parentElement?.closest("details");
+            newPanel = newPanel.parentElement?.closest("details");
+          }
+        }
+        host.replaceWith(previous.host);
+      }
+      if (type === "tier") void previous.handle.refresh?.({eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true});
+      return;
+    }
     const isCurrent = () => state.user?.id === userId && state.view === view && host.isConnected && !riderFeaturesDisabled() && !riderFeatureAccessUnknown();
     const changed = result => {
       cacheClear("leaderboard:"); cacheClear("leaderboard-home:"); cacheClear("tricktionary:"); cacheClear("run-plans:"); cacheClear("coach-command:");
@@ -10861,6 +10879,7 @@ function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
       </div>`}
       <button class="primary-btn compact-save-btn" type="submit">Save ${escapeHtml(info.label)}</button>
     </form>
+    ${listId === "daily" ? tierTwoEditorSection(entry.athlete.id) : ""}
   </details>`;
 }
 
@@ -13393,7 +13412,7 @@ async function renderStudentProfile() {
       <button class="danger-btn compact-btn" type="button" data-unlink-parent="${parent.id}">Unlink</button>
     </div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
-  const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete });
+  const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete, tierTwoAthleteId: athlete.id });
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
   const scoreXp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
@@ -13412,7 +13431,7 @@ async function renderStudentProfile() {
       <button class="secondary-btn next-week-list-btn" type="button" id="schedule-next-week-list">Schedule next week's list</button>
       ${template ? `<button class="secondary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}
     </section>
-    ${dailyFeatureHosts(athlete.id, true)}
+    ${dailyFeatureHosts(athlete.id)}
     <section class="student-profile-summary" aria-label="Rider progress summary">
       <article><span>Weekly points</span><strong ${pointsReceiptAttributes(athlete.id)}>${Number(weeklyRow?.weekly_points || 0)}</strong></article>
       <article><span>Daily days</span><strong>${dailyDone}/7</strong></article>
@@ -13625,6 +13644,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       <div class="venue-edit-panels">${dailyVenueEditors}</div>
       ${customVenueEditor}
     </div>`)}
+    ${options.tierTwoAthleteId ? tierTwoEditorSection(options.tierTwoAthleteId) : ""}
     ${otherCategoryEditor}
   </div>`;
 }

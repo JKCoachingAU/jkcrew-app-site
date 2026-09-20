@@ -2,7 +2,7 @@
 
 Tier 2 is an optional second round unlocked by a confirmed, fully completed standard Daily result. A saved partial finish never qualifies, including when its remaining tricks are ticked later. No existing Tier 1 progress, reward, XP, personal-best or finish function is replaced.
 
-The default is a fresh round of the same coach-assigned Daily tricks. A linked coach can configure 1–20 custom tricks in the rider's existing content screen. The template is copied at unlock. Template/sheet changes never rewrite an already unlocked round or historical evidence. If the standard list changed between its qualifying finish and unlock, the server asks the coach to configure the challenge rather than silently substituting different tricks.
+The default is a fresh round of the same coach-assigned Daily tricks. A linked coach can configure 1–20 custom tricks under **Edit current list → Tier 2**, or **Session Viewer → Daily Tricks → Edit Daily → Tier 2**. Use **Save Tier 2** to save this bonus list separately from the standard schedule. This current template is not part of the next-week scheduler. The template is copied at unlock. Template/sheet changes never rewrite an already unlocked round or historical evidence. If the standard list changed between its qualifying finish and unlock, the server asks the coach to configure the challenge rather than silently substituting different tricks.
 
 ## Integration
 
