@@ -6,7 +6,7 @@
   const icon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
   function mount(element, options) {
     if (!element || !options?.client || !options.athleteId) throw new Error('Tier 2 requires a host, client and rider.');
-    let disposed = false, busy = false, data = null, error = '', request = 0, reveal = false, resetTimer = null;
+    let disposed = false, busy = false, data = null, error = '', request = 0, reveal = false, resetTimer = null, eligible = false;
     const active = () => !disposed && element.isConnected !== false && (!options.isCurrent || options.isCurrent());
     const canEdit = () => !!options.canEdit && !data?.historical;
     const rpc = async (name, args = {}) => {
@@ -32,7 +32,7 @@
     function render() {
       if (!active()) return;
       element.hidden = !data?.unlocked;
-      if (element.hidden && error && options.eligibleHint) {
+      if (element.hidden && error && (eligible || options.eligibleHint)) {
         element.hidden = false;
         element.innerHTML = `<section class="daily-tier-two" aria-label="Daily Tier 2"><h3>Tier 2</h3><div class="daily-tier-two__error" role="alert">${escape(error)} <button type="button" data-tier-two-action="refresh">Retry</button></div></section>`;
         return;
@@ -67,6 +67,7 @@
       try {
         let next = await rpc('get_daily_tier_two', options.localDate ? { p_local_date: options.localDate } : {});
         if (!active() || token !== request || !next) return null;
+        eligible = next.eligible === true;
         if (!next.unlocked && next.eligible && options.canEdit && !options.localDate) next = await rpc('unlock_daily_tier_two');
         if (!active() || token !== request || !next) return null;
         data = next; error = ''; scheduleReset(); render(); return data;

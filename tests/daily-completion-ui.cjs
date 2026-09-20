@@ -4,7 +4,7 @@ const screenshotDir=process.env.JKCREW_SCREENSHOT_DIR;
 if(screenshotDir)fs.mkdirSync(screenshotDir,{recursive:true});
 const capture=async(page,name)=>{if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,name+'.png'),animations:'disabled'});};
 const root = path.resolve(__dirname, '..'), app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-const names = ['dailyFeatureHosts','sessionStatBarHtml','latestDailyTime','dailySessionHubHtml','assignmentList','dailyVenueGroups','assignmentGroups','loadActiveSession','renderSession','rememberSessionExpansions','riderSessionRefreshButtonHtml','updateTimer','startSession','recordAssignmentAction','getActiveCoachGroupSession','invalidateSessionViewerData','invalidateCachesForRealtime','refreshSessionViewerLight','sessionViewerRiderCountersHtml','sessionViewerRiderCardHtml','sessionViewerAssignmentsForList','sessionViewerListContent','finishViewerDailyTimer','recordViewerAssignmentAction'];
+const names = ['dailyTierTwoHost','otherLandedHost','dailyFeatureHosts','sessionStatBarHtml','latestDailyTime','dailySessionHubHtml','assignmentList','dailyVenueGroups','assignmentGroups','loadActiveSession','renderSession','rememberSessionExpansions','riderSessionRefreshButtonHtml','updateTimer','startSession','recordAssignmentAction','getActiveCoachGroupSession','invalidateSessionViewerData','invalidateCachesForRealtime','refreshSessionViewerLight','sessionViewerRiderCountersHtml','sessionViewerRiderCardHtml','sessionViewerAssignmentsForList','sessionViewerListContent','finishViewerDailyTimer','recordViewerAssignmentAction'];
 const actual = names.map(name => {
   const start = app.search(new RegExp('^(?:async )?function ' + name + '\\(', 'm'));
   assert(start >= 0, name);

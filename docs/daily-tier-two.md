@@ -35,9 +35,9 @@ await editor.ready;
 editor.destroy();
 ```
 
-Both controllers expose `refresh`, `ready`, `destroy`; the rider controller also exposes `getState`. `destroyAll()` tears down all current controllers for logout/access restriction. `localDate: 'YYYY-MM-DD'` requests a read-only historical snapshot. The module polls only while visible, refreshes on focus, and schedules the server-provided midnight reset. All requests time out after 15 seconds; `timeoutMs` is available for tests. A saved result can safely be retried after a timeout.
+Both controllers expose `refresh`, `ready`, `destroy`; the rider controller also exposes `getState`. `destroyAll()` tears down all current controllers for logout/access restriction. `localDate: 'YYYY-MM-DD'` requests a read-only historical snapshot. The module polls only while visible, refreshes on focus, and schedules the server-provided midnight reset. All requests time out after 15 seconds; `timeoutMs` is available for tests. A saved result can safely be retried after a timeout. If the server confirms eligibility but unlocking fails, a visible Retry message remains even when no active-session hint is available.
 
-Before eligibility the host is hidden. `eligibleHint` only enables a useful retry card when a known full finish cannot load its unlocked content; it never grants server eligibility. Keyboard focus moves from Open Tier 2 to the first checkbox. The reveal and staggered list/particles happen only for the winning server reveal claim, with a reduced-motion alternative. Subsequent refreshes do not replay them.
+In rider sessions (including coach-started team sessions), the Tier 2 card sits directly below the Daily timer, before other lists. In the coach Team Session, it appears immediately below the selected rider’s list tabs. Before eligibility the host is hidden. A full confirmed Daily result is required: ticking every trick alone does not confirm the finish. `eligibleHint` only enables a useful retry card when a known full finish cannot load its unlocked content; it never grants server eligibility. Keyboard focus moves from Open Tier 2 to the first checkbox. The reveal and staggered list/particles happen only for the winning server reveal claim, with a reduced-motion alternative. Subsequent refreshes do not replay them.
 
 ## RPCs and result shape
 
