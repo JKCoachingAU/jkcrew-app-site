@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.130";
+const version = "2.14.131";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -152,7 +152,7 @@ assert(functionBody("requestPasswordReset").includes("resetPasswordForEmail"), "
 assert(functionBody("requestPasswordReset").includes("redirectTo: redirectUrl.href"), "Password recovery must return the rider to JKCREW");
 assert(functionBody("init").includes('event === "PASSWORD_RECOVERY"'), "The app must detect Supabase password-recovery sessions");
 assert(functionBody("init").includes('withTimeout(client.auth.getSession(), "Sign in check", 8000)'), "Startup session recovery must fail fast enough to leave login usable");
-assert(functionBody("init").includes('if (event === "INITIAL_SESSION")'), "A delayed Supabase initial session must still resume the installed app");
+assert(functionBody("init").includes('event === "INITIAL_SESSION"'), "A delayed Supabase initial session must still resume the installed app");
 assert(functionBody("init").includes("handleSessionOnce(nextSession)"), "Supabase auth events must open a recovered session without an app restart");
 assert(functionBody("handleSessionOnce").includes("state.sessionHandlePromise !== sessionPromise"), "An older auth completion must not clear a newer session attempt");
 const sessionHandlerStart = app.indexOf("async function handleSession(session)");
@@ -191,15 +191,15 @@ assert(navigationLoading.includes("loadingToken !== state.loadingOverlayToken ||
 assert(navigationLoading.includes("mountStartupPrompts()"), "Update and notification prompts should wait until the first screen is ready");
 assert(!functionBody("renderShell").includes("mountWhatsNewPrompt()"), "The app shell must not put an onboarding dialog underneath its own loader");
 const athleteHome = functionBody("renderAthleteHome");
-assert(athleteHome.includes("void secondaryDataPromise.then"), "Optional athlete-home details must hydrate without holding the full-screen loader open");
+assert(athleteHome.includes("void run();") && athleteHome.includes("withTimeout("), "Optional athlete-home sections must hydrate independently with bounded waits");
 assert(css.includes(".screen-loading-overlay"), "The JKCREW loading popup needs its branded overlay styling");
 assert(css.includes(".screen-loading-track"), "The loading popup needs the coloured JKCREW progress route");
 assert(functionBody("updateRecoveredPassword").includes("client.auth.updateUser({ password })"), "The recovery screen must securely save the new Supabase password");
 assert(functionBody("updateRecoveredPassword").includes("password !== confirmPassword"), "The recovery screen must verify both password entries match");
 assert(app.includes('const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre"'), "What's New needs a fresh notification-centre campaign key");
 assert(serviceWorker.includes("await self.skipWaiting()"), "Service-worker installation must finish activation before the install event can end");
-assert(serviceWorker.includes("await Promise.all(windows.map"), "Service-worker activation must wait for every open app window to be refreshed");
-assert(serviceWorker.includes("await client.navigate(url.href)"), "Installed apps must navigate to the new version before activation completes");
+assert(!serviceWorker.includes("client.navigate("), "The worker must not interrupt first-login forms or compete with page-owned upgrade reloads");
+assert(app.includes("if (!wasControlled || !controller) {"), "First worker installation must preserve the current login form");
 assert(serviceWorker.includes('event.data?.type === "JKCREW_ACTIVATE_RELEASE"'), "The app must be able to activate a waiting release immediately");
 assert(app.includes('navigator.serviceWorker.addEventListener("controllerchange"'), "An installed app must reload after its service-worker controller changes");
 assert(app.includes('window.addEventListener("pageshow"'), "Returning to an installed app must check for a new release");
@@ -275,7 +275,7 @@ assert(functionBody("levelBadgeImageUrl").includes("safeLevel > 45"), "Levels wi
 assert(functionBody("getXpSummary").includes('.from("athlete_badges")'), "Badge loading must verify the permanent earned-badge ledger");
 assert(functionBody("getXpSummary").includes("highestPersistedLevel"), "A saved badge level must not be replaced by a lower calculated level");
 assert(lifetimeXpBadgeMigration.includes("public.level_for_xp(coalesce(profile.xp_total, 0))"), "Leaderboard badge levels must come from lifetime XP");
-assert(functionBody("renderAthleteHome").includes("{ ...(leaderboardRow || {}), ...state.profile, weekly_points: weeklyPoints }"), "Athlete Home must not let score rows override permanent XP profile levels");
+assert(functionBody("renderAthleteHome").includes("riderXpSummary(state.profile)"), "Athlete Home must not let score rows override permanent XP profile levels");
 const normalizeXpSummaryForTest = new Function(`
   const XP_LEVEL_CAP = 50;
   const PRESTIGE_LEVEL = 51;
@@ -1504,16 +1504,16 @@ assert(closeAthleteViewerBody.includes('video.removeAttribute("src")'), "Closing
 assert(closeAthleteViewerBody.includes("releaseVideoReviewMedia(requestId)"), "Closing a Coaching review must clear cached signed media");
 assert(functionBody("handleSession(").includes("closeAthleteReviewViewer()"), "Signing out or switching accounts must close any private Coaching review");
 const athleteHomeBody = functionBody("renderAthleteHome");
-assert(athleteHomeBody.includes("getHelpRequestSummaries(state.user.id)"), "Athlete Home must load lightweight Coaching reply status");
-assert(athleteHomeBody.includes("getAthleteHomeLeaderboard()"), "Athlete Home must avoid the heavier profile-hydrated leaderboard path");
-assert(athleteHomeBody.includes("getWeeklyAssignments(state.user.id, { includeAssignmentAttempts: false })"), "Athlete Home must skip detailed attempt history it does not display");
+assert(athleteHomeBody.includes("getHelpRequestSummaries(viewerId)"), "Athlete Home must load lightweight Coaching reply status");
+assert(athleteHomeBody.includes("getAthleteHomeVerifiedLeaderboard"), "Athlete Home must avoid the heavier profile-hydrated leaderboard path");
+assert(athleteHomeBody.includes("getWeeklyAssignments(viewerId, { includeAssignmentAttempts: false, force })"), "Athlete Home must skip detailed attempt history it does not display");
 assert(!athleteHomeBody.includes("getRiderBattleHistory()"), "Athlete Home must not request the same battle payload twice");
 assert(athleteHomeBody.includes('battle.status === "completed"'), "Athlete Home must derive battle history from its one battle response");
 assert(athleteHomeBody.includes("athleteHomeRenderVersion"), "Background Home hydration must be guarded against stale renders");
 assert(athleteHomeBody.includes('id="athlete-home-week"'), "Athlete Home must render its main dashboard before secondary weekly data finishes");
 assert(athleteHomeBody.includes("athleteRunBuilderCtaHtml()"), "Athlete Home must display the live Run Builder action");
 assert(athleteHomeBody.includes("openRunBuilder") && functionBody("openRunBuilder").includes('navigate("contests")'), "The Home Run Builder action must open Contests through the shared launch handler");
-assert(athleteHomeBody.includes("athleteCoachingCtaHtml(coachingRequests)"), "Athlete Home must display the video-help action");
+assert(athleteHomeBody.includes("athleteCoachingCtaHtml(requests)"), "Athlete Home must display the video-help action");
 assert(!athleteHomeBody.includes("rememberCoachingReplies(coachingRequests)"), "The Home notification badge must remain visible until the Coaching page actually opens");
 const homeLeaderboardBody = functionBody("getAthleteHomeLeaderboard");
 assert(homeLeaderboardBody.includes('client.rpc("get_weekly_leaderboard")'), "The lightweight Home leaderboard must use the existing leaderboard rules");

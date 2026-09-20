@@ -11,11 +11,12 @@ const extract = name => {
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
 const names = [
+  'isTransientRequestError', 'retryNetworkRequest',
   'riderFeaturesDisabled', 'riderFeatureAccessUnknown', 'showRiderAccessMessage',
   'refreshRiderFeatureAccess', 'closeRestrictedRiderFeatures', 'startRiderFeatureAccessWatch',
   'guardRiderFeatureInteraction', 'renderRestrictedRiderHome', 'riderAccessToggleHtml',
   'toggleRiderFeatureAccess', 'renderCrew', 'renderShell', 'navigate', 'resetPageExpansions',
-  'signOutCurrentDevice', 'renderAthleteHome',
+  'signOutCurrentDevice', 'athleteHomeSectionStatus', 'getAthleteHomeVerifiedLeaderboard', 'renderAthleteHome',
 ];
 const accessConstant = app.match(/^const RIDER_ACCESS_MESSAGE = .*;$/m)?.[0];
 assert(accessConstant, 'Actual restriction message exists');
@@ -45,6 +46,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
         videoReviewRecordedReplies: new Map(), videoReviewMedia: new Map(),
       };
       window.liveRun = null; window.clearDailyFeatureMounts = () => {};
+      window.wait = () => Promise.resolve();
       window.qaCalls = []; window.qaNotices = []; window.qaActions = []; window.qaClosed = [];
       window.qaDisabled = true; window.qaFailRead = false; window.qaFailWrite = false;
       window.qaHoldRead = false; window.qaHeldReads = []; window.qaHoldWrite = false; window.qaHeldWrites = [];

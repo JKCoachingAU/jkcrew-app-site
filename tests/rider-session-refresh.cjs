@@ -98,6 +98,8 @@ const names = [
       window.getParkKing = async () => null;
       window.dailySessionHubHtml = (_rows, venue) => `<div class="qa-selected-venue">${venue}</div><button id="create-session">Start daily timer</button>`;
       window.parkKingCardHtml = window.sheetRulesButtonHtml = () => '';
+      window.dailyTierTwoHost = window.otherLandedHost = () => '';
+      window.mountDailyFeatures = () => {};
       window.saveExtraTricks = async (tricks, message) => { (qa.extraSaves ||= []).push({ tricks: structuredClone(tricks), message }); };
       if (!crypto.randomUUID) crypto.randomUUID = () => 'synthetic-extra-trick';
       window.escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');

@@ -1,42 +1,42 @@
 const CACHE_PREFIX = "jkcrew-riley-shell-";
-const RELEASE_VERSION = "2.14.130";
+const RELEASE_VERSION = "2.14.131";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.130",
-  "./app.js?v=2.14.130",
-  "./daily-completion.js?v=2.14.130",
-  "./daily-tier-two.js?v=2.14.130",
-  "./daily-tier-two.css?v=2.14.130",
-  "./other-things-landed.js?v=2.14.130",
-  "./other-things-landed.css?v=2.14.130",
-  "./live-run-call.js?v=2.14.130",
-  "./live-run-call.css?v=2.14.130",
-  "./daily-completion.css?v=2.14.130",
-  "./progress-sharing.js?v=2.14.130",
-  "./progress-sharing.css?v=2.14.130",
-  "./battle-rematches.js?v=2.14.130",
-  "./battle-rematches.css?v=2.14.130",
-  "./bike-parts-catalog.js?v=2.14.130",
-  "./bike-config.js?v=2.14.130",
-  "./bike-seat-designs.js?v=2.14.130",
-  "./bike-photo-masks.js?v=2.14.130",
-  "./bike-renderer.js?v=2.14.130",
-  "./bike-preview.js?v=2.14.130",
-  "./bike-preview.css?v=2.14.130",
-  "./bike-three.js?v=2.14.130",
-  "./bike-garage.js?v=2.14.130",
-  "./bike-garage.css?v=2.14.130",
-  "./manifest.webmanifest?v=2.14.130",
+  "./styles.css?v=2.14.131",
+  "./app.js?v=2.14.131",
+  "./daily-completion.js?v=2.14.131",
+  "./daily-tier-two.js?v=2.14.131",
+  "./daily-tier-two.css?v=2.14.131",
+  "./other-things-landed.js?v=2.14.131",
+  "./other-things-landed.css?v=2.14.131",
+  "./live-run-call.js?v=2.14.131",
+  "./live-run-call.css?v=2.14.131",
+  "./daily-completion.css?v=2.14.131",
+  "./progress-sharing.js?v=2.14.131",
+  "./progress-sharing.css?v=2.14.131",
+  "./battle-rematches.js?v=2.14.131",
+  "./battle-rematches.css?v=2.14.131",
+  "./bike-parts-catalog.js?v=2.14.131",
+  "./bike-config.js?v=2.14.131",
+  "./bike-seat-designs.js?v=2.14.131",
+  "./bike-photo-masks.js?v=2.14.131",
+  "./bike-renderer.js?v=2.14.131",
+  "./bike-preview.js?v=2.14.131",
+  "./bike-preview.css?v=2.14.131",
+  "./bike-three.js?v=2.14.131",
+  "./bike-garage.js?v=2.14.131",
+  "./bike-garage.css?v=2.14.131",
+  "./manifest.webmanifest?v=2.14.131",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.130",
+  "./icons/badges/prestige-01.png?v=2.14.131",
 ];
 
 // Public bike photos are fetched only when the garage needs them, then cached.
@@ -71,7 +71,7 @@ const BIKE_PHOTO_ASSETS = [
 
 // 3D code is optional public content, cached after opening Bike Garage.
 const BIKE_3D_ASSETS = [
-  "./bike-three-model.js?v=2.14.130",
+  "./bike-three-model.js?v=2.14.131",
   "./vendor/three.module.min.js",
   "./vendor/three.core.min.js",
   "./vendor/OrbitControls.js",
@@ -91,22 +91,17 @@ self.addEventListener("activate", (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
     await self.clients.claim();
-    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    await Promise.all(windows.map(async (client) => {
-      const url = new URL(client.url);
-      if (url.origin !== self.location.origin || url.searchParams.get("jkcrew-version") === RELEASE_VERSION) return;
-      url.searchParams.delete("jkcrew-updated");
-      url.searchParams.set("jkcrew-version", RELEASE_VERSION);
-      try {
-        await client.navigate(url.href);
-      } catch (_) {
-        // A window can close while a new release is activating; keep updating the remaining clients.
-      }
-    }));
+    // The page handles upgrades on controllerchange. Navigating here as well
+    // races that handler and would wipe the sign-in form on first installation.
+    // Older open releases already have the same controllerchange reload owner.
   })());
 });
 
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "JKCREW_GET_RELEASE_VERSION") {
+    event.ports?.[0]?.postMessage({ type: "JKCREW_RELEASE_VERSION", version: RELEASE_VERSION });
+    return;
+  }
   if (event.data?.type === "JKCREW_ACTIVATE_RELEASE") event.waitUntil(self.skipWaiting());
 });
 

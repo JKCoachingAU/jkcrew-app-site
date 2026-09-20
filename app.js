@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.130";
+const RELEASE_VERSION = "2.14.131";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -100,6 +100,9 @@ const state = {
   inFlight: new Map(),
   sessionHandlePromise: null,
   sessionHandleUserId: "",
+  authEventVersion: 0,
+  authEventUserId: "",
+  sessionSetupVersion: 0,
   pendingAssignmentProgress: new Map(),
   pendingPercentageAttempts: new Map(),
   coachRosterIds: new Set(),
@@ -143,13 +146,14 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
   if (state.profile?.role !== "athlete" || !state.user?.id) return true;
   if (!force && state.riderAccess && Date.now() - state.riderAccessCheckedAt < 10000) return !riderFeaturesDisabled();
   const userId = state.user.id;
+  const setupVersion = state.sessionSetupVersion;
   if (!state.riderAccessRequest) {
     const request = (async () => {
-      const { data, error } = await withTimeout(client.rpc("get_rider_feature_access"), "Feature access check", 10000);
+      const { data, error } = await retryNetworkRequest(() => client.rpc("get_rider_feature_access"), "Feature access check", { attempts: 2, timeoutMs: 10000 });
       if (error) throw error;
       const access = (Array.isArray(data) ? data : [data]).find(row => row?.athlete_id === userId);
       if (!access || typeof access.features_disabled !== "boolean") throw new Error("Feature access could not be verified.");
-      if (state.user?.id !== userId) return;
+      if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return;
       state.riderAccess = access;
       state.riderAccessCheckedAt = Date.now();
     })();
@@ -158,12 +162,12 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
   }
   try { await state.riderAccessRequest; }
   catch (error) {
-    if (state.user?.id !== userId) return false;
+    if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return false;
     state.riderAccessCheckedAt = 0;
     console.warn("Feature access check unavailable", error);
     return false;
   }
-  if (state.user?.id !== userId) return false;
+  if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return false;
   if (enforce && riderFeaturesDisabled() && document.querySelector("#view") && !document.querySelector("#rider-access-dashboard")) {
     closeRestrictedRiderFeatures();
     await navigate("home", { accessChecked: true });
@@ -586,7 +590,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.130" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.131" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1298,7 +1302,9 @@ function setButtonBusy(button, label) {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isTransientRequestError(error) {
-  const message = messageFrom(error, "");
+  // Classify the original error, before messageFrom replaces network details
+  // with friendly copy that no longer contains the words we need to match.
+  const message = typeof error === "string" ? error : [error?.message, error?.error_description, error?.details, error?.hint, error?.statusText].filter(Boolean).join(" ");
   const status = Number(error?.status || error?.statusCode || 0);
   const code = String(error?.code || "");
   return status >= 500
@@ -1350,35 +1356,35 @@ function recordMyAppOpen() {
 
 async function init() {
   renderAuth("login", "Checking JKCREW connection...");
-  let passwordRecoveryEventReceived = false;
+  const initialAuthVersion = state.authEventVersion || 0;
   client.auth.onAuthStateChange((event, nextSession) => {
-    if (event === "PASSWORD_RECOVERY") {
-      passwordRecoveryEventReceived = true;
-      setTimeout(() => {
+    if (event === "INITIAL_SESSION" && state.authEventVersion !== initialAuthVersion) return;
+    if (event === "INITIAL_SESSION" && !nextSession) return;
+    const eventVersion = state.authEventVersion = (state.authEventVersion || 0) + 1;
+    state.authEventUserId = nextSession?.user?.id || "";
+    if (event === "PASSWORD_RECOVERY" || (nextSession?.user?.id || "") !== (state.user?.id || "")) {
+      // Stop old profile work immediately, even before the deferred handler runs.
+      state.sessionSetupVersion = (state.sessionSetupVersion || 0) + 1;
+      state.sessionReadyUserId = "";
+    }
+    // Leave the auth callback immediately: Supabase calls inside it can hold
+    // the auth lock. Only the newest queued auth event may update the screen.
+    setTimeout(() => {
+      if (eventVersion !== state.authEventVersion) return;
+      if (event === "PASSWORD_RECOVERY") {
         state.session = nextSession || null;
         state.user = nextSession?.user || null;
         renderPasswordRecovery();
-      }, 0);
-      return;
-    }
-    // getSession and INITIAL_SESSION normally arrive together. If a mobile
-    // browser delays one of them, accept the other instead of making the user
-    // close and reopen the installed app.
-    if (event === "INITIAL_SESSION") {
-      if (!nextSession) return;
-      setTimeout(() => {
-        handleSessionOnce(nextSession).catch((error) => {
-          console.error("Initial session setup failed", error);
-          renderBootRecovery(messageFrom(error));
-        });
-      }, 0);
-      return;
-    }
-    if (nextSession?.user?.id === state.user?.id && nextSession) return;
-    // Leave the auth callback immediately; profile queries inside this callback can
-    // block Supabase's auth lock and make a successful sign-in appear frozen.
-    setTimeout(() => {
+        return;
+      }
+      if (nextSession && isPasswordRecoveryUrl()) {
+        state.session = nextSession;
+        state.user = nextSession.user;
+        renderPasswordRecovery();
+        return;
+      }
       handleSessionOnce(nextSession).catch((error) => {
+        if (eventVersion !== state.authEventVersion) return;
         console.error("Session setup failed", error);
         renderBootRecovery(messageFrom(error));
       });
@@ -1387,14 +1393,19 @@ async function init() {
   let session = null;
   try {
     const result = await withTimeout(client.auth.getSession(), "Sign in check", 8000);
+    if (initialAuthVersion !== state.authEventVersion) return;
+    if (result.error) throw result.error;
     session = result.data?.session || null;
   } catch (error) {
-    renderAuth("login", messageFrom(error));
+    // INITIAL_SESSION / SIGNED_IN may have already restored a valid session.
+    // A late startup timeout must never replace that account with a login form.
+    if (initialAuthVersion !== state.authEventVersion) return;
+    renderBootRecovery(messageFrom(error));
     return;
   }
-  if (passwordRecoveryEventReceived || (session && isPasswordRecoveryUrl())) {
+  if (session && isPasswordRecoveryUrl()) {
     state.session = session;
-    state.user = session?.user || null;
+    state.user = session.user;
     renderPasswordRecovery();
     return;
   }
@@ -1403,12 +1414,22 @@ async function init() {
     renderForgotPassword("This reset link has expired or has already been used. Request a new link below.");
     return;
   }
+  if (!session) {
+    // The login form is already usable while restoration runs. Preserve typed
+    // credentials (or a recovery/signup form the rider opened) on a late empty read.
+    const message = document.querySelector(".auth-message");
+    if (message?.textContent === "Checking JKCREW connection...") message.textContent = "";
+    return;
+  }
   await handleSessionOnce(session);
 }
 
 function handleSessionOnce(session) {
   const userId = session?.user?.id || "signed-out";
-  if (state.sessionHandlePromise && state.sessionHandleUserId === userId) return state.sessionHandlePromise;
+  if (state.sessionHandlePromise && state.sessionHandleUserId === userId && state.sessionHandleSetupVersion === state.sessionSetupVersion) {
+    if (session) state.session = session;
+    return state.sessionHandlePromise;
+  }
   if (session && state.sessionReadyUserId === userId && state.profile?.id === userId && document.querySelector("#view")) {
     state.session = session;
     return Promise.resolve();
@@ -1416,6 +1437,7 @@ function handleSessionOnce(session) {
   state.sessionHandleUserId = userId;
   const sessionPromise = handleSession(session);
   state.sessionHandlePromise = sessionPromise;
+  state.sessionHandleSetupVersion = state.sessionSetupVersion;
   const clearCurrentSessionPromise = () => {
     if (state.sessionHandlePromise !== sessionPromise) return;
     state.sessionHandlePromise = null;
@@ -1437,7 +1459,22 @@ function renderBootRecovery(message = "The app could not finish loading.") {
         <button class="secondary-btn" type="button" id="boot-signout">Reset login on this device</button>
       </div>
     </div>`;
-  document.querySelector("#boot-retry")?.addEventListener("click", () => window.location.reload());
+  document.querySelector("#boot-retry")?.addEventListener("click", async (event) => {
+    const restore = setButtonBusy(event.currentTarget, "Loading your account…");
+    const authVersion = state.authEventVersion;
+    try {
+      let session = state.session;
+      if (!session) {
+        const result = await withTimeout(client.auth.getSession(), "Sign in check", 8000);
+        if (authVersion !== state.authEventVersion) return;
+        if (result.error) throw result.error;
+        session = result.data?.session || null;
+      }
+      await handleSessionOnce(session);
+    } catch (error) {
+      if (authVersion === state.authEventVersion) renderBootRecovery(messageFrom(error));
+    } finally { restore(); }
+  });
   document.querySelector("#boot-signout")?.addEventListener("click", async () => {
     clearLocalAuthSession();
     window.location.reload();
@@ -1445,14 +1482,19 @@ function renderBootRecovery(message = "The app could not finish loading.") {
 }
 
 async function handleSession(session) {
+  const setupVersion = state.sessionSetupVersion = (state.sessionSetupVersion || 0) + 1;
+  const nextUserId = session?.user?.id || "";
+  const isCurrent = () => setupVersion === state.sessionSetupVersion && (state.user?.id || "") === nextUserId;
+  state.athleteHomeRenderVersion += 1;
+  state.sessionRenderVersion += 1;
   state.sessionReadyUserId = "";
   cancelScreenLoading();
   clearInterval(state.timer);
   clearInterval(state.riderAccessTimer);
   teardownRealtimeSync();
   document.querySelector("#live-run-invitation")?.remove();
-  const nextUserId = session?.user?.id || "";
   if ((state.user?.id || "") !== nextUserId) {
+    if (state.user) app.innerHTML = "";
     dismissDailyFinishForNavigation();
     closeTrainingProgressViews();
     if (typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
@@ -1484,43 +1526,51 @@ async function handleSession(session) {
   const accountLoadingToken = beginScreenLoading(loadingScreenCopy("account"), 240);
   try {
     let { data, error } = await retryNetworkRequest(
-      () => client.from("profiles").select(PROFILE_SELECT).eq("id", state.user.id).maybeSingle(),
+      () => client.from("profiles").select(PROFILE_SELECT).eq("id", nextUserId).maybeSingle(),
       "Profile load",
       { attempts: 3, timeoutMs: 15000 }
     );
-    if (error || !data) {
+    if (!isCurrent()) return;
+    if (error) throw error;
+    if (!data) {
       const { data: recovered, error: recoveryError } = await withTimeout(
         client.rpc("ensure_current_profile"),
         "Profile recovery",
         12000
       );
-      if (recoveryError || !recovered) {
-        renderBootRecovery("Your account is signed in, but your JKCREW profile did not load. Try again or sign out and back in.");
-        notify(messageFrom(recoveryError || error || "Profile failed to load."), "error");
-        return;
-      }
+      if (!isCurrent()) return;
+      if (recoveryError || !recovered) throw recoveryError || new Error("Your JKCREW profile is not available yet. Please retry loading your account.");
       data = recovered;
     }
+    if (data.id !== nextUserId) throw new Error("Your JKCREW profile could not be verified. Please retry loading your account.");
     state.profile = data;
     await refreshRiderFeatureAccess({ force: true, enforce: false });
+    if (!isCurrent()) return;
     recordMyAppOpen();
     applyTheme(data.app_theme);
     const pushView = new URL(window.location.href).searchParams.get("push");
     const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
     state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
+    if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) state.view = "home";
     if (pushView) {
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete("push");
       window.history.replaceState({}, "", cleanUrl.href);
     }
+  } catch (error) {
+    if (!isCurrent()) return;
+    console.warn("Account loading interrupted", error);
+    renderBootRecovery("You are signed in. Your account could not finish loading. " + messageFrom(error));
+    return;
   } finally {
     finishScreenLoading(accountLoadingToken);
   }
+  if (!isCurrent()) return;
   state.startupPromptsPending = true;
   renderShell();
   state.sessionReadyUserId = state.user.id;
   startRiderFeatureAccessWatch();
-  void navigate(state.view);
+  void navigate(state.view, { accessChecked: true });
   // Realtime is an enhancement, not a gate to opening the app. On a slow
   // mobile connection the roster query used to leave a successful login on
   // the sign-in screen until the app was closed and reopened.
@@ -1717,7 +1767,9 @@ async function updateRecoveredPassword(event) {
 
 async function handleAuth(event, mode) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const authVersion = state.authEventVersion;
+  const authForm = event.currentTarget;
+  const form = new FormData(authForm);
   const email = form.get("email").trim();
   const password = form.get("password");
   const button = event.currentTarget.querySelector("button[type=submit]");
@@ -1734,8 +1786,10 @@ async function handleAuth(event, mode) {
         "Sign in",
         15000
       );
+      if (authForm.isConnected === false) return;
       if (error) {
-        renderAuth(mode, messageFrom(error, "Unable to sign in right now. Please check your email and password, then try again."));
+        if (isTransientRequestError(error)) renderBootRecovery("The connection was interrupted while signing in. Retry to check your saved session. " + messageFrom(error));
+        else renderAuth(mode, messageFrom(error, "Unable to sign in right now. Please check your email and password, then try again."));
         return;
       }
       let nextSession = data?.session || null;
@@ -1745,14 +1799,16 @@ async function handleAuth(event, mode) {
           "Session refresh",
           8000
         );
+        if (authForm.isConnected === false) return;
         if (sessionError) {
-          renderAuth(mode, messageFrom(sessionError, "Sign in worked, but JKCREW could not finish loading your session. Please try again."));
+          renderBootRecovery(messageFrom(sessionError, "Sign in worked, but JKCREW could not finish loading your session. Retry loading your account."));
           return;
         }
         nextSession = sessionData?.session || null;
       }
+      if (nextSession && authVersion !== state.authEventVersion && state.authEventUserId !== nextSession.user.id) return;
       if (nextSession) await handleSessionOnce(nextSession);
-      else renderAuth("login", "Sign in did not finish loading. Please tap Enter JKCREW again.");
+      else renderBootRecovery("Sign in is still connecting. Retry loading your account; you do not need to enter your password again.");
       return;
     }
 
@@ -1779,6 +1835,7 @@ async function handleAuth(event, mode) {
       "Sign in",
       15000
     );
+    if (authForm.isConnected === false) return;
     if (signInError) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
       return;
@@ -1790,12 +1847,23 @@ async function handleAuth(event, mode) {
         "Session refresh",
         8000
       );
+      if (authForm.isConnected === false) return;
       createdSession = sessionData?.session || null;
     }
+    if (createdSession && authVersion !== state.authEventVersion && state.authEventUserId !== createdSession.user.id) return;
     if (createdSession) await handleSessionOnce(createdSession);
     else renderAuth("login", "Account created. Sign in with your new email and password.");
     notify("Welcome to JKCREW. Your account is ready.");
   } catch (error) {
+    if (authForm.isConnected === false) return;
+    if (state.session?.user) {
+      if (!document.querySelector("#view")) renderBootRecovery("You are signed in. Retry loading your account. " + messageFrom(error));
+      return;
+    }
+    if (mode === "login" && isTransientRequestError(error)) {
+      renderBootRecovery("The connection was interrupted while signing in. Retry to check your saved session. " + messageFrom(error));
+      return;
+    }
     renderAuth(mode, messageFrom(error, mode === "login" ? "Unable to sign in right now. Please check your email and password, then try again." : "Unable to create your account right now. Please try again."));
   }
 }
@@ -2300,8 +2368,11 @@ function resetPageExpansions({ expandedNavGroup = "" } = {}) {
 }
 
 async function navigate(view, options = {}) {
+  const viewerId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
   if (state.profile?.role === "athlete" && !options.accessChecked) {
     const allowed = await refreshRiderFeatureAccess({ force: true, enforce: false });
+    if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
     if (!allowed && view !== "home") {
       showRiderAccessMessage();
       if (!document.querySelector("#rider-access-dashboard")) {
@@ -2314,6 +2385,7 @@ async function navigate(view, options = {}) {
   if (state.profile?.role === "athlete" && view !== "home" && (riderFeaturesDisabled() || riderFeatureAccessUnknown())) return showRiderAccessMessage();
   const previousView = state.view;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
+  if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
   if (view !== previousView) dismissDailyFinishForNavigation();
   if (view === previousView && view === "videoReviews" && (state.videoReviewRecording || state.videoReviewRecordingStarting)) return;
   if (previousView === "videoReviews" && view !== "videoReviews") {
@@ -2400,6 +2472,7 @@ async function navigate(view, options = {}) {
   try {
     if (!renders[view]) throw new Error("That screen is not available.");
     await renders[view]();
+    if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
     if ((riderFeaturesDisabled() || riderFeatureAccessUnknown()) && !document.querySelector("#rider-access-dashboard")) {
       closeRestrictedRiderFeatures();
       return navigate("home", { accessChecked: true });
@@ -6804,101 +6877,170 @@ document.addEventListener("click", event => {
 }, true);
 
 
+function athleteHomeSectionStatus(label, retryKey = "") {
+  return `<section class="panel simple-summary" role="status"><div class="panel-head"><div><div class="panel-title">${escapeHtml(label)}</div><div class="panel-meta">${retryKey ? "This section couldn't load. You can keep using the app and try again." : "Loading your latest information…"}</div></div>${retryKey ? `<button class="secondary-btn compact-btn" type="button" data-home-retry="${escapeHtml(retryKey)}">Retry</button>` : ""}</div></section>`;
+}
+
+async function getAthleteHomeVerifiedLeaderboard() {
+  // Home must distinguish unavailable rankings from a verified zero-point week.
+  const { data, error } = await client.rpc("get_weekly_leaderboard");
+  if (error) throw error;
+  if (!Array.isArray(data)) throw new Error("Rankings could not be verified.");
+  return data;
+}
+
 async function renderAthleteHome() {
   if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return renderRestrictedRiderHome();
   const renderVersion = ++state.athleteHomeRenderVersion;
-  const [leaderboard, riderBattles, activeSession] = await Promise.all([
-    getAthleteHomeLeaderboard(),
-    getWeeklyRiderBattles().catch((error) => {
-      console.warn("Rider battles unavailable", error);
-      return [];
-    }),
-    getActiveSession().catch((error) => {
-      console.warn("Active session unavailable", error);
-      return null;
-    }),
-  ]);
-  if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
+  const viewerId = state.user?.id;
+  const loadingToken = state.loadingOverlayToken;
+  const view = document.querySelector("#view");
+  const isCurrent = () => Boolean(viewerId) && state.user?.id === viewerId && state.view === "home"
+    && renderVersion === state.athleteHomeRenderVersion && loadingToken === state.loadingOverlayToken
+    && document.querySelector("#view") === view && !riderFeaturesDisabled() && !riderFeatureAccessUnknown();
+  if (!view || !isCurrent()) return;
   clearInterval(state.timer); state.timer = null;
-  const leaderboardRow = leaderboard.find((row) => row.athlete_id === state.user.id);
-  const weeklyPoints = Number(leaderboardRow?.weekly_points || 0);
-  const rank = leaderboardRow ? leaderboard.findIndex((row) => row.athlete_id === state.user.id) + 1 : 0;
-  const xp = riderXpSummary({ ...(leaderboardRow || {}), ...state.profile, weekly_points: weeklyPoints });
-  const battleHistory = riderBattles.filter((battle) => battle.status === "completed");
-  const battleRecord = riderBattleRecord(battleHistory);
-  if (activeSession) {
-    state.activeTraining = activeSession;
-    state.trickStartedAt = new Date(activeSession.started_at).getTime();
-  }
+  const summary = { leaderboard: null, battles: null, rankingsError: false, battlesError: false };
+  const retries = new Map();
+  const requests = new Map();
+  const retryButton = (key) => `<button class="secondary-btn compact-btn" type="button" data-home-retry="${key}">Retry</button>`;
+  const rankingsHtml = () => {
+    const leaderboard = summary.leaderboard;
+    const row = leaderboard?.find((item) => item.athlete_id === viewerId);
+    const rank = row ? leaderboard.indexOf(row) + 1 : 0;
+    const record = summary.battles ? riderBattleRecord(summary.battles.filter((battle) => battle.status === "completed")) : null;
+    return `<article class="stat-card score-ranking-card with-battle-record">
+      <div class="score-ranking-stat"><div class="stat-label">Weekly score</div><div class="stat-value" ${leaderboard ? pointsReceiptAttributes(viewerId) : ""}>${leaderboard ? `${escapeHtml(Number(row?.weekly_points || 0))}<small>pts</small>` : "—"}</div><div class="stat-foot">${leaderboard ? "This week" : summary.rankingsError ? "Score unavailable" : "Loading score…"}</div></div>
+      <div class="score-ranking-stat"><div class="stat-label">World ranking</div><div class="stat-value">${leaderboard ? rank ? `#${escapeHtml(rank)}` : "—" : "—"}</div><div class="stat-foot">${leaderboard ? `${escapeHtml(leaderboard.length)} riders on board` : summary.rankingsError ? `Rankings unavailable · ${retryButton("rankings")}` : "Loading rankings…"}</div></div>
+      <div class="score-ranking-stat battle-ranking-stat"><div class="stat-label">Battle record</div><div class="stat-value">${record ? `${escapeHtml(record.wins)}<small>W</small> — ${escapeHtml(record.losses)}<small>L</small>` : "—"}</div><div class="stat-foot">${record ? `${escapeHtml(record.winPercent)}% win rate` : summary.battlesError ? `Battles unavailable · ${retryButton("battles")}` : "Loading battles…"}</div></div>
+    </article>`;
+  };
+  const bindRetries = () => view.querySelectorAll("[data-home-retry]").forEach((button) => {
+    button.onclick = () => { if (isCurrent()) void retries.get(button.dataset.homeRetry)?.(); };
+  });
+  const paintRankings = () => {
+    view.querySelector(".home-scoreboard-summary").innerHTML = rankingsHtml();
+    bindRetries();
+  };
+  const bindCoaching = () => view.querySelector("#open-athlete-coaching")?.addEventListener("click", () => {
+    if (isCurrent()) navigate("coaching");
+  });
 
-  document.querySelector("#view").innerHTML = `
+  // Profile and navigation are ready now; optional network sections never hold up Home.
+  view.innerHTML = `
     <div id="athlete-home-coach-messages"></div>
-    ${battleDashboardAlertsHtml(riderBattles)}
+    <div id="athlete-home-battle-alerts"></div>
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
-      <div class="scoreboard-stats home-scoreboard-summary">
-        ${scoreRankingCard(weeklyPoints, rank, leaderboard.length, battleRecord)}
-      </div>
-      ${xpProgressHtml(xp)}
+      <div class="scoreboard-stats home-scoreboard-summary">${rankingsHtml()}</div>
+      ${xpProgressHtml(riderXpSummary(state.profile))}
     </section>
     <div id="athlete-home-milestones"></div>
     ${athleteRunBuilderCtaHtml()}
     <div id="athlete-home-coaching">${athleteCoachingCtaHtml([])}</div>
-    ${activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Daily Tricks timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${activeSession.total_points} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : ""}
+    <div id="athlete-home-active-session">${athleteHomeSectionStatus("Current session")}</div>
     ${quoteSection()}
-    <div id="athlete-home-week"><section class="panel simple-summary"><div class="panel-head"><div><div class="panel-title">This week</div><div class="panel-meta">Loading your latest progress…</div></div></div></section></div>
+    <div id="athlete-home-week">${athleteHomeSectionStatus("This week")}</div>
     ${goalsSection(state.profile)}
     <div id="athlete-home-proposals"></div>
     <div id="athlete-home-trick-requests"></div>
     ${typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}`;
   bindGoalActions();
-  document.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => navigate("bikeGarage"));
-  document.querySelector("#open-home-run-builder")?.addEventListener("click", openRunBuilder);
-  document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => navigate("coaching"));
-  document.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => navigate("challenges")));
-  if (activeSession) {
-    updateTimer();
-    if (activeSession.daily_completed_seconds == null) state.timer = setInterval(updateTimer, 1000);
-  }
+  view.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => { if (isCurrent()) navigate("bikeGarage"); });
+  view.querySelector("#open-home-run-builder")?.addEventListener("click", (event) => { if (isCurrent()) openRunBuilder(event); });
+  bindCoaching();
+  const coachingStatus = view.querySelector("#athlete-home-coaching .coaching-cta-status");
+  if (coachingStatus) coachingStatus.textContent = "Checking coaching replies…";
 
-  const secondaryDataPromise = Promise.all([
-    getWeeklyAssignments(state.user.id, { includeAssignmentAttempts: false }).catch((error) => {
-      console.warn("Home week summary unavailable", error);
-      return { assignments: [], awards: [], percentageAttempts: [], assignmentAttempts: [] };
-    }),
-    getTrickRequestsForAthlete(state.user.id).catch(() => []),
-    getRiderSheetProposals(state.user.id).catch(() => []),
-    getMyCoachMessages(3).catch((error) => {
-      console.warn("Coach messages unavailable", error);
-      return [];
-    }),
-    getHelpRequestSummaries(state.user.id).catch((error) => {
-      console.warn("Coaching reply summary unavailable", error);
-      return [];
-    }),
-    getMyProgressMilestones().catch((error) => {
-      console.warn("Private milestones unavailable", error);
-      return {};
-    }),
-  ]);
-  void secondaryDataPromise.then(([schedule, trickRequests, sheetProposals, coachMessages, coachingRequests, milestones]) => {
-    if (state.view !== "home" || renderVersion !== state.athleteHomeRenderVersion) return;
-    const { assignments = [], awards = [] } = schedule;
-    document.querySelector("#athlete-home-milestones").innerHTML = privateProgressMilestonesHtml(milestones);
-    document.querySelector("#athlete-home-coach-messages").innerHTML = coachMessagesHtml(coachMessages);
-    document.querySelector("#athlete-home-coaching").innerHTML = athleteCoachingCtaHtml(coachingRequests);
-    document.querySelector("#athlete-home-week").innerHTML = weekSummaryHtml(assignments, awards);
-    document.querySelector("#athlete-home-proposals").innerHTML = riderProposalForm(sheetProposals);
-    document.querySelector("#athlete-home-trick-requests").innerHTML = athleteTrickRequestSection(assignments, trickRequests);
-    document.querySelector("#open-athlete-coaching")?.addEventListener("click", () => navigate("coaching"));
-    document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
-    document.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => document.querySelector("#rider-proposal-builder")?.classList.toggle("hidden"));
-    const riderProposalFormElement = document.querySelector("#rider-proposal-form");
-    riderProposalFormElement?.addEventListener("submit", submitRiderSheetProposal);
-    riderProposalFormElement?.addEventListener("input", () => updateRiderProposalCounts(riderProposalFormElement));
-    if (riderProposalFormElement) updateRiderProposalCounts(riderProposalFormElement);
-    document.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
-  }).catch((error) => console.warn("Home details could not finish loading", error));
+  const section = (key, label, load, apply, pending, failed) => {
+    const run = async () => {
+      if (!isCurrent()) return;
+      const request = (requests.get(key) || 0) + 1;
+      requests.set(key, request);
+      const current = () => isCurrent() && requests.get(key) === request;
+      if (pending) pending();
+      else if (request > 1) view.querySelector(`#athlete-home-${key}`).innerHTML = athleteHomeSectionStatus(label);
+      try {
+        const data = await withTimeout(Promise.resolve().then(() => current() ? load(request > 1) : null), label, 8000);
+        if (!current()) return;
+        apply(data);
+      } catch (error) {
+        if (!current()) return;
+        console.warn(`${label} unavailable`, error);
+        if (failed) failed();
+        else view.querySelector(`#athlete-home-${key}`).innerHTML = athleteHomeSectionStatus(label, key);
+      }
+      if (current()) bindRetries();
+    };
+    retries.set(key, run);
+    void run();
+  };
+  section("rankings", "Rankings", getAthleteHomeVerifiedLeaderboard, (leaderboard) => {
+    summary.leaderboard = leaderboard; summary.rankingsError = false; paintRankings();
+  }, () => { summary.rankingsError = false; paintRankings(); }, () => { summary.rankingsError = true; paintRankings(); });
+  section("battles", "Rider battles", getWeeklyRiderBattles, (battles) => {
+    summary.battles = battles; summary.battlesError = false; paintRankings();
+    view.querySelector("#athlete-home-battle-alerts").innerHTML = battleDashboardAlertsHtml(battles);
+    view.querySelectorAll("[data-open-battle-request]").forEach((button) => button.addEventListener("click", () => {
+      if (isCurrent()) navigate("challenges");
+    }));
+  }, () => { summary.battlesError = false; paintRankings(); }, () => { summary.battlesError = true; paintRankings(); });
+  section("active-session", "Current session", getActiveSession, (activeSession) => {
+    state.activeTraining = activeSession;
+    state.trickStartedAt = activeSession ? new Date(activeSession.started_at).getTime() : null;
+    view.querySelector("#athlete-home-active-session").innerHTML = activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Daily Tricks timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${escapeHtml(activeSession.total_points)} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : "";
+    clearInterval(state.timer); state.timer = null;
+    if (activeSession) {
+      updateTimer();
+      if (activeSession.daily_completed_seconds == null) {
+        const timer = setInterval(() => {
+          if (isCurrent()) updateTimer();
+          else { clearInterval(timer); if (state.timer === timer) state.timer = null; }
+        }, 1000);
+        state.timer = timer;
+      }
+    }
+  });
+
+  // Share the first schedule request; a retry bypasses a stalled in-flight cache entry.
+  let scheduleRequest;
+  const loadSchedule = (force = false) => {
+    if (!scheduleRequest || force) scheduleRequest = getWeeklyAssignments(viewerId, { includeAssignmentAttempts: false, force });
+    return scheduleRequest;
+  };
+  section("week", "This week", loadSchedule, ({ assignments = [], awards = [] }) => {
+    view.querySelector("#athlete-home-week").innerHTML = weekSummaryHtml(assignments, awards);
+  });
+  section("coach-messages", "Coach messages", () => getMyCoachMessages(3), (messages) => {
+    view.querySelector("#athlete-home-coach-messages").innerHTML = coachMessagesHtml(messages);
+    view.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
+  });
+  section("coaching", "Coaching replies", () => getHelpRequestSummaries(viewerId), (requests) => {
+    view.querySelector("#athlete-home-coaching").innerHTML = athleteCoachingCtaHtml(requests); bindCoaching();
+  }, () => {
+    const status = view.querySelector("#athlete-home-coaching .coaching-cta-status");
+    if (status) status.textContent = "Checking coaching replies…";
+  }, () => {
+    const status = view.querySelector("#athlete-home-coaching .coaching-cta-status");
+    if (status) status.innerHTML = `Replies unavailable · ${retryButton("coaching")}`;
+  });
+  section("milestones", "Your milestones", getMyProgressMilestones, (milestones) => {
+    view.querySelector("#athlete-home-milestones").innerHTML = privateProgressMilestonesHtml(milestones);
+  });
+  section("proposals", "Plan your week", () => getRiderSheetProposals(viewerId), (proposals) => {
+    view.querySelector("#athlete-home-proposals").innerHTML = riderProposalForm(proposals);
+    view.querySelector("#toggle-rider-proposal")?.addEventListener("click", () => {
+      if (isCurrent()) view.querySelector("#rider-proposal-builder")?.classList.toggle("hidden");
+    });
+    const form = view.querySelector("#rider-proposal-form");
+    form?.addEventListener("submit", submitRiderSheetProposal);
+    form?.addEventListener("input", () => updateRiderProposalCounts(form));
+    if (form) updateRiderProposalCounts(form);
+  });
+  section("trick-requests", "Trick requests", (retry) => Promise.all([loadSchedule(retry), getTrickRequestsForAthlete(viewerId)]), ([schedule, requests]) => {
+    view.querySelector("#athlete-home-trick-requests").innerHTML = athleteTrickRequestSection(schedule.assignments || [], requests);
+    view.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
+  });
 }
 
 function statCard(label, value, unit, foot, className = "", receiptAthleteId = "") {
@@ -16552,7 +16694,33 @@ window.addEventListener("appinstalled", () => {
   notify("JK Coaching installed. You can launch it from your apps.");
 });
 let serviceWorkerRefreshStarted = false;
+let hadServiceWorkerController = Boolean(navigator.serviceWorker?.controller);
+let checkedServiceWorkerController = null;
 let activeServiceWorkerRegistration = null;
+function readServiceWorkerRelease(controller, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    let channel;
+    let timer;
+    let settled = false;
+    const finish = (version = "") => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      channel?.port1.close();
+      channel?.port2.close();
+      resolve(version);
+    };
+    try {
+      channel = new MessageChannel();
+      channel.port1.onmessage = (event) => {
+        const version = event.data?.type === "JKCREW_RELEASE_VERSION" ? event.data.version : "";
+        finish(typeof version === "string" && /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(version) ? version : "");
+      };
+      timer = setTimeout(() => finish(), timeoutMs);
+      controller.postMessage({ type: "JKCREW_GET_RELEASE_VERSION" }, [channel.port2]);
+    } catch (_) { finish(); }
+  });
+}
 async function refreshServiceWorkerRelease() {
   if (!("serviceWorker" in navigator)) return;
   const registration = activeServiceWorkerRegistration || await navigator.serviceWorker.getRegistration();
@@ -16562,16 +16730,24 @@ async function refreshServiceWorkerRelease() {
   registration.waiting?.postMessage({ type: "JKCREW_ACTIVATE_RELEASE" });
 }
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (serviceWorkerRefreshStarted) return;
-    const refreshKey = `jkcrew-controller-refresh:${RELEASE_VERSION}`;
-    try {
-      if (sessionStorage.getItem(refreshKey) === "1") return;
-      sessionStorage.setItem(refreshKey, "1");
-    } catch (_) {}
+  navigator.serviceWorker.addEventListener("controllerchange", async () => {
+    const controller = navigator.serviceWorker.controller;
+    const wasControlled = hadServiceWorkerController;
+    hadServiceWorkerController = Boolean(controller);
+    // First installation claims an already-current page. Keep its sign-in form
+    // and any in-flight login intact; only a later worker replacement reloads.
+    if (!wasControlled || !controller) { checkedServiceWorkerController = controller; return; }
+    if (serviceWorkerRefreshStarted || checkedServiceWorkerController === controller) return;
+    checkedServiceWorkerController = controller;
+    // update() may replace the worker body without changing its script URL.
+    // Ask the worker itself, and avoid reloading when a new URL registers the
+    // same release that this page already runs. Older workers time out safely.
+    const nextRelease = await readServiceWorkerRelease(controller);
+    if (navigator.serviceWorker.controller !== controller || serviceWorkerRefreshStarted) return;
+    if (nextRelease === RELEASE_VERSION) return;
     serviceWorkerRefreshStarted = true;
     const nextUrl = new URL(window.location.href);
-    nextUrl.searchParams.set("jkcrew-version", RELEASE_VERSION);
+    if (nextRelease) nextUrl.searchParams.set("jkcrew-version", nextRelease);
     window.location.replace(nextUrl.href);
   });
 }
