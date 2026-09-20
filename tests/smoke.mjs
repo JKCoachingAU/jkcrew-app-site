@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.141";
+const version = "2.14.142";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1506,11 +1506,14 @@ assert(functionBody("handleSession(").includes("closeAthleteReviewViewer()"), "S
 const athleteHomeBody = functionBody("renderAthleteHome");
 assert(athleteHomeBody.includes("getHelpRequestSummaries(viewerId)"), "Athlete Home must load lightweight Coaching reply status");
 assert(athleteHomeBody.includes("getAthleteHomeVerifiedLeaderboard"), "Athlete Home must avoid the heavier profile-hydrated leaderboard path");
-assert(athleteHomeBody.includes("getWeeklyAssignments(viewerId, { includeAssignmentAttempts: false, force })"), "Athlete Home must skip detailed attempt history it does not display");
+assert(!athleteHomeBody.includes("getWeeklyAssignments("), "Athlete Home must not fetch removed weekly summary data");
 assert(!athleteHomeBody.includes("getRiderBattleHistory()"), "Athlete Home must not request the same battle payload twice");
 assert(athleteHomeBody.includes('battle.status === "completed"'), "Athlete Home must derive battle history from its one battle response");
 assert(athleteHomeBody.includes("athleteHomeRenderVersion"), "Background Home hydration must be guarded against stale renders");
-assert(athleteHomeBody.includes('id="athlete-home-week"'), "Athlete Home must render its main dashboard before secondary weekly data finishes");
+assert(!athleteHomeBody.includes('id="athlete-home-week"'), "Athlete Home must omit the removed This Week panel");
+assert(!athleteHomeBody.includes("goalsSection("), "Goals belong on Profile rather than Home");
+assert(!athleteHomeBody.includes("getTrickRequestsForAthlete("), "Home must not load its removed individual trick requests panel");
+assert(athleteHomeBody.includes("getRiderSheetProposals(viewerId)"), "Home must retain Request Your Weekly Lists");
 assert(athleteHomeBody.includes("athleteRunBuilderCtaHtml()"), "Athlete Home must display the live Run Builder action");
 assert(athleteHomeBody.includes("openRunBuilder") && functionBody("openRunBuilder").includes('navigate("contests")'), "The Home Run Builder action must open Contests through the shared launch handler");
 assert(athleteHomeBody.includes("athleteCoachingCtaHtml(requests)"), "Athlete Home must display the video-help action");

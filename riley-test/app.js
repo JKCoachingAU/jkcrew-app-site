@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.141";
+const RELEASE_VERSION = "2.14.142";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -591,7 +591,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.141" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.142" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -5044,12 +5044,28 @@ function normalizedGoals() {
   return Array.isArray(state.profile?.goals) ? [...state.profile.goals] : [];
 }
 
-async function saveGoals(goals, message = "Goals saved.") {
-  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", state.user.id).select(PROFILE_SELECT).single();
+async function saveGoals(goals, message = "Goals saved.", { clearDraft = false } = {}) {
+  const viewerId = state.user.id;
+  const panel = document.querySelector("#view .goals-panel");
+  const submittedDraft = panel?.querySelector("#goal-form input")?.value || "";
+  const { data, error } = await client.from("profiles").update({ goals, updated_at: new Date().toISOString() }).eq("id", viewerId).select(PROFILE_SELECT).single();
+  if (state.user?.id !== viewerId) return;
   if (error) return notify(messageFrom(error), "error");
-  state.profile = data;
+  state.profile = { ...state.profile, goals: data.goals, updated_at: data.updated_at };
   notify(message);
-  await renderAthleteHome();
+  // Refresh only goals: keep other Profile fields and the rider's place intact.
+  if (state.view !== "profile" || !panel?.isConnected || document.querySelector("#view .goals-panel") !== panel) return;
+  const open = panel.open;
+  const draft = panel.querySelector("#goal-form input")?.value || "";
+  const focused = panel.contains(document.activeElement) ? document.activeElement : null;
+  const focusAttribute = ["data-goal-toggle", "data-goal-title", "data-goal-save", "data-goal-delete"].find((name) => focused?.hasAttribute(name));
+  const focusSelector = focusAttribute ? `[${focusAttribute}="${CSS.escape(focused.getAttribute(focusAttribute))}"]` : focused?.closest("#goal-form") ? (focused.tagName === "INPUT" ? "#goal-form input" : "#goal-form button") : "summary";
+  panel.outerHTML = goalsSection(state.profile);
+  const updatedPanel = document.querySelector("#view .goals-panel");
+  updatedPanel.open = open;
+  updatedPanel.querySelector("#goal-form input").value = clearDraft && draft === submittedDraft ? "" : draft;
+  bindGoalActions();
+  if (focused) (updatedPanel.querySelector(focusSelector) || updatedPanel.querySelector("summary")).focus({ preventScroll: true });
 }
 
 function bindGoalActions() {
@@ -5059,7 +5075,7 @@ function bindGoalActions() {
     if (!title) return;
     const goals = normalizedGoals();
     goals.unshift({ id: crypto.randomUUID(), title: title.slice(0, 120), completed: false, createdAt: new Date().toISOString() });
-    await saveGoals(goals, "Goal added.");
+    await saveGoals(goals, "Goal added.", { clearDraft: true });
   });
   document.querySelectorAll("[data-goal-toggle]").forEach((button) => button.addEventListener("click", async () => {
     const goals = normalizedGoals().map((goal) => goal.id === button.dataset.goalToggle ? { ...goal, completed: !goal.completed } : goal);
@@ -6958,12 +6974,8 @@ async function renderAthleteHome() {
     <div id="athlete-home-coaching">${athleteCoachingCtaHtml([])}</div>
     <div id="athlete-home-active-session">${athleteHomeSectionStatus("Current session")}</div>
     ${quoteSection()}
-    <div id="athlete-home-week">${athleteHomeSectionStatus("This week")}</div>
-    ${goalsSection(state.profile)}
-    <div id="athlete-home-proposals"></div>
-    <div id="athlete-home-trick-requests"></div>
-    ${shredZoneTeaserHtml()}`;
-  bindGoalActions();
+    ${shredZoneTeaserHtml()}
+    <div id="athlete-home-proposals"></div>`;
   view.querySelector("[data-open-shred-zone]")?.addEventListener("click", () => { if (isCurrent()) navigate("shredZone"); });
   view.querySelector("#open-home-run-builder")?.addEventListener("click", (event) => { if (isCurrent()) openRunBuilder(event); });
   bindCoaching();
@@ -7020,15 +7032,6 @@ async function renderAthleteHome() {
     }
   });
 
-  // Share the first schedule request; a retry bypasses a stalled in-flight cache entry.
-  let scheduleRequest;
-  const loadSchedule = (force = false) => {
-    if (!scheduleRequest || force) scheduleRequest = getWeeklyAssignments(viewerId, { includeAssignmentAttempts: false, force });
-    return scheduleRequest;
-  };
-  section("week", "This week", loadSchedule, ({ assignments = [], awards = [] }) => {
-    view.querySelector("#athlete-home-week").innerHTML = weekSummaryHtml(assignments, awards);
-  });
   section("coach-messages", "Coach messages", () => getMyCoachMessages(3), (messages) => {
     view.querySelector("#athlete-home-coach-messages").innerHTML = coachMessagesHtml(messages);
     view.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
@@ -7054,10 +7057,6 @@ async function renderAthleteHome() {
     form?.addEventListener("submit", submitRiderSheetProposal);
     form?.addEventListener("input", () => updateRiderProposalCounts(form));
     if (form) updateRiderProposalCounts(form);
-  });
-  section("trick-requests", "Trick requests", (retry) => Promise.all([loadSchedule(retry), getTrickRequestsForAthlete(viewerId)]), ([schedule, requests]) => {
-    view.querySelector("#athlete-home-trick-requests").innerHTML = athleteTrickRequestSection(schedule.assignments || [], requests);
-    view.querySelector("#trick-request-form")?.addEventListener("submit", submitTrickRequest);
   });
 }
 
@@ -17084,6 +17083,7 @@ async function renderProfile() {
   }
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
+    ${state.profile.role === "athlete" ? goalsSection(state.profile) : ""}
     ${state.profile?.role !== "athlete" && typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}
     <div class="profile-grid">
       <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
@@ -17147,6 +17147,7 @@ async function renderProfile() {
     ${trainingHistorySection}
     ${state.profile.role === "athlete" ? `<section class="panel profile-library-card"><div class="panel-head"><div><div class="panel-title">My Tricktionary</div><div class="panel-meta">Your landed trick library and weekly attempt history now live under Profile & Settings.</div></div></div><button class="secondary-btn" type="button" id="open-tricktionary-from-profile">Open My Tricktionary</button></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
+  if (state.profile.role === "athlete") bindGoalActions();
   document.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => navigate("bikeGarage"));
   document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);
   document.querySelector("#remove-own-avatar").addEventListener("click", () => saveOwnAvatar(null));

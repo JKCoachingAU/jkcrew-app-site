@@ -87,7 +87,8 @@ function session() {
       eq(await page.locator('.score-ranking-stat .stat-value').nth(0).textContent(), '—', 'Pending points are unknown, not fabricated zero');
       await page.waitForFunction(() => document.querySelector('.battle-ranking-stat .stat-value')?.textContent.includes('1W'));
       ok((await page.locator('.xp-title').textContent()).includes('45 XP'), 'Persisted XP renders immediately');
-      eq(await page.locator('#goal-form').count(), 1, 'Goal controls mount before optional requests finish');
+      eq(await page.locator('#goal-form').count(), 0, 'Goals no longer take space on Home');
+      eq(await page.locator('#athlete-home-week, #athlete-home-trick-requests').count(), 0, 'Removed Home panels are absent');
       eq(await page.locator('[data-open-shred-zone]').count(), 1, 'Shred Zone replaces Garage on Home');
       eq(await page.locator('#open-home-run-builder').count(), 1);
       eq(await page.locator('#open-athlete-coaching').count(), 1);
@@ -118,12 +119,12 @@ function session() {
       await page.locator('[data-home-retry="rankings"]').waitFor(); await page.locator('[data-home-retry="active-session"]').waitFor();
       eq(await page.locator('.score-ranking-stat .stat-value').nth(0).textContent(), '—');
       await page.locator('#rider-proposal-form').waitFor({ state: 'attached' });
-      eq(await page.locator('#athlete-home-week .panel-meta').textContent(), 'Loading your latest information…', 'Stalled week does not delay independent proposals');
+      eq(t.counts.week || 0, 0, 'Home no longer fetches the removed weekly summary');
       eq(await page.locator('.battle-ranking-stat .stat-value').textContent(), '1W — 0L');
-      await page.locator('.goals-panel summary').click(); await page.locator('#goal-form input').fill('Keep this unsaved goal');
+      await page.locator('#toggle-rider-proposal').click(); await page.locator('#proposal-title').fill('Keep this unsaved request');
       t.controls.rankings = 'ok'; await page.locator('[data-home-retry="rankings"]').click();
       await page.waitForFunction(() => document.querySelector('.score-ranking-stat .stat-value')?.textContent === '7pts');
-      eq(await page.locator('#goal-form input').inputValue(), 'Keep this unsaved goal', 'Section retry preserves unrelated form edits');
+      eq(await page.locator('#proposal-title').inputValue(), 'Keep this unsaved request', 'Section retry preserves unrelated form edits');
       t.controls.active = 'completed'; await page.locator('[data-home-retry="active-session"]').click(); await page.locator('#trick-timer').waitFor();
       eq(await page.evaluate(() => state.timer), null, 'Completed Daily session shows saved timer without running interval');
       await t.close();
@@ -131,7 +132,9 @@ function session() {
     {
       const t = await scenario(), page = t.page;
       await page.waitForFunction(() => document.querySelector('.score-ranking-stat .stat-value')?.textContent === '7pts');
-      await page.locator('#rider-proposal-form').waitFor({ state: 'attached' }); await page.locator('#trick-request-form').waitFor({ state: 'attached' });
+      await page.locator('#rider-proposal-form').waitFor({ state: 'attached' });
+      eq(await page.locator('#trick-request-form').count(), 0, 'Single trick requests removed from Home');
+      ok(await page.evaluate(() => Boolean(document.querySelector('[data-open-shred-zone]').compareDocumentPosition(document.querySelector('#athlete-home-proposals')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'Shred Zone appears above retained weekly list requests');
       eq(await page.locator('#athlete-home-active-session').textContent(), '', 'Verified no active session omits timer');
       eq(await page.evaluate(() => state.activeTraining), null);
       eq(await page.locator('.score-ranking-stat .stat-value').nth(1).textContent(), '#1');
