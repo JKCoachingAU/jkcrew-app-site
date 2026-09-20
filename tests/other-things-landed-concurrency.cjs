@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+const {initialize,id}=require('./other-things-landed-db.cjs');
+const {createHarness,literal,json}=require('./helpers/local-postgres.cjs');
+async function run(){
+ const h=createHarness('other_landed');const report=[];
+ const acting=n=>`set role authenticated;set request.jwt.claim.sub=${literal(id(n))};`;
+ const submit=(n,title=`Trick ${n}`)=>`select submit_other_things_landed(${literal(JSON.stringify([{id:id(n),trick_name:title,note:''}]))}::jsonb,'Test park');`;
+ const review=(n,status='approved')=>`select review_other_thing_landed('${id(n)}','${status}');`;
+ const facts=n=>json(h.batch(`select jsonb_build_object('status',(select status from other_things_landed where id='${id(n)}'),'awards',(select count(*) from assignment_point_awards where id='${id(n)}'),'points',(select coalesce(sum(points),0) from assignment_point_awards where id='${id(n)}'),'history',(select count(*) from tricktionary_landing_history where id='other-landed:${id(n)}'));`));
+ try{
+  await initialize(h.adapter);
+  h.batch(`insert into profiles(id,role,display_name) values('${id(1)}','coach','Coach One'),('${id(2)}','coach','Coach Two'),('${id(10)}','athlete','Rider');insert into coach_athletes values('${id(1)}','${id(10)}'),('${id(2)}','${id(10)}');`);
+  const s1=h.connect('submit_a'),s2=h.connect('submit_b');const saved=json(await s1.query(`begin;${acting(10)}${submit(100)}`));const waiting=s2.query(`${acting(10)}${submit(100)}`);await h.waitLock(s2);await s1.query('commit;');assert.deepEqual(json(await waiting),saved);assert.deepEqual(facts(100),{status:'pending',awards:0,points:0,history:0});report.push('simultaneous duplicate submission: one pending row, no score or history');
+  const a=h.connect('approve_a'),b=h.connect('approve_b');const approved=json(await a.query(`begin;${acting(1)}${review(100)}`));const approveWait=b.query(`${acting(2)}${review(100)}`);await h.waitLock(b);await a.query('commit;');const repeated=json(await approveWait);assert.deepEqual(repeated.item,approved.item);assert.equal(repeated.already_reviewed,true);assert.deepEqual(facts(100),{status:'approved',awards:1,points:1,history:1});report.push('two linked coaches approve: one immutable reviewer, exactly one point and one landing');
+  h.batch(`${acting(10)}${submit(101)}`);const decline=h.connect('decline_first'),approve=h.connect('approve_after_decline');const declined=json(await decline.query(`begin;${acting(1)}${review(101,'declined')}`));const wrongOutcome=approve.query(`${acting(2)}${review(101)}`);await h.waitLock(approve);await decline.query('commit;');assert.deepEqual(json(await wrongOutcome).item,declined.item);assert.deepEqual(facts(101),{status:'declined',awards:0,points:0,history:0});report.push('decline wins approval race: both clients see the final decline and no rewards');
+  h.batch(`${acting(10)}${submit(102)}`);const approveFirst=h.connect('approve_first'),lateDecline=h.connect('decline_after_approve');const final=json(await approveFirst.query(`begin;${acting(1)}${review(102)}`));const later=lateDecline.query(`${acting(2)}${review(102,'declined')}`);await h.waitLock(lateDecline);await approveFirst.query('commit;');assert.deepEqual(json(await later).item,final.item);assert.deepEqual(facts(102),{status:'approved',awards:1,points:1,history:1});report.push('approval wins decline race: final approved point and evidence stay intact');
+  h.batch(`${acting(10)}${submit(103)}`);const pause=h.connect('pause_first'),blocked=h.connect('approve_after_pause');await pause.query(`begin;${acting(1)}select * from set_rider_scoring_pause('${id(10)}',true);`);const blockedReview=blocked.query(`${acting(2)}${review(103)}`).then(value=>({value}),error=>({error}));await h.waitLock(blocked);await pause.query('commit;');assert.match((await blockedReview).error?.message||'',/scoring is paused/);assert.deepEqual(facts(103),{status:'pending',awards:0,points:0,history:0});report.push('scoring pause wins overlap: pending review survives, no point can slip through');
+  console.log(JSON.stringify({status:'PASS',postgres:h.batch('select version();'),independent_connections:h.count(),cases:report},null,2));
+ }finally{await h.close();}
+}
+run().catch(error=>{console.error(error.stack);process.exitCode=1;});

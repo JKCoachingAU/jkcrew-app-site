@@ -4,13 +4,15 @@ const screenshotDir=process.env.JKCREW_SCREENSHOT_DIR;
 if(screenshotDir)fs.mkdirSync(screenshotDir,{recursive:true});
 const capture=async(page,name)=>{if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,name+'.png'),animations:'disabled'});};
 const root = path.resolve(__dirname, '..'), app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-const names = ['sessionStatBarHtml','latestDailyTime','dailySessionHubHtml','assignmentList','dailyVenueGroups','assignmentGroups','loadActiveSession','renderSession','rememberSessionExpansions','riderSessionRefreshButtonHtml','updateTimer','startSession','recordAssignmentAction','getActiveCoachGroupSession','invalidateSessionViewerData','invalidateCachesForRealtime','refreshSessionViewerLight','sessionViewerRiderCountersHtml','sessionViewerRiderCardHtml','sessionViewerAssignmentsForList','sessionViewerListContent','finishViewerDailyTimer','recordViewerAssignmentAction'];
+const names = ['dailyFeatureHosts','sessionStatBarHtml','latestDailyTime','dailySessionHubHtml','assignmentList','dailyVenueGroups','assignmentGroups','loadActiveSession','renderSession','rememberSessionExpansions','riderSessionRefreshButtonHtml','updateTimer','startSession','recordAssignmentAction','getActiveCoachGroupSession','invalidateSessionViewerData','invalidateCachesForRealtime','refreshSessionViewerLight','sessionViewerRiderCountersHtml','sessionViewerRiderCardHtml','sessionViewerAssignmentsForList','sessionViewerListContent','finishViewerDailyTimer','recordViewerAssignmentAction'];
 const actual = names.map(name => {
   const start = app.search(new RegExp('^(?:async )?function ' + name + '\\(', 'm'));
   assert(start >= 0, name);
   const rest = app.slice(start); return rest.slice(0, rest.indexOf('\n}') + 2).replace(/^async function refreshSessionViewerLight\(/, 'async function testRefreshSessionViewerLight(');
 }).join('\n');
 const fixture = String.raw`
+const mountDailyFeatures=()=>{};
+
 const nativeSetInterval=window.setInterval.bind(window),nativeClearInterval=window.clearInterval.bind(window);window.liveIntervals=new Set();window.setInterval=(handler,...args)=>{const id=nativeSetInterval(handler,...args);liveIntervals.add(id);return id;};window.clearInterval=id=>{liveIntervals.delete(id);nativeClearInterval(id);};
 const NativeDate=Date; window.clockNow=NativeDate.now(); window.Date=class extends NativeDate { constructor(...args){super(...(args.length?args:[clockNow]));} static now(){return clockNow;} };
 const state={user:{id:'r1'},profile:{id:'r1',role:'athlete',display_name:'Test Rider One',country_code:'AU'},view:'session',selectedVenue:'Test Park',sessionRenderVersion:0,attempts:[],timer:null,sessionOpenDailyVenues:new Set(['Test Park']),sessionOpenAssignmentSections:new Set(),pendingAssignmentProgress:new Map(),sessionViewerVenue:'Test Park',sessionViewerOpenAthleteId:'r1',sessionViewerActiveList:'daily',sessionViewerGroup:'Test Group',sessionViewerSearch:'',sessionViewerRenderVersion:0,sessionViewerDataVersion:0};

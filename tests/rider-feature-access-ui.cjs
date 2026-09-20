@@ -44,7 +44,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
         sessionOpenDailyVenues: new Set(), sessionOpenAssignmentSections: new Set(),
         videoReviewRecordedReplies: new Map(), videoReviewMedia: new Map(),
       };
-      window.liveRun = null;
+      window.liveRun = null; window.clearDailyFeatureMounts = () => {};
       window.qaCalls = []; window.qaNotices = []; window.qaActions = []; window.qaClosed = [];
       window.qaDisabled = true; window.qaFailRead = false; window.qaFailWrite = false;
       window.qaHoldRead = false; window.qaHeldReads = []; window.qaHoldWrite = false; window.qaHeldWrites = [];

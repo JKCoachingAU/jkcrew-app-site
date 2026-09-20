@@ -1,0 +1,5 @@
+# This endpoint validates the bearer token with Auth /user and then checks the
+# accepted, device-bound call via the authenticated RPC. No anonymous access.
+# Keeping auth in the function supports both legacy and asymmetric JWT keys.
+[functions.live-run-ice]
+verify_jwt = false
