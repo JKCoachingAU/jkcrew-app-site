@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
 const root = path.resolve(__dirname, '..'), source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const releaseVersion = source.match(/^const RELEASE_VERSION = "([^"]+)";$/m)[1];
 function block(start, end) {
   const from = source.indexOf(start), to = source.indexOf(end, from);
   assert(from >= 0 && to > from, 'Actual source block found: ' + start);
@@ -15,6 +16,7 @@ const returnState = block('  if (previousView === "shredZone" &&', '  resetPageE
 const routePredicate = source.match(/^const isRileyTestRoute = .*;$/m)?.[0];
 assert(routePredicate, 'Actual Riley route predicate found');
 const fixture = `
+${source.match(/^const RELEASE_VERSION = .*;$/m)[0]}
 const state = { user: { id: 'fixture-rider' }, profile: { role: 'athlete' }, view: 'home' };
 const client = {}, isCoachRole = role => ['coach', 'admin'].includes(role);
 window.navigations = [];
@@ -103,7 +105,7 @@ ${tricktionary}
       await page.click('[data-back-shred-zone]');
       await page.click('[data-shred-destination="jkcYard"]');
       await page.locator('.jkc-yard-loading').waitFor({state: 'hidden'});
-      eq(await page.locator('iframe').getAttribute('src'), origin + '/games/jkc-yard/index.html', 'Root and Riley load one shared game');
+      eq(await page.locator('iframe').getAttribute('src'), origin + '/games/jkc-yard/index.html?v=' + releaseVersion, 'Root and Riley load the current release of one shared game');
       eq(requests.slice(count).map(item => item.method), ['HEAD','GET'], 'Game fetched only on entry');
       eq(await page.locator('iframe').getAttribute('title'), 'JKC Yard BMX game', 'Game frame labelled');
       eq(await page.evaluate(() => yardTimers.size), 0, 'Load clears timeout');
