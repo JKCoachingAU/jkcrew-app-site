@@ -15,6 +15,8 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  // Run the actual HQ renderer with the ranking response held indefinitely.
  await page.addScriptTag({content:`
  const state={user:{id:'coach'},profile:{role:'coach'},view:'command'};window.events=[];
+ window.queueOptions=null;window.queueMounts=0;window.queueDestroys=0;window.invalidated=[];const cacheClear=key=>invalidated.push(key);
+ window.JKCrewOtherThingsLanded={mountCoachQueue(options){queueOptions=options;queueMounts++;options.element.innerHTML='<section><h2>Other Things Landed</h2></section>';return{destroy(){queueDestroys++;options.element.replaceChildren();}};}};
  const getCoachRoster=async options=>{events.push('roster');return [{id:'rider',display_name:'Rider'}]};
  const getCoachCommandData=async (roster,options)=>{events.push('command');return {}};
  let resolveRanking,rejectRanking;const getLeaderboard=()=>new Promise((resolve,reject)=>{resolveRanking=resolve;rejectRanking=reject});
@@ -29,10 +31,18 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  window.start=async()=>{await renderCoachCommand();window.ready=true;};start();
  `});
  await page.waitForFunction(()=>window.ready);assert(await page.getByRole('heading',{name:'Coach HQ'}).isVisible());assert(await page.getByRole('button',{name:/Start Coaching/}).isVisible());assert(await page.locator('[data-command-leaderboard]').isVisible());
+ assert(await page.getByRole('heading',{name:'Other Things Landed'}).isVisible(),'Coach review queue is visible without waiting for rankings');
+ assert.deepEqual(await page.evaluate(()=>queueOptions.roster.map(r=>r.id)),['rider'],'Queue receives the current coach roster');
+ assert.equal(await page.evaluate(()=>queueOptions.isCurrent()),true);
+ await page.evaluate(()=>queueOptions.onChanged({kind:'refresh',pendingCount:1}));assert.deepEqual(await page.evaluate(()=>invalidated),[],'Queue polls do not redraw rankings or clear caches');
+ await page.evaluate(()=>resolveRanking([]));await page.waitForSelector('[data-command-leaderboard] button');
+ await page.evaluate(()=>queueOptions.onChanged({kind:'review',status:'approved',points:1}));
+ await page.waitForFunction(()=>invalidated.filter(k=>k==='leaderboard').length===2);
+ assert((await page.evaluate(()=>invalidated)).includes('points-receipt:'),'Confirmed reviews invalidate scoring receipts');
  await page.evaluate(()=>resolveRanking([]));await page.getByRole('button',{name:'View Full Leaderboard'}).click();assert.equal(await page.evaluate(()=>state.view),'board','Deferred leaderboard controls bind after arrival');
  // Late rankings cannot overwrite another tab or another account.
- await page.evaluate(async()=>{state.view='command';await renderCoachCommand();await navigate('contests');resolveRanking([]);});assert.equal(await page.locator('#view').innerText(),'contests');
- await page.evaluate(async()=>{state.view='command';await renderCoachCommand();state.user.id='other';document.querySelector('#view').textContent='Other account';resolveRanking([]);});assert.equal(await page.locator('#view').innerText(),'Other account');
+ await page.evaluate(async()=>{state.view='command';await renderCoachCommand();await navigate('contests');resolveRanking([]);});assert.equal(await page.locator('#view').innerText(),'contests');assert.equal(await page.evaluate(()=>queueOptions.isCurrent()),false,'Queue rejects late updates after navigation');
+ await page.evaluate(async()=>{state.view='command';await renderCoachCommand();state.user.id='other';document.querySelector('#view').textContent='Other account';resolveRanking([]);});assert.equal(await page.locator('#view').innerText(),'Other account');assert.equal(await page.evaluate(()=>queueOptions.isCurrent()),false,'Queue rejects updates after account switch');assert(await page.evaluate(()=>queueDestroys>=2),'Replacing HQ destroys its previous queue');
  assert.deepEqual(errors,[]);await browser.close();
- console.log('PASS: HQ skips roster photos and five training/history requests; full data caches remain separate; dashboard becomes usable with rankings stalled; deferred ranking controls and stale-account/tab protection work.');
+ console.log('PASS: HQ skips roster photos and five training/history requests; full data caches remain separate; dashboard becomes usable with rankings stalled; deferred ranking controls, visible landing reviews, post-review score refresh and stale-account/tab protection work.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -167,5 +167,144 @@
     const handle = {refresh,destroy() {if (destroyed) return;destroyed = true;sequence++;clearInterval(timer);element.removeEventListener('click',onClick);form.removeEventListener('input',onInput);form.removeEventListener('submit',onSubmit);panel.removeEventListener('toggle',onToggle);window.removeEventListener('focus',onFocus);element.replaceChildren();mounts.delete(element);}};
     mounts.set(element,handle);return handle;
   }
-  globalThis.JKCrewOtherThingsLanded = Object.freeze({mount});
+  function mountCoachQueue({element, client, roster = [], isCurrent = () => true, onChanged = () => {}} = {}) {
+    if (!element || !client?.from || !client?.rpc) throw new Error('A connected coach queue is required.');
+    mounts.get(element)?.destroy();
+    const riders = new Map(roster.filter(rider => rider?.id).map(rider => [String(rider.id), rider]));
+    const athleteIds = [...riders.keys()];
+    let destroyed = false, sequence = 0, loading = false, items = [], total = null, pageLimit = 30;
+    let reviewBusy = null, reviewAttempt = null, retry = null;
+    const current = () => !destroyed && element.isConnected && isCurrent();
+    element.innerHTML = `<section class="other-landed-panel other-landed-coach-queue panel" aria-label="Other Things Landed reviews">
+      <header class="other-landed-queue-head"><div><p class="other-landed-queue-eyebrow">Coach review</p><h2>Other Things Landed</h2><p>Extra landings waiting for your approval.</p></div>
+        <div class="other-landed-queue-tools"><span class="other-landed-queue-count" data-other-queue-count aria-live="polite">Loading…</span><button type="button" data-other-queue-refresh aria-label="Refresh Other Things Landed">Refresh</button></div></header>
+      <div class="other-landed-queue-body"><div class="other-landed-status" role="status" aria-live="polite" data-other-queue-status></div>
+        <button type="button" class="other-landed-retry" data-other-queue-retry hidden>Retry</button>
+        <div class="other-landed-list" data-other-queue-list aria-label="Landings waiting for review"></div>
+        <button type="button" class="other-landed-queue-more" data-other-queue-more hidden>Show more landings</button></div>
+    </section>`;
+    const list = element.querySelector('[data-other-queue-list]');
+    const status = element.querySelector('[data-other-queue-status]');
+    const count = element.querySelector('[data-other-queue-count]');
+    const refreshButton = element.querySelector('[data-other-queue-refresh]');
+    const retryButton = element.querySelector('[data-other-queue-retry]');
+    const moreButton = element.querySelector('[data-other-queue-more]');
+    function message(text, failure = false, retryAction = null) {
+      if (!current()) return;
+      status.textContent = text;status.classList.toggle('is-error', failure);
+      retry = retryAction;retryButton.hidden = !retryAction;retryButton.disabled = !!reviewBusy;
+    }
+    function notify(payload) {
+      if (!current()) return;
+      try { Promise.resolve(onChanged(payload)).catch(() => {}); } catch (_) { /* A dashboard refresh cannot undo a saved review. */ }
+    }
+    function riderName(athleteId) { return riders.get(athleteId)?.display_name || 'Rider'; }
+    function render() {
+      if (!current()) return;
+      count.textContent = total === null ? (loading ? 'Loading…' : 'Unavailable') : `${total} pending`;
+      count.classList.toggle('is-empty', total === 0);
+      refreshButton.disabled = loading || !!reviewBusy;
+      retryButton.disabled = !!reviewBusy || loading;
+      moreButton.hidden = total === null || items.length >= total;
+      moreButton.disabled = loading || !!reviewBusy;
+      moreButton.textContent = loading && items.length ? 'Loading…' : `Show more landings (${items.length} of ${total || 0})`;
+      list.setAttribute('aria-busy', String(loading));
+      list.innerHTML = items.map(item => `<article class="other-landed-item other-landed-queue-item is-pending" data-other-queue-item="${escape(item.id)}" data-athlete-id="${escape(item.athlete_id)}">
+        <div class="other-landed-queue-content"><p class="other-landed-queue-rider">${escape(riderName(item.athlete_id))}</p><h3>${escape(item.trick_name)}</h3>
+          ${item.note ? `<p class="other-landed-note">${escape(item.note)}</p>` : ''}
+          <small>${item.venue ? `${escape(item.venue)} · ` : ''}<time datetime="${escape(item.submitted_at)}">${escape(date(item.submitted_at))}</time></small></div>
+        <div class="other-landed-review-actions"><button type="button" class="other-landed-primary" data-other-queue-review="approved" aria-label="Approve ${escape(item.trick_name)} by ${escape(riderName(item.athlete_id))}, plus 1 point" ${reviewBusy ? 'disabled' : ''}>${reviewBusy === item.id ? 'Saving…' : 'Approve · +1'}</button><button type="button" data-other-queue-review="declined" aria-label="Decline ${escape(item.trick_name)} by ${escape(riderName(item.athlete_id))}" ${reviewBusy ? 'disabled' : ''}>Decline</button></div>
+      </article>`).join('') || (total === 0 ? '<div class="other-landed-queue-empty"><strong>All caught up</strong><p>No extra landings are waiting for your review.</p></div>' : '');
+    }
+    async function responseFor(request) {
+      let timeout;
+      const response = await Promise.race([Promise.resolve(request), new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('The connection is taking too long. Please retry.')), 15000);
+      })]).finally(() => clearTimeout(timeout));
+      if (response?.error) throw response.error;
+      if (!response || typeof response !== 'object') throw new Error('The response could not be confirmed. Please retry.');
+      return response;
+    }
+    async function refresh({quiet = false} = {}) {
+      if (!current() || loading || reviewBusy) return false;
+      const request = ++sequence;loading = true;render();
+      if (!quiet && !reviewAttempt) message(items.length ? 'Updating landings…' : 'Loading landings…');
+      try {
+        let next = [], nextTotal = 0;
+        // Read the visible prefix again after every review. Offset-only loading
+        // would skip a pending landing whenever an earlier row is approved.
+        if (athleteIds.length) {
+          do {
+            const response = await responseFor(client.from('other_things_landed')
+              .select('id,athlete_id,trick_name,note,venue,status,submitted_at', {count:'exact'})
+              .in('athlete_id', athleteIds).eq('status', 'pending')
+              .order('submitted_at', {ascending:true}).order('id', {ascending:true})
+              .range(next.length, Math.min(next.length + 299, pageLimit - 1)));
+            if (!current() || request !== sequence) return false;
+            if (!Array.isArray(response.data) || !Number.isInteger(response.count) || response.count < 0) throw new Error('Landings could not be loaded. Please retry.');
+            // RLS is authoritative; also refuse to display anything outside the
+            // captured roster if the server returns an unexpected response.
+            if (response.data.some(row => !row?.id || !riders.has(row.athlete_id) || row.status !== 'pending')) throw new Error('Landings could not be verified. Please refresh.');
+            nextTotal = response.count;
+            if (!response.data.length) break;
+            const byId = new Map(next.map(row => [row.id, row]));
+            response.data.forEach(row => byId.set(row.id, row));
+            if (byId.size === next.length) break;
+            next = [...byId.values()];
+          } while (next.length < Math.min(pageLimit, nextTotal));
+        }
+        if (!current() || request !== sequence) return false;
+        items = next;total = nextTotal;
+        if (!reviewAttempt && (!quiet || status.classList.contains('is-error'))) message('');
+        notify({kind:'refresh',pendingCount:total});
+        return true;
+      } catch (error) {
+        if (!current() || request !== sequence) return false;
+        if (error.code === '42501') {items = [];total = null;reviewAttempt = null;}
+        if (!reviewAttempt) message(errorText(error), true, () => refresh());
+        return false;
+      } finally {
+        if (current() && request === sequence) {loading = false;render();}
+      }
+    }
+    async function review(attempt) {
+      if (!current() || reviewBusy || !attempt || !riders.has(attempt.athleteId) || !['approved','declined'].includes(attempt.decision)) return;
+      sequence++;loading = false;reviewBusy = attempt.id;reviewAttempt = attempt;render();message('Saving coach review…');
+      let saved = false;
+      try {
+        const response = await responseFor(client.rpc('review_other_thing_landed', {p_submission_id:attempt.id,p_decision:attempt.decision}));
+        if (!current()) return;
+        const result = response.data, item = result?.item;
+        if (item?.id !== attempt.id || item.athlete_id !== attempt.athleteId || !['approved','declined'].includes(item.status) || item.points !== (item.status === 'approved' ? 1 : 0)) throw new Error('The review could not be confirmed. Retry to check it safely.');
+        if (items.some(row => row.id === attempt.id) && total !== null) total = Math.max(0, total - 1);
+        items = items.filter(row => row.id !== attempt.id);reviewAttempt = null;saved = true;
+        message(`${riderName(attempt.athleteId)} · ${item.trick_name || attempt.trickName}: ${result.already_reviewed ? 'already ' : ''}${item.status === 'approved' ? 'approved · +1 point.' : 'declined · 0 points.'}`);
+        notify({kind:'review',athleteId:attempt.athleteId,submissionId:item.id,status:item.status,points:item.points,pendingCount:total,alreadyReviewed:result.already_reviewed === true});
+      } catch (error) {
+        if (current()) message(`${errorText(error)} Retry checks this same landing safely.`, true, () => review(attempt));
+      } finally {
+        reviewBusy = null;if (current()) render();
+      }
+      if (saved && current()) await refresh({quiet:true});
+    }
+    function onClick(event) {
+      const target = event.target.closest('button');if (!target || !element.contains(target) || target.disabled) return;
+      if (target.hasAttribute('data-other-queue-refresh')) refresh();
+      if (target.hasAttribute('data-other-queue-retry')) retry?.();
+      if (target.hasAttribute('data-other-queue-more') && !loading && !reviewBusy) {pageLimit += 30;refresh({quiet:true});}
+      if (target.dataset.otherQueueReview) {
+        const item = items.find(row => row.id === target.closest('[data-other-queue-item]')?.dataset.otherQueueItem);
+        if (item) review({id:item.id,athleteId:item.athlete_id,trickName:item.trick_name,decision:target.dataset.otherQueueReview});
+      }
+    }
+    function onWake() {if (document.visibilityState !== 'hidden') refresh({quiet:true});}
+    element.addEventListener('click', onClick);window.addEventListener('focus', onWake);window.addEventListener('online', onWake);document.addEventListener('visibilitychange', onWake);
+    const timer = setInterval(onWake, 30000);
+    const handle = {refresh,ready:null,destroy() {
+      if (destroyed) return;
+      destroyed = true;sequence++;clearInterval(timer);element.removeEventListener('click', onClick);window.removeEventListener('focus', onWake);window.removeEventListener('online', onWake);document.removeEventListener('visibilitychange', onWake);element.replaceChildren();mounts.delete(element);
+    }};
+    mounts.set(element, handle);handle.ready = refresh();return handle;
+  }
+  globalThis.JKCrewOtherThingsLanded = Object.freeze({mount,mountCoachQueue});
 })();
