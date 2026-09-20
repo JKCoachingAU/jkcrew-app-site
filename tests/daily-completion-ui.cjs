@@ -195,7 +195,8 @@ function partialRiderMode(completedCount){dismissDailyFinishForNavigation();stat
     await page.locator('[data-cancel-daily]').click();assert.equal(await page.evaluate(()=>sessions.r2.daily_completed_seconds),null);assert.equal(await page.evaluate(()=>state.sessionViewerActiveSessionCache.status),'active','Group clock stays active');
     await page.evaluate(()=>{clockNow+=2000;});await page.locator('[data-finish-daily-athlete="r2"]').click();await page.waitForSelector('[data-confirm-daily]');
     await page.locator('[data-confirm-daily]').click();await page.waitForSelector('.daily-result-dialog');
-    const coachResult=await page.locator('.daily-result-dialog').textContent();for(const text of ['Test Rider Two','+3','23','#8','NEW PERSONAL BEST'])assert(coachResult.includes(text),text);
+    const coachResult=await page.locator('.daily-result-dialog').textContent();for(const text of ['Test Rider Two','+3','23','#8','Personal best · same list'])assert(coachResult.includes(text),text);
+    assert.equal(await page.locator('.daily-pb-banner').count(),0,'Saved receipt preserves PB information without replaying congratulations');
     await page.locator('[data-keep-riding]').click();await page.evaluate(()=>renderSessionViewer());assert.equal(await page.locator('.daily-finish-backdrop').count(),0,'Coach refresh never pops saved results');
     await capture(page,'daily-coach-context-tablet');
     await page.evaluate(()=>{results.r2=null;daily('r2').forEach(a=>a.completed=true);holdPrepare=true;});

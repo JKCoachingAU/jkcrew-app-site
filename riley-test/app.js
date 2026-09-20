@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.131";
+const RELEASE_VERSION = "2.14.132";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -590,7 +590,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.131" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.132" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7695,6 +7695,13 @@ function clearDailyFeatureMounts() {
   for (const mounted of dailyFeatureMounts.values()) mounted.handle.destroy?.();
   dailyFeatureMounts.clear();
 }
+async function saveDailyTierTwoDraft(athleteId, { userId = state.user?.id, view = state.view } = {}) {
+  if (state.user?.id !== userId || state.view !== view || !isCoachRole(state.profile?.role)) throw new Error("The selected rider changed. Return to their list before saving.");
+  const mounted = dailyFeatureMounts.get(`${userId}:${view}:editor:${athleteId}`);
+  if (!mounted?.host.isConnected) return false;
+  if (typeof mounted.handle.saveIfDirty !== "function") throw new Error("Refresh this page before saving Tier 2.");
+  return mounted.handle.saveIfDirty();
+}
 function dailyTierTwoHost(athleteId) {
   return `<div data-daily-tier-two-host="${escapeHtml(athleteId)}"></div>`;
 }
@@ -7736,25 +7743,48 @@ function mountDailyFeatures() {
     const changed = result => {
       cacheClear("leaderboard:"); cacheClear("leaderboard-home:"); cacheClear("tricktionary:"); cacheClear("run-plans:"); cacheClear("coach-command:");
       cacheClear("weekly-assignments:"); cacheClear("points-receipt:");
-      if (result?.reveal_claimed) {
-        const daily = document.querySelector("#view .daily-session-hub");
-        if (daily && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) daily.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-16px)"}],{duration:300}).finished.then(() => { daily.querySelectorAll("details[open]").forEach(d => { d.open = false; }); }).catch(() => {});
-      }
       if (result?.points || result?.completed_at) queueMicrotask(() => {
         if (!isCurrent()) return;
         if (view === "session") void renderSession({preserveScroll:true});
         if (view === "sessionViewer") void refreshSessionViewerLight({force:true});
       });
     };
+    const opened = () => {
+      if (!isCurrent()) return;
+      // Collapse only this rider's completed Daily list, keeping it available
+      // for review and corrections while the fresh Tier 2 list takes focus.
+      const daily = coach ? host.closest('[data-viewer-plan]')?.querySelector('[data-completed-daily]') : document.querySelector('#view .daily-session-hub');
+      if (!daily) return;
+      const collapse = () => {
+        if (!isCurrent() || !daily.isConnected) return;
+        daily.querySelectorAll('details[open]').forEach(panel => { panel.open = false; });
+        if (daily.matches('details')) daily.open = false;
+        if (!coach) state.sessionOpenDailyVenues?.clear();
+      };
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && daily.animate) daily.animate([{opacity:1},{opacity:.2}],{duration:240}).finished.then(collapse).catch(collapse);
+      else collapse();
+    };
     let handle;
     if (type === "other") handle = window.JKCrewOtherThingsLanded?.mount({element:host,client,athleteId,role:coach ? "coach" : "rider",venue:state.selectedVenue || "",isCurrent,onChanged:changed});
-    if (type === "tier") handle = window.JKCrewDailyTierTwo?.mount(host,{client,athleteId,canEdit:coach || athleteId === userId,canReveal:!coach && athleteId === userId,eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true,isCurrent,onChange:changed});
+    if (type === "tier") handle = window.JKCrewDailyTierTwo?.mount(host,{client,athleteId,canEdit:coach || athleteId === userId,canReveal:!coach && athleteId === userId,eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true,observerId:coach ? userId : null,isCurrent,onChange:changed,onOpen:opened});
     if (type === "editor" && coach) handle = window.JKCrewDailyTierTwo?.mountEditor(host,{client,athleteId,isCurrent});
     if (handle) dailyFeatureMounts.set(key,{host,handle,userId,view});
   });
   for (const [key,mounted] of dailyFeatureMounts) {
     if (!mounted.host.isConnected || mounted.userId !== userId || mounted.view !== view) { mounted.handle.destroy?.(); dailyFeatureMounts.delete(key); }
   }
+}
+async function showDailyTierTwoAfterFinish(result, context, { celebrate = false } = {}) {
+  if (result?.all_completed !== true || !dailyFinishContextIsCurrent(context) || !window.JKCrewDailyTierTwo) return false;
+  if (context.viewer && state.sessionViewerOpenAthleteId !== context.athleteId) {
+    state.sessionViewerOpenAthleteId = context.athleteId;
+    state.sessionViewerActiveList = "daily";
+    await renderSessionViewer();
+  }
+  if (!dailyFinishContextIsCurrent(context)) return false;
+  mountDailyFeatures();
+  const mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
+  return !!(await mounted?.handle.present?.({ celebrate }));
 }
 const dailyFeatureObserver = new MutationObserver(() => {
   clearTimeout(dailyFeatureObserver.timer);
@@ -10968,7 +10998,7 @@ function sessionViewerPlanList(entry, activeGroupSession) {
   return `<div class="viewer-inline-list viewer-list-tone-${activeList}" id="viewer-plan-${escapeHtml(entry.athlete.id)}" data-viewer-plan="${escapeHtml(entry.athlete.id)}">
     <div class="viewer-list-tabs" role="group" aria-label="Rider trick lists">${tabs}</div>
     ${dailyTierTwoHost(entry.athlete.id)}
-    ${activeList ? sessionViewerListContent(entry, activeGroupSession, activeList) : `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>`}
+    ${activeList === "daily" && entry.participant?.daily_result?.all_completed === true ? `<details class="viewer-completed-daily" data-completed-daily><summary>Daily Tricks complete · ${entry.daily.length}/${entry.daily.length}<span>View list</span></summary>${sessionViewerListContent(entry, activeGroupSession, activeList)}</details>` : activeList ? sessionViewerListContent(entry, activeGroupSession, activeList) : `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>`}
     ${otherLandedHost(entry.athlete.id)}
   </div>`;
 }
@@ -11366,6 +11396,8 @@ async function saveSessionViewerAssignments(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
   const athleteId = formElement.dataset.athleteId;
+  const userId = state.user?.id, view = state.view;
+  const isCurrent = () => formElement.isConnected && state.user?.id === userId && state.view === view && formElement.dataset.athleteId === athleteId;
   const listId = formElement.dataset.viewerAssignmentEditor;
   const venue = formElement.dataset.venue || "";
   if (!athleteId || !categoryInfo[listId]) return notify("Could not save that list.", "error");
@@ -11380,6 +11412,8 @@ async function saveSessionViewerAssignments(event) {
     .slice(0, listId === "percentage" ? 3 : undefined);
 
   try {
+    const tierTwoSaved = listId === "daily" && await saveDailyTierTwoDraft(athleteId, { userId, view });
+    if (!isCurrent()) return;
     const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
     const info = categoryDisplayInfo(listId, athlete);
     const athleteWeekStart = weekStartDateForCountry(athlete?.country_code || "AU");
@@ -11390,11 +11424,13 @@ async function saveSessionViewerAssignments(event) {
       p_venue: listId === "daily" ? venue : "",
       p_assignments: editedLines,
     }), `Save ${info.label}`, 20000);
+    if (!isCurrent()) return;
     if (error) throw error;
     clearCoachCaches({ roster: false, command: true, sessionViewer: true, leaderboard: false });
-    notify(`${info.label} saved for this rider.`);
+    notify(`${info.label}${tierTwoSaved ? " and Tier 2" : ""} saved for this rider.`);
     await refreshSessionViewerLight({ force: true });
   } catch (error) {
+    if (!isCurrent()) return;
     notify(messageFrom(error), "error");
   } finally {
     restoreButton();
@@ -13822,19 +13858,25 @@ async function saveCoachVenueNames(rows) {
 
 async function saveWeeklyAssignments(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.selectedAthleteId, weekStartDate());
+  const formElement = event.currentTarget;
+  const athleteId = state.selectedAthleteId, userId = state.user?.id, view = state.view;
+  const isCurrent = () => formElement.isConnected && state.user?.id === userId && state.view === view && state.selectedAthleteId === athleteId;
+  const form = new FormData(formElement);
+  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, athleteId, weekStartDate());
   const button = event.submitter || event.currentTarget.querySelector("button[type='submit']") || event.currentTarget.querySelector("button");
   const originalText = button.textContent;
   button.disabled = true;
   button.textContent = "Saving...";
   try {
+    const tierTwoSaved = await saveDailyTierTwoDraft(athleteId, { userId, view });
+    if (!isCurrent()) return;
     const { error } = await withTimeout(client.rpc("save_weekly_assignments", {
-      p_athlete_id: state.selectedAthleteId,
+      p_athlete_id: athleteId,
       p_week_start: weekStartDate(),
       p_assignments: assignments,
       p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
     }), "Saving schedule", 15000);
+    if (!isCurrent()) return;
     if (error) {
       button.disabled = false;
       button.textContent = originalText;
@@ -13843,10 +13885,11 @@ async function saveWeeklyAssignments(event) {
       return;
     }
 
-    notify("Weekly schedule saved for this student.");
+    notify(tierTwoSaved ? "Weekly schedule and Tier 2 saved for this student." : "Weekly schedule saved for this student.");
     button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {
+    if (!isCurrent()) return;
     button.disabled = false;
     button.textContent = originalText;
     notify(messageFrom(error) || "Unable to save this schedule. Please try again.", "error");
@@ -13855,6 +13898,8 @@ async function saveWeeklyAssignments(event) {
 
 async function saveDailyVenueFromStudentProfile(event) {
   const button = event.currentTarget;
+  const athleteId = state.selectedAthleteId, userId = state.user?.id, view = state.view;
+  const isCurrent = () => button.isConnected && state.user?.id === userId && state.view === view && state.selectedAthleteId === athleteId;
   const venueIndex = button.dataset.saveDailyVenue;
   const panel = document.querySelector(`[data-venue-panel="${venueIndex}"]`);
   if (!panel) return notify("Could not find that Daily Tricks venue editor.", "error");
@@ -13874,14 +13919,17 @@ async function saveDailyVenueFromStudentProfile(event) {
   button.textContent = "Saving...";
 
   try {
+    const tierTwoSaved = await saveDailyTierTwoDraft(athleteId, { userId, view });
+    if (!isCurrent()) return;
     const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
-      p_athlete_id: state.selectedAthleteId,
+      p_athlete_id: athleteId,
       p_week_start: weekStartDate(),
       p_category: "daily",
       p_venue: venueKey(venueName).slice(0, 80),
       p_assignments: editedLines,
     }), "Saving Daily list", 15000);
 
+    if (!isCurrent()) return;
     if (error) {
       button.disabled = false;
       button.textContent = originalText;
@@ -13890,12 +13938,13 @@ async function saveDailyVenueFromStudentProfile(event) {
 
     if (originalVenue && venueKey(originalVenue).toLowerCase() !== venueKey(venueName).toLowerCase()) {
       const { error: clearOldVenueError } = await withTimeout(client.rpc("save_weekly_assignment_list", {
-        p_athlete_id: state.selectedAthleteId,
+        p_athlete_id: athleteId,
         p_week_start: weekStartDate(),
         p_category: "daily",
         p_venue: venueKey(originalVenue).slice(0, 80),
         p_assignments: [],
       }), "Removing old Daily list", 15000);
+      if (!isCurrent()) return;
       if (clearOldVenueError) {
         button.disabled = false;
         button.textContent = originalText;
@@ -13906,10 +13955,11 @@ async function saveDailyVenueFromStudentProfile(event) {
     state.coachPlanVenue = venueName;
     clearCoachCaches();
     state.sessionViewerPlanMemory = null;
-    notify(`${venueName} Daily Tricks saved.`);
+    notify(`${venueName} Daily Tricks${tierTwoSaved ? " and Tier 2" : ""} saved.`);
     button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {
+    if (!isCurrent()) return;
     button.disabled = false;
     button.textContent = originalText;
     notify(messageFrom(error) || "Unable to save this Daily list. Please try again.", "error");

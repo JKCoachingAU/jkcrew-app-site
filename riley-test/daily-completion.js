@@ -73,7 +73,12 @@ function closeDailyFinish({ returnFocus = true, next = true } = {}) {
       showDailyFinishConfirmation(upcoming.candidate, upcoming.context);
     } else dailyFinishUi.queued = [];
   }
+  if (current && !dailyFinishUi.current) document.dispatchEvent(new CustomEvent("jkcrew:daily-finish-dismissed"));
 }
+
+document.addEventListener("jkcrew:tier-two-opened", () => {
+  if (!dailyFinishUi.current && dailyFinishUi.queued.length && !document.querySelector('dialog[open]')) closeDailyFinish({ returnFocus: false });
+});
 
 function dailyFinishModal(content, context, { result = false } = {}) {
   const element = document.createElement("div");
@@ -115,11 +120,11 @@ function showDailyFinishConfirmation(candidate, context) {
   const current = dailyFinishModal(`
     <div class="eyebrow">DAILY TRICKS · ${escapeHtml(context.riderName)}</div>
     <h2 id="daily-finish-title">Daily Tricks finished?</h2>
-    <p class="daily-confirm-copy">${partial ? `${Number(candidate.completed_count)}/${Number(candidate.total_count)} tricks landed. Finish Daily practice and move on?` : "You’ve ticked every trick. Ready to lock in your time?"}</p>
+    <p class="daily-confirm-copy">${partial ? `${Number(candidate.completed_count)}/${Number(candidate.total_count)} tricks landed. Finish Daily practice and move on?` : "You’ve landed the whole list. Save your Daily time and unlock what’s next."}</p>
     ${seconds !== null ? `<div class="daily-finish-time"><strong>${formatTime(seconds)}</strong><span>${context.manual ? "Time at your finish tap" : "Time at your final trick"}</span></div>` : ""}
     <p class="daily-finish-note">${partial ? "Unfinished tricks stay unticked. This saves your practice time with no Daily completion points, bonus or personal best. Your other training stays open." : "Reading this popup won’t add to your result. Go back to keep the timer running and correct your list."}</p>
     <div class="daily-finish-error" role="alert" hidden></div>
-    <div class="daily-finish-actions"><button class="primary-btn" type="button" data-confirm-daily>Yes — finish Daily Tricks</button><button class="secondary-btn" type="button" data-cancel-daily>Go back</button></div>`, context);
+    <div class="daily-finish-actions"><button class="primary-btn" type="button" data-confirm-daily>${partial ? "Yes — finish Daily Tricks" : "Save Daily & unlock Tier 2"}</button><button class="secondary-btn" type="button" data-cancel-daily>Go back</button></div>`, context);
   current.candidate = candidate;
   current.element.querySelector("[data-cancel-daily]").onclick = () => closeDailyFinish();
   current.element.querySelector("[data-confirm-daily]").onclick = () => confirmDailyFinish(current);
@@ -135,8 +140,8 @@ function dailySavedResultHtml(result, context) {
   const completionPoints = dailyFinishNumber(result.completion_points);
   const weeklyScore = dailyFinishNumber(result.weekly_score);
   const rank = dailyFinishNumber(result.leaderboard_position);
-  const firstPb = comparable && result.is_first_pb === true;
-  const newPb = comparable && result.is_new_pb === true;
+  const firstPb = !context.reviewing && comparable && result.is_first_pb === true;
+  const newPb = !context.reviewing && comparable && result.is_new_pb === true;
   const comparison = previousPb !== null && seconds !== null
     ? seconds === previousPb ? "You matched your personal best." : `${formatTime(Math.abs(previousPb - seconds))} ${seconds < previousPb ? "faster than" : "off"} your previous best.`
     : firstPb ? "Your first recorded best for this Daily Tricks list." : "A saved result to build on.";
@@ -151,11 +156,12 @@ function dailySavedResultHtml(result, context) {
     </div>
     ${partial ? `<p class="daily-finish-note">Unfinished tricks are still unticked. No Daily completion point, bonus or personal best was awarded.</p>` : comparable ? `<div class="daily-pb-comparison"><div><span>Personal best · same list</span><strong>${personalBest === null ? "Not available" : formatTime(personalBest)}</strong></div><p>${escapeHtml(comparison)}</p></div>` : `<p class="daily-finish-note">Earlier saved Daily result. A compatible PB comparison and completion point breakdown aren’t available for this result.</p>`}
     ${rank !== null && rank > 0 ? `<p class="daily-result-rank">Leaderboard position <strong>#${rank}</strong></p>` : ""}
-    <p class="daily-finish-note">Keep going with One Bangs, Dialled, Lines or your other training. Your Daily result is saved.</p>
-    <div class="daily-finish-actions"><button class="primary-btn" type="button" data-keep-riding>Keep riding</button>${sharingEnabled ? `<button class="secondary-btn" type="button" data-share-daily>Share result</button>` : ""}</div>`;
+    <p class="daily-finish-note">${result.all_completed === true ? "Your Daily result is saved. Tier 2 is ready for you in this session." : "Keep going with One Bangs, Dialled, Lines or your other training. Your Daily result is saved."}</p>
+    <div class="daily-finish-actions">${result.all_completed === true && typeof showDailyTierTwoAfterFinish === "function" ? '<button class="primary-btn" type="button" data-view-tier-two>View Tier 2</button>' : ''}<button class="secondary-btn" type="button" data-keep-riding>Keep riding</button>${sharingEnabled ? `<button class="secondary-btn" type="button" data-share-daily>Share result</button>` : ""}</div>`;
 }
 
 function showSavedDailyResult(result, context) {
+  context = { ...context, reviewing: true };
   result = normalizedDailyResult(result);
   if (!result || result.athlete_id !== context.athleteId) return;
   if (!dailyFinishContextIsCurrent(context)) return;
@@ -163,6 +169,17 @@ function showSavedDailyResult(result, context) {
   const current = dailyFinishModal(dailySavedResultHtml(result, context), context, { result: true });
   current.result = result;
   current.element.querySelector("[data-keep-riding]").onclick = () => closeDailyFinish();
+  const tierTwo = current.element.querySelector("[data-view-tier-two]");
+  if (tierTwo) tierTwo.onclick = async () => {
+    closeDailyFinish({ returnFocus: false, next: false });
+    try {
+      if (await showDailyTierTwoAfterFinish(result, context)) return;
+    } catch (error) { console.warn("Saved Daily result: Tier 2 refresh pending", error); }
+    if (dailyFinishContextIsCurrent(context)) {
+      if (!dailyFinishUi.current) showSavedDailyResult(result, context);
+      notify("Your Daily result is saved. Tier 2 could not load yet—use Retry in the Tier 2 panel.", "error");
+    }
+  };
   const share = current.element.querySelector("[data-share-daily]");
   if (share) share.onclick = () => showTrainingSharePreview({ dailyResult: result });
 }
@@ -201,10 +218,20 @@ async function confirmDailyFinish(current) {
     const result = normalizedDailyResult(Array.isArray(data) ? data[0] : data);
     if (!result?.id || result.athlete_id !== current.context.athleteId || dailyFinishNumber(result.seconds) === null || result.seconds < 0) throw new Error("The finish could not be verified. Retry to check your saved result.");
     current.saving = false;
+    // The save may finish after navigation or after a different rider's dialog
+    // has opened. Its durable result will be restored on the next session read.
+    if (!dailyFinishContextIsCurrent(current.context) || dailyFinishUi.current !== current) return;
     setSyncStatus("saved");
-    showSavedDailyResult(result, current.context);
-    try { await refreshAfterDailyFinish(result, current.context); }
-    catch (refreshError) { console.warn("Daily result saved; session refresh is pending", refreshError); }
+    const tierTwoHandoff = result.all_completed === true && typeof showDailyTierTwoAfterFinish === "function";
+    if (tierTwoHandoff) closeDailyFinish({ returnFocus: false, next: false });
+    else showSavedDailyResult(result, current.context);
+    try {
+      await refreshAfterDailyFinish(result, current.context);
+      if (tierTwoHandoff && !await showDailyTierTwoAfterFinish(result, current.context, { celebrate: true }) && !dailyFinishUi.current) showSavedDailyResult(result, current.context);
+    } catch (refreshError) {
+      console.warn("Daily result saved; session refresh is pending", refreshError);
+      if (tierTwoHandoff && !dailyFinishUi.current) showSavedDailyResult(result, current.context);
+    }
   } catch (error) {
     current.saving = false;
     if (dailyFinishUi.current !== current) return;

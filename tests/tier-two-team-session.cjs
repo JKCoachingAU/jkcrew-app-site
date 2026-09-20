@@ -83,24 +83,25 @@ window.refreshFeatures = async () => {
     await page.evaluate(()=>remoteCoachFinish());
     eq(await page.evaluate(()=>results.r1.group_session_id),'group','Fixture committed a team-session finish from the coach connection');
     eq(await tier.isVisible(),false,'Server change alone does not pretend a local unlock occurred');
-    await refresh(); await page.waitForSelector('[data-tier-two-action="reveal"]');
+    await refresh(); await page.waitForSelector('.daily-tier-two-unlock[open]');
     eq(await page.evaluate(()=>state.activeTraining.daily_result.all_completed),true,'Real loadActiveSession restores the confirmed full result');
     eq(await page.evaluate(()=>state.activeTraining.daily_result.group_session_id),'group');
     eq(await page.locator('#finish-daily-tricks').textContent(),'View Daily result','The original confirmed Daily result remains available');
     eq(await page.locator('.daily-finish-backdrop').count(),0,'Rider refresh does not repeat the coach’s confirmation popup');
-    eq(await tier.locator('h3').textContent(),'Tier 2 Unlocked');
-    eq(await tier.locator('[data-tier-two-item]').count(),0,'Custom tricks remain concealed until Open Tier 2 is tapped');
-    eq(await page.evaluate(()=>tierCalls.filter(call=>call.name==='claim_daily_tier_two_reveal').length),0,'Rendering does not consume the durable reveal');
+    eq(await page.locator('.daily-tier-two-unlock h2').textContent(),'Tier 2Unlocked');
+    eq(await tier.locator('[data-tier-two-item]').count(),2,'Custom list is ready behind automatic unlock moment');
+    eq(await page.evaluate(()=>tierCalls.filter(call=>call.name==='claim_daily_tier_two_reveal').length),1,'Rider seeing their unlock claims the durable reveal once');
+    await page.locator('[data-tier-two-enter]').click();
     ok(await tier.evaluate(element=>element.previousElementSibling?.classList.contains('daily-session-hub')),'Tier 2 is immediately after Daily Tricks in the active branch');
     ok(await tier.evaluate(element=>!(element.compareDocumentPosition(document.querySelector('[data-other-landed-host]'))&Node.DOCUMENT_POSITION_PRECEDING)),'Tier 2 appears before other landed submissions and untimed lists');
     for(const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       ok(await tier.evaluate(element=>element.scrollWidth<=element.clientWidth+1),'Tier 2 card fits '+width+'px without clipped controls');
-      ok(await page.locator('[data-tier-two-action="reveal"]').evaluate(element=>element.getBoundingClientRect().height>=44),'Open Tier 2 has a touch-sized target at '+width+'px');
+      ok(await page.locator('[data-tier-two-action="complete"]').evaluate(element=>element.getBoundingClientRect().height>=44),'Tier 2 completion has a touch-sized target at '+width+'px');
     }
     await page.setViewportSize({width:390,height:844}); await tier.scrollIntoViewIfNeeded();
     if(process.env.JKCREW_SCREENSHOT) await page.screenshot({path:process.env.JKCREW_SCREENSHOT,animations:'disabled'});
-    await page.locator('[data-tier-two-action="reveal"]').click(); await page.waitForSelector('[data-tier-two-item="tier-manual"]');
+    await page.waitForSelector('[data-tier-two-item="tier-manual"]');
     eq(await tier.locator('.daily-tier-two__trick strong').allTextContents(),['Manual','Bunny hop'],'Real module reveals the saved coach template');
     await tier.locator('.daily-tier-two__trick').first().click();await page.waitForFunction(()=>tierRound.completed_count===1);
     const revealedAt=await page.evaluate(()=>tierRound.revealed_at);
@@ -109,7 +110,7 @@ window.refreshFeatures = async () => {
     await page.evaluate(async()=>{clearDailyFeatureMounts();document.querySelector('#view').replaceChildren();state.activeTraining=null;await renderSession();await refreshFeatures();});
     eq(await tier.locator('[data-tier-two-item="tier-manual"]').isChecked(),true,'Fresh mount restores saved Tier 2 progress');
     eq(await page.evaluate(()=>tierRound.revealed_at),revealedAt,'Fresh mount does not change the saved reveal timestamp');
-    eq(await page.evaluate(()=>tierCalls.filter(call=>call.name==='claim_daily_tier_two_reveal').length),1,'Reveal was claimed once, by the rider’s explicit tap');
+    eq(await page.evaluate(()=>tierCalls.filter(call=>call.name==='claim_daily_tier_two_reveal').length),1,'Reveal was claimed once during the automatic handoff');
     eq(await page.evaluate(()=>rpcCalls.filter(call=>call.name==='confirm_daily_finish').length),1,'Rider refresh/reveal does not reconfirm or reaward Daily points');
     await page.evaluate(async()=>{clearDailyFeatureMounts();sessions.r1=null;state.activeTraining=null;await renderSession();await refreshFeatures();});
     ok(await tier.isVisible(),'Saved Tier 2 remains available after the team training session ends');
@@ -121,7 +122,7 @@ window.refreshFeatures = async () => {
     await page.waitForSelector('[data-tier-two-action="refresh"]');
     eq(await page.evaluate(()=>state.activeTraining),null,'No client eligibleHint is available for the ended-session case');
     ok((await tier.locator('[role="alert"]').textContent()).includes('Connection interrupted'),'Known eligible rider sees the actual unlock error');
-    await page.locator('[data-tier-two-action="refresh"]').click();await page.waitForSelector('[data-tier-two-action="reveal"]');
+    await page.locator('[data-tier-two-action="refresh"]').click();await page.waitForSelector('.daily-tier-two-unlock[open]');await page.locator('[data-tier-two-enter]').click();
     ok(await tier.isVisible(),'Retry recovers the eligible round without restarting training');
     for(const completed of [0,1]) {
       await page.evaluate(async count=>{await resetTeam(count);await remoteCoachFinish();await requestRiderSessionRefresh({force:true});await refreshFeatures();},completed);
