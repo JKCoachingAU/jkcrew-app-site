@@ -73,6 +73,7 @@
     }
     function render() {
       if (!active()) return;
+      try {
       element.hidden = !data?.unlocked;
       if (element.hidden && error && (eligible || options.eligibleHint)) {
         element.hidden = false;
@@ -101,6 +102,9 @@
         (target || (focusKey === 'reveal' ? element.querySelector('[data-tier-two-item]') : null))?.focus({ preventScroll: true });
       }
       reveal = false;
+      } finally {
+        options.onRender?.(data);
+      }
     }
     async function refresh({ eligibleHint } = {}) {
       if (typeof eligibleHint === 'boolean') options.eligibleHint = eligibleHint;

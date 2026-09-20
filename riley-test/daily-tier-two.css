@@ -15,3 +15,24 @@
 [data-daily-tier-two-host]{scroll-margin-top:95px}
 @keyframes tier-unlock-enter{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:none}}@keyframes tier-unlock-halo{to{transform:rotate(28deg);opacity:.55}}@keyframes tier-unlock-spark{0%{opacity:0;transform:translateY(30px) rotate(-25deg)}30%{opacity:.75}100%{opacity:0;transform:translateY(-90px) rotate(80deg)}}
 @media(prefers-reduced-motion:reduce){.daily-tier-two-unlock,.daily-tier-two-unlock__halo,.daily-tier-two-unlock__sparks i{animation:none}.daily-tier-two-unlock__sparks{display:none}}
+
+/* Daily Tricks owns both rounds; the unlocked round stays in the same workspace. */
+.daily-tiers{min-width:0;scroll-margin-top:95px}
+.daily-tiers .daily-tier-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0 0 16px;padding:5px;border:1px solid #354451;border-radius:15px;background:#091219;box-shadow:inset 0 1px 0 #ffffff03}
+.daily-tiers .daily-tier-tabs[hidden],.daily-tiers [data-daily-tier-panel][hidden]{display:none!important}
+.daily-tiers .daily-tier-tabs [data-daily-tier-tab]{--tier-tab-accent:#78ded0;box-sizing:border-box;position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:3px;min-width:0;min-height:58px;padding:10px 13px;border:1px solid transparent;border-radius:10px;background:transparent;color:#a4b2bf;text-align:left;font:inherit;line-height:1.2;cursor:pointer;transition:background .18s ease,border-color .18s ease,color .18s ease}
+.daily-tiers .daily-tier-tabs [data-daily-tier-tab="2"]{--tier-tab-accent:#c4a3ff}
+.daily-tiers .daily-tier-tabs [data-daily-tier-tab]:hover{background:#ffffff06;color:#edf3f7}
+.daily-tiers .daily-tier-tabs [data-daily-tier-tab][aria-selected="true"]{border-color:#78ded059;background:linear-gradient(130deg,#78ded01b,#78ded009);color:#edf9f7;box-shadow:inset 0 1px 0 #ffffff06}
+.daily-tiers .daily-tier-tabs [data-daily-tier-tab="2"][aria-selected="true"]{border-color:#b996ff70;background:linear-gradient(130deg,#a47bf42b,#7e5aac0e);color:#f3edff}
+.daily-tiers .daily-tier-tabs [data-daily-tier-tab]:focus-visible{outline:3px solid var(--tier-tab-accent);outline-offset:3px;z-index:1}
+.daily-tiers .daily-tier-tab__index{grid-row:1 / span 2;display:grid;place-items:center;width:30px;height:30px;border:1px solid #4a59694d;border-radius:9px;color:#80919e;background:#ffffff03;font-family:var(--mono,monospace);font-size:11px;font-weight:800;letter-spacing:-.3px;transition:color .18s ease,border-color .18s ease}
+.daily-tiers [aria-selected="true"] .daily-tier-tab__index{color:var(--tier-tab-accent);border-color:currentColor;background:#ffffff03}
+.daily-tiers .daily-tier-tab__label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:800;letter-spacing:-.15px}
+.daily-tiers [data-daily-tier-status]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#a3b2c0;font-family:var(--mono,monospace);font-size:10px;font-weight:600;line-height:1.2;letter-spacing:.1px}
+.daily-tiers [aria-selected="true"] [data-daily-tier-status]{color:var(--tier-tab-accent)}
+.daily-tiers [data-daily-tier-panel]{min-width:0;outline:none}
+.daily-tiers [data-daily-tier-panel="2"] .daily-tier-two{margin:0}
+.daily-tiers [data-daily-tier-panel="1"] .viewer-completed-daily{margin-top:0}
+@media(max-width:380px){.daily-tiers .daily-tier-tabs{gap:4px;padding:4px;border-radius:13px}.daily-tiers .daily-tier-tabs [data-daily-tier-tab]{column-gap:7px;padding:10px 8px}.daily-tiers .daily-tier-tab__index{width:26px;height:28px;font-size:10px}.daily-tiers .daily-tier-tab__label{font-size:13px}.daily-tiers [data-daily-tier-status]{font-size:9px}}
+@media(prefers-reduced-motion:reduce){.daily-tiers .daily-tier-tabs [data-daily-tier-tab],.daily-tiers .daily-tier-tab__index{transition:none}}

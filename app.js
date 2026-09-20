@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.139";
+const RELEASE_VERSION = "2.14.140";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -590,7 +590,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.139" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.140" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -4309,7 +4309,7 @@ function dailyVenueGroups(assignments, interactive = false, profile = null, sele
   }).join("") : `<div class="empty">No ${escapeHtml(info.label)} assigned for this week yet.</div>`;
   return `<section class="assignment-group daily-venue-group">
     <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels.daily}</span><div class="category-count">${complete}/${visibleAssignments.length}</div></div></div>
-    <div class="daily-venue-stack">${body}</div>
+    ${interactive && state.view === "session" ? dailyTiersHtml(state.user.id, `<div class="daily-venue-stack">${body}</div>`) : `<div class="daily-venue-stack">${body}</div>`}
   </section>`;
 }
 
@@ -7714,6 +7714,58 @@ async function saveDailyTierTwoDraft(athleteId, { userId = state.user?.id, view 
 function dailyTierTwoHost(athleteId) {
   return `<div data-daily-tier-two-host="${escapeHtml(athleteId)}"></div>`;
 }
+// The selected Daily tier belongs to this viewer, rider and daily cycle.
+const dailyTierSelections = new Map();
+function dailyTiersHtml(athleteId, dailyHtml) {
+  const id = `daily-tiers-${encodeURIComponent(athleteId)}`;
+  return `<div class="daily-tiers" data-daily-tiers="${escapeHtml(athleteId)}">
+    <div class="daily-tier-tabs" role="tablist" aria-label="Daily Tricks tiers" hidden>
+      <button type="button" role="tab" id="${id}-tab-1" aria-controls="${id}-panel-1" aria-selected="true" data-daily-tier-tab="1"><span class="daily-tier-tab__index" aria-hidden="true">01</span><span class="daily-tier-tab__label">Daily</span></button>
+      <button type="button" role="tab" id="${id}-tab-2" aria-controls="${id}-panel-2" aria-selected="false" tabindex="-1" data-daily-tier-tab="2"><span class="daily-tier-tab__index" aria-hidden="true">02</span><span class="daily-tier-tab__label">Tier 2</span><small data-daily-tier-status>+4</small></button>
+    </div>
+    <div id="${id}-panel-1" role="tabpanel" aria-labelledby="${id}-tab-1" data-daily-tier-panel="1">${dailyHtml}</div>
+    <div id="${id}-panel-2" role="tabpanel" aria-labelledby="${id}-tab-2" data-daily-tier-panel="2" hidden>${dailyTierTwoHost(athleteId)}</div>
+  </div>`;
+}
+function syncDailyTierTabs(host, data, { select, focus = false } = {}) {
+  const shell = host.closest('[data-daily-tiers]');
+  if (!shell) return;
+  const available = !host.hidden;
+  const key = `${state.user?.id}:${state.view}:${host.dataset.dailyTierTwoHost}`;
+  const cycle = data?.local_date || "";
+  let choice = dailyTierSelections.get(key);
+  if (!choice || choice.cycle !== cycle) choice = { cycle, tier: available ? "2" : "1" };
+  if (available && !choice.available) choice.tier = "2";
+  if (select && available) choice.tier = select;
+  if (!available) choice.tier = "1";
+  choice.available = available;
+  dailyTierSelections.set(key, choice);
+  const tabs = shell.querySelector('.daily-tier-tabs');
+  tabs.hidden = !available;
+  shell.dataset.activeTier = choice.tier;
+  shell.querySelectorAll('[data-daily-tier-tab]').forEach(button => {
+    const selected = button.dataset.dailyTierTab === choice.tier;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    if (focus && selected) button.focus({ preventScroll: true });
+  });
+  shell.querySelectorAll('[data-daily-tier-panel]').forEach(panel => { panel.hidden = panel.dataset.dailyTierPanel !== choice.tier; });
+  const status = shell.querySelector('[data-daily-tier-status]');
+  status.textContent = data?.completed_at ? '✓ +4' : data?.total_count ? `${Number(data.completed_count) || 0}/${Number(data.total_count)}` : '+4';
+  // Rebind on the newly rendered shell, while retaining the live Tier 2 host.
+  shell.onclick = event => {
+    const button = event.target.closest('[data-daily-tier-tab]');
+    if (!button || !tabs.contains(button)) return;
+    syncDailyTierTabs(host, data, { select: button.dataset.dailyTierTab });
+  };
+  shell.onkeydown = event => {
+    const button = event.target.closest('[data-daily-tier-tab]');
+    if (!button || !tabs.contains(button) || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const tier = event.key === 'Home' ? '1' : event.key === 'End' ? '2' : button.dataset.dailyTierTab === '1' ? '2' : '1';
+    syncDailyTierTabs(host, data, { select: tier, focus: true });
+  };
+}
 function otherLandedHost(athleteId) {
   return `<div data-other-landed-host="${escapeHtml(athleteId)}"></div>`;
 }
@@ -7745,7 +7797,10 @@ function mountDailyFeatures() {
         }
         host.replaceWith(previous.host);
       }
-      if (type === "tier") void previous.handle.refresh?.({eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true});
+      if (type === "tier") {
+        syncDailyTierTabs(previous.host, previous.handle.getState?.());
+        void previous.handle.refresh?.({eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true});
+      }
       return;
     }
     const isCurrent = () => state.user?.id === userId && state.view === view && host.isConnected && !riderFeaturesDisabled() && !riderFeatureAccessUnknown();
@@ -7758,24 +7813,12 @@ function mountDailyFeatures() {
         if (view === "sessionViewer") void refreshSessionViewerLight({force:true});
       });
     };
-    const opened = () => {
-      if (!isCurrent()) return;
-      // Collapse only this rider's completed Daily list, keeping it available
-      // for review and corrections while the fresh Tier 2 list takes focus.
-      const daily = coach ? host.closest('[data-viewer-plan]')?.querySelector('[data-completed-daily]') : document.querySelector('#view .daily-session-hub');
-      if (!daily) return;
-      const collapse = () => {
-        if (!isCurrent() || !daily.isConnected) return;
-        daily.querySelectorAll('details[open]').forEach(panel => { panel.open = false; });
-        if (daily.matches('details')) daily.open = false;
-        if (!coach) state.sessionOpenDailyVenues?.clear();
-      };
-      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && daily.animate) daily.animate([{opacity:1},{opacity:.2}],{duration:240}).finished.then(collapse).catch(collapse);
-      else collapse();
+    const opened = data => {
+      if (isCurrent()) syncDailyTierTabs(host, data, { select: "2" });
     };
     let handle;
     if (type === "other") handle = window.JKCrewOtherThingsLanded?.mount({element:host,client,athleteId,role:coach ? "coach" : "rider",venue:state.selectedVenue || "",isCurrent,onChanged:changed});
-    if (type === "tier") handle = window.JKCrewDailyTierTwo?.mount(host,{client,athleteId,canEdit:coach || athleteId === userId,canReveal:!coach && athleteId === userId,eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true,observerId:coach ? userId : null,isCurrent,onChange:changed,onOpen:opened});
+    if (type === "tier") handle = window.JKCrewDailyTierTwo?.mount(host,{client,athleteId,canEdit:coach || athleteId === userId,canReveal:!coach && athleteId === userId,eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true,observerId:coach ? userId : null,isCurrent,onChange:changed,onOpen:opened,onRender:data=>syncDailyTierTabs(host,data)});
     if (type === "editor" && coach) handle = window.JKCrewDailyTierTwo?.mountEditor(host,{client,athleteId,isCurrent});
     if (handle) dailyFeatureMounts.set(key,{host,handle,userId,view});
   });
@@ -7789,8 +7832,21 @@ function dailyTierTwoIsUnlocked(context) {
 async function refreshDailyTierTwoAfterProgress(context, { present = false } = {}) {
   if (!dailyFinishContextIsCurrent(context) || !window.JKCrewDailyTierTwo) return false;
   mountDailyFeatures();
-  const mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
+  let mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
   if (!mounted?.host.isConnected) return false;
+  // A slow ordinary tick must not pull a coach back from another list. Only
+  // select Daily when the server confirms there is an unlocked round to show.
+  if (present && context.viewer && (state.sessionViewerOpenAthleteId !== context.athleteId || state.sessionViewerActiveList !== "daily")) {
+    const round = await mounted.handle.refresh?.();
+    if (!dailyFinishContextIsCurrent(context) || !round?.unlocked) return false;
+    state.sessionViewerOpenAthleteId = context.athleteId;
+    state.sessionViewerActiveList = "daily";
+    await renderSessionViewer();
+    if (!dailyFinishContextIsCurrent(context)) return false;
+    mountDailyFeatures();
+    mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
+    if (!mounted?.host.isConnected) return false;
+  }
   // The server decides whether a previously saved partial Daily is now a full
   // checklist. Never rewrite that receipt or infer eligibility from local ticks.
   if (present) return !!(await mounted.handle.present?.({ celebrate: true }));
@@ -7799,7 +7855,7 @@ async function refreshDailyTierTwoAfterProgress(context, { present = false } = {
 }
 async function showDailyTierTwoAfterFinish(result, context, { celebrate = false } = {}) {
   if (result?.all_completed !== true || !dailyFinishContextIsCurrent(context) || !window.JKCrewDailyTierTwo) return false;
-  if (context.viewer && state.sessionViewerOpenAthleteId !== context.athleteId) {
+  if (context.viewer && (state.sessionViewerOpenAthleteId !== context.athleteId || state.sessionViewerActiveList !== "daily")) {
     state.sessionViewerOpenAthleteId = context.athleteId;
     state.sessionViewerActiveList = "daily";
     await renderSessionViewer();
@@ -7873,7 +7929,6 @@ async function renderSession({ forceParkKing = false, forceAssignments = false, 
       ${statBar}
       <div class="page-head"><div><div class="eyebrow">Private training plan</div><h1>Today's <span>training</span></h1><p>Time your Daily Tricks. One Bangs, Dialled, Lines and other training stay untimed.</p></div>${riderSessionRefreshButtonHtml()}</div>
       ${dailySessionHubHtml(assignments, selectedVenue, null, latestDailyTraining)}
-      ${dailyTierTwoHost(state.user.id)}
       ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
       ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
       ${otherLandedHost(state.user.id)}
@@ -7901,7 +7956,6 @@ async function renderSession({ forceParkKing = false, forceAssignments = false, 
     ${statBar}
     <div class="page-head"><div><div class="eyebrow">Session live</div><h1>Today's <span>plan</span></h1><p>Tap the circle next to each trick as you complete it.</p></div>${riderSessionRefreshButtonHtml()}</div>
     ${dailySessionHubHtml(assignments, selectedVenue, state.activeTraining, latestDailyTraining)}
-    ${dailyTierTwoHost(state.user.id)}
     ${contestPrepSession ? "" : parkKingCardHtml(parkKing, selectedVenue, { id: "session-park-king", compact: true })}
     ${assignmentGroups(assignments, true, state.profile, selectedVenue)}
     ${otherLandedHost(state.user.id)}
@@ -11343,8 +11397,8 @@ function sessionViewerPlanList(entry, activeGroupSession) {
   }).join("");
   return `<div class="viewer-inline-list viewer-list-tone-${activeList}" id="viewer-plan-${escapeHtml(entry.athlete.id)}" data-viewer-plan="${escapeHtml(entry.athlete.id)}">
     <div class="viewer-list-tabs" role="group" aria-label="Rider trick lists">${tabs}</div>
-    ${dailyTierTwoHost(entry.athlete.id)}
-    ${activeList === "daily" && entry.participant?.daily_result?.all_completed === true ? `<details class="viewer-completed-daily" data-completed-daily><summary>Daily Tricks complete · ${entry.daily.length}/${entry.daily.length}<span>View list</span></summary>${sessionViewerListContent(entry, activeGroupSession, activeList)}</details>` : activeList ? sessionViewerListContent(entry, activeGroupSession, activeList) : `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>`}
+    <div data-viewer-daily-pane ${activeList === "daily" ? "" : "hidden"}>${dailyTiersHtml(entry.athlete.id, activeList === "daily" ? sessionViewerListContent(entry, activeGroupSession, "daily") : "")}</div>
+    ${activeList && activeList !== "daily" ? sessionViewerListContent(entry, activeGroupSession, activeList) : !activeList ? `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>` : ""}
     ${otherLandedHost(entry.athlete.id)}
   </div>`;
 }

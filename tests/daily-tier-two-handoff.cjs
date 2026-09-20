@@ -55,10 +55,10 @@ function tierHandle(id='r1'){return mountRecords().find(m=>m.host.dataset.dailyT
 function bindFinish(){document.querySelectorAll('[data-finish-daily-athlete]').forEach(button=>button.onclick=()=>requestDailyFinish(button,state.profile.role==='coach'));}
 function paint(){
  const view=document.querySelector('#view');
- if(state.profile.role==='coach')view.innerHTML=['r1','r2'].map(id=>'<article class="viewer-rider-accordion open" data-rider="'+id+'"><button data-viewer-athlete="'+id+'">'+id+'</button><button data-finish-daily-athlete="'+id+'">View Daily result</button><div id="viewer-plan-'+id+'" data-viewer-plan="'+id+'"><div class="viewer-list-tone-daily" data-completed-daily><details id="daily-'+id+'" open><summary>Daily '+id+'</summary>Tier 1 list</details></div>'+dailyTierTwoHost(id)+'</div></article>').join('');
- else view.innerHTML='<button id="finish-daily-tricks" data-finish-daily-athlete="r1">View Daily result</button><section class="daily-session-hub"><details id="daily-r1" open><summary>Daily list</summary>Tier 1 list</details></section>'+dailyTierTwoHost('r1')+'<button id="other-category">One Bangs</button>';
+ if(state.profile.role==='coach')view.innerHTML=['r1','r2'].map(id=>'<article class="viewer-rider-accordion open" data-rider="'+id+'"><button data-viewer-athlete="'+id+'">'+id+'</button><button data-finish-daily-athlete="'+id+'">View Daily result</button><div id="viewer-plan-'+id+'" data-viewer-plan="'+id+'"><div data-viewer-daily-pane="'+id+'" '+(state.sessionViewerActiveList==='daily'?'':'hidden')+'>'+dailyTiersHtml(id,'<div class="viewer-list-tone-daily" data-completed-daily><details id="daily-'+id+'" open><summary>Daily '+id+'</summary>Tier 1 list</details></div>')+'</div><div data-test-other-category="'+id+'" '+(state.sessionViewerActiveList==='daily'?'hidden':'')+'>One Bangs list</div></div></article>').join('');
+ else view.innerHTML='<button id="finish-daily-tricks" data-finish-daily-athlete="r1">View Daily result</button><section class="assignment-group daily-venue-group">'+dailyTiersHtml('r1','<details id="daily-r1" open><summary>Daily list</summary>Tier 1 list</details>')+'</section><button id="other-category">One Bangs</button>';
  if(partialMode){
-  const target=state.profile.role==='coach'?view.querySelector('[data-viewer-plan="r1"]'):view;
+  const target=view.querySelector('[data-daily-tiers="r1"] [data-daily-tier-panel="1"]');
   target.insertAdjacentHTML('beforeend','<div data-test-daily-ticks>'+partialTicks.map((landed,index)=>'<div class="'+(state.profile.role==='coach'?'viewer-trick-row':'assignment-row')+(landed?' complete':'')+'"><button data-test-daily-tick="'+index+'" data-assignment-id="tick-'+index+'" data-athlete-id="r1" '+(state.profile.role==='coach'?'data-viewer-assignment-action':'data-assignment-action')+'="'+(landed?'unlanded':'landed')+'">'+(landed?'✓':'Tick '+(index+1))+'</button></div>').join('')+'</div>');
   target.querySelectorAll('[data-test-daily-tick]').forEach(button=>button.onclick=event=>recordDailyTrainingAction(event,state.profile.role==='coach'));
  }
@@ -76,16 +76,30 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
  const browser=await chromium.launch({headless:true,executablePath:process.env.JKCREW_BROWSER_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});let checks=0;
  const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;},ok=(value,message)=>{assert(value,message);checks++;};
  const pages=[];
- async function fresh({coach=false,reducedMotion=false}={}){
+ const tab=(page,id,tier)=>page.locator('[data-daily-tiers="'+id+'"] [data-daily-tier-tab="'+tier+'"]');
+ const panel=(page,id,tier)=>page.locator('[data-daily-tiers="'+id+'"] [data-daily-tier-panel="'+tier+'"]');
+ async function selected(page,id,tier,message){
+  eq(await tab(page,id,tier).getAttribute('aria-selected'),'true',message+' selected tab');
+  eq(await panel(page,id,tier).isVisible(),true,message+' selected panel visible');
+  eq(await panel(page,id,tier===1?2:1).isHidden(),true,message+' other panel hidden');
+ }
+
+ async function fresh({coach=false,reducedMotion=false,returningUnlocked=false}={}){
   const page=await browser.newPage({viewport:{width:390,height:844},reducedMotion:reducedMotion?'reduce':'no-preference'});pages.push(page);page.setDefaultTimeout(7000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',route=>route.abort());
   await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><html data-theme="dark"><body style="background:#081018;color:white"><main id="view"></main></body></html>');
   for(const name of ['styles.css','daily-completion.css','daily-tier-two.css'])await page.addStyleTag({content:fs.readFileSync(path.join(root,name),'utf8')});
   for(const name of ['daily-completion.js','daily-tier-two.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,name),'utf8')});
-  await page.addScriptTag({content:fixture+'\n'+helpers});await page.evaluate(coach=>coach?coachMode():paint(),coach);await page.waitForFunction(()=>mountRecords().length>0);await page.evaluate(()=>Promise.all(mountRecords().map(m=>m.handle.ready)));return {page,errors};
+  await page.addScriptTag({content:fixture+'\n'+helpers});await page.evaluate(async({coach,returningUnlocked})=>{if(returningUnlocked){rounds.r1.eligible=true;await client.rpc('unlock_daily_tier_two',{p_athlete_id:'r1'});rounds.r1.revealed_at=new Date().toISOString();}coach?coachMode():paint();},{coach,returningUnlocked});await page.waitForFunction(()=>mountRecords().length>0);await page.evaluate(()=>Promise.all(mountRecords().map(m=>m.handle.ready)));return {page,errors};
  }
  try{
   {
-   const {page,errors}=await fresh();await page.evaluate(()=>{enableFinalTick();partialTicks[8]=false;paint();});
+   const {page,errors}=await fresh();
+   eq(await page.locator('[data-daily-tiers="r1"] .daily-tier-tabs').isHidden(),true,'Tier tabs stay hidden before eligibility');
+   eq(await panel(page,'r1',1).isVisible(),true,'Standard Daily remains visible before unlock');
+   eq(await panel(page,'r1',2).isHidden(),true,'Tier 2 stays hidden before unlock');
+   eq(await panel(page,'r1',2).locator('[data-daily-tier-two-host="r1"]').count(),1,'Tier 2 host belongs to the second Daily panel');
+   eq(await page.locator('.daily-venue-group [data-daily-tiers="r1"]').count(),1,'Both tiers live inside Daily Tricks');
+   await page.evaluate(()=>{enableFinalTick();partialTicks[8]=false;paint();});
    await page.click('[data-test-daily-tick="8"]');await page.waitForFunction(()=>partialTicks[8]);
    eq(await page.evaluate(()=>calls.filter(c=>c.name==='confirm_daily_finish').length),0,'Nonfinal Daily tick never saves a finish');
    await page.evaluate(()=>holdConfirm=true);await page.click('[data-test-daily-tick="9"]');await page.waitForFunction(()=>!!releaseConfirm);
@@ -101,10 +115,18 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
    eq(await page.evaluate(()=>state.activeTraining.daily_result.all_completed),true,'Saved Daily remains authoritative');
    await page.waitForTimeout(300);await page.screenshot({path:'/tmp/jkcrew-tier2-unlock-mobile.png'});
    await page.waitForSelector('dialog.daily-tier-two-unlock',{state:'detached'});await page.waitForSelector('[data-tier-two-item]');
-   await page.waitForFunction(()=>!document.querySelector('#daily-r1').open);
+   await selected(page,'r1',2,'Unlock handoff');
    eq(await page.evaluate(()=>document.activeElement?.tagName),'H3','Timed popup handoff focuses the unlocked list');
    await page.waitForTimeout(900);await page.screenshot({path:'/tmp/jkcrew-tier2-list-mobile.png'});
    eq(await page.locator('[data-tier-two-item]').count(),2,'Unlocked list is immediately usable');eq(await page.evaluate(()=>popupShows.length),1,'One automatic unlock popup');
+   await tab(page,'r1',1).click();await selected(page,'r1',1,'Switching back to standard Daily');
+   const savedResult=await page.evaluate(()=>JSON.stringify(results.r1));
+   await page.click('[data-test-daily-tick="9"]');await page.waitForFunction(()=>partialTicks[9]===false);await page.evaluate(()=>tierHandle().refresh());
+   await selected(page,'r1',1,'Correcting a standard Daily trick');
+   eq(await page.evaluate(()=>JSON.stringify(results.r1)),savedResult,'Standard Daily correction preserves the saved receipt');
+   await page.click('[data-test-daily-tick="9"]');await page.waitForFunction(()=>partialTicks[9]===true);
+   await page.evaluate(async()=>{paint();await tierHandle().refresh();});await selected(page,'r1',1,'Refresh retains the selected standard Daily tab');
+   await tab(page,'r1',2).click();await selected(page,'r1',2,'Returning to Tier 2');
    await page.evaluate(()=>paint());await page.evaluate(()=>tierHandle().refresh());eq(await page.evaluate(()=>popupShows.length),1,'Refresh does not replay unlock');
    await page.click('#finish-daily-tricks');await page.waitForSelector('.daily-result-dialog');
    eq(await page.locator('.daily-pb-banner,.daily-result-mark.new-pb').count(),0,'Reopened old receipt never replays PB celebration');
@@ -113,6 +135,15 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
    eq(await page.evaluate(()=>calls.filter(c=>c.name==='confirm_daily_finish').length),1,'Reopening saved result never confirms twice');
    eq(await page.evaluate(()=>calls.filter(c=>c.name==='claim_daily_tier_two_reveal').length),1,'Rider reveal is claimed once');
    eq(errors,[],'Full handoff has no browser errors');await page.close();
+  }
+  for(const coach of [false,true]){
+   const {page,errors}=await fresh({coach,returningUnlocked:true});
+   await selected(page,'r1',2,'Returning unlocked '+(coach?'coach':'rider')+' starts on Tier 2');
+   eq(await page.evaluate(()=>popupShows.length),0,'Returning revealed round does not replay its celebration');
+   await tab(page,'r1',1).click();await page.evaluate(async()=>{paint();await tierHandle('r1').refresh();});
+   await selected(page,'r1',1,'Returning rider choice survives background refresh');
+   eq(await panel(page,'r1',2).locator('[data-tier-two-item]').count(),2,'Hidden Tier 2 keeps its saved checklist mounted');
+   eq(errors,[]);await page.close();
   }
   {
    const {page,errors}=await fresh();await page.evaluate(()=>{failConfirmOnce=true;showConfirm();});await page.waitForFunction(()=>document.querySelector('[data-confirm-daily]')?.textContent==='Retry finish');
@@ -145,12 +176,20 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
    eq(await page.evaluate(()=>state.sessionViewerOpenAthleteId),'r1','Coach handoff selects the completed rider');
    eq(await page.evaluate(()=>results.r2||null),null,'Coach finishing one rider does not finish the other');
    eq(await page.evaluate(()=>state.sessionViewerActiveSessionCache.status),'active','Coach group session remains active');
-   eq(await page.locator('#daily-r2').evaluate(el=>el.open),true,'Other rider’s Daily list is not collapsed');
+   eq(await panel(page,'r2',1).isVisible(),true,'Other rider standard Daily stays visible');
    eq(await page.evaluate(()=>calls.some(c=>c.name==='claim_daily_tier_two_reveal')),false,'Coach never consumes rider reveal');
    await page.click('[data-tier-two-enter]');await page.waitForSelector('[data-daily-tier-two-host="r1"] [data-tier-two-item]');
-   await page.waitForFunction(()=>!document.querySelector('#daily-r1').open);eq(await page.locator('#daily-r1').evaluate(el=>el.open),false,'Coach handoff collapses only the completed rider Daily');
-   eq(await page.locator('#daily-r2').evaluate(el=>el.open),true,'Other rider remains open after animation');
+   await selected(page,'r1',2,'Coach unlock selects only the completed rider Tier 2');
+   eq(await panel(page,'r2',1).isVisible(),true,'Other rider stays on standard Daily');
+   eq(await page.locator('[data-daily-tiers="r2"] .daily-tier-tabs').isHidden(),true,'Other rider gains no Tier 2 tab');
+   await tab(page,'r1',1).click();await page.evaluate(async()=>{paint();await tierHandle('r1').refresh();});await selected(page,'r1',1,'Coach standard Daily choice survives refresh');
+   await page.evaluate(()=>{window.previousTierHandle=tierHandle('r1');state.sessionViewerActiveList='one_bang';paint();});
+   eq(await page.locator('[data-daily-tiers="r1"]').isHidden(),true,'Coach other category hides both Daily tiers');
+   eq(await page.locator('[data-tier-two-item]:visible').count(),0,'Tier 2 does not appear above unrelated coach lists');
+   eq(await page.evaluate(()=>previousTierHandle===tierHandle('r1')),true,'Changing coach category keeps the Tier 2 controller mounted');
    await page.evaluate(async()=>{const context=dailyFinishContext(document.querySelector('[data-finish-daily-athlete="r1"]'),true);await showDailyTierTwoAfterFinish(results.r1,context,{celebrate:true});});
+   eq(await page.evaluate(()=>state.sessionViewerActiveList),'daily','Same-rider handoff returns from another category to Daily Tricks');
+   await selected(page,'r1',2,'Same-rider explicit handoff selects Tier 2');
    eq(await page.evaluate(()=>popupShows.length),1,'Same coach/rider/day handoff does not repeat popup');eq(errors,[]);await page.close();
   }
   {
@@ -195,7 +234,7 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
    const {page,errors}=await fresh({reducedMotion:true});await page.evaluate(()=>showConfirm());await page.waitForSelector('dialog.daily-tier-two-unlock[open]');
    await page.keyboard.press('Escape');await page.waitForSelector('[data-tier-two-item]');
    eq(await page.locator('.daily-tier-two--reveal').count(),0,'Reduced motion handoff omits list reveal animation');
-   eq(await page.locator('#daily-r1').evaluate(el=>el.open),false,'Reduced motion collapses completed Daily immediately');
+   await selected(page,'r1',2,'Reduced motion opens the second Daily tab');
    eq(await page.evaluate(()=>document.activeElement?.tagName),'H3','Escape reaches the unlocked list with focus');eq(errors,[]);await page.close();
   }
   {
@@ -238,6 +277,27 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
    await page.evaluate(()=>{holdConfirm=false;releaseConfirm();});await page.waitForSelector('dialog.daily-tier-two-unlock[open]');
    eq(await page.evaluate(()=>calls.filter(c=>c.name==='confirm_daily_finish').map(c=>c.args.p_candidate_id)),['candidate-r1'],'Manual full Finish saves its original candidate once');
    eq(errors,[],'Manual full '+(coach?'coach':'rider')+' handoff has no browser errors');await page.close();
+  }
+  {
+   const {page,errors}=await fresh({coach:true});
+   await page.evaluate(()=>{partialMode=true;full=false;paint();showConfirm('r1');});
+   await page.click('[data-confirm-daily]');await page.waitForSelector('.daily-result-dialog');await page.click('[data-keep-riding]');
+   const original=await page.evaluate(()=>JSON.stringify(results.r1));
+   await page.evaluate(()=>{state.sessionViewerOpenAthleteId='r1';state.sessionViewerActiveList='one_bang';paint();window.progressContext=dailyFinishContext(document.querySelector('[data-finish-daily-athlete="r1"]'),true);});
+   eq(await page.evaluate(()=>refreshDailyTierTwoAfterProgress(progressContext,{present:true})),false,'Locked progress cannot open Tier 2');
+   eq(await page.evaluate(()=>state.sessionViewerActiveList),'one_bang','Locked progress retains the coach selected category');
+   eq(await page.locator('[data-daily-tiers="r1"]').isHidden(),true,'Locked progress leaves Daily hidden under the other category');
+   eq(await page.evaluate(()=>popupShows.length),0,'Locked progress has no unlock celebration');
+   await page.evaluate(()=>{partialTicks=Array(10).fill(true);rounds.r1.eligible=true;});
+   eq(await page.evaluate(()=>refreshDailyTierTwoAfterProgress(progressContext,{present:true})),true,'Server eligible later checklist opens its unlocked round');
+   await page.waitForSelector('dialog.daily-tier-two-unlock[open]');
+   eq(await page.evaluate(()=>state.sessionViewerActiveList),'daily','Unlocked progress switches back to Daily Tricks');
+   eq(await page.evaluate(()=>state.sessionViewerOpenAthleteId),'r1','Unlocked progress keeps the completed rider selected');
+   await page.click('[data-tier-two-enter]');await selected(page,'r1',2,'Unlocked progress opens Daily Tier 2');
+   eq(await page.evaluate(()=>JSON.stringify(results.r1)),original,'Category handoff preserves the original partial receipt');
+   eq(await page.evaluate(()=>calls.filter(c=>c.name==='confirm_daily_finish').length),1,'Progress handoff does not repeat Daily confirmation');
+   eq(await page.evaluate(()=>calls.filter(c=>c.name==='claim_daily_tier_two_reveal').length),0,'Coach progress handoff preserves the rider reveal');
+   eq(errors,[]);await page.close();
   }
   for(const coach of [false,true]){
    const {page,errors}=await fresh({coach});
@@ -287,6 +347,6 @@ function showConfirm(id='r1'){const button=document.querySelector('[data-finish-
    eq(await page.evaluate(()=>JSON.stringify(results.r1)),original,'Recovered unlock still preserves original partial result');
    eq(await page.locator('[data-tier-two-item]').count(),2,'Recovered server round is usable immediately');eq(errors,[]);await page.close();
   }
-  console.log(JSON.stringify({status:'PASS',checks,coverage:['actual rider and coach final-trick automatic handoff','manual full Finish automatic handoff','same-candidate lost-response retry','modal blocks background reveal','neutral saved receipt','coach target and reveal separation','queued rider continuation','reduced motion and Escape','partial/error/navigation safety','saved partial then full checklist rider and coach','server-only later eligibility','focus recovery without duplicate Daily award'],production_requests:0},null,2));
+  console.log(JSON.stringify({status:'PASS',checks,coverage:['Tier 2 inside Daily second tab','standard Daily switchback and corrections','refresh retains selected tier','returning unlocked defaults to Tier 2','coach category and rider isolation','locked progress retains category; unlocked progress returns to Daily','actual rider and coach final-trick automatic handoff','manual full Finish automatic handoff','same-candidate lost-response retry','modal blocks background reveal','neutral saved receipt','coach target and reveal separation','queued rider continuation','reduced motion and Escape','partial/error/navigation safety','saved partial then full checklist rider and coach','server-only later eligibility','focus recovery without duplicate Daily award'],production_requests:0},null,2));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
