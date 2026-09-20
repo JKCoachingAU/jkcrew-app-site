@@ -1,4 +1,4 @@
-/* Daily finishes are explicit, saved transactions. Rendering and realtime never open this UI. */
+/* A full list saves at the final tick; partial finishes remain explicit. Rendering and realtime never finish a list. */
 const dailyFinishUi = { current: null, queued: [], shown: new Set(), requests: new Set(), epoch: 0 };
 
 function dailyRpcVenue(value) {
@@ -117,17 +117,19 @@ function showDailyFinishConfirmation(candidate, context) {
   context = { ...context, riderName: candidate.rider_name || context.riderName };
   const seconds = dailyFinishNumber(candidate.seconds);
   const partial = candidate.all_completed === false;
+  const automatic = candidate.all_completed === true;
   const current = dailyFinishModal(`
     <div class="eyebrow">DAILY TRICKS · ${escapeHtml(context.riderName)}</div>
-    <h2 id="daily-finish-title">Daily Tricks finished?</h2>
-    <p class="daily-confirm-copy">${partial ? `${Number(candidate.completed_count)}/${Number(candidate.total_count)} tricks landed. Finish Daily practice and move on?` : "You’ve landed the whole list. Save your Daily time and unlock what’s next."}</p>
+    <h2 id="daily-finish-title">${automatic ? "Daily list complete" : "Daily Tricks finished?"}</h2>
+    <p class="daily-confirm-copy">${partial ? `${Number(candidate.completed_count)}/${Number(candidate.total_count)} tricks landed. Finish Daily practice and move on?` : automatic ? "Saving your Daily result and opening Tier 2…" : "Save your Daily result to continue."}</p>
     ${seconds !== null ? `<div class="daily-finish-time"><strong>${formatTime(seconds)}</strong><span>${context.manual ? "Time at your finish tap" : "Time at your final trick"}</span></div>` : ""}
-    <p class="daily-finish-note">${partial ? "Unfinished tricks stay unticked. This saves your practice time with no Daily completion points, bonus or personal best. Your other training stays open." : "Reading this popup won’t add to your result. Go back to keep the timer running and correct your list."}</p>
+    <p class="daily-finish-note">${partial ? "Unfinished tricks stay unticked. This saves your practice time with no Daily completion points, bonus or personal best. Your other training stays open." : automatic ? "Your time was captured at the final trick. Your next challenge is on its way." : "Go back to keep the timer running and correct your list."}</p>
     <div class="daily-finish-error" role="alert" hidden></div>
-    <div class="daily-finish-actions"><button class="primary-btn" type="button" data-confirm-daily>${partial ? "Yes — finish Daily Tricks" : "Save Daily & unlock Tier 2"}</button><button class="secondary-btn" type="button" data-cancel-daily>Go back</button></div>`, context);
+    <div class="daily-finish-actions" ${automatic ? 'hidden' : ''}><button class="primary-btn" type="button" data-confirm-daily>${partial ? "Yes — finish Daily Tricks" : "Save Daily & unlock Tier 2"}</button><button class="secondary-btn" type="button" data-cancel-daily>${automatic ? "Back to session" : "Go back"}</button></div>`, context);
   current.candidate = candidate;
   current.element.querySelector("[data-cancel-daily]").onclick = () => closeDailyFinish();
   current.element.querySelector("[data-confirm-daily]").onclick = () => confirmDailyFinish(current);
+  if (automatic) return confirmDailyFinish(current);
 }
 
 function dailySavedResultHtml(result, context) {
@@ -232,12 +234,14 @@ async function confirmDailyFinish(current) {
       console.warn("Daily result saved; session refresh is pending", refreshError);
       if (tierTwoHandoff && !dailyFinishUi.current) showSavedDailyResult(result, current.context);
     }
+    return true;
   } catch (error) {
     current.saving = false;
     if (dailyFinishUi.current !== current) return;
     setSyncStatus("error");
     errorBox.textContent = `${messageFrom(error)} Your trick progress is kept. Retry checks this same finish, so it cannot award it twice.`;
     errorBox.hidden = false;
+    current.element.querySelector(".daily-finish-actions").hidden = false;
     confirm.disabled = false; cancel.disabled = false;
     confirm.removeAttribute("aria-busy"); confirm.textContent = "Retry finish";
   }
@@ -258,7 +262,7 @@ async function requestDailyFinish(button, viewer = false) {
     if (error) throw error;
     const response = Array.isArray(data) ? data[0] : data;
     if (response?.result) showSavedDailyResult(response.result, context);
-    else if (response?.completion_candidate) showDailyFinishConfirmation(normalizedDailyCandidate(response.completion_candidate), context);
+    else if (response?.completion_candidate) await showDailyFinishConfirmation(normalizedDailyCandidate(response.completion_candidate), context);
     else notify(response?.message || "Couldn't prepare your Daily finish. Please try again.", "error");
   } catch (error) { notify(messageFrom(error), "error"); }
   finally { dailyFinishUi.requests.delete(key); restore(); }
@@ -276,7 +280,7 @@ function handleDailyCompletionAction(result, context, action, wasComplete) {
   const key = candidate.id;
   if (dailyFinishUi.shown.has(key)) return;
   dailyFinishUi.shown.add(key);
-  showDailyFinishConfirmation(candidate, context);
+  return showDailyFinishConfirmation(candidate, context);
 }
 
 async function recordDailyTrainingAction(event, viewer = false) {
@@ -309,7 +313,10 @@ async function recordDailyTrainingAction(event, viewer = false) {
     setSyncStatus("saved");
     cacheClear(`schedule:${context.athleteId}:`); cacheClear("leaderboard"); cacheClear("park-king:");
     invalidateSessionViewerData();
-    handleDailyCompletionAction(result, context, action, wasComplete);
+    // Serialize the full-list save and its Tier 2 handoff with this tap's UI
+    // refresh, so a late Tier 1 render cannot tear down the unlock celebration.
+    const dailyFinished = await handleDailyCompletionAction(result, context, action, wasComplete);
+    if (dailyFinished) return;
     if (!result?.completion_candidate) notify(result?.message || (landed ? "Daily Trick saved." : "Daily Trick corrected."));
     if (dailyFinishContextIsCurrent(context)) {
       if (viewer) await refreshSessionViewerLight({ force: true });

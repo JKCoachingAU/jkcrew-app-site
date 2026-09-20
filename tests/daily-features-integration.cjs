@@ -1,4 +1,4 @@
-// Real app mount/preservation helpers + both real modules + real Daily confirm
+// Real app mount/preservation helpers + both real modules + real automatic Daily finish
 // flow in a browser. Backend contracts are covered independently by DB suites.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
@@ -12,6 +12,7 @@ const state={user:{id:'rider'},profile:{id:'rider',role:'athlete'},view:'session
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isCoachRole=role=>['coach','admin'].includes(role),cacheClear=key=>cacheKeys.push(key),riderFeaturesDisabled=()=>disabled,riderFeatureAccessUnknown=()=>unknown;
 const clearCoachCaches=()=>{},updateTimer=()=>{},refreshOpenTrainingProgress=()=>{},withTimeout=promise=>promise,setSyncStatus=()=>{},messageFrom=e=>e.message;
+const formatTime=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
 if(!crypto.randomUUID){let uuid=1;crypto.randomUUID=()=> '00000000-0000-0000-0000-'+String(uuid++).padStart(12,'0');}
 const originalRpc=client.rpc;
 client.rpc=async(name,args)=>{
@@ -22,7 +23,7 @@ client.rpc=async(name,args)=>{
 window.paint=(editor=false)=>{document.querySelector('#view').innerHTML='<section class="daily-session-hub"><details open><summary>Daily list</summary>Tier 1 content</details></section>'+dailyFeatureHosts('rider')+(editor?tierTwoEditorSection('rider'):'');mountDailyFeatures();};
 window.renderSession=async()=>paint();window.renderSessionViewer=async()=>paint();window.refreshSessionViewerLight=async()=>paint();window.renderAthleteHome=async()=>paint();
 window.mountCount=()=>dailyFeatureMounts.size;
-window.confirmFull=async()=>{const element=document.createElement('div');element.innerHTML='<button data-confirm-daily>Confirm</button><button data-cancel-daily>Cancel</button><div class="daily-finish-error" hidden></div>';document.body.append(element);const current={element,candidate:{id:'candidate'},saving:false,context:{athleteId:'rider',userId:state.user.id,view:state.view,epoch:dailyFinishUi.epoch,viewer:state.view==='sessionViewer'}};dailyFinishUi.current=current;await confirmDailyFinish(current);element.remove();};
+window.finishFull=()=>showDailyFinishConfirmation(normalizedDailyCandidate({candidate_id:'candidate',athlete_id:'rider',rider_name:'Rider',session_id:'session-rider',seconds:65,all_completed:true,completed_count:2,total_count:2}),{athleteId:'rider',riderName:'Rider',userId:state.user.id,view:state.view,epoch:dailyFinishUi.epoch,viewer:state.view==='sessionViewer'});
 showSavedDailyResult=(result)=>savedDaily.push(result);
 `;
 (async()=>{
@@ -31,14 +32,14 @@ showSavedDailyResult=(result)=>savedDaily.push(result);
  try{
   const page=await browser.newPage({viewport:{width:390,height:900}}),errors=[];page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());
   await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;padding:14px;background:#081018;color:#fff;font-family:Arial"><main id="view"></main></body>');
-  for(const f of ['daily-tier-two.css','other-things-landed.css'])await page.addStyleTag({content:fs.readFileSync(path.join(root,f),'utf8')});
+  for(const f of ['daily-completion.css','daily-tier-two.css','other-things-landed.css'])await page.addStyleTag({content:fs.readFileSync(path.join(root,f),'utf8')});
   for(const f of ['daily-tier-two.js','other-things-landed.js','daily-completion.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,f),'utf8')});
   await page.addScriptTag({content:uiFixture});await page.addScriptTag({content:fixture});await page.addScriptTag({content:helpers});
   await page.evaluate(()=>paint());await page.waitForFunction(()=>calls.some(c=>c.name==='get_daily_tier_two'));eq(await page.evaluate(()=>mountCount()),2,'Rider session mounts the two separate feature modules');
   eq(await page.locator('[data-daily-tier-two-host]').isHidden(),true);await page.locator('[data-other-landed-panel]>summary').click();await page.locator('[data-other-name]').fill('Footjam practice');await page.locator('[data-other-note]').fill('Keep my unsent note');
   await page.evaluate(()=>paint());eq(await page.locator('[data-other-name]').inputValue(),'Footjam practice','Session refresh keeps actual Other Things Landed form node/draft');eq(await page.locator('[data-other-note]').inputValue(),'Keep my unsent note');ok(await page.locator('[data-other-landed-panel]').evaluate(el=>el.open));
-  // Execute the real Daily confirmation function and its real refresh callback.
-  await page.evaluate(()=>confirmFull());await page.waitForSelector('.daily-tier-two-unlock[open]');eq(await page.evaluate(()=>savedDaily.length),0,'Full Daily hands off directly without old result popup');ok(await page.evaluate(()=>calls.some(c=>c.name==='unlock_daily_tier_two')),'Confirmed full Daily re-renders session and triggers authoritative unlock');
+  // Dispatch a real full candidate: saving and the module handoff happen without a confirm click.
+  eq(await page.evaluate(()=>finishFull()),true,'Full candidate resolves only after its automatic save and handoff');await page.waitForSelector('.daily-tier-two-unlock[open]');eq(await page.locator('.daily-finish-backdrop').count(),0,'Automatic finish leaves no confirmation popup');eq(await page.evaluate(()=>calls.filter(c=>c.name==='confirm_daily_finish').map(c=>c.args.p_candidate_id)),['candidate'],'Automatic flow saves its original candidate once');eq(await page.evaluate(()=>savedDaily.length),0,'Full Daily hands off directly without old result popup');ok(await page.evaluate(()=>calls.some(c=>c.name==='unlock_daily_tier_two')),'Confirmed full Daily re-renders session and triggers authoritative unlock');
   eq(await page.locator('[data-other-name]').inputValue(),'Footjam practice','Full Daily confirmation preserves unsent extras');
   await page.locator('[data-tier-two-enter]').click();await page.waitForFunction(()=>!!round.revealed_at);await page.locator('.daily-tier-two__trick').first().click();await page.waitForFunction(()=>round.completed_count===1);await page.evaluate(()=>paint());await page.waitForFunction(()=>document.querySelector('[data-tier-two-item]')?.checked);eq(await page.locator('[data-tier-two-item]').first().isChecked(),true,'Tier 2 progress survives session redraw');
   eq(await page.locator('[data-other-name]').inputValue(),'Footjam practice');ok(await page.evaluate(()=>cacheKeys.includes('tricktionary:')),'Tier 2 landed changes invalidate existing history caches');
@@ -51,6 +52,6 @@ showSavedDailyResult=(result)=>savedDaily.push(result);
   await page.evaluate(()=>{disabled=true;mountDailyFeatures();});await page.waitForFunction(()=>mountCount()===0);eq(await page.locator('[data-other-landed-panel]').count(),0,'Disabling access tears down controls even before dashboard replaces the DOM');eq(await page.locator('[data-daily-tier-two-host]').textContent(),'');
   await page.evaluate(()=>{disabled=false;unknown=true;paint();});eq(await page.evaluate(()=>mountCount()),0,'Unknown account access cannot mount feature controls');
   eq(errors,[],'Actual app helpers and modules run without browser errors');
-  console.log(`PASS: ${checks} actual app/Daily/module integration checks: session, coach, profile, unsent draft preservation, progress redraw, confirmed Daily unlock and account/navigation cleanup.`);
+  console.log(`PASS: ${checks} actual app/Daily/module integration checks: session, coach, profile, unsent draft preservation, progress redraw, automatic Daily unlock and account/navigation cleanup.`);
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -9,6 +9,7 @@ html.daily-finish-open { overflow: hidden; }
 .daily-finish-time span { display:block; color:#a8bdcc; font-size:13px; margin-top:12px; }
 .daily-finish-note { color:#a8bdcc; line-height:1.5; font-size:14px; }
 .daily-finish-actions { display:grid; gap:10px; margin-top:22px; }
+.daily-finish-actions[hidden] { display:none; }
 .daily-finish-actions > button { min-height:48px; width:100%; white-space:normal; line-height:1.4; padding:12px 14px; }
 .daily-finish-error { border:1px solid #ca6874; background:#3c1725; color:#ffe5e8; padding:12px; border-radius:12px; line-height:1.5; font-size:14px; }
 .daily-finish-error[hidden] { display:none; }
