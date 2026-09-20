@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.140";
+const RELEASE_VERSION = "2.14.141";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -191,6 +191,7 @@ function closeRestrictedRiderFeatures() {
   closeContestEventModal();
   stopRunPlayback();
   disconnectLiveRun();
+  closeJkcYard();
   if (typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
   document.querySelectorAll('.parent-notification-backdrop, .battle-intro-backdrop, .push-setup-modal-backdrop, .coaching-viewer-backdrop, .contest-event-backdrop, [role="dialog"], #live-run-invitation').forEach(element => element.remove());
 }
@@ -356,17 +357,17 @@ function coachPrimaryView(view = "") {
   if (view === "battleViewer") return "battleViewer";
   if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
   if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
-  if (["more", "bikeGarage", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
+  if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
 
 function parentPrimaryView(view = "") {
-  if (["profile", "tricktionary", "bikeGarage"].includes(view)) return "parentMore";
+  if (["profile", "tricktionary", "bikeGarage", "shredZone", "jkcYard"].includes(view)) return "parentMore";
   return view;
 }
 
 function athletePrimaryView(view = "") {
-  if (view === "bikeGarage") return "home";
+  if (["bikeGarage", "shredZone", "jkcYard"].includes(view)) return "home";
   return view === "coaching" ? "home" : view;
 }
 
@@ -590,7 +591,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.140" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.141" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1497,6 +1498,7 @@ async function handleSession(session) {
     if (state.user) app.innerHTML = "";
     dismissDailyFinishForNavigation();
     closeTrainingProgressViews();
+    closeJkcYard();
     if (typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
     state.runBuilder = null;
     runUndoStack = []; runRedoStack = [];
@@ -2403,6 +2405,7 @@ async function navigate(view, options = {}) {
   }
   clearInterval(state.timer);
   if (previousView === "bikeGarage" && view !== previousView && typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
+  if (previousView === "jkcYard") closeJkcYard();
   stopRunPlayback();
   if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
   if (previousView === "contests" && view !== "contests") {
@@ -2423,6 +2426,8 @@ async function navigate(view, options = {}) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
+  if (previousView === "shredZone" && ["bikeGarage", "tricktionary", "jkcYard"].includes(view)) state.shredZoneReturn = view;
+  else if (view !== previousView) state.shredZoneReturn = null;
   resetPageExpansions(options);
   state.view = view;
   const viewElement = document.querySelector("#view");
@@ -2458,6 +2463,8 @@ async function navigate(view, options = {}) {
     coachTools: renderCoachTools,
     more: renderCoachMore,
     bikeGarage: renderBikeGarage,
+    shredZone: renderShredZone,
+    jkcYard: renderJkcYard,
     adminRecords: renderCoachAdminRecords,
     planner: renderPlanner,
     parents: renderParents,
@@ -6200,6 +6207,7 @@ async function renderTricktionary() {
   state.profile = data.profile || state.profile;
   const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: state.user.id }));
   document.querySelector("#view").innerHTML = `
+    ${state.shredZoneReturn === "tricktionary" ? `<button class="secondary-btn shred-tricktionary-back" type="button" data-back-shred-zone>← Shred Zone</button>` : ""}
     <div class="page-head"><div><div class="eyebrow">Progress history</div><h1>My <span>Tricktionary</span></h1><p>Your personal BMX trick library, built from landed training-sheet tricks plus manual history.</p></div></div>
     <section class="panel">
       <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">${entries.length} tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
@@ -6211,6 +6219,7 @@ async function renderTricktionary() {
       ${weeklyAttemptsHtml(data.attempts.filter((attempt) => attempt.week_start === weekStartDate()), data.profile)}
     </section>
     `;
+  document.querySelector("[data-back-shred-zone]")?.addEventListener("click", () => navigate("shredZone"));
   document.querySelector("#manual-trick-form")?.addEventListener("submit", saveManualTrick);
   document.querySelectorAll("[data-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeManualTrick));
   bindTricktionaryBoard({ athleteId: state.user.id, refresh: renderTricktionary });
@@ -6953,9 +6962,9 @@ async function renderAthleteHome() {
     ${goalsSection(state.profile)}
     <div id="athlete-home-proposals"></div>
     <div id="athlete-home-trick-requests"></div>
-    ${typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}`;
+    ${shredZoneTeaserHtml()}`;
   bindGoalActions();
-  view.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => { if (isCurrent()) navigate("bikeGarage"); });
+  view.querySelector("[data-open-shred-zone]")?.addEventListener("click", () => { if (isCurrent()) navigate("shredZone"); });
   view.querySelector("#open-home-run-builder")?.addEventListener("click", (event) => { if (isCurrent()) openRunBuilder(event); });
   bindCoaching();
   const coachingStatus = view.querySelector("#athlete-home-coaching .coaching-cta-status");
@@ -10761,13 +10770,128 @@ async function renderCoachTools() {
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
 }
 
+function shredZoneIcon(name) {
+  const paths = {
+    garage: '<circle cx="5.5" cy="17" r="4"/><circle cx="19" cy="17" r="4"/><path d="m5.5 17 4.5-9 5 9H5.5l7-7h5l1.5 7M8 5h4m3-1h3l1 6"/>',
+    yard: '<path d="M2 19h20M3 5v14m18-14v14M3 6c0 8 4 11 9 11s9-3 9-11M8 7l4-4 4 4m-4-4v8"/>',
+    tricks: '<path d="M12 5C8 2 4 3 2 4v16c3-2 7-1 10 1 3-2 7-3 10-1V4c-2-1-6-2-10 1Zm0 0v16M5 8l4 1m-4 3 4 1m6-4 4-1m-4 5 4-1"/>',
+    arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+    back: '<path d="M19 12H5m6-6-6 6 6 6"/>',
+    zone: '<path d="m13 2-9 12h7l-1 8L21 9h-8l1-7Z"/>',
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.zone}</svg>`;
+}
+function shredZoneTeaserHtml() {
+  return `<button class="shred-zone-entry" type="button" data-open-shred-zone><span class="shred-entry-mark">${shredZoneIcon("zone")}</span><span class="shred-entry-copy"><small>MAKE IT YOURS</small><strong>SHRED ZONE</strong><span>Build. Ride. Progress.</span></span><span class="shred-entry-arrow">${shredZoneIcon("arrow")}</span></button>`;
+}
+function renderShredZone() {
+  if (!state.user?.id) return navigate("home");
+  const destinations = [
+    ["bikeGarage", "garage", "JKC GARAGE", "Create your dream BMX. Every detail, your way.", "Open garage"],
+    ["jkcYard", "yard", "JKC YARD", "Drop in and ride your own BMX playground.", "Play Yard"],
+    ["tricktionary", "tricks", "TRICKTIONARY", "Your landed tricks. Your growing bag of moves.", "Explore tricks"],
+  ];
+  const root = document.querySelector("#view");
+  root.innerHTML = `<section class="shred-zone-page"><header class="shred-zone-header"><button class="shred-zone-back" type="button" data-shred-back aria-label="Back to home">${shredZoneIcon("back")}</button><div><div class="eyebrow">YOUR SPACE TO RIDE</div><h1>SHRED <span>ZONE</span></h1><p>Build your setup. Drop into the Yard. Grow your trick library.</p></div></header><div class="shred-zone-grid">${destinations.map(([view, icon, title, description, action], index) => `<button class="shred-zone-card shred-zone-card--${icon}" type="button" data-shred-destination="${view}"><span class="shred-zone-card__top"><span class="shred-zone-card__number">0${index + 1}</span><span class="shred-zone-card__arrow">${shredZoneIcon("arrow")}</span></span><span class="shred-zone-card__icon">${shredZoneIcon(icon)}</span><strong>${title}</strong><span class="shred-zone-card__description">${description}</span><span class="shred-zone-card__action">${action}${shredZoneIcon("arrow")}</span></button>`).join("")}</div></section>`;
+  root.querySelector('[data-shred-back]').onclick = () => navigate(isCoachRole(state.profile?.role) ? "more" : "home");
+  root.querySelectorAll('[data-shred-destination]').forEach(button => { button.onclick = () => navigate(button.dataset.shredDestination); });
+}
+
+function closeJkcYard() {
+  state.jkcYardCleanup?.();
+  state.jkcYardCleanup = null;
+}
+
+async function renderJkcYard() {
+  closeJkcYard();
+  const userId = state.user?.id;
+  if (!userId) return navigate("home");
+  const root = document.querySelector("#view");
+  root.innerHTML = `<section class="jkc-yard-page"><header class="jkc-yard-header"><button class="shred-zone-back" type="button" data-yard-back aria-label="Back to Shred Zone">${shredZoneIcon("back")}</button><div><div class="eyebrow">SHRED ZONE</div><h1>JKC YARD</h1></div><button class="secondary-btn" type="button" data-yard-fullscreen aria-pressed="false">Full screen</button></header><div class="jkc-yard-stage"><div class="jkc-yard-loading" role="status">Opening the Yard…</div><div class="jkc-yard-error" role="alert" hidden><strong>Couldn't open the Yard</strong><p>Check your connection and try again.</p><button class="secondary-btn" type="button" data-yard-retry>Try again</button></div></div><p class="jkc-yard-hint">Your playground. Game scores are separate from your training points.</p></section>`;
+  const page = root.querySelector('.jkc-yard-page');
+  const stage = page.querySelector('.jkc-yard-stage');
+  const loading = page.querySelector('.jkc-yard-loading');
+  const errorPanel = page.querySelector('.jkc-yard-error');
+  const fullscreen = page.querySelector('[data-yard-fullscreen]');
+  const controller = new AbortController();
+  let frame = null, timer = null, disposed = false;
+  const isCurrent = () => !disposed && state.view === "jkcYard" && state.user?.id === userId && page.isConnected;
+  const syncFullscreen = () => {
+    const expanded = document.fullscreenElement === page || page.classList.contains('is-expanded');
+    fullscreen.textContent = expanded ? "Exit full screen" : "Full screen";
+    fullscreen.setAttribute('aria-pressed', String(expanded));
+  };
+  const exitExpanded = () => {
+    page.classList.remove('is-expanded');
+    document.body.classList.remove('jkc-yard-expanded');
+    if (document.fullscreenElement === page) void document.exitFullscreen().catch(() => {});
+    syncFullscreen();
+  };
+  const keydown = event => { if (event.key === 'Escape') exitExpanded(); };
+  state.jkcYardCleanup = () => {
+    disposed = true;
+    controller.abort();
+    clearTimeout(timer);
+    exitExpanded();
+    document.removeEventListener('fullscreenchange', syncFullscreen);
+    document.removeEventListener('keydown', keydown);
+    frame?.remove();
+  };
+  document.addEventListener('fullscreenchange', syncFullscreen);
+  document.addEventListener('keydown', keydown);
+  page.querySelector('[data-yard-back]').onclick = () => navigate("shredZone");
+  page.querySelector('[data-yard-retry]').onclick = () => renderJkcYard();
+  fullscreen.onclick = async () => {
+    if (document.fullscreenElement === page || page.classList.contains('is-expanded')) return exitExpanded();
+    if (page.requestFullscreen) {
+      try { await page.requestFullscreen(); return; } catch { /* iPhone/PWA fallback keeps the game in this tab. */ }
+    }
+    if (!isCurrent()) return;
+    page.classList.add('is-expanded');
+    document.body.classList.add('jkc-yard-expanded');
+    syncFullscreen();
+  };
+  const failed = () => {
+    if (!isCurrent()) return;
+    clearTimeout(timer);
+    controller.abort();
+    frame?.remove();
+    loading.hidden = true;
+    errorPanel.hidden = false;
+  };
+  try {
+    // The reviewed static game lives outside the Riley mirror and is loaded only on demand.
+    const yardFromRiley = /\/riley-test(?:\/index\.html)?\/?$/.test(window.location.pathname);
+    const gameUrl = new URL(yardFromRiley ? "../games/jkc-yard/index.html" : "./games/jkc-yard/index.html", window.location.href);
+    timer = setTimeout(failed, 30000);
+    const response = await fetch(gameUrl, { method: "HEAD", signal: controller.signal, cache: "no-cache" });
+    if (!response.ok) throw new Error("Yard is unavailable");
+    if (!isCurrent()) return;
+    frame = document.createElement('iframe');
+    frame.title = "JKC Yard BMX game";
+    frame.allow = "fullscreen; gamepad";
+    frame.referrerPolicy = "no-referrer";
+    frame.addEventListener('load', () => {
+      if (!isCurrent()) return;
+      clearTimeout(timer);
+      loading.hidden = true;
+      frame.focus();
+    }, { once: true });
+    frame.addEventListener('error', failed, { once: true });
+    frame.src = gameUrl.href;
+    stage.prepend(frame);
+  } catch (error) {
+    if (!disposed) failed();
+  }
+}
+
 function renderBikeGarage() {
   const userId = state.user?.id;
   if (!userId) return navigate("home");
   JKCrewBikeGarage.mount({
     root: document.querySelector("#view"), client, userId,
     isCurrent: () => state.view === "bikeGarage" && state.user?.id === userId,
-    onBack: () => navigate(isCoachRole(state.profile?.role) ? "more" : state.profile?.role === "athlete" ? "home" : "profile"),
+    onBack: () => navigate(state.shredZoneReturn === "bikeGarage" ? "shredZone" : isCoachRole(state.profile?.role) ? "more" : state.profile?.role === "athlete" ? "home" : "profile"),
   });
 }
 

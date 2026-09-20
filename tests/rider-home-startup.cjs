@@ -88,12 +88,12 @@ function session() {
       await page.waitForFunction(() => document.querySelector('.battle-ranking-stat .stat-value')?.textContent.includes('1W'));
       ok((await page.locator('.xp-title').textContent()).includes('45 XP'), 'Persisted XP renders immediately');
       eq(await page.locator('#goal-form').count(), 1, 'Goal controls mount before optional requests finish');
-      eq(await page.locator('[data-open-bike-garage]').count(), 1, 'Garage remains at Home');
+      eq(await page.locator('[data-open-shred-zone]').count(), 1, 'Shred Zone replaces Garage on Home');
       eq(await page.locator('#open-home-run-builder').count(), 1);
       eq(await page.locator('#open-athlete-coaching').count(), 1);
       await page.evaluate(() => { window.actionCalls = []; navigate = view => window.actionCalls.push(view); openRunBuilder = () => window.actionCalls.push('run'); });
-      await page.locator('#open-home-run-builder').click(); await page.locator('#open-athlete-coaching').click(); await page.locator('[data-open-bike-garage]').click();
-      eq(await page.evaluate(() => actionCalls), ['run', 'coaching', 'bikeGarage'], 'Immediate primary action callbacks remain connected');
+      await page.locator('#open-home-run-builder').click(); await page.locator('#open-athlete-coaching').click(); await page.locator('[data-open-shred-zone]').click();
+      eq(await page.evaluate(() => actionCalls), ['run', 'coaching', 'shredZone'], 'Immediate primary action callbacks remain connected');
       await page.locator('[data-home-retry="rankings"]').waitFor(); await page.locator('[data-home-retry="active-session"]').waitFor();
       eq(await page.locator('.score-ranking-stat .stat-value').nth(0).textContent(), '—', 'Timed out scores stay unknown');
       eq(await page.locator('.view-error').count(), 0, 'Timeout does not replace Home with whole-screen error');

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JKCREW — BMX Yard</title>
+<meta name="theme-color" content="#020405" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="description" content="A free-roam 3D BMX game — the JKCREW Yard, the JKC Trail slopestyle, a vert ramp, three contest parks and five pump-track lines — with tricks, grinds and crashes." />
+<link rel="icon" type="image/png" href="./assets/jkc-logo.png" />
+<link rel="apple-touch-icon" href="./assets/jkc-logo.png" />
+<link rel="stylesheet" href="./style.css" />
+<style>[hidden]:not([hidden="until-found"]){display:none!important}</style>
+</head>
+<body>
+<main id="game" aria-label="3D BMX park and tracks">
+  <canvas id="scene" aria-label="BMX rider and ramps"></canvas>
+  <div class="vignette"></div>
+  <header class="topbar">
+    <div class="brand"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M3 3v5a13 13 0 0 0 26 0V3" /></svg><strong>JK<span>CREW</span></strong><span class="edition">BMX YARD / 2.6</span></div>
+    <div class="top-actions"><button id="tracks-btn" class="reset-btn" aria-label="Choose track">TRACKS</button><button id="marker-btn" class="icon-btn" aria-label="Set respawn marker" title="Set marker (M)">⚑</button><button id="audio-btn" class="icon-btn" aria-label="Enable sound" title="Sound"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 3c3 2 3 6 0 8m3-11c5 4 5 10 0 14"/></svg></button><button id="help-btn" class="icon-btn" aria-label="Controls and tutorial" title="Controls">?</button><button id="pause-btn" class="icon-btn" aria-label="Pause game" title="Pause"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button><button id="reset-btn" class="reset-btn" title="Reset (R)"><span>↻</span> RESET</button></div>
+  </header>
+  <section class="session-hud" aria-label="Session score"><span class="eyebrow">SESSION SCORE</span><div id="score">00000</div><div class="best">BEST LINE <span id="best">0</span></div></section>
+  <aside class="spot"><span class="spot-number" id="track-number">01</span><div><strong id="track-name">MEADOW ROLLERS</strong><span id="track-meta">EASY · THREE TABLETOPS</span></div></aside>
+  <section class="feedback" aria-live="polite"><span id="feedback-tag">FIND YOUR FLOW</span><strong id="feedback-title">One more run.</strong><span id="feedback-detail">Build speed. Go higher.</span></section>
+  <div class="pump-cue" id="pump-cue">HOLD PUMP</div>
+  <div class="run-track"><div><span>START</span><b id="run-progress">0%</b><span>FINISH</span></div><i><span id="progress-fill"></span></i></div>
+  <div class="telemetry" hidden><div><b id="speed">0</b><span>KM/H</span></div><div class="speed-track"><i id="speed-fill"></i></div><div><b id="height">0.0</b><span>AIR / M</span></div></div>
+  <div class="status-line" hidden><span id="ride-status">READY TO RIDE</span><span class="status-separator">/</span><span id="fps">60 FPS TARGET</span></div>
+  <div id="controls" class="controls">
+    <div class="park-steering"><div id="steering" role="group" aria-label="Analog pad. In a park: left and right steer, pull down for a manual or icepick, push up for a nose manual or toothpick. In the air, and on a flow line: left spins left, right spins right, up throws a front flip, down a backflip."><span>‹</span><span>›</span><b class="balance-up"><i class="park-only">NOSE</i><i class="flow-only">FRONT FLIP</i></b><b class="balance-down"><i class="park-only">MANUAL</i><i class="flow-only">BACKFLIP</i></b><div id="steer-stick"></div></div><small>STEER · SPIN · FLIP</small></div>
+    <div class="left-controls mobile-tricks">
+      <div class="stick-top"><span id="stick-name">TRICKS</span></div>
+      <div id="joystick" class="trick-joystick" aria-label="Trick stick. Flick up for Tabletop, right for Tailwhip, down for Turndown, left for Barspin. Diagonals select more tricks.">
+        <i class="stick-axis horizontal"></i><i class="stick-axis vertical"></i>
+        <span data-sector="0">TABLE</span><span data-sector="1">BAR</span><span data-sector="2">WHIP</span><span data-sector="3">CAN-CAN</span><span data-sector="4">TURN</span><span data-sector="5">TOBOGGAN</span><span data-sector="6">NO HAND</span><span data-sector="7">SUPERMAN</span>
+        <div id="stick"></div>
+      </div><small class="thumb-caption">FLICK · HOLD · RELEASE</small>
+    </div>
+    <div class="right-controls mobile-drive"><div class="tier-btns" role="group" aria-label="Trick set"><button class="tier-btn hold-control" data-tier="0" aria-pressed="true">T1</button><button class="tier-btn hold-control" data-tier="1" aria-pressed="false">T2</button><button class="tier-btn hold-control" data-tier="2" aria-pressed="false">T3</button></div><button id="pump-btn" class="pump-btn hold-control"><span class="pump-label">PUMP</span><small>HOLD / RELEASE</small></button><small id="lean-hint" class="thumb-caption">PAD: SPIN · FLIP</small></div>
+    <div class="extra-controls"><button id="brake-btn" class="hold-control">BRAKE</button></div>
+  </div>
+  <div id="intro" class="overlay">
+    <section class="intro-card track-menu" aria-label="Choose your track">
+      <div class="intro-kicker">FREE RIDE <span>3 TRACKS</span></div>
+      <h1>Your crew.<br> <em>Your yard.</em></h1>
+      <div class="track-pager"><button id="track-prev" class="pager-btn" aria-label="Previous track">‹</button><div class="track-window"><div id="track-list" class="track-list" aria-label="Track difficulty"></div></div><button id="track-next" class="pager-btn" aria-label="Next track">›</button></div>
+      <div id="track-dots" class="track-dots" aria-hidden="true"></div>
+      <button id="start-btn" class="start-btn"><strong id="start-label">RIDE EASY</strong><span>↗</span></button>
+      <div class="intro-hint" role="status">LOADING TRACK DETAILS…</div>
+    </section>
+    <div class="rider-panel" aria-label="Your rider">
+      <div class="rider-row"><span>RIDER</span><div class="seg" data-option="build"><button data-value="boy" aria-pressed="true">BOY</button><button data-value="girl" aria-pressed="false">GIRL</button></div></div>
+      <div class="rider-row"><span>STANCE</span><div class="seg" data-option="stance"><button data-value="left" aria-pressed="false">LEFT FOOT</button><button data-value="right" aria-pressed="true">RIGHT FOOT</button></div></div>
+      <div class="rider-row"><span>SPIN</span><div class="seg" data-option="spin"><button data-value="left" aria-pressed="true">LEFT</button><button data-value="right" aria-pressed="false">RIGHT</button></div></div>
+      <button id="kit-btn" class="text-btn kit-btn" aria-label="Change bike and pants">KIT · BLACKOUT ›</button>
+    </div>
+    <div class="location-caption"><span id="selected-track-name">MEADOW ROLLERS</span><p id="selected-track-detail">3 TABLETOPS · 113 M</p></div>
+  </div>
+  <div id="tutorial" class="modal-backdrop" hidden><section class="modal tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title"><div class="modal-top"><span class="eyebrow">MOBILE CONTROLS</span><button id="close-help" class="icon-btn" aria-label="Close tutorial">×</button></div><h2 id="tutorial-title">Two thumbs. More flow.</h2>
+    <div class="tutorial-steps"><article><span>01</span><h3>Right thumb: Pump</h3><p>Hold <b>PUMP</b> down the ramp. Release just after takeoff. Press again on the descent. <b>T1 · T2 · T3</b> above it pick the trick set.</p></article><article><span>02</span><h3>Right thumb: Tricks</h3><p>Flick the stick: <b>← Barspin · → Tailwhip · ↑ Table · ↓ Turndown.</b> Hold for style, then release before landing. T2 and T3 put more tricks on the same eight flicks.</p></article><article><span>03</span><h3>Left thumb: Spin and flip</h3><p id="pitch-help">The pad on the left: push <b>← or →</b> in the air to spin left or right, <b>↑</b> for a front flip, <b>↓</b> for a backflip. Let it go to stop rotating and line up the landing.</p></article></div>
+    <div class="motion-options"><button id="tilt-btn" class="text-btn">ENABLE PHONE TILT</button><button id="calibrate-btn" class="text-btn" hidden>RECENTER TILT</button><span id="motion-status">Touch lean is ready.</span></div>
+    <div class="trick-reference"><span id="map-title">TRICK STICK / T1</span><div id="trick-map"></div></div>
+    <p class="touch-guide">Tap the pad sideways for a 180 — it finishes the half-turn on its own. Hold it for a 360. Your spin direction on the home page sets which way a lip air and the Q key turn.</p>
+    <div class="keyboard-guide">KEYBOARD: Space pedal/pump · A/D steer in park, spin in the air · W/S balance on the ground, front flip / backflip in the air · Q spin · 1–8 tricks clockwise from ↑ · T next trick set · H hop · Shift brake · R reset · Esc pause</div>
+    <button id="tutorial-go" class="start-btn">RIDE THE LINE <span>↗</span></button>
+  </section></div>
+  <div id="pause-overlay" class="modal-backdrop" hidden><section class="modal pause-card" role="dialog" aria-modal="true"><span class="eyebrow">TAKE A BREATHER</span><h2>Session paused.</h2><button id="resume-btn" class="start-btn">KEEP RIDING <span>↗</span></button><button id="pause-help" class="text-btn">VIEW CONTROLS</button></section></div>
+  <div id="crash-overlay" hidden><span>BAILED</span><strong id="crash-reason">Not quite lined up.</strong><button id="crash-reset">BACK ON THE BIKE <span>↻</span></button><small>or press R · your banked score is safe</small></div>
+  <div id="finish-overlay" class="modal-backdrop" hidden><section class="modal pause-card"><span class="eyebrow">LINE COMPLETE</span><h2>That’s the flow.</h2><div class="finish-stats"><strong id="finish-score">0</strong><span>SESSION POINTS</span><b id="finish-time">0 SEC</b></div><button id="replay-btn" class="start-btn">RIDE AGAIN <span>↻</span></button><button id="finish-tracks" class="text-btn">CHOOSE ANOTHER TRACK</button></section></div>
+  <div id="error" hidden></div>
+</main>
+<script type="module" src="./app.js"></script>
+
+</body></html>

@@ -17,6 +17,7 @@ const names = [
   'guardRiderFeatureInteraction', 'renderRestrictedRiderHome', 'riderAccessToggleHtml',
   'toggleRiderFeatureAccess', 'renderCrew', 'renderShell', 'navigate', 'resetPageExpansions',
   'signOutCurrentDevice', 'athleteHomeSectionStatus', 'getAthleteHomeVerifiedLeaderboard', 'renderAthleteHome',
+  'shredZoneIcon', 'shredZoneTeaserHtml', 'closeJkcYard',
 ];
 const accessConstant = app.match(/^const RIDER_ACCESS_MESSAGE = .*;$/m)?.[0];
 assert(accessConstant, 'Actual restriction message exists');
@@ -134,13 +135,13 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     assert.equal(await page.locator('#rider-access-dashboard h1').textContent(), 'Alex & Rider');
     assert.equal(await page.locator('#rider-access-week').innerText(), '42 points this week');
     assert.equal(await page.locator('.rider-access-notice [role="status"]').innerText(), "You don't have access to this feature, contact your coach");
-    assert.equal(await page.locator('#open-home-run-builder, [data-open-bike-garage], form').count(), 0, 'Restricted dashboard renders no active tools');
+    assert.equal(await page.locator('#open-home-run-builder, [data-open-bike-garage], [data-open-shred-zone], form').count(), 0, 'Restricted dashboard renders no active tools');
     await page.locator('.bottom-nav [data-view="session"]').click();
     assert.equal(await page.evaluate(() => state.view), 'home');
     assert.equal((await page.evaluate(() => qaNotices.at(-1))).message, "You don't have access to this feature, contact your coach");
     await page.locator('#notification-centre-bell').click();
     assert.equal(await page.evaluate(() => qaActions.length), 0, 'Notifications are not an alternate route into features');
-    for (const view of ['session', 'contests', 'bikeGarage', 'profile', 'tricktionary', 'board', 'challenges', 'coaching']) {
+    for (const view of ['session', 'contests', 'bikeGarage', 'shredZone', 'jkcYard', 'profile', 'tricktionary', 'board', 'challenges', 'coaching']) {
       await page.evaluate(view => navigate(view), view);
       assert.equal(await page.evaluate(() => state.view), 'home', `Direct navigation to ${view} is blocked`);
     }
@@ -169,6 +170,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
 
     await page.evaluate(async () => {
       qaActions = []; qaDisabled = true; state.view = 'session';
+      state.jkcYardCleanup = () => qaClosed.push('jkcYard');
       document.body.insertAdjacentHTML('beforeend', '<div role="dialog"><button>Old modal tool</button></div>');
       await refreshRiderFeatureAccess({ force: true });
     });
@@ -176,6 +178,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     assert.equal(await page.locator('[role="dialog"]').count(), 0, 'Stale feature dialogs close');
     assert(await page.evaluate(() => state.sessionRenderVersion > 0 && state.athleteHomeRenderVersion > 0), 'Pending home/session renders are invalidated');
     assert(await page.evaluate(() => qaClosed.includes('disconnectLiveRun')), 'Live run connections close');
+    assert(await page.evaluate(() => qaClosed.includes('jkcYard') && state.jkcYardCleanup === null), 'Yard closes when account access is disabled');
 
     await page.evaluate(async () => {
       qaHoldRead = true; state.riderAccessCheckedAt = 0;
