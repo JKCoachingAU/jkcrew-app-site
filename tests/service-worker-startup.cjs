@@ -18,10 +18,13 @@ const release = worker.match(/const RELEASE_VERSION = "([^"]+)"/)[1];
 const nextRelease = release.replace(/\d+$/, value => String(Number(value) + 1));
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
-function pageVm({ controlled = false, stored = false, storageThrows = false } = {}) {
+function pageVm({ controlled = false, stored = false, storageThrows = false, signedIn = false, entered = false, pendingAuth = false, activeCall = false } = {}) {
   const listeners = {}, redirects = [], storage = new Map(stored ? [[`jkcrew-controller-refresh:${nextRelease}`, '1']] : []);
   const navigator = { serviceWorker: { controller: controlled ? { scriptURL: `https://jkcrew.test/sw.js?v=${release}` } : null, addEventListener: (name, fn) => listeners[name] = fn } };
-  const sandbox = { RELEASE_VERSION: release, navigator, MessageChannel, setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 30)), clearTimeout, sessionStorage: { getItem: key => { if (storageThrows) throw Error('Storage blocked'); return storage.get(key); }, setItem: (key, value) => { if (storageThrows) throw Error('Storage blocked'); storage.set(key, value); } }, window: { location: { href: 'https://jkcrew.test/?push=home#login', replace: url => redirects.push(url) } }, URL };
+  const controls = {}, notices = [];
+  const document = { querySelector: () => null, querySelectorAll: () => entered ? [{type:'password',value:'unsent'}] : [], body:{append:node=>notices.push(node)}, createElement:()=>({ setAttribute(){},querySelector:selector=>controls[selector] ||= {},remove(){} }) };
+  const state = {user:signedIn ? {id:'local-rider'} : null,authPendingForm:pendingAuth ? {isConnected:true} : null};
+  const sandbox = { document, state, liveRun:activeCall ? {} : null, RELEASE_VERSION: release, navigator, MessageChannel, setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 30)), clearTimeout, sessionStorage: { getItem: key => { if (storageThrows) throw Error('Storage blocked'); return storage.get(key); }, setItem: (key, value) => { if (storageThrows) throw Error('Storage blocked'); storage.set(key, value); } }, window: { location: { href: 'https://jkcrew.test/?push=home#login', replace: url => redirects.push(url) } }, URL };
   vm.runInNewContext(handler, sandbox);
   const change = (version, scriptVersion = release, behavior = 'reply') => {
     navigator.serviceWorker.controller = version === null ? null : { scriptURL: `https://jkcrew.test/sw.js?v=${scriptVersion}`, postMessage(message, ports) {
@@ -30,7 +33,7 @@ function pageVm({ controlled = false, stored = false, storageThrows = false } = 
     } };
     return listeners.controllerchange();
   };
-  return { change, repeat: () => listeners.controllerchange(), redirects, storage };
+  return { change, repeat: () => listeners.controllerchange(), redirects, storage, notices, apply:()=>controls["[data-apply-app-update]"].onclick() };
 }
 async function testVm() {
   const first = pageVm(); await first.change(release);
@@ -59,10 +62,19 @@ async function testVm() {
   }
   const lost = pageVm({ controlled: true }); await lost.change(null); await lost.change(release);
   eq(lost.redirects, [], 'Controller loss and fresh acquisition do not interrupt the form');
+  for (const options of [{signedIn:true},{entered:true},{pendingAuth:true},{activeCall:true,signedIn:true}]) {
+    const busy = pageVm({controlled:true,...options}); await busy.change(nextRelease);
+    eq(busy.redirects, [], 'An update cannot silently discard active work or login input');
+    eq(busy.notices.length, 1, 'A deferred update remains available to the user');
+    busy.apply();
+    eq(busy.redirects.length, options.pendingAuth || options.activeCall ? 0 : 1, 'Explicit update waits for pending auth and live calls');
+  }
   const events = {}, deleted = [], visits = []; let claims = 0, lifetime;
-  vm.runInNewContext(worker, { self: { addEventListener: (name, fn) => events[name] = fn, clients: { claim: async () => { claims++; }, matchAll: async () => [{ url: 'https://jkcrew.test/', navigate: async url => visits.push(url) }] }, location: { origin: 'https://jkcrew.test' } }, caches: { keys: async () => ['jkcrew-shell-vold', `jkcrew-shell-v${release}`, 'other-app-cache'], delete: async key => deleted.push(key) }, URL });
+  const priorRelease = release.replace(/\d+$/, value => String(Number(value) - 1));
+  const olderRelease = release.replace(/\d+$/, value => String(Number(value) - 2));
+  vm.runInNewContext(worker, { self: { addEventListener: (name, fn) => events[name] = fn, clients: { claim: async () => { claims++; }, matchAll: async () => [{ url: 'https://jkcrew.test/', navigate: async url => visits.push(url) }] }, location: { origin: 'https://jkcrew.test' } }, caches: { keys: async () => ['jkcrew-shell-vold', `jkcrew-shell-v${olderRelease}`, `jkcrew-shell-v${priorRelease}`, `jkcrew-shell-v${release}`, 'jkcrew-riley-shell-v1.0.0', 'other-app-cache'], delete: async key => deleted.push(key) }, URL });
   events.activate({ waitUntil: promise => lifetime = promise }); await lifetime;
-  eq(deleted, ['jkcrew-shell-vold'], 'Activation retains current and unrelated caches');
+  eq(deleted, ['jkcrew-shell-vold', `jkcrew-shell-v${olderRelease}`], 'Activation retains current, one actual previous release, and unrelated app caches');
   eq(claims, 1, 'Activation still claims clients for online/offline shell support');
   eq(visits, [], 'Worker never starts a competing navigation, including for old page clients');
   let reply; events.message({data:{type:'JKCREW_GET_RELEASE_VERSION'},ports:[{postMessage:value=>reply=value}]});
@@ -104,8 +116,21 @@ async function testBrowser() {
     eq(await page.locator('#email').inputValue(), 'rider@example.test', 'Unsubmitted rider email survives first installation');
     eq(await page.locator('#password').inputValue(), 'unsent-local-fixture', 'Unsubmitted password survives first installation');
     eq(page.url(), origin + '/fixture.html', 'First-install URL is unchanged');
+    const garageUrls = [`/bike-three.js?v=${release}`, '/vendor/three.module.min.js', '/images/bike-garage/scene-street-v4.webp'];
+    eq(await page.evaluate(async urls => Promise.all(urls.map(async url => (await fetch(url)).ok)), garageUrls), [true,true,true], 'First Garage use fills only the current public cache');
     currentRelease = nextRelease;
     await page.evaluate(() => refreshServiceWorkerRelease());
+    await page.locator('#app-update-notice').waitFor();
+    eq(await page.locator('#email').inputValue(), 'rider@example.test', 'A new release preserves a partly completed login');
+    eq(await page.locator('#password').inputValue(), 'unsent-local-fixture', 'An upgrade never discards an entered password');
+    eq(await page.evaluate(() => sessionStorage.getItem('loads')), '1', 'Upgrade is deferred until the user is ready');
+    const retainedCaches = await page.evaluate(() => caches.keys());
+    assert(retainedCaches.includes(`jkcrew-shell-v${release}`) && retainedCaches.includes(`jkcrew-shell-v${nextRelease}`)); checks++;
+    await page.context().setOffline(true);
+    try {
+      eq(await page.evaluate(async urls => Promise.all(urls.map(async url => (await fetch(url)).ok)), garageUrls), [true,true,true], 'Deferred page keeps its cached Garage scripts, 3D engine and background after an offline upgrade');
+    } finally { await page.context().setOffline(false); }
+    await page.getByRole('button', {name:'Update app',exact:true}).click();
     await page.waitForURL(url => url.searchParams.get('jkcrew-version') === nextRelease);
     await page.waitForFunction(() => sessionStorage.getItem('loads') === '2');
     eq(await page.evaluate(() => sessionStorage.getItem('loads')), '2', 'Same-URL registration.update discovers new body and reloads exactly once');

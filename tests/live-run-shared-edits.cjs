@@ -1,6 +1,5 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
 const {initialize:initializeCalls}=require('./live-run-calls.cjs');
 const root=process.env.JKCREW_ROOT||path.resolve(__dirname,'..');
 async function initialize(db){
@@ -9,6 +8,7 @@ async function initialize(db){
 }
 const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 async function run(){
+ const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
  const db=new PGlite();let checks=0;
  const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
  const ok=(value,message)=>{assert(value,message);checks++;};

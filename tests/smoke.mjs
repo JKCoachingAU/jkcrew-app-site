@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.144";
+const version = "2.14.145";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -939,14 +939,14 @@ for (const asset of ["daily-completion", "progress-sharing", "battle-rematches",
   for (const extension of ["js", "css"]) {
     const file = `${asset}.${extension}`;
     assert.equal(read(`riley-test/${file}`), read(file), `${file} must match on the Riley path`);
-    assert(html.includes(`${file}?v=${version}`) && serviceWorker.includes(`${file}?v=${version}`), `${file} must be loaded and cached`);
+    assert((asset.startsWith("bike-") ? app.includes(`"${file}"`) : html.includes(`${file}?v=${version}`)) && serviceWorker.includes(`${file}?v=${version}`), `${file} must be available and cached`);
   }
 }
 
 for (const file of ["bike-three.js", "bike-three-model.js", "vendor/three.module.min.js", "vendor/three.core.min.js", "vendor/OrbitControls.js", "vendor/RoomEnvironment.js", "vendor/THREE-LICENSE.txt"]) {
   assert.equal(read(`riley-test/${file}`), read(file), `${file} must match on the Riley path`);
 }
-assert(html.includes(`bike-three.js?v=${version}`), "The lightweight 360 viewer entry must be available in the app");
+assert(app.includes('"bike-three.js"') && !html.includes('bike-three.js'), "The 360 viewer entry loads on demand");
 assert(serviceWorker.includes(`bike-three-model.js?v=${version}`), "The on-demand model must use this release's cache key");
 
 
@@ -1613,7 +1613,7 @@ const manualFileForTest = { size: 600, name: "manual.mov" };
 assert.equal(selectCoachReplyVideo({ size: 0 }, { file: recordedFileForTest }), recordedFileForTest, "An empty file input must use the recorded review");
 assert.equal(selectCoachReplyVideo(manualFileForTest, { file: recordedFileForTest }), manualFileForTest, "A manually chosen replacement must override an unsent recorded review");
 assert(coachReplyBody.includes("clearCoachRecordedReply(requestId)"), "Recorded review previews must clear only after the database commit");
-assert(coachReplyBody.includes("Could not clean up failed coach video reply upload"), "Failed coach replies must clean up uploaded media");
+assert(coachReplyBody.includes("Could not clean up rejected coach video reply upload") && coachReplyBody.includes("writeRejected"), "Only definitively rejected coach replies may clean up their new upload; uncertain saves must retain it");
 assert(coachReplyBody.includes("upload?.path && !committed"), "A committed coach reply must never have its uploaded video deleted by a later render error");
 assert(coachReplyBody.includes("previousCoachVideoPath"), "Replacing a coach reply must clean up the previous private video");
 assert(coachReplyBody.includes('state.view === originatingView && originatingView === "videoReviews"'), "A completed upload must not replace a screen the coach navigated to");

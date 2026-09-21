@@ -1,44 +1,48 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.144";
+const RELEASE_VERSION = "2.14.145";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.144",
-  "./shred-zone.css?v=2.14.144",
-  "./app.js?v=2.14.144",
-  "./daily-completion.js?v=2.14.144",
-  "./daily-tier-two.js?v=2.14.144",
-  "./daily-tier-two.css?v=2.14.144",
-  "./other-things-landed.js?v=2.14.144",
-  "./other-things-landed.css?v=2.14.144",
-  "./live-run-sync.js?v=2.14.144",
-  "./live-run-call.js?v=2.14.144",
-  "./live-run-call.css?v=2.14.144",
-  "./daily-completion.css?v=2.14.144",
-  "./progress-sharing.js?v=2.14.144",
-  "./progress-sharing.css?v=2.14.144",
-  "./battle-rematches.js?v=2.14.144",
-  "./battle-rematches.css?v=2.14.144",
-  "./bike-parts-catalog.js?v=2.14.144",
-  "./bike-config.js?v=2.14.144",
-  "./bike-seat-designs.js?v=2.14.144",
-  "./bike-photo-masks.js?v=2.14.144",
-  "./bike-renderer.js?v=2.14.144",
-  "./bike-preview.js?v=2.14.144",
-  "./bike-preview.css?v=2.14.144",
-  "./bike-three.js?v=2.14.144",
-  "./bike-garage.js?v=2.14.144",
-  "./bike-garage.css?v=2.14.144",
-  "./manifest.webmanifest?v=2.14.144",
+  "./styles.css?v=2.14.145",
+  "./shred-zone.css?v=2.14.145",
+  "./app.js?v=2.14.145",
+  "./daily-completion.js?v=2.14.145",
+  "./daily-tier-two.js?v=2.14.145",
+  "./daily-tier-two.css?v=2.14.145",
+  "./other-things-landed.js?v=2.14.145",
+  "./other-things-landed.css?v=2.14.145",
+  "./live-run-sync.js?v=2.14.145",
+  "./live-run-call.js?v=2.14.145",
+  "./live-run-call.css?v=2.14.145",
+  "./daily-completion.css?v=2.14.145",
+  "./progress-sharing.js?v=2.14.145",
+  "./progress-sharing.css?v=2.14.145",
+  "./battle-rematches.js?v=2.14.145",
+  "./battle-rematches.css?v=2.14.145",
+  "./manifest.webmanifest?v=2.14.145",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.144",
+  "./icons/badges/prestige-01.png?v=2.14.145",
+];
+
+// Optional Garage code and styles load only when opened, then remain available offline.
+const BIKE_GARAGE_ASSETS = [
+  "./bike-parts-catalog.js?v=2.14.145",
+  "./bike-config.js?v=2.14.145",
+  "./bike-seat-designs.js?v=2.14.145",
+  "./bike-photo-masks.js?v=2.14.145",
+  "./bike-renderer.js?v=2.14.145",
+  "./bike-preview.js?v=2.14.145",
+  "./bike-preview.css?v=2.14.145",
+  "./bike-three.js?v=2.14.145",
+  "./bike-garage.js?v=2.14.145",
+  "./bike-garage.css?v=2.14.145",
 ];
 
 // Public bike photos are fetched only when the garage needs them, then cached.
@@ -73,12 +77,26 @@ const BIKE_PHOTO_ASSETS = [
 
 // 3D code is optional public content, cached after opening Bike Garage.
 const BIKE_3D_ASSETS = [
-  "./bike-three-model.js?v=2.14.144",
+  "./bike-three-model.js?v=2.14.145",
   "./vendor/three.module.min.js",
   "./vendor/three.core.min.js",
   "./vendor/OrbitControls.js",
   "./vendor/RoomEnvironment.js",
 ];
+
+// Only public Garage files with an unchanged exact URL may use the retained
+// release. Photos carry their content version in the filename. Vendor modules
+// remain network-first on a new release so an engine upgrade is not masked.
+async function previousGarageAsset(request) {
+  const url = request.url;
+  const reusable = [...BIKE_PHOTO_ASSETS, ...BIKE_3D_ASSETS.filter(path => !path.includes("?"))]
+    .some(path => new URL(path, self.location.href).href === url);
+  if (!reusable) return null;
+  const keys = await caches.keys();
+  const previous = keys.filter(key => key.startsWith(`${CACHE_PREFIX}v`) && key !== CACHE_NAME && /^\d+\.\d+\.\d+$/.test(key.slice(CACHE_PREFIX.length + 1)))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).at(-1);
+  return previous ? (await caches.open(previous)).match(request) : null;
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
@@ -91,7 +109,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
+    // An open page may defer its upgrade to finish a form/call. Keep one prior
+    // public release for its offline assets; older caches still get collected.
+    const previous = keys.filter(key => key.startsWith(`${CACHE_PREFIX}v`) && key !== CACHE_NAME && /^\d+\.\d+\.\d+$/.test(key.slice(CACHE_PREFIX.length + 1)))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).at(-1);
+    await Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME && key !== previous).map((key) => caches.delete(key)));
     await self.clients.claim();
     // The page handles upgrades on controllerchange. Navigating here as well
     // races that handler and would wipe the sign-in form on first installation.
@@ -117,7 +139,9 @@ self.addEventListener("fetch", (event) => {
     // Serve only this release's public shell. Refresh HTML in the background;
     // the existing service-worker update flow still activates new releases.
     const network = fetch(event.request, { cache: "reload" }).then(async response => {
-      if (response.ok) {
+      // A newer HTML document must not enter an older release's offline cache.
+      // Its assets may not have finished installing yet. The new worker owns it.
+      if (response.ok && (await response.clone().text()).includes(`src="app.js?v=${RELEASE_VERSION}"`)) {
         const cache = await caches.open(CACHE_NAME);
         await cache.put("./index.html", response.clone());
       }
@@ -133,15 +157,43 @@ self.addEventListener("fetch", (event) => {
 
   // Versioned public assets can be reused immediately, even on a weak signal.
   // Never cache API/account data or assets outside the explicit public lists.
-  const shellUrls = new Set([...APP_SHELL, ...BIKE_PHOTO_ASSETS, ...BIKE_3D_ASSETS].map(path => new URL(path, self.location.href).href));
-  if (!shellUrls.has(requestUrl.href)) return;
+  const shellUrls = new Set([...APP_SHELL, ...BIKE_GARAGE_ASSETS, ...BIKE_PHOTO_ASSETS, ...BIKE_3D_ASSETS].map(path => new URL(path, self.location.href).href));
+  if (!shellUrls.has(requestUrl.href)) {
+    // Only exact cached URLs of allowlisted public files from the previous
+    // release may be reused. Account/API data never enters this path.
+    const previousVersion = requestUrl.searchParams.get("v");
+    const samePublicPath = [...shellUrls].some(url => new URL(url).pathname === requestUrl.pathname);
+    if (!previousVersion || !/^\d+\.\d+\.\d+$/.test(previousVersion) || !samePublicPath) return;
+    event.respondWith((async () => {
+      const keys = await caches.keys();
+      const previousName = `${CACHE_PREFIX}v${previousVersion}`;
+      const cached = keys.includes(previousName) ? await (await caches.open(previousName)).match(event.request) : null;
+      return cached || fetch(event.request);
+    })());
+    return;
+  }
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(event.request);
     if (cached) return cached;
-    const response = await fetch(event.request);
-    if (response.ok) await cache.put(event.request, response.clone());
-    return response;
+    const immutablePhoto = BIKE_PHOTO_ASSETS.some(path => new URL(path, self.location.href).href === requestUrl.href);
+    if (immutablePhoto) {
+      const previous = await previousGarageAsset(event.request);
+      if (previous) {
+        await cache.put(event.request, previous.clone());
+        return previous;
+      }
+    }
+    try {
+      const response = await fetch(event.request);
+      if (response.ok) await cache.put(event.request, response.clone());
+      else return await previousGarageAsset(event.request) || response;
+      return response;
+    } catch (error) {
+      const previous = await previousGarageAsset(event.request);
+      if (previous) return previous;
+      throw error;
+    }
   })());
 });
 

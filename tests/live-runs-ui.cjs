@@ -1,6 +1,8 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const sync=require('../live-run-sync.js');
+const {createHash}=require('node:crypto');
+const compactResponses=[];
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const names=[...new Set([
@@ -16,7 +18,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  async function pageFor(role){
   const page=await browser.newPage({viewport:role==='coach'?{width:1024,height:768}:{width:390,height:844},hasTouch:true,permissions:['camera','microphone']});
   page.setDefaultTimeout(15000); page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR',e.message)});
-  await page.exposeFunction('server',async(kind,args)=>{
+  const serve=async(kind,args)=>{
    requests.push({role,kind,args});
    if(kind==='read')return {data:structuredClone(session)};
    if(kind==='list')return {data:session?.status==='active'?[structuredClone(session)]:[]};
@@ -77,6 +79,18 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    if(a==='save'){assert.equal(args.p_version,session.version);if(!session.saved_run_id)saves++;session.saved_run_id='saved-run';session.saved_version=session.version;session.saved_run_updated_at=new Date().toISOString();return ok();}
    if(a==='end'||a==='cancel'){session.call_status=a==='cancel'?'cancelled':'ended';session.status='ended';return ok();}
    throw Error(a);
+  };
+  await page.exposeFunction('server',async(kind,args)=>{
+   const response=await serve(kind.replace(/_compact$/, ''),args);
+   if(kind.endsWith('_compact')&&response.data?.draft){
+    const result=structuredClone(response.data);
+    result.image_key=createHash('sha256').update(result.draft.imageDataUrl||'').digest('hex');
+    result.image_omitted=args.p_image_key===result.image_key;
+    if(result.image_omitted)delete result.draft.imageDataUrl;
+    compactResponses.push({role,kind,omitted:result.image_omitted,bytes:Buffer.byteLength(JSON.stringify(result))});
+    return {data:result};
+   }
+   return response;
   });
   await page.route('https://jkcrew.test/**',route=>route.fulfill({contentType:'text/html',body:'<html></html>'}));await page.goto('https://jkcrew.test/');
   await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><div id="app"><div class="app-shell '+(role==='coach'?'coach-shell':'rider-shell')+'" style="display:block"><main id="view"></main></div></div>');
@@ -249,6 +263,10 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await coach.locator('[data-live-event]').selectOption('event-three');await coach.waitForFunction(()=>inspect().draft.contestItemId==='event-three'&&inspect().draft.courseSource==='upload'&&!liveRun.busy);
  await coach.locator('#run-photo').setInputFiles(upload);await rider.waitForFunction(()=>inspect().draft.contestItemId==='event-three'&&inspect().draft.imageDataUrl.startsWith('data:image/svg+xml'));
  assert.equal(draft.contestItemId,'event-three','Event without existing course supports the rider/coach upload');
+ for(const p of [rider,coach])assert.equal(await p.evaluate(()=>inspect().draft.imageDataUrl),draft.imageDataUrl,'Compact updates preserve the same course photo on both devices');
+ assert(compactResponses.some(r=>r.role==='athlete'&&r.omitted),'Rider receives image-free edit responses');
+ assert(compactResponses.some(r=>r.role==='coach'&&r.omitted),'Coach receives image-free edit responses');
+ assert(compactResponses.some(r=>!r.omitted),'Initial or changed course photos still load');
  await coach.click('[data-live-run-action="leave"]');await coach.waitForFunction(()=>inspect().live===null);
  assert.equal(session.call_status,'ended');assert.equal(await coach.evaluate(()=>mediaDestroyed),1);
  await rider.waitForFunction(()=>inspect().live.session.call_status==='ended');

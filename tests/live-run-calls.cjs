@@ -1,5 +1,4 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
 const root=process.env.JKCREW_ROOT||path.resolve(__dirname,'..');
 const migration=name=>fs.readFileSync(path.join(root,'supabase/migrations',fs.readdirSync(path.join(root,'supabase/migrations')).find(f=>f.endsWith('_'+name+'.sql'))),'utf8');
 async function initialize(db){
@@ -22,6 +21,7 @@ async function initialize(db){
  await db.exec(migration('live_run_calls_and_continuous_save'));
 }
 async function run(){
+ const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
  const db=new PGlite();
  try{
  await initialize(db);

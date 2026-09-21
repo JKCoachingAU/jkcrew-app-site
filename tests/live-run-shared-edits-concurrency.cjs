@@ -1,6 +1,8 @@
 // Actual PostgreSQL backends, not parallel promises on one embedded connection.
 // The shared helper permits only a disposable database on a /tmp Unix socket.
 const assert = require('node:assert/strict');
+const fs = require('node:fs'), path = require('node:path');
+const compact = process.env.JKCREW_LIVE_COMPACT === '1';
 const { initialize } = require('./live-run-shared-edits.cjs');
 const { createHarness, literal, json } = require('./helpers/local-postgres.cjs');
 
@@ -14,9 +16,9 @@ const nextRequest = () => id(++request);
 const call = (action, session, client, payload = {}) =>
   `select public.live_run_call_action(${literal(action)},${session ? literal(session) : 'null'},'${client}','${nextRequest()}',${sqlJson(payload)},'${rider}','${coach}',0);`;
 const edit = (session, client, version, ops, requestId = nextRequest()) =>
-  `select public.live_run_edit('${session}','${client}','${requestId}',${version},${sqlJson(ops)});`;
+  `select public.live_run_edit${compact?'_compact':''}('${session}','${client}','${requestId}',${version},${sqlJson(ops)});`;
 const save = (session, client, version) =>
-  `select public.live_run_action('save','${session}','${client}',${version},'{}'::jsonb,'${rider}','${coach}');`;
+  `select public.live_run_action${compact?'_compact':''}('save','${session}','${client}',${version},'{}'::jsonb,'${rider}','${coach}');`;
 const pointEdit = (point, change) => ({ op: 'point', id: point.id, before: point, value: { ...point, ...change } });
 const set = (key, before, value) => ({ op: 'set', key, before, value });
 
@@ -74,6 +76,7 @@ async function run() {
   };
   try {
     await initialize(h.adapter);
+    if (compact) await h.adapter.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260921062609_compact_live_run_course_payloads.sql'),'utf8'));
     h.batch(`insert into public.profiles values('${rider}','athlete','Shared run rider'),('${coach}','coach','Linked coach');
       insert into public.coach_athletes values('${coach}','${rider}');
       insert into public.dashboard_items(id,item_type,end_at) values('${event}','event',now()+interval '1 day');

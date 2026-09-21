@@ -38,8 +38,10 @@ async function workerChecks() {
  const handlers={}, stores=new Map(), networkCalls=[];let network=deferred();
  const origin='https://jkcrew.test/';
  const key=x=>new URL(typeof x==='string'?x:x.url,origin).href;
- const cache={match:async x=>stores.get(key(x)),put:async(x,r)=>stores.set(key(x),r)};
- const worker=vm.createContext({self:{location:{origin:'https://jkcrew.test',href:origin+'sw.js'},addEventListener:(n,fn)=>handlers[n]=fn},caches:{open:async()=>cache},URL,Set,Promise,fetch:r=>{networkCalls.push(r);return network.promise}});
+ const priorRelease=release.replace(/\d+$/,value=>String(Number(value)-1));
+ const prior=new Map(), unrelated=new Map(), namedStores=new Map([[`jkcrew-shell-v${release}`,stores],[`jkcrew-shell-v${priorRelease}`,prior],['jkcrew-riley-shell-v99.0.0',unrelated]]);
+ const cacheFor=name=>{const data=namedStores.get(name);assert(data,'Only existing release caches are read');return {match:async x=>data.get(key(x)),put:async(x,r)=>data.set(key(x),r)}};
+ const worker=vm.createContext({self:{location:{origin:'https://jkcrew.test',href:origin+'sw.js'},addEventListener:(n,fn)=>handlers[n]=fn},caches:{keys:async()=>[...namedStores.keys()],open:async name=>cacheFor(name)},URL,Set,Promise,fetch:r=>{networkCalls.push(r);return network.promise}});
  vm.runInContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),worker);
  const dispatch=(url,mode='cors')=>{let result;const waits=[];handlers.fetch({request:{url,method:'GET',mode},respondWith:p=>result=p,waitUntil:p=>waits.push(p)});return {result,waits}};
  stores.set(origin+'index.html','cached-shell');stores.set(origin+('app.js?v='+release),'cached-js');stores.set(origin+'vendor/supabase-2.116.0.min.js','cached-sdk');
@@ -49,6 +51,12 @@ async function workerChecks() {
  assert.equal(dispatch(origin+'private-data.json').result,undefined);
  assert.equal(dispatch(origin+'riley-test/','navigate').result,undefined,'Nested app navigation must not receive the root app shell');
  network.reject(new Error('offline'));await Promise.all(html.waits);
+ for (const htmlVersion of [release, '99.99.99']) {
+  network=deferred(); const old=stores.get(origin+'index.html'); const nav=dispatch(origin,'navigate');
+  const response={ok:true,clone(){return this},text:async()=>'<script defer src="app.js?v='+htmlVersion+'"></script>'};network.resolve(response);await Promise.all(nav.waits);
+  assert.equal(stores.get(origin+'index.html'),htmlVersion===release?response:old,'An older worker must never cache a newer release document');
+ }
+
  network=deferred();const missing=dispatch(origin+('styles.css?v='+release));network.resolve({ok:false,status:404});assert.equal((await missing.result).status,404);assert(!stores.has(origin+('styles.css?v='+release)));
  network=deferred();const photoUrl=origin+'images/bike-garage/studio-white-v1.webp',photo={ok:true,clone(){return this}};
  const firstPhoto=dispatch(photoUrl);network.resolve(photo);assert.equal(await firstPhoto.result,photo);const photoRequests=networkCalls.length;
@@ -58,7 +66,29 @@ async function workerChecks() {
  for(const name of ['studio-four-top-v5.webp','studio-four-front-v5.webp','studio-top-plastic-v5.webp','studio-front-metal-v5.webp','studio-hardware-v2.webp','studio-metal-v2.webp','studio-chrome-v3.webp','studio-chrome-options-v3.webp','studio-jetfuel-v3.webp','studio-jetfuel-options-v3.webp','studio-chrome-top-stem-v3.webp','studio-chrome-front-stem-v3.webp','studio-lhd-v4.webp','studio-lhd-chrome-v4.webp','studio-lhd-jetfuel-v4.webp',...['street','skatepark','warehouse','rooftop'].flatMap(scene=>['scene-'+scene+'-v4.webp','scene-'+scene+'-v4-thumb.webp'])]) { network=deferred();const response=dispatch(origin+'images/bike-garage/'+name);network.resolve(photo);assert.equal(await response.result,photo,'Optional artwork uses the public cache'); }
  assert(!fs.readFileSync(path.join(root,'sw.js'),'utf8').match(/const APP_SHELL = \[([\s\S]*?)\];/)[1].includes('images/bike-garage/'),'Optional bike photos must not delay app-shell installation');
  for(const name of [('bike-three-model.js?v='+release),'vendor/three.module.min.js','vendor/three.core.min.js','vendor/OrbitControls.js','vendor/RoomEnvironment.js']) { network=deferred();const response=dispatch(origin+name);network.resolve(photo);assert.equal(await response.result,photo,'3D assets load and cache only on demand'); }
+ // A deferred page may still need its last release's Garage while offline.
+ const retained={ok:true,source:'previous-public-release',clone(){return this}};
+ prior.set(origin+'bike-three.js?v='+priorRelease,retained);
+ assert.equal(await dispatch(origin+'bike-three.js?v='+priorRelease).result,retained,'Old Garage code uses only its exact retained version URL');
+ network=deferred();const notExact=dispatch(origin+'bike-three.js?v='+priorRelease+'&different=1');network.reject(Error('offline'));
+ await assert.rejects(notExact.result,/offline/,'A changed query cannot match a different cached URL');
+ const retainedPhoto=origin+'images/bike-garage/scene-street-v4.webp';stores.delete(retainedPhoto);prior.set(retainedPhoto,retained);
+ const beforePhoto=networkCalls.length;assert.equal(await dispatch(retainedPhoto).result,retained);
+ assert.equal(networkCalls.length,beforePhoto,'Version-named public photos reuse the previous release without downloading again');
+ assert.equal(stores.get(retainedPhoto),retained,'Immutable public photos are copied into the current offline cache');
+ const retainedVendor=origin+'vendor/three.module.min.js';stores.delete(retainedVendor);prior.set(retainedVendor,retained);
+ network=deferred();const offlineVendor=dispatch(retainedVendor);network.reject(Error('offline'));
+ assert.equal(await offlineVendor.result,retained,'Deferred Garage can load its retained 3D engine while offline');
+ assert(!stores.has(retainedVendor),'Offline fallback must not pin an old engine into the new release cache');
+ network=deferred();const onlineVendor=dispatch(retainedVendor);const upgraded={ok:true,source:'new-engine',clone(){return this}};network.resolve(upgraded);
+ assert.equal(await onlineVendor.result,upgraded,'Online engine upgrades take priority over a retained previous module');
+ assert.equal(stores.get(retainedVendor),upgraded);
+ const notRetained=origin+'vendor/RoomEnvironment.js';stores.delete(notRetained);prior.delete(notRetained);unrelated.set(notRetained,retained);
+ network=deferred();const unrelatedAsset=dispatch(notRetained);network.reject(Error('offline'));
+ await assert.rejects(unrelatedAsset.result,/offline/,'Never reuse another app scope cache even with the same public URL');
+ assert.equal(dispatch(origin+'rest/v1/profiles?v='+priorRelease).result,undefined,'Old-version fallback never intercepts account data');
  const garageShell=fs.readFileSync(path.join(root,'sw.js'),'utf8').match(/const APP_SHELL = \[([\s\S]*?)\];/)[1];
+ assert(!garageShell.includes('bike-'),'Optional Garage scripts and styles must not load during worker install');
  assert(!garageShell.includes('three.module')&&!garageShell.includes('three.core')&&!garageShell.includes('bike-three-model'),'3D model and engine must not block shell installation');
  const entryHTML=fs.readFileSync(path.join(root,'index.html'),'utf8');
  assert(!entryHTML.includes('three.module')&&!entryHTML.includes('bike-three-model'),'3D engine/model must not load on the sign-in page');

@@ -260,6 +260,10 @@ button[aria-busy="true"] {
   background: rgba(7, 10, 9, 0.78);
 }
 .auth-card { width: min(100%, 460px); }
+.auth-card .field input, .auth-card .field select { min-height: 48px; font-size: 16px; scroll-margin-block: 24px; }
+.auth-card .auth-text-btn { min-height: 44px; }
+.auth-card form[aria-busy="true"] { cursor: progress; }
+.auth-card button:disabled { cursor: wait; }
 .auth-card h2 { margin: 8px 0 6px; font: 800 2.5rem var(--display); text-transform: uppercase; }
 .subcopy { margin: 0 0 24px; color: var(--muted); }
 .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 22px; }
@@ -6808,15 +6812,19 @@ html[data-theme="light"] .success-burst {
     overflow-x: clip;
   }
   body { position: relative; touch-action: pan-y; }
-  .auth-page { grid-template-columns: 1fr; }
-  .auth-hero { min-height: 46vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 28px 22px; }
+  .auth-page { grid-template-columns: 1fr; min-height: 100svh; align-content: start; }
+  .auth-hero { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); padding: max(22px, env(safe-area-inset-top)) 20px 20px; }
+  .auth-hero .hero-copy { display: none; }
+  .auth-hero::after { display: none; }
   .auth-logo-lockup { margin: 0 auto; }
   .auth-logo-lockup img { width: 118px; height: 118px; border-radius: 24px; }
-  .auth-logo-lockup.wordmark-lockup { width: min(360px, 86vw); }
+  .auth-logo-lockup.wordmark-lockup { width: min(220px, 62vw); }
   .auth-logo-lockup.wordmark-lockup img { width: 100%; height: auto; border-radius: 0; }
   .hero-copy h1 { font-size: clamp(4.2rem, 21vw, 7rem); letter-spacing: -0.024em; line-height: 0.86; }
   .feature-strip { display: none; }
-  .auth-panel { min-height: 54vh; padding: 30px 20px 70px; }
+  .auth-panel { min-height: 0; padding: 24px 20px max(32px, env(safe-area-inset-bottom)); align-items: start; }
+  .auth-card .subcopy { margin-bottom: 18px; }
+  .auth-card .auth-tabs { margin-bottom: 18px; }
   .app-shell { display: block; }
   .sidebar { display: none; }
   .main-wrap { min-width: 0; }
@@ -7440,9 +7448,7 @@ html[data-theme="light"] .success-burst {
 }
 
 @media (max-width: 620px) {
-  body:has(.auth-page) .install-app {
-    bottom: max(14px, env(safe-area-inset-bottom));
-  }
+  body:has(.auth-page) .install-app { display: none; }
 
   .field input,
   .field select,
@@ -12225,3 +12231,22 @@ html[data-theme="light"] .battle-card .battle-team > strong { color: #eef7f8; }
 .run-save-feedback[hidden]{display:none}
 .run-save-feedback[data-tone="error"]{color:#ff9c91}
 html[data-theme="light"] .run-save-feedback[data-tone="error"]{color:#a12820}
+
+/* Lightweight Garage entry remains available before its optional editor loads. */
+.bike-garage-entry{width:100%;display:flex!important;align-items:center;gap:18px;text-align:left;margin:0 0 22px;padding:22px!important;background:linear-gradient(110deg,#252238,#162336)!important;border:1px solid #635284!important;border-radius:18px!important;color:#f3edff!important;box-shadow:none!important;cursor:pointer}
+.bike-entry-icon{display:grid;place-items:center;border:1px solid #9576be;border-radius:14px;width:58px;height:58px;font-size:35px;flex:0 0 58px;color:#cba8ff;background:#c499ff12}
+.bike-garage-entry>span:nth-child(2){display:flex;flex-direction:column;gap:5px;min-width:0}
+.bike-garage-entry small{font:600 10px/1.4 'Roboto Mono',monospace;letter-spacing:2px;color:#c3a0ee}
+.bike-garage-entry strong{font:700 27px/1.1 'Barlow Condensed',sans-serif;text-transform:none}
+.bike-garage-entry>span>span{font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;color:#b7c1d3}
+.bike-garage-entry>b{margin-left:auto;font-size:25px;color:#c4aae5}
+
+/* Updates wait for the rider, rather than interrupting a form or live session. */
+.app-update-notice { position:fixed; z-index:12000; bottom:calc(110px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:12px; width:max-content; max-width:calc(100vw - 24px); padding:12px 14px; border:1px solid #37bdb1; border-radius:14px; background:#102329; color:#f2faf9; box-shadow:0 10px 35px #0007; }
+.app-update-notice span { display:grid; gap:3px; min-width:0; }
+.app-update-notice strong { font-size:15px; }
+.app-update-notice small { color:#b2c7cc; font-size:12px; }
+.app-update-notice button { min-height:44px; padding:9px 13px; border:0; border-radius:9px; background:#75d3ca; color:#092b2b; font:700 13px Barlow,sans-serif; white-space:nowrap; cursor:pointer; }
+.app-update-notice [data-dismiss-app-update] { padding:8px; min-width:32px; background:transparent; color:#b2c7cc; font-size:22px; }
+@media (min-width:901px) { .app-update-notice { bottom:24px; } }
+@media (max-width:359px) { .app-update-notice { gap:7px; padding:10px; } .app-update-notice small { max-width:120px; } }

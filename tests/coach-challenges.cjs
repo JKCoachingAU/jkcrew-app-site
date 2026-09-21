@@ -106,6 +106,7 @@ async function install(page, theme) {
       }
     };
     window.getCoachRoster = async () => structuredClone(qaRoster);
+    window.cacheClear = () => {};
     window.isCoachRole = role => role === 'coach' || role === 'admin';
     window.escapeHtml = (value = '') => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
     window.avatarHtml = (rider, className) => `<span class="${className || 'avatar'}" style="display:grid;place-items:center;background:#173f42;flex:none">${escapeHtml(rider.display_name.slice(0, 1))}</span>`;

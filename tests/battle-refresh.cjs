@@ -9,6 +9,7 @@ const rest = app.slice(start);
 const source = 'let battleScoreRefreshRunning = false;\n' + rest.slice(0, rest.indexOf('\n}') + 2);
 let renders = 0, modal = false, focused = false, hold = false, reject = false, release;
 const context = {
+  navigator: { onLine: true },
   state: { view: 'battleViewer', profile: { role: 'coach' } }, isCoachRole: role => role === 'coach',
   document: { visibilityState: 'visible', activeElement: { matches: () => focused }, querySelector: () => modal },
   renderCoachBattleViewer: async () => {
@@ -20,7 +21,8 @@ const context = {
 vm.createContext(context); vm.runInContext(source, context);
 (async () => {
   await context.refreshCoachBattleScores(); assert.equal(renders, 1);
-  for (const mode of ['modal', 'hidden', 'other-view', 'rider', 'focused-input']) {
+  for (const mode of ['modal', 'hidden', 'other-view', 'rider', 'focused-input', 'offline']) {
+    context.navigator.onLine = mode !== 'offline';
     modal = mode === 'modal'; focused = mode === 'focused-input';
     context.document.visibilityState = mode === 'hidden' ? 'hidden' : 'visible';
     context.state.view = mode === 'other-view' ? 'student' : 'battleViewer';
@@ -28,6 +30,7 @@ vm.createContext(context); vm.runInContext(source, context);
     await context.refreshCoachBattleScores();
     assert.equal(renders, 1, `${mode} suppresses background refresh`);
   }
+  context.navigator.onLine = true;
   modal = focused = false; context.document.visibilityState = 'visible';
   context.state.view = 'battleViewer'; context.state.profile.role = 'coach';
   hold = true;

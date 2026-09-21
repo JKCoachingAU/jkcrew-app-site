@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.144";
+const RELEASE_VERSION = "2.14.145";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -591,7 +591,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.144" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.145" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1334,9 +1334,10 @@ async function retryNetworkRequest(factory, label, { attempts = 3, timeoutMs = 1
 
 function clearLocalAuthSession() {
   try {
-    Object.keys(window.localStorage || {}).forEach((key) => {
-      if (key.startsWith("sb-") || key.includes("supabase.auth")) localStorage.removeItem(key);
-    });
+    // Only this project's credentials: keep rider drafts, preferences and
+    // sessions belonging to other apps on the same origin.
+    const storageKey = `sb-${new URL(SUPABASE_URL).hostname.split(".")[0]}-auth-token`;
+    [storageKey, `${storageKey}-code-verifier`, `${storageKey}-user`].forEach((key) => localStorage.removeItem(key));
   } catch (error) {
     console.warn("Unable to clear saved JKCREW session.", error);
   }
@@ -1375,13 +1376,14 @@ async function init() {
       if (event === "PASSWORD_RECOVERY") {
         state.session = nextSession || null;
         state.user = nextSession?.user || null;
-        renderPasswordRecovery();
+        if (!document.querySelector("#password-recovery-form")) renderPasswordRecovery();
         return;
       }
-      if (nextSession && isPasswordRecoveryUrl()) {
+      if (nextSession && (isPasswordRecoveryUrl() || state.passwordRecoveryActive)) {
         state.session = nextSession;
         state.user = nextSession.user;
-        renderPasswordRecovery();
+        // Token refresh / USER_UPDATED must not wipe a password being typed.
+        if (!document.querySelector("#password-recovery-form")) renderPasswordRecovery();
         return;
       }
       handleSessionOnce(nextSession).catch((error) => {
@@ -1596,6 +1598,7 @@ function authHeroMarkup() {
 }
 
 function renderAuth(mode = "login", message = "") {
+  state.passwordRecoveryActive = false;
   cancelScreenLoading();
   app.innerHTML = `
     <div class="auth-page">
@@ -1612,7 +1615,7 @@ function renderAuth(mode = "login", message = "") {
           <form id="auth-form">
             <div class="field ${mode === "signup" ? "" : "hidden"}">
               <label for="display-name">Display name</label>
-              <input id="display-name" name="displayName" autocomplete="name" placeholder="Riley Chen">
+              <input id="display-name" name="displayName" autocomplete="name" enterkeyhint="next" placeholder="Riley Chen">
             </div>
             <div class="field ${mode === "signup" ? "" : "hidden"}">
               <label for="role">Account type</label>
@@ -1620,15 +1623,15 @@ function renderAuth(mode = "login", message = "") {
             </div>
             <div class="field">
               <label for="email">Email</label>
-              <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com">
+              <input id="email" name="email" type="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="next" required autocomplete="email" placeholder="you@example.com">
             </div>
             <div class="field">
               <label for="password">Password</label>
-              <input id="password" name="password" type="password" required minlength="8" autocomplete="${mode === "login" ? "current-password" : "new-password"}" placeholder="At least 8 characters">
+              <input id="password" name="password" type="password" required ${mode === "signup" ? 'minlength="8"' : ""} enterkeyhint="go" autocomplete="${mode === "login" ? "current-password" : "new-password"}" placeholder="${mode === "login" ? "Your password" : "At least 8 characters"}">
             </div>
             ${mode === "login" ? `<button class="auth-text-btn auth-forgot-link" type="button" id="forgot-password">Forgot password?</button>` : ""}
             <button class="primary-btn wide" type="submit">${mode === "login" ? "Enter JKCREW" : "Create my account"}</button>
-            <div class="auth-message ${/backend|connection|timed out|responding|unable to sign in|did not finish/i.test(message) ? "auth-warning" : ""}">${escapeHtml(message)}</div>
+            <div role="status" aria-live="polite" aria-atomic="true" class="auth-message ${/backend|connection|timed out|responding|unable to sign in|did not finish/i.test(message) ? "auth-warning" : ""}">${escapeHtml(message)}</div>
           </form>
         </div>
       </section>
@@ -1652,6 +1655,7 @@ function cleanPasswordRecoveryUrl() {
 }
 
 function renderForgotPassword(message = "", email = "") {
+  state.passwordRecoveryActive = false;
   cancelScreenLoading();
   app.innerHTML = `
     <div class="auth-page">
@@ -1664,11 +1668,11 @@ function renderForgotPassword(message = "", email = "") {
           <form id="forgot-password-form">
             <div class="field">
               <label for="recovery-email">Account email</label>
-              <input id="recovery-email" name="email" type="email" required autocomplete="email" value="${escapeHtml(email)}" placeholder="you@example.com">
+              <input id="recovery-email" name="email" type="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="send" required autocomplete="email" value="${escapeHtml(email)}" placeholder="you@example.com">
             </div>
             <button class="primary-btn wide" type="submit">Send reset link</button>
             <button class="auth-text-btn auth-back-link" type="button" id="back-to-sign-in">Back to sign in</button>
-            <div class="auth-message">${escapeHtml(message)}</div>
+            <div class="auth-message" role="status" aria-live="polite" aria-atomic="true">${escapeHtml(message)}</div>
           </form>
         </div>
       </section>
@@ -1677,33 +1681,69 @@ function renderForgotPassword(message = "", email = "") {
   document.querySelector("#back-to-sign-in")?.addEventListener("click", () => renderAuth("login"));
 }
 
+function beginAuthFormRequest(form, label) {
+  if (!form?.isConnected || form.dataset.submitting === "true" || state.authPendingForm?.isConnected) return null;
+  state.authPendingForm = form;
+  form.dataset.submitting = "true";
+  form.setAttribute("aria-busy", "true");
+  const buttons = [...form.closest(".auth-card").querySelectorAll("button")].map(button => [button, button.disabled]);
+  const restoreButton = setButtonBusy(form.querySelector("button[type=submit]"), label);
+  buttons.forEach(([button]) => { button.disabled = true; });
+  return () => {
+    if (state.authPendingForm === form) state.authPendingForm = null;
+    delete form.dataset.submitting;
+    form.removeAttribute("aria-busy");
+    restoreButton();
+    buttons.forEach(([button, disabled]) => { button.disabled = disabled; });
+  };
+}
+
+function showAuthFormMessage(form, message, warning = true) {
+  if (!form?.isConnected) return;
+  const target = form.closest(".auth-card")?.querySelector(".auth-message");
+  if (!target) return;
+  target.textContent = message;
+  target.classList.toggle("auth-warning", warning);
+}
+
+function authErrorMessage(error, fallback) {
+  const status = Number(error?.status || error?.statusCode || error?.context?.status || 0);
+  const code = String(error?.code || "");
+  if (navigator.onLine === false) return "You’re offline. Reconnect and try again; your details are still here.";
+  if (status === 402) return "JKCREW is temporarily unavailable. Please try again later or contact your coach.";
+  if (status === 429 || /rate_limit|over_request_rate_limit/.test(code)) return "Too many attempts just now. Please wait a minute, then try again.";
+  if (status >= 500 || isTransientRequestError(error)) return "We couldn’t reach JKCREW just now. Please try again in a moment.";
+  if (/email_not_confirmed/.test(code)) return "Please confirm your email using the link in your inbox, then sign in.";
+  if (/session_not_found|refresh_token_not_found|refresh_token_already_used|otp_expired/.test(code)) return "Your session or reset link has expired. Sign in again or request a new reset link.";
+  return messageFrom(error, fallback);
+}
+
 async function requestPasswordReset(event) {
   event.preventDefault();
-  const email = String(new FormData(event.currentTarget).get("email") || "").trim();
-  const button = event.currentTarget.querySelector("button[type=submit]");
-  button.disabled = true;
-  button.textContent = "Sending...";
+  const authForm = event.currentTarget;
+  const restore = beginAuthFormRequest(authForm, "Sending reset link…");
+  if (!restore) return;
+  const email = String(new FormData(authForm).get("email") || "").trim();
   const redirectUrl = new URL(window.location.href);
   redirectUrl.search = "";
   redirectUrl.hash = "";
   redirectUrl.searchParams.set("password-recovery", "1");
+  showAuthFormMessage(authForm, "Sending your secure reset link…", false);
   try {
-    const { error } = await retryNetworkRequest(
-      () => client.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl.href }),
-      "Password reset",
-      { attempts: 2, timeoutMs: 15000 }
+    // This sends an email: retry only when the user asks, never automatically.
+    const { error } = await withTimeout(
+      client.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl.href }),
+      "Password reset", 15000
     );
-    if (error) {
-      renderForgotPassword(messageFrom(error, "The reset email could not be sent. Please try again."), email);
-      return;
-    }
-    renderForgotPassword("Check your email for a secure JKCREW password reset link. You can close this page after it arrives.", email);
+    if (error) throw error;
+    showAuthFormMessage(authForm, "Check your email for a secure JKCREW password reset link. You can close this page after it arrives.", false);
   } catch (error) {
-    renderForgotPassword(messageFrom(error, "The reset email could not be sent. Please try again."), email);
-  }
+    showAuthFormMessage(authForm, authErrorMessage(error, "The reset email could not be sent. Please try again."));
+  } finally { restore(); }
 }
 
 function renderPasswordRecovery(message = "", complete = false) {
+  state.passwordRecoveryActive = !complete;
   cancelScreenLoading();
   app.innerHTML = `
     <div class="auth-page">
@@ -1717,66 +1757,71 @@ function renderPasswordRecovery(message = "", complete = false) {
           <form id="password-recovery-form">
             <div class="field">
               <label for="new-password">New password</label>
-              <input id="new-password" name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+              <input id="new-password" name="password" type="password" required minlength="8" enterkeyhint="next" autocomplete="new-password" placeholder="At least 8 characters">
             </div>
             <div class="field">
               <label for="confirm-password">Confirm new password</label>
-              <input id="confirm-password" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter it again">
+              <input id="confirm-password" name="confirmPassword" type="password" required minlength="8" enterkeyhint="go" autocomplete="new-password" placeholder="Enter it again">
             </div>
             <button class="primary-btn wide" type="submit">Save new password</button>
+            <button class="auth-text-btn auth-back-link" type="button" id="new-reset-link">Request a new reset link</button>
           </form>`}
-          <div class="auth-message">${escapeHtml(message)}</div>
+          <div class="auth-message" role="status" aria-live="polite" aria-atomic="true">${escapeHtml(message)}</div>
         </div>
       </section>
     </div>`;
   document.querySelector("#password-recovery-form")?.addEventListener("submit", updateRecoveredPassword);
+  document.querySelector("#new-reset-link")?.addEventListener("click", () => {
+    cleanPasswordRecoveryUrl();
+    renderForgotPassword("", state.user?.email || "");
+  });
 }
 
 async function updateRecoveredPassword(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const authForm = event.currentTarget;
+  const form = new FormData(authForm);
   const password = String(form.get("password") || "");
   const confirmPassword = String(form.get("confirmPassword") || "");
   if (password.length < 8) {
-    renderPasswordRecovery("Your new password must be at least 8 characters.");
+    showAuthFormMessage(authForm, "Your new password must be at least 8 characters.");
     return;
   }
   if (password !== confirmPassword) {
-    renderPasswordRecovery("Those passwords do not match. Please enter them again.");
+    showAuthFormMessage(authForm, "Those passwords do not match. Check the confirmation and try again.");
     return;
   }
-  const button = event.currentTarget.querySelector("button[type=submit]");
-  button.disabled = true;
-  button.textContent = "Saving...";
+  const restore = beginAuthFormRequest(authForm, "Saving password…");
+  if (!restore) return;
+  const userId = state.user?.id;
+  showAuthFormMessage(authForm, "Saving your new password…", false);
   try {
-    const { data, error } = await retryNetworkRequest(
-      () => client.auth.updateUser({ password }),
-      "Password update",
-      { attempts: 2, timeoutMs: 15000 }
-    );
-    if (error) {
-      renderPasswordRecovery(messageFrom(error, "Your password could not be updated. Please request a new reset link and try again."));
-      return;
-    }
+    const { data, error } = await withTimeout(client.auth.updateUser({ password }), "Password update", 15000);
+    if (!authForm.isConnected || state.user?.id !== userId) return;
+    if (error) throw error;
     state.user = data?.user || state.user;
     cleanPasswordRecoveryUrl();
     renderPasswordRecovery("Password updated successfully.", true);
-    window.setTimeout(() => handleSessionOnce(state.session), 900);
+    const successCard = document.querySelector(".auth-card");
+    window.setTimeout(() => {
+      if (!successCard?.isConnected || state.user?.id !== userId) return;
+      handleSessionOnce(state.session).catch(error => renderBootRecovery(authErrorMessage(error)));
+    }, 900);
   } catch (error) {
-    renderPasswordRecovery(messageFrom(error, "Your password could not be updated. Please request a new reset link and try again."));
-  }
+    showAuthFormMessage(authForm, authErrorMessage(error, "Your password could not be updated. Please try again or request a new reset link."));
+  } finally { restore(); }
 }
 
 async function handleAuth(event, mode) {
   event.preventDefault();
   const authVersion = state.authEventVersion;
   const authForm = event.currentTarget;
+  const restore = beginAuthFormRequest(authForm, mode === "login" ? "Signing in…" : "Creating account…");
+  if (!restore) return;
   const form = new FormData(authForm);
   const email = form.get("email").trim();
   const password = form.get("password");
-  const button = event.currentTarget.querySelector("button[type=submit]");
-  button.disabled = true;
-  button.textContent = mode === "login" ? "Signing in..." : "Creating account...";
+  showAuthFormMessage(authForm, mode === "login" ? "Connecting to your account…" : "Creating your account…", false);
 
   try {
     if (mode === "login") {
@@ -1791,7 +1836,7 @@ async function handleAuth(event, mode) {
       if (authForm.isConnected === false) return;
       if (error) {
         if (isTransientRequestError(error)) renderBootRecovery("The connection was interrupted while signing in. Retry to check your saved session. " + messageFrom(error));
-        else renderAuth(mode, messageFrom(error, "Unable to sign in right now. Please check your email and password, then try again."));
+        else showAuthFormMessage(authForm, authErrorMessage(error, "Unable to sign in right now. Please check your email and password, then try again."));
         return;
       }
       let nextSession = data?.session || null;
@@ -1815,20 +1860,21 @@ async function handleAuth(event, mode) {
     }
 
     const displayName = form.get("displayName").trim();
-    const role = form.get("role");
+    const role = form.get("role") === "parent" ? "parent" : "athlete";
     if (!displayName) {
-      renderAuth(mode, "Please add a display name.");
+      showAuthFormMessage(authForm, "Please add a display name.");
       return;
     }
     const { data: signupData, error: signupError } = await withTimeout(
       client.functions.invoke("create-jkcrew-account", {
         body: { email, password, displayName, role, website: "" },
       }),
-      "Create account"
+      "Create account", 15000
     );
+    if (!authForm.isConnected) return;
     if (signupError || signupData?.error) {
-      const signupMessage = signupData?.error || messageFrom(signupError, "Unable to create your account right now. Please try again.");
-      renderAuth(mode, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
+      const signupMessage = signupData?.error ? authErrorMessage(signupData.error) : authErrorMessage(signupError, "Unable to create your account right now. Please try again.");
+      showAuthFormMessage(authForm, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
       return;
     }
 
@@ -1840,6 +1886,7 @@ async function handleAuth(event, mode) {
     if (authForm.isConnected === false) return;
     if (signInError) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
+      document.querySelector("#email").value = email;
       return;
     }
     let createdSession = signInData?.session || null;
@@ -1854,7 +1901,10 @@ async function handleAuth(event, mode) {
     }
     if (createdSession && authVersion !== state.authEventVersion && state.authEventUserId !== createdSession.user.id) return;
     if (createdSession) await handleSessionOnce(createdSession);
-    else renderAuth("login", "Account created. Sign in with your new email and password.");
+    else {
+      renderAuth("login", "Account created. Sign in with your new email and password.");
+      document.querySelector("#email").value = email;
+    }
     notify("Welcome to JKCREW. Your account is ready.");
   } catch (error) {
     if (authForm.isConnected === false) return;
@@ -1866,8 +1916,8 @@ async function handleAuth(event, mode) {
       renderBootRecovery("The connection was interrupted while signing in. Retry to check your saved session. " + messageFrom(error));
       return;
     }
-    renderAuth(mode, messageFrom(error, mode === "login" ? "Unable to sign in right now. Please check your email and password, then try again." : "Unable to create your account right now. Please try again."));
-  }
+    showAuthFormMessage(authForm, authErrorMessage(error, mode === "login" ? "Unable to sign in right now. Please check your email and password, then try again." : "Unable to create your account right now. Please try again."));
+  } finally { restore(); }
 }
 
 function navNotificationBadge(view) {
@@ -2407,7 +2457,7 @@ async function navigate(view, options = {}) {
   if (previousView === "bikeGarage" && view !== previousView && typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
   if (previousView === "jkcYard") closeJkcYard();
   stopRunPlayback();
-  if (previousView === "coaching" && view !== "coaching") closeAthleteReviewViewer();
+  if (view !== previousView) closeAthleteReviewViewer();
   if (previousView === "contests" && view !== "contests") {
     closeContestEventModal();
     closeContestMergeModal();
@@ -2676,6 +2726,7 @@ function isRelevantRealtimePayload(table, payload = {}) {
 }
 
 function invalidateCachesForRealtime(table) {
+  if (table === "trick_help_requests") invalidateHelpRequestData();
   if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
   if (table === "coach_group_session_participants") {
     state.sessionViewerActiveSessionCache = null;
@@ -3070,10 +3121,40 @@ async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = tru
   return request;
 }
 
+function invalidateHelpRequestData() {
+  cacheClear("help-requests:");
+  // A reply arriving during an older read must not repopulate its cache.
+  for (const key of state.inFlight.keys()) if (key.startsWith("help-requests:")) state.inFlight.delete(key);
+}
+
 async function getHelpRequests(athleteId) {
-  const { data, error } = await client.from("trick_help_requests").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false });
-  if (error) throw error;
-  return hydrateHelpRequestMediaUrls(data || []);
+  const viewerId = state.user?.id;
+  if (!viewerId || !athleteId) return [];
+  const cacheKey = `help-requests:${viewerId}:${athleteId}`;
+  const cached = cacheGet(cacheKey, 15000);
+  if (cached) return cached;
+  if (state.inFlight.has(cacheKey)) return state.inFlight.get(cacheKey);
+  const request = (async () => {
+    const rows = [];
+    const pageSize = 200;
+    // Lists need metadata only. Legacy inline video and signed storage URLs are
+    // fetched for one review when it is opened, never on a dashboard visit.
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await client.from("trick_help_requests")
+        .select("id,athlete_id,coach_id,question,coach_comment,status,created_at,replied_at,video_storage_path,coach_video_storage_path,video_file_name,coach_video_file_name")
+        .eq("athlete_id", athleteId)
+        .order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw error;
+      if (state.user?.id !== viewerId) throw new Error("The signed-in account changed. Please reopen coaching.");
+      rows.push(...(data || []));
+      if ((data || []).length < pageSize) break;
+    }
+    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, rows);
+    return rows;
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
+  state.inFlight.set(cacheKey, request);
+  return request;
 }
 
 async function getAthleteHelpRequests(athleteId) {
@@ -4340,23 +4421,9 @@ function assignmentGroups(assignments, interactive = false, profile = null, sele
 
 function helpRequestsHtml(requests, mode = "athlete") {
   if (!requests.length) return `<div class="empty">No trick help videos yet.</div>`;
-  return requests.map((request) => {
-    const riderVideoUrl = request.video_url || request.video_data_url || "";
-    const coachVideoUrl = request.coach_video_url || request.coach_video_data_url || "";
-    const riderVideo = riderVideoUrl ? `
-      <video class="help-video" src="${escapeHtml(riderVideoUrl)}" controls playsinline preload="metadata"></video>
-      <div class="video-actions">
-        <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" target="_blank" rel="noopener">Open video</a>
-        <a class="secondary-btn compact-btn" href="${escapeHtml(riderVideoUrl)}" download="${escapeHtml(safeFileName(request.video_file_name || "jkcrew-trick-video"))}">Download</a>
-      </div>` : `<div class="empty compact-empty">No video attached.</div>`;
-    const coachVideo = coachVideoUrl ? `
-      <video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>
-      <div class="video-actions">
-        <a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" target="_blank" rel="noopener">Open coach video</a>
-        <a class="secondary-btn compact-btn" href="${escapeHtml(coachVideoUrl)}" download="${escapeHtml(safeFileName(request.coach_video_file_name || "jkcrew-coach-reply"))}">Download</a>
-      </div>` : "";
-    const coachReply = request.coach_comment || coachVideoUrl
-      ? `<div class="coach-reply"><strong>Coach reply</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideo}</div>`
+  const cards = requests.map((request, index) => {
+    const coachReply = athleteHelpHasReply(request)
+      ? `<div class="coach-reply"><strong>Coach reply</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : `<p>Private video feedback is ready to watch.</p>`}</div>`
       : `<div class="panel-meta">Waiting for coach reply</div>`;
     const coachTools = mode === "coach" ? `
       <form class="reply-form" data-help-reply="${request.id}">
@@ -4364,13 +4431,29 @@ function helpRequestsHtml(requests, mode = "athlete") {
         <div class="field"><label for="reply-video-${request.id}">Optional video reply</label><input id="reply-video-${request.id}" name="video" type="file" accept="video/*"></div>
         <button class="primary-btn" type="submit">Send coach reply</button>
       </form>` : "";
-    return `<article class="help-card">
+    return `<article class="help-card" data-help-history-row ${index >= 6 ? "hidden" : ""}>
       <div class="help-card-head"><div><strong>${escapeHtml(request.question || "Trick help request")}</strong><small>${dateLabel(request.created_at)} · ${escapeHtml(request.status)}</small></div></div>
-      ${riderVideo}
+      <button class="secondary-btn" type="button" data-open-help-review="${escapeHtml(request.id)}" aria-haspopup="dialog">${athleteHelpHasReply(request) ? "Watch clip & feedback" : "Watch rider clip"}</button>
       ${coachReply}
       ${coachTools}
     </article>`;
   }).join("");
+  return `<div class="help-review-history">${cards}${requests.length > 6 ? `<button class="secondary-btn wide" type="button" data-help-show-more>Show older reviews (${requests.length - 6})</button>` : ""}</div>`;
+}
+
+function bindHelpRequestMedia(requests = []) {
+  const byId = new Map(requests.map(request => [request.id, request]));
+  document.querySelectorAll("[data-open-help-review]").forEach(button => button.addEventListener("click", () => {
+    const request = byId.get(button.dataset.openHelpReview);
+    if (request) openAthleteReviewViewer(request, button);
+  }));
+  document.querySelectorAll("[data-help-show-more]").forEach(button => button.addEventListener("click", () => {
+    const hidden = [...button.closest(".help-review-history").querySelectorAll("[data-help-history-row][hidden]")];
+    hidden.slice(0, 6).forEach(row => { row.hidden = false; });
+    const remaining = Math.max(0, hidden.length - 6);
+    button.hidden = !remaining;
+    button.textContent = `Show older reviews (${remaining})`;
+  }));
 }
 
 function athleteHelpHasReply(request = {}) {
@@ -4452,6 +4535,7 @@ function athleteReviewViewerHtml(request = {}, media = {}) {
   const riderVideoUrl = media.video_url || media.video_data_url || "";
   const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
   const hasReply = athleteHelpHasReply(request);
+  const ownClip = state.profile?.role === "athlete";
   const initialKind = coachVideoUrl ? "coach" : "rider";
   const initialUrl = initialKind === "coach" ? coachVideoUrl : riderVideoUrl;
   const riderDownloadName = safeFileName(request.video_file_name || "jkcrew-trick-video");
@@ -4462,11 +4546,11 @@ function athleteReviewViewerHtml(request = {}, media = {}) {
     <header class="coaching-viewer-head"><div><div class="eyebrow">Private trick review</div><h2 id="coaching-viewer-title">${escapeHtml(request.question || "Trick help request")}</h2><p>${dateLabel(request.created_at)} · ${escapeHtml(status.label)}</p></div><button class="coaching-viewer-close" type="button" data-close-athlete-review aria-label="Close video review">×</button></header>
     <div class="coaching-viewer-tabs" role="tablist" aria-label="Choose review video">
       ${coachVideoUrl ? `<button class="${initialKind === "coach" ? "active" : ""}" type="button" role="tab" data-athlete-review-media="coach" aria-selected="${initialKind === "coach"}">Coach feedback</button>` : ""}
-      ${riderVideoUrl ? `<button class="${initialKind === "rider" ? "active" : ""}" type="button" role="tab" data-athlete-review-media="rider" aria-selected="${initialKind === "rider"}">My clip</button>` : ""}
+      ${riderVideoUrl ? `<button class="${initialKind === "rider" ? "active" : ""}" type="button" role="tab" data-athlete-review-media="rider" aria-selected="${initialKind === "rider"}">${ownClip ? "My clip" : "Rider clip"}</button>` : ""}
     </div>
     <div class="coaching-viewer-media">
       ${initialUrl ? `<video id="athlete-review-video" src="${escapeHtml(initialUrl)}" controls playsinline preload="metadata"></video>` : `<div class="coaching-viewer-no-video"><span>▶</span><strong>No video is available for this review.</strong></div>`}
-      ${initialUrl ? `<div class="coaching-viewer-media-actions"><span id="athlete-review-media-label">${initialKind === "coach" ? "Coach feedback video" : "Your original clip"}</span><div><a id="athlete-review-open-media" class="secondary-btn compact-btn" href="${escapeHtml(initialUrl)}" target="_blank" rel="noopener">Open video</a><a id="athlete-review-download-media" class="secondary-btn compact-btn" href="${escapeHtml(initialUrl)}" download="${escapeHtml(initialDownloadName)}">Download</a></div></div>` : ""}
+      ${initialUrl ? `<div class="coaching-viewer-media-actions"><span id="athlete-review-media-label">${initialKind === "coach" ? "Coach feedback video" : ownClip ? "Your original clip" : "Rider clip"}</span><div><a id="athlete-review-open-media" class="secondary-btn compact-btn" href="${escapeHtml(initialUrl)}" target="_blank" rel="noopener">Open video</a><a id="athlete-review-download-media" class="secondary-btn compact-btn" href="${escapeHtml(initialUrl)}" download="${escapeHtml(initialDownloadName)}">Download</a></div></div>` : ""}
     </div>
     <div class="coaching-viewer-feedback ${hasReply ? "has-reply" : "is-waiting"}">
       <div class="coaching-feedback-mark" aria-hidden="true">${hasReply ? "JK" : "…"}</div>
@@ -4517,7 +4601,7 @@ async function openAthleteReviewViewer(request = {}, opener = null) {
     backdrop.querySelector("[data-close-athlete-review]")?.addEventListener("click", close);
     const video = backdrop.querySelector("#athlete-review-video");
     const mediaByKind = {
-      rider: { url: media.video_url || media.video_data_url || "", label: "Your original clip", download: safeFileName(request.video_file_name || "jkcrew-trick-video") },
+      rider: { url: media.video_url || media.video_data_url || "", label: state.profile?.role === "athlete" ? "Your original clip" : "Rider clip", download: safeFileName(request.video_file_name || "jkcrew-trick-video") },
       coach: { url: media.coach_video_url || media.coach_video_data_url || "", label: "Coach feedback video", download: safeFileName(request.coach_video_file_name || "jkcrew-coach-reply") },
     };
     backdrop.querySelectorAll("[data-athlete-review-media]").forEach((button) => button.addEventListener("click", () => {
@@ -7201,7 +7285,7 @@ function parentNextItemHtml(items = []) {
 }
 
 function parentLatestFeedbackHtml(requests = []) {
-  const feedback = requests.find((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+  const feedback = requests.find(athleteHelpHasReply);
   if (!feedback) return `<div class="parent-empty-note"><strong>No returned video feedback yet</strong><span>Coach replies will stay private to your family and coach.</span></div>`;
   return `<article class="parent-feedback-preview"><div class="parent-card-kicker"><span>Video feedback returned</span><small>${dateLabel(feedback.replied_at || feedback.created_at)}</small></div><strong>${escapeHtml(feedback.question || "Trick review")}</strong>${feedback.coach_comment ? `<p>${escapeHtml(feedback.coach_comment)}</p>` : `<p>Coach JK returned a private video reply.</p>`}<button class="parent-text-action" type="button" data-parent-open-view="parentCoaching">Watch feedback</button></article>`;
 }
@@ -7367,7 +7451,7 @@ async function renderParentCoaching() {
     getMyCoachMessages(20).catch((error) => { console.warn("Coach messages unavailable", error); return []; }),
     getHelpRequests(context.selected.id),
   ]);
-  const returned = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+  const returned = helpRequests.filter(athleteHelpHasReply);
   const waiting = helpRequests.length - returned.length;
   document.querySelector("#view").innerHTML = `
     ${parentChildSwitcherHtml(context)}
@@ -7378,6 +7462,7 @@ async function renderParentCoaching() {
       <section class="panel parent-coaching-panel"><div class="parent-section-head"><div><span>Video analysis</span><h2>Trick feedback</h2></div><b>${returned.length} returned · ${waiting} waiting</b></div><div class="help-list parent-help-list">${helpRequestsHtml(helpRequests, "parent")}</div></section>
     </div>`;
   bindParentPageActions();
+  bindHelpRequestMedia(helpRequests);
 }
 
 function parentAgendaItemHtml(item = {}) {
@@ -7465,7 +7550,7 @@ async function showParentNotificationDrawer() {
       getHelpRequests(context.selected.id),
       getDashboardItems(context.selected.id),
     ]);
-    const feedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+    const feedback = helpRequests.filter(athleteHelpHasReply);
     const items = [
       ...messages.map((message) => ({ at: message.sent_at, type: "Coach message", title: message.message, view: "parentCoaching" })),
       ...feedback.map((request) => ({ at: request.replied_at || request.created_at, type: "Video feedback", title: request.question || "Coach feedback returned", view: "parentCoaching" })),
@@ -9393,13 +9478,39 @@ function liveRunCanEdit() {
   return !liveRun || (liveRun.session.call_status !== "ringing" && !["ended","declined","cancelled","missed"].includes(liveRun.session.call_status) && liveRunOwnsEditor() && !liveRun.error && !liveRun.busy && navigator.onLine);
 }
 
+// Only cache the current session's immutable image string. Capturing the cache
+// at request time keeps out-of-order acknowledgements tied to the right photo.
+const liveRunLegacyRpc = new Set();
+async function compactLiveRunRequest(name, args, l, label) {
+  const cached = l?.imageCache;
+  const compact = !liveRunLegacyRpc.has(name);
+  let { data, error } = await withTimeout(client.rpc(compact ? `${name}_compact` : name,
+    compact ? { ...args, p_image_key: cached?.key || null } : args), label, 15000);
+  // A missing endpoint means no operation ran. Never replay on a network error,
+  // timeout or permission error; edits retain their receipt for an explicit retry.
+  if (compact && error && ["PGRST202", "42883"].includes(error.code) &&
+      `${error.message || ""} ${error.details || ""}`.includes(`${name}_compact`)) {
+    liveRunLegacyRpc.add(name);
+    ({ data, error } = await withTimeout(client.rpc(name, args), label, 15000));
+  }
+  if (error) throw error;
+  if (data?.draft && data.image_key) {
+    if (data.image_omitted) {
+      if (!cached || cached.key !== data.image_key) throw new Error("The course photo needs to reload. Your edits are kept here; retry to reconnect.");
+      data.draft.imageDataUrl = cached.value;
+    } else if (typeof data.draft.imageDataUrl !== "string") {
+      throw new Error("The course photo could not be loaded. Your edits are kept here; retry to reconnect.");
+    }
+    if (l) l.imageCache = { key: data.image_key, value: data.draft.imageDataUrl };
+  }
+  return data;
+}
+
 async function liveRunRequest(action, l = liveRun, extra = {}) {
-  const { data, error } = await withTimeout(client.rpc("live_run_action", {
+  return compactLiveRunRequest("live_run_action", {
     p_action: action, p_session_id: l?.session?.id || null, p_client_id: l?.clientId || null,
     p_version: l?.session?.version || null, ...extra,
-  }), "Live run connection", 15000);
-  if (error) throw error;
-  return data;
+  }, l, "Live run connection");
 }
 
 async function liveRunCallRequest(action, l = liveRun, extra = {}) {
@@ -9544,14 +9655,12 @@ function applyLiveRunDraft(draft, session) {
 }
 
 async function sharedLiveRunRequest(l, pending = null) {
-  const { data, error } = await withTimeout(client.rpc("live_run_edit", {
+  return compactLiveRunRequest("live_run_edit", {
     p_session_id: l.session.id, p_client_id: l.clientId,
     p_request_id: pending?.id || crypto.randomUUID(),
     p_version: pending?.version ?? l.session.version,
     p_ops: pending?.ops || [],
-  }), "Shared run editing", 15000);
-  if (error) throw error;
-  return data;
+  }, l, "Shared run editing");
 }
 
 function sharedLiveRunConflictLabel(paths) {
@@ -9822,8 +9931,19 @@ async function pollLiveRun(l = liveRun) {
   finally { l.polling = false; if (liveRun === l) paintLiveRunControls(); }
 }
 
+function liveRunPollDue(l, now = Date.now()) {
+  // Realtime changes set lastPoll to zero. Keep a slower safety poll while
+  // subscribed, a short fallback when disconnected, and none in hidden tabs.
+  return !document.hidden && (!l.lastPoll || now - l.lastPoll >= (l.connected ? 5000 : 2000));
+}
+
 function connectLiveRun(result, clientId) {
   const l = liveRun = { session: result.session, clientId, base: structuredClone(result.draft), lastPoll: 0, lastHeartbeat: Date.now(), connected: false };
+  if (result.image_key && typeof result.draft?.imageDataUrl === "string") {
+    l.imageCache = { key: result.image_key, value: result.draft.imageDataUrl };
+  }
+  l.onVisible = () => { if (!document.hidden) l.lastPoll = 0; };
+  document.addEventListener("visibilitychange", l.onVisible);
   state.runBuilder.liveSessionId = result.session.id;
   try { sessionStorage.setItem(`jkcrew-call-client:${state.user.id}:${result.session.id}`,clientId); } catch {}
   l.channel = client.channel(`run-live:${result.session.id}:${clientId}`)
@@ -9848,7 +9968,7 @@ function connectLiveRun(result, clientId) {
           if (liveRun === l && !l.busy) { l.session = response.session; l.lastHeartbeat = Date.now(); }
         }
       }
-      if (Date.now() - l.lastPoll > (liveRunShared(l) ? 900 : 2000)) { l.lastPoll = Date.now(); await pollLiveRun(l); }
+      if (liveRunPollDue(l)) { l.lastPoll = Date.now(); await pollLiveRun(l); }
     } catch (error) { if (liveRun === l) { l.error ||= messageFrom(error); paintLiveRunControls(); } }
     finally { l.ticking = false; }
   }, 300);
@@ -9866,6 +9986,8 @@ function disconnectLiveRun() {
   liveRun = null;
   if (!l) return;
   clearInterval(l.timer);
+  document.removeEventListener("visibilitychange", l.onVisible);
+  l.imageCache = null;
   l.media?.destroy();
   if (l.channel) void client.removeChannel(l.channel);
   if (state.runBuilder) delete state.runBuilder.liveSessionId;
@@ -10474,6 +10596,7 @@ function restoreCoachBattleViewState(view, saved) {
 let battleScoreRefreshRunning = false;
 async function refreshCoachBattleScores() {
   if (battleScoreRefreshRunning || state.view !== "battleViewer" || !isCoachRole(state.profile?.role)
+    || (typeof navigator !== "undefined" && navigator.onLine === false)
     || document.visibilityState === "hidden" || document.querySelector(".battle-intro-backdrop")
     || document.activeElement?.matches("input, select, textarea")) return;
   battleScoreRefreshRunning = true;
@@ -10483,14 +10606,15 @@ async function refreshCoachBattleScores() {
 
 async function renderCoachBattleViewer() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const viewerId = state.user.id;
   const renderVersion = state.coachBattleRenderVersion = (state.coachBattleRenderVersion || 0) + 1;
-  const rosterPromise = getCoachRoster();
+  const rosterPromise = getCoachRoster({ summary: true, maxAgeMs: 60000 });
   const [{ data: battles, error }, roster, challengeSummary] = await Promise.all([
     client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
     rosterPromise,
     getCoachWeeklyChallenges(rosterPromise),
   ]);
-  if (state.view !== "battleViewer" || renderVersion !== state.coachBattleRenderVersion) return;
+  if (state.user?.id !== viewerId || state.view !== "battleViewer" || renderVersion !== state.coachBattleRenderVersion) return;
   if (error) throw error;
   const rows = Array.isArray(battles) ? battles : [];
   const current = rows.filter((battle) => !battle.archived_at);
@@ -10529,8 +10653,18 @@ async function renderCoachBattleViewer() {
       </div>
     </details>
   </div>`;
-  view.querySelector("#refresh-coach-battles")?.addEventListener("click", refreshCoachBattleScores);
-  view.querySelector("#coach-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(roster, renderCoachBattleViewer));
+  view.querySelector("#refresh-coach-battles")?.addEventListener("click", () => {
+    cacheClear(`roster:${state.user.id}:dashboard`);
+    refreshCoachBattleScores().catch(error => notify(messageFrom(error), "error"));
+  });
+  view.querySelector("#coach-create-battle")?.addEventListener("click", async (event) => {
+    const restore = setButtonBusy(event.currentTarget, "Loading riders…");
+    try {
+      const fullRoster = await getCoachRoster();
+      if (state.view === "battleViewer") showCoachBattleBuilder(fullRoster, renderCoachBattleViewer);
+    } catch (error) { notify(messageFrom(error), "error"); }
+    finally { restore(); }
+  });
   view.querySelector("#coach-create-weekly-challenge")?.addEventListener("click", () => showWeeklyChallengeBuilder(renderCoachBattleViewer));
   view.querySelectorAll("[data-retry-coach-challenges]").forEach(button => button.addEventListener("click", renderCoachBattleViewer));
   const applyBattleFilters = () => {
@@ -10885,9 +11019,47 @@ async function renderJkcYard() {
   }
 }
 
-function renderBikeGarage() {
+const bikeGarageAssetLoads = new Map();
+function loadBikeGarageAsset(file, stylesheet = false, timeoutMs = 15000) {
+  if (bikeGarageAssetLoads.has(file)) return bikeGarageAssetLoads.get(file);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Fetch before executing: an aborted script cannot arrive late and redeclare
+  // its globals after a retry. Only these fixed, same-origin assets use this loader.
+  const pending = (async () => {
+    try {
+      const url = new URL(`${file}?v=${RELEASE_VERSION}`, window.location.href).href;
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error("Asset unavailable");
+      const source = await response.text();
+      if (controller.signal.aborted) throw new Error("Asset timed out");
+      const element = document.createElement(stylesheet ? "style" : "script");
+      element.dataset.assetUrl = url;
+      element.textContent = source;
+      document.head.append(element);
+    } catch (_) {
+      bikeGarageAssetLoads.delete(file);
+      throw new Error("Bike Garage could not load. Check your connection and try again.");
+    } finally { clearTimeout(timer); }
+  })();
+  bikeGarageAssetLoads.set(file, pending);
+  return pending;
+}
+async function loadBikeGarageAssets() {
+  await Promise.all(["bike-garage.css", "bike-preview.css"].map(file => loadBikeGarageAsset(file, true)));
+  // Classic scripts have ordered dependencies. Reuse successful loads on retry.
+  for (const file of ["bike-parts-catalog.js", "bike-config.js", "bike-seat-designs.js", "bike-photo-masks.js", "bike-renderer.js", "bike-preview.js", "bike-three.js", "bike-garage.js"]) {
+    await loadBikeGarageAsset(file);
+  }
+}
+function bikeGarageTeaserHtml() {
+  return `<button type="button" class="bike-garage-entry" data-open-bike-garage><span class="bike-entry-icon" aria-hidden="true">✳</span><span><small>JKCREW GARAGE</small><strong>Build your dream bike</strong><span>Pick your parts. Make it yours.</span></span><b aria-hidden="true">↗</b></button>`;
+}
+async function renderBikeGarage() {
   const userId = state.user?.id;
   if (!userId) return navigate("home");
+  if (typeof JKCrewBikeGarage === "undefined") await withTimeout(loadBikeGarageAssets(), "Load Bike Garage", 20000);
+  if (state.view !== "bikeGarage" || state.user?.id !== userId) return;
   JKCrewBikeGarage.mount({
     root: document.querySelector("#view"), client, userId,
     isCurrent: () => state.view === "bikeGarage" && state.user?.id === userId,
@@ -13090,9 +13262,9 @@ async function getSessionViewerRoster() {
   return cacheSet(cacheKey, roster);
 }
 
-async function getCoachRoster({ summary = false } = {}) {
+async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
   const cacheKey = `roster:${state.user.id}${summary ? ":dashboard" : ""}`;
-  const cached = cacheGet(cacheKey, 10000);
+  const cached = cacheGet(cacheKey, maxAgeMs);
   if (cached) {
     state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
     return cached;
@@ -13699,7 +13871,7 @@ async function renderCoachPreview(mode = "student") {
   const weeklyItems = completionAssignments(assignments);
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
   const events = dashboardItems.filter((item) => item.item_type === "event");
-  const visibleFeedback = helpRequests.filter((request) => request.coach_comment || request.coach_video_data_url || request.coach_video_storage_path || request.coach_video_url);
+  const visibleFeedback = helpRequests.filter(athleteHelpHasReply);
   const tabs = coachPreviewTabs(mode);
   if (!tabs.some(([id]) => id === state.coachPreviewTab)) state.coachPreviewTab = "home";
   const activeTab = state.coachPreviewTab;
@@ -13738,6 +13910,7 @@ async function renderCoachPreview(mode = "student") {
     state.coachPreviewTab = "home";
     navigate(event.currentTarget.dataset.previewSwitch);
   });
+  bindHelpRequestMedia(visibleFeedback);
   document.querySelectorAll("[data-preview-tab]").forEach((button) => button.addEventListener("click", () => {
     state.coachPreviewTab = button.dataset.previewTab || "home";
     renderCoachPreview(mode);
@@ -14254,6 +14427,7 @@ async function renderStudentProfile() {
   bindRunBuilderActions();
   document.querySelectorAll("[data-unlink-parent]").forEach((button) => button.addEventListener("click", unlinkParentAccount));
   document.querySelectorAll("[data-help-reply]").forEach((form) => form.addEventListener("submit", replyToHelpRequest));
+  bindHelpRequestMedia(helpRequests);
   bindDashboardItemActions(renderStudentProfile);
   document.querySelector("#choose-avatar").addEventListener("click", () => document.querySelector("#avatar-file").click());
   document.querySelector("#avatar-file").addEventListener("change", updateAthleteAvatar);
@@ -15598,52 +15772,132 @@ async function getLinkedCoachIdForCurrentAthlete() {
   return data?.[0]?.coach_id || null;
 }
 
+function helpUploadDraftSignature(file, text = "") {
+  return JSON.stringify([file?.name || "", file?.size || 0, file?.lastModified || 0, file?.type || "", text]);
+}
+
+function isDefinitiveHelpWriteError(error) {
+  // A dropped response, timeout or 5xx may follow a successful commit. Never
+  // remove a possibly referenced object for those errors (or a duplicate ID).
+  const status = Number(error?.status || error?.statusCode || 0);
+  const code = String(error?.code || "");
+  if (code === "23505" || status === 409) return false;
+  return /^(22|42)/.test(code) || (status >= 400 && status < 500 && ![408, 429].includes(status));
+}
+
+async function readHelpWriteReceipt(requestId) {
+  const viewerId = state.user?.id;
+  const { data, error } = await withTimeout(client.from("trick_help_requests")
+    .select("id,athlete_id,coach_id,video_storage_path,coach_video_storage_path,coach_comment,status,replied_at")
+    .eq("id", requestId).maybeSingle(), "Check saved video", 8000);
+  if (state.user?.id !== viewerId) throw new Error("Your account changed. Reopen Coaching before continuing.");
+  if (error) throw error;
+  return data;
+}
+
 async function submitHelpRequest(event) {
   event.preventDefault();
   if (state.profile?.role !== "athlete") return notify("Video coaching is available from an athlete account.", "error");
-  const form = new FormData(event.currentTarget);
+  const submitterId = state.user.id;
+  const originatingView = state.view;
+  const formElement = event.currentTarget;
+  if (formElement.dataset.submitting === "true") return;
+  const form = new FormData(formElement);
   const video = form.get("video");
   const question = String(form.get("question") || "").trim();
   if (!video?.size) return notify("Upload a trick video first.", "error");
   if (!supportedHelpVideoFile(video)) return notify("Choose an MP4, MOV, M4V, WebM or phone video file.", "error");
   if (video.size > RIDER_VIDEO_MAX_BYTES) return notify("Trim the video below 50MB before sending it.", "error");
   if (!question) return notify("Tell Coach JK what you want checked in the clip.", "error");
-  const button = event.currentTarget.querySelector("button");
+  const signature = helpUploadDraftSignature(video, question);
+  const button = formElement.querySelector("button");
+  formElement.dataset.submitting = "true";
   button.disabled = true;
   button.textContent = "Checking clip...";
-  let upload = null;
+  let submission = formElement._helpSubmission;
+  if (submission?.userId !== submitterId) submission = null;
+  let committed = false;
+  let writeRejected = false;
+  let resetDraft = true;
   try {
-    const duration = await videoDurationSeconds(video);
-    if (duration > RIDER_VIDEO_MAX_SECONDS) throw new Error("Trim the video to 60 seconds or less before sending it.");
-    const coachId = await getLinkedCoachIdForCurrentAthlete();
-    if (!coachId) throw new Error("Ask your coach to add you to their crew first.");
-    upload = await uploadHelpVideoFile(video, "student", (percent) => {
-      if (button.isConnected) button.textContent = `Uploading ${percent}%`;
-    });
-    button.textContent = "Saving request...";
-    const { error } = await client.from("trick_help_requests").insert({
-      athlete_id: state.user.id,
-      coach_id: coachId,
-      question,
-      video_data_url: "",
-      video_storage_path: upload.path,
-      video_file_name: upload.fileName,
-      video_mime_type: upload.mimeType,
-      video_size_bytes: upload.size,
-    });
-    if (error) throw error;
+    if (submission?.writeAttempted) {
+      const receipt = await readHelpWriteReceipt(submission.id);
+      committed = receipt?.athlete_id === submitterId && receipt?.video_storage_path === submission.upload?.path;
+      if (committed) resetDraft = submission.signature === signature;
+    }
+    if (!committed) {
+      if (!submission || submission.signature !== signature) {
+        submission = { id: crypto.randomUUID(), userId: submitterId, signature, upload: null, writeAttempted: false };
+        formElement._helpSubmission = submission;
+      }
+      if (!submission.upload) {
+        const duration = await videoDurationSeconds(video);
+        if (duration > RIDER_VIDEO_MAX_SECONDS) throw new Error("Trim the video to 60 seconds or less before sending it.");
+        if (state.user?.id !== submitterId) throw new Error("Your account changed. Reopen Coaching before sending this video.");
+        const coachId = await getLinkedCoachIdForCurrentAthlete();
+        if (state.user?.id !== submitterId) throw new Error("Your account changed. Reopen Coaching before sending this video.");
+        if (!coachId) throw new Error("Ask your coach to add you to their crew first.");
+        submission.coachId = coachId;
+        submission.upload = await uploadHelpVideoFile(video, "student", (percent) => {
+          if (button.isConnected) button.textContent = `Uploading ${percent}%`;
+        });
+      }
+      if (state.user?.id !== submitterId) throw new Error("Your account changed. Reopen Coaching before sending this video.");
+      button.textContent = "Saving request...";
+      submission.writeAttempted = true;
+      const { error } = await withTimeout(client.from("trick_help_requests").insert({
+        id: submission.id,
+        athlete_id: submitterId,
+        coach_id: submission.coachId,
+        question,
+        video_data_url: "",
+        video_storage_path: submission.upload.path,
+        video_file_name: submission.upload.fileName,
+        video_mime_type: submission.upload.mimeType,
+        video_size_bytes: submission.upload.size,
+      }), "Save video request", 15000).catch(error => ({ error }));
+      if (error) {
+        writeRejected = isDefinitiveHelpWriteError(error) && !submission.uncertain;
+        if (!writeRejected) submission.uncertain = true;
+        // Reuse this UUID on retry. A lost response must never create another
+        // request or delete the video attached to the first one.
+        let receipt = null;
+        try { receipt = await readHelpWriteReceipt(submission.id); } catch (_) {}
+        if (receipt?.athlete_id !== submitterId || receipt?.video_storage_path !== submission.upload.path) throw error;
+      }
+      committed = true;
+    }
+    invalidateHelpRequestData();
+    if (state.user?.id !== submitterId) return;
+    const currentDraft = new FormData(formElement);
+    resetDraft = submission.signature === helpUploadDraftSignature(currentDraft.get("video"), String(currentDraft.get("question") || "").trim());
+    if (!resetDraft) {
+      notify("Your previous video was sent. Your new edits are still here; send them when ready.");
+      return;
+    }
     clearHelpVideoPreview();
     notify("Video sent privately to Coach JK.");
-    if (state.view === "coaching") await renderAthleteCoaching();
-    else await renderAthleteHome();
+    if (state.view === originatingView && state.view === "coaching") await renderAthleteCoaching();
+    else if (state.view === originatingView && state.view === "home") await renderAthleteHome();
   } catch (error) {
-    if (upload?.path) {
-      const { error: cleanupError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([upload.path]);
-      if (cleanupError) console.warn("Could not clean up failed video request upload.", cleanupError);
+    if (submission?.upload?.path && !committed && (!submission.writeAttempted || writeRejected)) {
+      const { error: cleanupError } = await withTimeout(client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([submission.upload.path]), "Clean up rejected video", 8000).catch(error => ({ error }));
+      if (cleanupError) console.warn("Could not clean up rejected video request upload.", cleanupError);
+      if (formElement._helpSubmission === submission) delete formElement._helpSubmission;
+    }
+    if (state.user?.id !== submitterId) return;
+    if (committed) {
+      console.warn("Video was saved but the coaching screen did not refresh.", error);
+      notify("Your video was sent. Reopen Coaching to see it in your reviews.");
+    } else notify(`${messageFrom(error)}${submission?.writeAttempted && !writeRejected ? " Your clip is kept here. Try again to check whether it was sent." : ""}`, "error");
+  } finally {
+    delete formElement.dataset.submitting;
+    if (committed) {
+      if (resetDraft) formElement.reset();
+      if (formElement._helpSubmission === submission) delete formElement._helpSubmission;
     }
     button.disabled = false;
     button.textContent = "Send video to Coach JK";
-    notify(messageFrom(error), "error");
   }
 }
 
@@ -15685,8 +15939,10 @@ async function submitTrickRequest(event) {
 async function replyToHelpRequest(event) {
   event.preventDefault();
   if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before sending feedback.", "error");
+  const submitterId = state.user?.id;
   const originatingView = state.view;
   const formElement = event.currentTarget;
+  if (formElement.dataset.submitting === "true") return;
   const form = new FormData(formElement);
   const requestId = formElement.dataset.helpReply;
   const recordedReply = state.videoReviewRecordedReplies.get(requestId);
@@ -15697,62 +15953,94 @@ async function replyToHelpRequest(event) {
   if (!comment && !file?.size) return notify("Add a written reply, video reply, or both.", "error");
   if (file?.size && !supportedHelpVideoFile(file)) return notify("Choose an MP4, MOV, M4V, WebM or phone video file.", "error");
   if (file?.size > COACH_VIDEO_MAX_BYTES) return notify("Choose a video reply under 50MB.", "error");
+  const signature = helpUploadDraftSignature(file, comment);
   const button = formElement.querySelector("button");
   const originalButtonText = button.textContent;
+  formElement.dataset.submitting = "true";
   button.disabled = true;
   button.textContent = "Sending...";
-  let upload = null;
-  let previousCoachVideoPath = "";
+  let submission = formElement._helpReplySubmission;
+  if (submission?.userId !== submitterId) submission = null;
   let committed = false;
+  let writeRejected = false;
+  let keepNewDraft = false;
+  const matchesReceipt = receipt => Boolean(submission?.update?.replied_at)
+    && Date.parse(receipt?.replied_at) === Date.parse(submission.update.replied_at)
+    && receipt?.coach_comment === submission?.update?.coach_comment
+    && (!submission?.upload || receipt?.coach_video_storage_path === submission.upload.path);
   try {
-    const update = {
-      coach_comment: comment || "",
-      status: "replied",
-      replied_at: new Date().toISOString(),
-    };
-    if (file?.size) {
-      const { data: previous, error: previousError } = await client.from("trick_help_requests")
-        .select("coach_video_storage_path")
-        .eq("id", requestId)
-        .maybeSingle();
-      if (previousError) throw previousError;
-      previousCoachVideoPath = previous?.coach_video_storage_path || "";
-      upload = await uploadHelpVideoFile(file, "coach-reply");
-      update.coach_video_data_url = "";
-      update.coach_video_storage_path = upload.path;
-      update.coach_video_file_name = upload.fileName;
-      update.coach_video_mime_type = upload.mimeType;
-      update.coach_video_size_bytes = upload.size;
+    const previous = await readHelpWriteReceipt(requestId);
+    if (!previous) throw new Error("Unable to save feedback for this video. Check the rider is still linked to your coach account.");
+    if (submission?.writeAttempted && matchesReceipt(previous)) {
+      committed = true;
+      keepNewDraft = submission.signature !== signature;
     }
-    const { data, error } = await client.from("trick_help_requests")
-      .update(update)
-      .eq("id", requestId)
-      .select("id, status");
-    if (error) throw error;
-    if (!data?.length) throw new Error("Unable to save feedback for this video. Check the rider is still linked to your coach account.");
-    committed = true;
-    if (upload?.path) releaseVideoReviewMedia(requestId);
+    if (!committed) {
+      if (!submission || submission.signature !== signature) {
+        submission = { userId: submitterId, signature, upload: null, writeAttempted: false,
+          baseRepliedAt: previous.replied_at || null, previousCoachVideoPath: previous.coach_video_storage_path || "",
+          update: { coach_comment: comment || "", status: "replied", replied_at: new Date().toISOString() } };
+        formElement._helpReplySubmission = submission;
+      }
+      // Keep retries tied to the version this draft started from. Re-reading a
+      // newer reply is not permission to overwrite another device's feedback.
+      const baseRevision = submission.baseRepliedAt ? Date.parse(submission.baseRepliedAt) : null;
+      const currentRevision = previous.replied_at ? Date.parse(previous.replied_at) : null;
+      if (baseRevision !== currentRevision) throw new Error("Feedback changed on another device. Your draft is kept here; review the latest feedback before sending a new reply.");
+      if (file?.size && !submission.upload) {
+        submission.upload = await uploadHelpVideoFile(file, "coach-reply");
+        Object.assign(submission.update, { coach_video_data_url: "", coach_video_storage_path: submission.upload.path,
+          coach_video_file_name: submission.upload.fileName, coach_video_mime_type: submission.upload.mimeType, coach_video_size_bytes: submission.upload.size });
+      }
+      if (state.user?.id !== submitterId) throw new Error("Your account changed. Reopen this review before sending feedback.");
+      submission.writeAttempted = true;
+      let query = client.from("trick_help_requests").update(submission.update).eq("id", requestId);
+      query = submission.baseRepliedAt ? query.eq("replied_at", submission.baseRepliedAt) : query.is("replied_at", null);
+      const { data, error } = await withTimeout(query.select("id,status"), "Save coach feedback", 15000).catch(error => ({ error }));
+      if (error || !data?.length) {
+        writeRejected = isDefinitiveHelpWriteError(error) && !submission.uncertain;
+        if (!writeRejected) submission.uncertain = true;
+        let receipt = null;
+        try { receipt = await readHelpWriteReceipt(requestId); } catch (_) {}
+        if (!matchesReceipt(receipt)) throw error || new Error("This review changed while you were sending. Your reply is kept here. Check the latest feedback before trying again.");
+      }
+      committed = true;
+    }
+    invalidateHelpRequestData();
+    if (state.user?.id !== submitterId) return;
+    if (submission.upload?.path) releaseVideoReviewMedia(requestId);
+    const currentDraft = new FormData(formElement);
+    const currentFile = selectCoachReplyVideoFile(currentDraft.get("video"), state.videoReviewRecordedReplies.get(requestId));
+    keepNewDraft = submission.signature !== helpUploadDraftSignature(currentFile, String(currentDraft.get("comment") || "").trim());
+    if (keepNewDraft) {
+      notify("Your previous feedback was sent. Your new edits are still here; send them when ready.");
+      return;
+    }
     if (recordedReply) clearCoachRecordedReply(requestId);
-    if (previousCoachVideoPath && previousCoachVideoPath !== upload?.path) {
-      const { error: staleReplyError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([previousCoachVideoPath]);
+    if (submission.upload?.path && submission.previousCoachVideoPath && submission.previousCoachVideoPath !== submission.upload?.path) {
+      const { error: staleReplyError } = await withTimeout(client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([submission.previousCoachVideoPath]), "Clean up previous feedback", 8000).catch(error => ({ error }));
       if (staleReplyError) console.warn("Could not remove the previous coach video reply.", staleReplyError);
     }
     notify(usesRecordedReply ? "Recorded review saved and sent to the rider." : "Coach feedback sent to the rider.");
     if (state.view === originatingView && originatingView === "videoReviews") await renderVideoReviews();
     else if (state.view === originatingView && originatingView === "student") await renderStudentProfile();
   } catch (error) {
-    if (upload?.path && !committed) {
-      const { error: cleanupError } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([upload.path]);
-      if (cleanupError) console.warn("Could not clean up failed coach video reply upload.", cleanupError);
+    if (submission?.upload?.path && !committed && (!submission.writeAttempted || writeRejected)) {
+      const { error: cleanupError } = await withTimeout(client.storage.from(TRICK_HELP_VIDEO_BUCKET).remove([submission.upload.path]), "Clean up rejected video", 8000).catch(error => ({ error }));
+      if (cleanupError) console.warn("Could not clean up rejected coach video reply upload.", cleanupError);
+      if (formElement._helpReplySubmission === submission) delete formElement._helpReplySubmission;
     }
-    button.disabled = false;
-    button.textContent = originalButtonText;
+    if (state.user?.id !== submitterId) return;
     if (committed) {
       console.warn("Coach feedback saved, but the review screen did not refresh.", error);
       notify("Feedback was sent. Refresh the review list to see the update.", "error");
-      return;
-    }
-    notify(messageFrom(error), "error");
+    } else notify(`${messageFrom(error)}${submission?.writeAttempted && !writeRejected ? " Your reply is kept here. Try again to check whether it was sent." : ""}`, "error");
+  } finally {
+    delete formElement.dataset.submitting;
+    // Keep a confirmed transaction until this form is replaced, so a failed
+    // refresh followed by another tap checks the receipt instead of uploading.
+    if (committed && keepNewDraft && formElement._helpReplySubmission === submission) delete formElement._helpReplySubmission;
+    if (button.isConnected) { button.disabled = false; button.textContent = originalButtonText; }
   }
 }
 
@@ -15893,6 +16181,7 @@ function coachReviewWorkspaceHtml(request) {
 }
 
 function releaseVideoReviewMedia(requestId) {
+  state.inFlight?.delete(`help-media:${state.user?.id}:${requestId}`);
   const media = state.videoReviewMedia.get(requestId);
   if (media?.video_playback_url) URL.revokeObjectURL(media.video_playback_url);
   state.videoReviewMedia.delete(requestId);
@@ -16650,20 +16939,29 @@ async function renderVideoReviews() {
 }
 
 async function fetchHelpVideoMedia(requestId) {
+  const viewerId = state.user?.id;
+  if (!viewerId || !requestId) throw new Error("Sign in again to open your private review.");
   const cached = state.videoReviewMedia.get(requestId);
   const usesSignedUrl = Boolean(cached?.video_storage_path || cached?.coach_video_storage_path);
   const signedUrlFresh = !usesSignedUrl || (Date.now() - Number(cached?._signedAt || 0)) < ((HELP_VIDEO_SIGNED_URL_SECONDS - 60) * 1000);
-  if (signedUrlFresh && (cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url)) return cached;
-  const { data, error } = await client.from("trick_help_requests")
-    .select("id, video_data_url, coach_video_data_url, video_storage_path, coach_video_storage_path")
-    .eq("id", requestId)
-    .limit(1);
-  if (error) throw error;
-  if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
-  const [media] = await hydrateHelpRequestMediaUrls(data);
-  const freshMedia = { ...media, ...(cached?.video_playback_url ? { video_playback_url: cached.video_playback_url } : {}), _signedAt: Date.now() };
-  state.videoReviewMedia.set(requestId, freshMedia);
-  return freshMedia;
+  if (signedUrlFresh && (cached?._loaded || cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url)) return cached;
+  const key = `help-media:${viewerId}:${requestId}`;
+  if (state.inFlight.has(key)) return state.inFlight.get(key);
+  const request = (async () => {
+    const { data, error } = await client.from("trick_help_requests")
+      .select("id, video_data_url, coach_video_data_url, video_storage_path, coach_video_storage_path")
+      .eq("id", requestId)
+      .limit(1);
+    if (error) throw error;
+    if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
+    const [media] = await hydrateHelpRequestMediaUrls(data);
+    if (state.user?.id !== viewerId) throw new Error("The signed-in account changed. Please reopen coaching.");
+    const freshMedia = { ...media, ...(cached?.video_playback_url ? { video_playback_url: cached.video_playback_url } : {}), _signedAt: Date.now(), _loaded: true };
+    if (state.inFlight.get(key) === request) state.videoReviewMedia.set(requestId, freshMedia);
+    return freshMedia;
+  })().finally(() => { if (state.inFlight.get(key) === request) state.inFlight.delete(key); });
+  state.inFlight.set(key, request);
+  return request;
 }
 
 async function prepareCoachReviewPlaybackMedia(requestId, media = {}) {
@@ -16748,6 +17046,7 @@ async function markHelpReviewed(event) {
     button.disabled = false;
     return notify("Unable to mark reviewed. Check the rider is still linked to your coach account.", "error");
   }
+  invalidateHelpRequestData();
   notify("Video marked reviewed.");
   await renderVideoReviews();
 }
@@ -17025,24 +17324,41 @@ async function disablePushNotifications() {
   notify("Push notifications are off on this device.");
 }
 
-async function signOutCurrentDevice() {
-  if (liveRun && !await leaveLiveRun()) return;
+async function signOutCurrentDevice(event) {
+  if (state.signingOut) return;
+  state.signingOut = true;
+  const restore = setButtonBusy(event?.currentTarget, "Signing out…");
+  const userId = state.user?.id;
   try {
-    if (supportsPushNotifications()) {
-      const registration = await navigator.serviceWorker.getRegistration();
-      const subscription = registration ? await registration.pushManager.getSubscription() : null;
-      if (subscription) {
-        await client.from("push_subscriptions")
-          .delete()
-          .eq("user_id", state.user.id)
-          .eq("endpoint", subscription.endpoint);
-        await subscription.unsubscribe();
-      }
+    if (liveRun && !await leaveLiveRun()) return;
+    // Notification cleanup must not trap an offline rider in their account.
+    try {
+      await withTimeout((async () => {
+        if (!supportsPushNotifications()) return;
+        const registration = await navigator.serviceWorker.getRegistration();
+        const subscription = registration ? await registration.pushManager.getSubscription() : null;
+        if (!subscription) return;
+        const deletion = client.from("push_subscriptions").delete().eq("user_id", userId).eq("endpoint", subscription.endpoint);
+        await Promise.allSettled([Promise.resolve(deletion), subscription.unsubscribe()]);
+      })(), "Notification sign-out cleanup", 3000);
+    } catch (error) {
+      console.warn("Push subscription cleanup unavailable during sign out", error);
     }
+    if (state.user?.id !== userId) return;
+    const { error } = await withTimeout(client.auth.signOut({ scope: "local" }), "Sign out", 8000);
+    if (error) throw error;
+    if (state.user?.id === userId) await handleSessionOnce(null);
   } catch (error) {
-    console.warn("Push subscription cleanup failed during sign out", error);
+    console.warn("Online sign out unavailable; clearing this device's session", error);
+    if (state.user?.id !== userId) return;
+    // The SDK retains a session when remote revocation fails. Remove only our
+    // local credentials and reload to release any tokens held in SDK memory.
+    clearLocalAuthSession();
+    window.location.reload();
+  } finally {
+    state.signingOut = false;
+    restore();
   }
-  await client.auth.signOut();
 }
 
 async function togglePushNotifications(event) {
@@ -17107,7 +17423,7 @@ async function renderProfile() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     ${state.profile.role === "athlete" ? goalsSection(state.profile) : ""}
-    ${state.profile?.role !== "athlete" && typeof JKCrewBikeGarage !== "undefined" ? JKCrewBikeGarage.teaserHtml() : ""}
+    ${state.profile?.role !== "athlete" ? bikeGarageTeaserHtml() : ""}
     <div class="profile-grid">
       <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
       <section class="panel">
@@ -17308,6 +17624,38 @@ let serviceWorkerRefreshStarted = false;
 let hadServiceWorkerController = Boolean(navigator.serviceWorker?.controller);
 let checkedServiceWorkerController = null;
 let activeServiceWorkerRegistration = null;
+let serviceWorkerUpdatePromise = null;
+let pendingServiceWorkerRelease = "";
+function shouldDeferAppUpdate() {
+  // Never discard an active account's work or a partly entered login/reset form.
+  if (typeof state !== "undefined" && (state.user?.id || state.authPendingForm?.isConnected)) return true;
+  return [...document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]), textarea")]
+    .some(input => input.type === "checkbox" || input.type === "radio" ? input.checked : Boolean(input.value));
+}
+function applyPendingAppUpdate() {
+  if (serviceWorkerRefreshStarted) return;
+  if ((typeof state !== "undefined" && state.authPendingForm?.isConnected) || (typeof liveRun !== "undefined" && liveRun)) {
+    if (typeof notify === "function") notify("Finish your current sign-in or live run before updating.");
+    return;
+  }
+  serviceWorkerRefreshStarted = true;
+  const nextUrl = new URL(window.location.href);
+  if (pendingServiceWorkerRelease) nextUrl.searchParams.set("jkcrew-version", pendingServiceWorkerRelease);
+  window.location.replace(nextUrl.href);
+}
+function offerAppUpdate(version) {
+  pendingServiceWorkerRelease = version;
+  if (!shouldDeferAppUpdate()) return applyPendingAppUpdate();
+  if (document.querySelector("#app-update-notice")) return;
+  const notice = document.createElement("aside");
+  notice.id = "app-update-notice";
+  notice.className = "app-update-notice";
+  notice.setAttribute("aria-label", "App update available");
+  notice.innerHTML = `<span><strong>Update ready</strong><small>Finish your work, then update.</small></span><button type="button" data-apply-app-update>Update app</button><button type="button" data-dismiss-app-update aria-label="Update later">×</button>`;
+  notice.querySelector("[data-apply-app-update]").onclick = applyPendingAppUpdate;
+  notice.querySelector("[data-dismiss-app-update]").onclick = () => notice.remove();
+  document.body.append(notice);
+}
 function readServiceWorkerRelease(controller, timeoutMs = 1500) {
   return new Promise((resolve) => {
     let channel;
@@ -17334,11 +17682,16 @@ function readServiceWorkerRelease(controller, timeoutMs = 1500) {
 }
 async function refreshServiceWorkerRelease() {
   if (!("serviceWorker" in navigator)) return;
-  const registration = activeServiceWorkerRegistration || await navigator.serviceWorker.getRegistration();
-  if (!registration) return;
-  activeServiceWorkerRegistration = registration;
-  await registration.update();
-  registration.waiting?.postMessage({ type: "JKCREW_ACTIVATE_RELEASE" });
+  if (serviceWorkerUpdatePromise) return serviceWorkerUpdatePromise;
+  serviceWorkerUpdatePromise = (async () => {
+    const registration = activeServiceWorkerRegistration || await navigator.serviceWorker.getRegistration();
+    if (!registration) return;
+    activeServiceWorkerRegistration = registration;
+    await registration.update();
+    registration.waiting?.postMessage({ type: "JKCREW_ACTIVATE_RELEASE" });
+  })();
+  try { await serviceWorkerUpdatePromise; }
+  finally { serviceWorkerUpdatePromise = null; }
 }
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", async () => {
@@ -17356,10 +17709,7 @@ if ("serviceWorker" in navigator) {
     const nextRelease = await readServiceWorkerRelease(controller);
     if (navigator.serviceWorker.controller !== controller || serviceWorkerRefreshStarted) return;
     if (nextRelease === RELEASE_VERSION) return;
-    serviceWorkerRefreshStarted = true;
-    const nextUrl = new URL(window.location.href);
-    if (nextRelease) nextUrl.searchParams.set("jkcrew-version", nextRelease);
-    window.location.replace(nextUrl.href);
+    offerAppUpdate(nextRelease);
   });
 }
 window.setInterval(() => { if (state.user?.id) refreshCoachBattleScores().catch(error => console.warn("Battle score refresh failed", error)); }, 20000);
@@ -17377,7 +17727,7 @@ window.addEventListener("load", async () => {
       const registration = await navigator.serviceWorker.register(`./sw.js?v=${RELEASE_VERSION}`, { updateViaCache: "none" });
       activeServiceWorkerRegistration = registration;
       await refreshServiceWorkerRelease();
-      window.setInterval(() => refreshServiceWorkerRelease().catch(() => {}), 5 * 60 * 1000);
+      window.setInterval(() => { if (document.visibilityState === "visible") refreshServiceWorkerRelease().catch(() => {}); }, 5 * 60 * 1000);
     } catch (error) {
       console.warn("JKCREW app launcher could not be registered.", error);
     }

@@ -1,6 +1,5 @@
 // No network or production writes: real Daily/partial/pause functions in PGlite.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
 const {initialize,id,partialMigration}=require('./daily-partial-db.cjs');
 const root=path.resolve(__dirname,'..');
 const migration='20260920025715_daily_tier_two_surprise_unlock.sql';
@@ -18,6 +17,7 @@ async function initializeTierTwo(db){
   await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',qualificationMigration),'utf8'));
 }
 async function run(){
+  const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
   const db=new PGlite();let checks=0;
   const eq=(a,b,label)=>{assert.deepEqual(a,b,label);checks++;};
   const ok=(a,label)=>{assert(a,label);checks++;};

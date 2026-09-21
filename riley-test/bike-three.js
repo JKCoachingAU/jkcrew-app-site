@@ -1,7 +1,7 @@
 /* Original local 3D BMX viewer. No module, image or GPU work begins before mount(). */
 (function(global){
   'use strict';
-  const scriptURL=document.currentScript?.src||new URL('bike-three.js',location.href).href;
+  const scriptURL=document.currentScript?.dataset.assetUrl||document.currentScript?.src||new URL('bike-three.js',location.href).href;
   const baseURL=new URL('.',scriptURL);
   const modelURL=new URL('bike-three-model.js',baseURL);modelURL.search=new URL(scriptURL).search;
   let dependencies;

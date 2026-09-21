@@ -1,7 +1,6 @@
 // Isolated database regression. Uses production Daily/ledger schemas, real roles
 // and the actual feature-access/scoring-pause functions; never contacts Supabase.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
 const {initialize:initializeDaily,id}=require('./daily-partial-db.cjs');
 const root=path.resolve(__dirname,'..');
 const migration='20260920025223_other_things_landed_coach_review.sql';
@@ -26,6 +25,7 @@ async function initialize(db){
   await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',migration),'utf8'));
 }
 async function run(){
+  const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
   const db=new PGlite();let checks=0;
   const q=async(sql,args=[]) => (await db.query(sql,args)).rows;
   const scalar=async(sql,args=[])=>Object.values((await q(sql,args))[0])[0];

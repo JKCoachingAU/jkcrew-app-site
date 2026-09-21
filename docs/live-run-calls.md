@@ -64,3 +64,28 @@ With no relay configured it returns a STUN server and `relayConfigured:false`. T
 Credentials expire after one hour and are issued only for an accepted private call; the shared secret never reaches the browser. Do not put these values in app.js, git, screenshots or client configuration. A provider/account is not provisioned by this change. Check the relay's credential format matches TURN REST HMAC-SHA1, then verify one phone on mobile data against another participant on Wi-Fi. The current local browser verification proves native audio/video, signaling, editing and saving, but does not substitute for that cross-network relay check.
 
 `tests/live-run-ice.cjs` executes the actual TypeScript handler after Node's type stripping and verifies identity/call/recipient restrictions, no-store responses, direct fallback and the HMAC credential signature. `tests/live-run-call-webrtc.cjs` uses separate Chrome sessions with native WebRTC and synthetic camera/audio; `tests/live-runs-ui.cjs` combines the actual HD builder with those native media connections. No test logs into or alters real rider accounts.
+
+### Compact course-photo transport
+
+The optional `live_run_edit_compact` and `live_run_action_compact` RPCs delegate
+all authorization, device binding, operation receipts, conflict detection and
+saving to the existing RPCs. They add `image_key` (SHA-256 of `imageDataUrl`) and
+`image_omitted`. A client sends `p_image_key` only for the photo in its current
+live-session cache; matching responses omit the photo, and changed/unknown keys
+return it in full. The browser hydrates the draft from the cache captured for
+that specific request before passing it to the unchanged merge logic. Closing
+the live session discards the cache. Old installed clients retain full responses.
+If the compact endpoint is not yet deployed, the browser falls back only on an
+explicit missing-function response, never on a timeout or failed mutation.
+
+Connected visible builders use Realtime invalidation with a five-second fallback
+metadata poll; disconnected subscriptions use two seconds. Hidden builders skip
+metadata polling and refresh when visible. Media signaling and call heartbeats
+continue separately so this does not end an active call.
+
+Regression checks: `tests/live-run-compact-client.cjs`,
+`tests/live-run-compact-payload.cjs`, `tests/live-runs-ui.cjs`, and
+`JKCREW_LIVE_COMPACT=1 node tests/live-run-shared-edits-concurrency.cjs`.
+The two SQL tests use `tests/helpers/local-postgres.cjs`: provide
+`JKCREW_PG_BIN` and `JKCREW_PG_SOCKET` for a disposable local PostgreSQL server;
+the harness refuses non-`/tmp` sockets and creates/drops only its own test database.

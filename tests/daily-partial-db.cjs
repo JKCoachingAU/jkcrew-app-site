@@ -3,7 +3,6 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const assert=require('node:assert/strict');
-const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
 const root=path.resolve(__dirname,'..');
 const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 const migrationFiles=['20260911085353_confirm_daily_tricks_and_today_progress.sql','20260911100447_make_daily_standings_read_only.sql','20260914104325_rider_scoring_pause.sql'];
@@ -33,6 +32,7 @@ async function initialize(db){
   await db.exec(`create or replace function get_earned_badges(uuid) returns jsonb language plpgsql as $$begin raise exception 'Unexpected badge synchronization';end$$;`);
 }
 async function run(){
+  const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
   const db=new PGlite();let checks=0;
   const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
   const ok=(value,message)=>{assert(value,message);checks++;};
