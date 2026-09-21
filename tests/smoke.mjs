@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.145";
+const version = "2.14.146";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -978,7 +978,7 @@ assert(riderChallengeView.includes("weeklyChallenge?.reward_points || 5"), "The 
 assert(riderChallengeView.includes('weeklyChallenge?.completion_rule === "percentage_perfect"'), "The rider card must explain the Perfectionist rule");
 assert(riderChallengeView.includes("Land all 10 attempts"), "The Perfectionist card must clearly explain 10/10 scoring");
 assert(riderChallengeView.includes("+${challengeReward} leaderboard points"), "The completion popup must use the challenge reward instead of a hard-coded five");
-assert(functionBody("battleRulesMarkup").includes("Choose up to 6v6v6"), "Rider battle help must explain teams of up to six on two or three sides");
+assert(["2v1 or 1v2", "two or three equal teams of up to six"].every(text => functionBody("battleRulesMarkup").includes(text)), "Rider battle help must explain uneven pairs and equal teams of up to six");
 const battleLoader = functionBody("getWeeklyRiderBattles");
 assert(battleLoader.includes('rpc("get_my_rider_battles")'), "Battle identities must load through the limited participant RPC");
 assert(!battleLoader.includes('challenger:profiles'), "Battle loading must not rely on profile joins hidden by rider RLS");

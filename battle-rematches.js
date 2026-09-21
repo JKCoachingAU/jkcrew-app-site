@@ -2,7 +2,10 @@
 const JKCrewBattleRematches = (() => {
   const reviews = new WeakMap();
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-  const formatValue = draft => draft.teamCount === 3 ? Array(3).fill(draft.size).join('v') : String(draft.size);
+  const formatValue = draft => {
+    const sizes = draft.teams.map(team => team.length);
+    return sizes.length === 2 && sizes[0] === sizes[1] ? String(sizes[0]) : sizes.join('v');
+  };
   const countActive = battles => battles.filter(battle => ['pending', 'accepted'].includes(battle.status)).length;
 
   function draftFromBattle(battle, viewerId, coach = false) {
@@ -12,17 +15,21 @@ const JKCrewBattleRematches = (() => {
     if (!Number.isInteger(size) || size < 1 || size > 6 || ![2, 3].includes(teamCount)
       || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 7
       || !Number.isInteger(rewardPoints) || rewardPoints < 1 || rewardPoints > 20) return null;
-    const participants = battle.participants || [];
+    const participants = Array.isArray(battle.participants) ? battle.participants : [];
     const teams = Array.from({ length: teamCount }, (_, index) => participants.filter(person => Number(person.team_number) === index + 1).map(person => person.athlete_id));
-    if (teams.some(team => team.length !== size) || teams.flat().some(id => !id)
-      || new Set(teams.flat()).size !== size * teamCount || participants.length !== size * teamCount) return null;
+    const sizes = teams.map(team => team.length);
+    const equalTeams = sizes.every(teamSize => teamSize === size);
+    const twoAgainstOne = teamCount === 2 && sizes.includes(1) && sizes.includes(2);
+    const ids = teams.flat();
+    if (sizes[0] !== size || (!equalTeams && !twoAgainstOne) || ids.some(id => !id)
+      || new Set(ids).size !== ids.length || participants.length !== ids.length) return null;
     if (!coach) {
       const own = teams.findIndex(team => team.includes(viewerId));
       if (own < 0) return null;
       teams.unshift(...teams.splice(own, 1));
       teams[0] = [viewerId, ...teams[0].filter(id => id !== viewerId)];
     }
-    return { battleId: battle.id, size, teamCount, durationDays, rewardPoints, teams, participants };
+    return { battleId: battle.id, size: teams[0].length, sizes: teams.map(team => team.length), teamCount, durationDays, rewardPoints, teams, participants };
   }
 
   function actionHtml(battle, viewerId, coach = false) {

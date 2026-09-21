@@ -73,7 +73,41 @@ const extracted=names.map(name=>{const start=app.search(new RegExp('^(?:async )?
     assert((await page.locator('#coach-battle-builder-form .battle-suggestion').innerText()).includes('training points'));
     await page.locator('#coach-battle-builder-form .battle-suggestion button').click();assert.equal(await page.evaluate(()=>requests.length),0);
     assert.equal(await page.inputValue('[name=teamTwoRider]:enabled'),'r1');
+    for(const sizes of [[2,1],[1,2]]){
+      const teamIds=sizes[0]===2?[['r0','r1'],['r2']]:[['r0'],['r1','r2']];
+      for(const viewerId of ['r0','r1','r2']){
+        await page.evaluate(async({sizes,teamIds,viewerId})=>{
+          document.querySelector('#coach-battle-builder-modal')?.remove();
+          requests=[];missing=[];state.user.id=viewerId;state.profile.role='athlete';
+          document.querySelector('.app-shell').className='app-shell rider-shell';
+          battles=[{id:'unequal-battle',status:'completed',battle_size:sizes[0],team_count:2,duration_days:3,reward_points:8,
+            participants:teamIds.flatMap((team,index)=>team.map(id=>({...roster.find(rider=>rider.id===id),team_number:index+1,response:'accepted'})))}];
+          await renderChallenges();
+        },{sizes,teamIds,viewerId});
+        await page.click('[data-rematch-battle]');
+        const own=teamIds.findIndex(team=>team.includes(viewerId));
+        assert.equal(await page.inputValue('#rider-battle-size'),[sizes[own],sizes[1-own]].join('v'));
+        assert.deepEqual(await page.locator('[name=teammateIds]:checked').evaluateAll(inputs=>inputs.map(input=>input.value)),teamIds[own].filter(id=>id!==viewerId));
+        assert.deepEqual(await page.locator('[name=opponentIds]:checked').evaluateAll(inputs=>inputs.map(input=>input.value)),teamIds[1-own]);
+        assert.equal(await page.evaluate(()=>requests.length),0,'Unequal rematch also requires explicit review and send');
+        await page.click('#send-rider-battle');await page.waitForFunction(()=>requests.length===1);
+        assert.deepEqual((await page.evaluate(()=>requests[0])).args,{
+          p_team_one:[viewerId,...teamIds[own].filter(id=>id!==viewerId)],p_team_two:teamIds[1-own],p_team_three:[],p_duration_days:3,p_reward_points:8,
+        });
+      }
+      await page.evaluate(()=>{requests=[];coachPage();});
+      await page.locator('.coach-battle-view-card summary').first().click();await page.click('[data-rematch-battle]');
+      assert.equal(await page.inputValue('#coach-battle-size'),sizes.join('v'));
+      assert.equal(await page.locator('#coach-battle-builder-form select[name$=Rider]:enabled').count(),3);
+      for(const [index,team] of ['One','Two'].entries()){
+        assert.deepEqual(await page.locator(`[name=team${team}Rider]:enabled`).evaluateAll(selects=>selects.map(select=>select.value)),teamIds[index]);
+      }
+      await page.locator('#coach-battle-builder-form button[type=submit]').click();await page.waitForFunction(()=>requests.length===1);
+      assert.deepEqual((await page.evaluate(()=>requests[0])).args,{
+        p_team_one:teamIds[0],p_team_two:teamIds[1],p_team_three:[],p_duration_days:3,p_reward_points:8,
+      });
+    }
     assert.deepEqual(errors,[]);
-    console.log('PASS mobile/tablet rider and coach rematches, losing third-side rotation,18 seats, review/no autosend, changed eligibility, unavailable replacements, active limits, double-submit protection and factual suggestions. All requests isolated.');
+    console.log('PASS mobile/tablet rider and coach rematches, all 2v1/1v2 solo and pair perspectives, losing third-side rotation,18 seats, review/no autosend, changed eligibility, unavailable replacements, active limits, double-submit protection and factual suggestions. All requests isolated.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});
