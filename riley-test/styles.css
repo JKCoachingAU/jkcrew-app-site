@@ -4539,6 +4539,40 @@ html.contest-merge-open body { overflow: hidden; }
 .contest-course-upload { display: grid; place-items: center; cursor: pointer; text-align: center; }
 .event-course-backdrop { z-index: 1450; }
 .event-course-viewer { width: min(940px, 100%); }
+.past-events-head { align-items: center; gap: 20px; }
+.past-events-note { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; padding: 16px 20px; border: 1px solid rgba(32,227,195,.24); border-radius: 16px; background: rgba(32,227,195,.04); }
+.past-events-note > span { color: var(--aqua); font-size: 1.8rem; }
+.past-events-note p { margin: 0; color: var(--muted); line-height: 1.5; }
+.past-events-toolbar { display: flex; align-items: end; gap: 12px; margin-bottom: 20px; }
+.past-events-toolbar .field { flex: 1; margin: 0; min-width: 0; }
+.past-events-toolbar input { width: 100%; min-height: 48px; }
+.past-events-feedback { margin: 16px 0; color: var(--muted); line-height: 1.5; }
+.past-events-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.past-event-card { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 18px; padding: 24px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(135deg, rgba(32,227,195,.045), transparent 60%), var(--surface); }
+.past-event-date { display: grid; align-content: center; justify-items: center; align-self: start; gap: 2px; min-height: 72px; padding: 8px 4px; border: 1px solid rgba(32,227,195,.22); border-radius: 12px; background: rgba(32,227,195,.07); color: var(--aqua); }
+.past-event-date span { font: 700 .7rem var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.past-event-date strong { font: 900 1.8rem var(--display); }
+.past-event-copy { min-width: 0; overflow-wrap: anywhere; }
+.past-event-copy h2 { font: 800 1.35rem var(--display); line-height: 1.2; margin: 10px 0 6px; }
+.past-event-copy p { margin: 0 0 10px; color: var(--muted); line-height: 1.4; }
+.past-event-copy small { color: var(--muted); }
+.past-event-status { color: var(--muted); font: 700 .65rem var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.past-event-status.has-layout { color: var(--aqua); }
+.past-event-card > button, .past-event-no-layout { grid-column: 1 / -1; }
+.past-event-card > button { display: flex; justify-content: space-between; align-items: center; border-color: rgba(32,227,195,.3); }
+.past-event-no-layout { align-self: end; color: var(--muted); font-size: .85rem; line-height: 1.45; }
+.past-events-footer { display: flex; justify-content: center; margin-top: 24px; }
+#past-events-page button { min-height: 44px; }
+#past-events-page [hidden] { display: none !important; }
+@media (max-width: 700px) {
+  .past-events-head { align-items: flex-start; flex-direction: column; }
+  .past-events-list { grid-template-columns: minmax(0, 1fr); }
+  .past-events-toolbar { flex-wrap: wrap; }
+  .past-events-toolbar .field { flex-basis: 100%; }
+  .past-events-toolbar > button { flex: 1; }
+  .past-event-card { padding: 18px; gap: 14px; grid-template-columns: 52px minmax(0, 1fr); }
+  .past-events-note { padding: 14px; }
+}
 .event-course-photo {
   display: grid;
   place-items: center;
@@ -4555,6 +4589,8 @@ html.contest-merge-open body { overflow: hidden; }
   border-radius: 14px;
   background: #000;
 }
+.event-course-photo img[hidden], .event-course-image-error[hidden] { display: none; }
+.event-course-image-error { margin: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); }
 .event-course-viewer-actions {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

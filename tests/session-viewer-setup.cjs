@@ -61,9 +61,9 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
           'startViewerGroupSession', 'toggleViewerGroupSessionPause', 'endViewerGroupSession', 'addExtraRiderToGroupSession',
           'finishViewerDailyTimer', 'recordViewerAssignmentAction', 'recordViewerAssignmentAttempt', 'recordViewerPercentageAttempt',
           'selectViewerListTab', 'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments',
-          'stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal',
+          'stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeEventCourseViewer', 'closeContestMergeModal',
           'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites',
-          'bindTrainingProgressActions', 'dismissDailyFinishForNavigation'
+          'bindTrainingProgressActions', 'mountDailyFeatures', 'dismissDailyFinishForNavigation'
         ]) window[name] = () => {};
         window.coachPrimaryView = window.parentPrimaryView = window.athletePrimaryView = view => view;
         window.setLoading = () => { document.querySelector('#view').innerHTML = ''; return ++state.loadingOverlayToken; };

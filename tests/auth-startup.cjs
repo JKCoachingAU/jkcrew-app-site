@@ -21,7 +21,7 @@ const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<
 const wait=()=>Promise.resolve();
 const withTimeout=(promise,label,ms)=>testRealTimeout(promise,label,timeoutOverrides[label]??ms);
 const cancelScreenLoading=()=>{state.loadingOverlayToken++;app.inert=false;},loadingScreenCopy=()=>({}),beginScreenLoading=()=>++state.loadingOverlayToken,finishScreenLoading=()=>{};
-const closeJkcYard=()=>{},teardownRealtimeSync=()=>{},dismissDailyFinishForNavigation=()=>{},closeTrainingProgressViews=()=>{},closeAthleteReviewViewer=()=>{},closeContestEventModal=()=>{},resetVideoReviewPrivateState=()=>{},clearDailyFeatureMounts=()=>{},applyTheme=()=>{},recordMyAppOpen=()=>{},startRiderFeatureAccessWatch=()=>{},setupRealtimeSync=async()=>{},isRileyTestRoute=()=>false;
+const closeJkcYard=()=>{},teardownRealtimeSync=()=>{},dismissDailyFinishForNavigation=()=>{},closeTrainingProgressViews=()=>{},closeAthleteReviewViewer=()=>{},closeContestEventModal=()=>{},closeEventCourseViewer=()=>{},resetVideoReviewPrivateState=()=>{},clearDailyFeatureMounts=()=>{},applyTheme=()=>{},recordMyAppOpen=()=>{},startRiderFeatureAccessWatch=()=>{},setupRealtimeSync=async()=>{},isRileyTestRoute=()=>false;
 const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false;
 const refreshRiderFeatureAccess=async()=>true,isCoachRole=role=>role==='coach',notify=message=>notices.push(message);
 const navigate=async view=>{state.view=view;paints.push({kind:'navigate',view,user:state.user?.id});};

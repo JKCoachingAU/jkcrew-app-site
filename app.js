@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.146";
+const RELEASE_VERSION = "2.14.147";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -340,7 +340,7 @@ const coachNavGroups = [
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Battles & Challenges"]] },
-  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["pastEvents", "Past Events"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["bikeGarage", "Bike Garage"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
@@ -356,7 +356,7 @@ function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (view === "battleViewer") return "battleViewer";
   if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
-  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests"].includes(view)) return "coachTools";
+  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "pastEvents"].includes(view)) return "coachTools";
   if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
@@ -591,7 +591,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.146" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.147" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1506,6 +1506,7 @@ async function handleSession(session) {
     runUndoStack = []; runRedoStack = [];
     closeAthleteReviewViewer();
     closeContestEventModal();
+    closeEventCourseViewer();
     resetVideoReviewPrivateState();
   }
   state.session = session;
@@ -2458,9 +2459,10 @@ async function navigate(view, options = {}) {
   if (previousView === "jkcYard") closeJkcYard();
   stopRunPlayback();
   if (view !== previousView) closeAthleteReviewViewer();
-  if (previousView === "contests" && view !== "contests") {
+  if (["contests", "pastEvents"].includes(previousView) && view !== previousView) {
     closeContestEventModal();
     closeContestMergeModal();
+    closeEventCourseViewer();
   }
   if (["session", "coaching"].includes(previousView) && view !== previousView) clearHelpVideoPreview();
   if (previousView === "videoReviews" && view !== "videoReviews") teardownCoachVideoReviewEditor();
@@ -2511,6 +2513,7 @@ async function navigate(view, options = {}) {
     sessionViewer: renderSessionViewer,
     battleViewer: renderCoachBattleViewer,
     coachTools: renderCoachTools,
+    pastEvents: renderPastEvents,
     more: renderCoachMore,
     bikeGarage: renderBikeGarage,
     shredZone: renderShredZone,
@@ -3278,13 +3281,13 @@ async function getEventCoursePhoto(eventId = "") {
   if (recentEventCoursePhoto?.key === key && Date.now() - recentEventCoursePhoto.time < 30000) return recentEventCoursePhoto.photo;
   if (state.inFlight.has(key)) return state.inFlight.get(key);
   const request = (async () => {
-    const { data, error } = await client.from("event_course_photos")
-      .select("event_id,image_data_url,updated_at").eq("event_id", eventId).maybeSingle();
+    const { data, error } = await withTimeout(client.from("event_course_photos")
+      .select("event_id,image_data_url,updated_at").eq("event_id", eventId).maybeSingle(), "Park layout", 15000);
     if (error) throw error;
     // Keep only one recent shared photo in memory; never persist private runs.
     if (state.user?.id === userId && data) recentEventCoursePhoto = { key, photo: data, time: Date.now() };
     return data || null;
-  })().finally(() => state.inFlight.delete(key));
+  })().finally(() => { if (state.inFlight.get(key) === request) state.inFlight.delete(key); });
   state.inFlight.set(key, request);
   return request;
 }
@@ -9018,16 +9021,20 @@ function closeEventCourseViewer() {
   state.eventCourseEscapeHandler = null;
   backdrop?.remove();
   if (!document.querySelector("#contest-event-backdrop")) document.documentElement.classList.remove("contest-event-open");
+  if (state.eventCourseReturnFocus?.isConnected) state.eventCourseReturnFocus.focus();
+  state.eventCourseReturnFocus = null;
 }
 
 function eventCourseViewerHtml(item = {}, photo = {}, viewOptions = {}) {
   const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
-  const coachView = isCoachRole(state.profile?.role) && !parentView;
+  const pastEvent = Boolean(viewOptions.pastEvent);
+  const coachView = isCoachRole(state.profile?.role) && !parentView && !pastEvent;
   return `<section class="contest-event-modal event-course-viewer" role="dialog" aria-modal="true" aria-labelledby="event-course-viewer-title">
-    <header class="contest-event-modal-head"><div><div class="eyebrow">Shared event course</div><h2 id="event-course-viewer-title">${escapeHtml(item.title || "Course photo")}</h2><p>${escapeHtml(item.details || "Park overview")}</p></div><button class="contest-event-modal-close" type="button" data-close-event-course aria-label="Close course photo">×</button></header>
+    <header class="contest-event-modal-head"><div><div class="eyebrow">${pastEvent ? "Past event · Saved park layout" : "Shared event course"}</div><h2 id="event-course-viewer-title">${escapeHtml(item.title || "Course photo")}</h2><p>${escapeHtml(item.details || "Park overview")}</p></div><button class="contest-event-modal-close" type="button" data-close-event-course aria-label="Close course photo">×</button></header>
     <figure class="event-course-photo"><img src="${escapeHtml(photo.image_data_url || "")}" alt="Course layout for ${escapeHtml(item.title || "this event")}"></figure>
+    <p class="event-course-image-error" role="alert" hidden>The saved layout couldn't be displayed. Close this window and try opening it again.</p>
     <div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>COURSE PHOTO ONLY</strong><p>No rider routes, numbered dots, tricks or run-plan notes are included here. Private plans remain visible only to that rider and their linked coach.</p></div></div>
-    <div class="event-course-viewer-actions"><button class="secondary-btn" type="button" data-close-event-course>BACK TO EVENTS</button>${coachView ? `<label class="primary-btn contest-course-upload" for="replace-event-course-${escapeHtml(item.id)}">CHANGE COURSE PHOTO<input id="replace-event-course-${escapeHtml(item.id)}" type="file" accept="image/*" data-event-course-photo-input="${escapeHtml(item.id)}" hidden></label>` : ""}</div>
+    <div class="event-course-viewer-actions"><button class="secondary-btn" type="button" data-close-event-course>${pastEvent ? "BACK TO PAST EVENTS" : "BACK TO EVENTS"}</button>${coachView ? `<label class="primary-btn contest-course-upload" for="replace-event-course-${escapeHtml(item.id)}">CHANGE COURSE PHOTO<input id="replace-event-course-${escapeHtml(item.id)}" type="file" accept="image/*" data-event-course-photo-input="${escapeHtml(item.id)}" hidden></label>` : ""}</div>
   </section>`;
 }
 
@@ -9060,11 +9067,19 @@ async function saveEventCoursePhoto(item = {}, file = null) {
 }
 
 async function openEventCourseViewer(item = {}, suppliedPhoto = null, viewOptions = {}) {
+  const userId = state.user?.id, view = state.view, setupVersion = state.sessionSetupVersion;
+  const viewRoot = document.querySelector("#view"), viewContent = viewRoot?.firstElementChild;
+  const isCurrent = () => state.user?.id === userId && state.view === view && state.sessionSetupVersion === setupVersion
+    && (!viewRoot || (viewRoot.isConnected && viewRoot.firstElementChild === viewContent))
+    && (!viewOptions.returnFocus || viewOptions.returnFocus.isConnected);
+  const returnFocus = viewOptions.returnFocus || document.activeElement;
   try {
     const photo = suppliedPhoto || await getEventCoursePhoto(item.id);
+    if (!isCurrent()) return;
     if (!photo?.image_data_url) return notify("No course photo has been added yet.", "error");
     closeContestEventModal();
     closeEventCourseViewer();
+    state.eventCourseReturnFocus = returnFocus;
     const backdrop = document.createElement("div");
     backdrop.id = "event-course-backdrop";
     backdrop.className = "contest-event-backdrop event-course-backdrop";
@@ -9074,12 +9089,24 @@ async function openEventCourseViewer(item = {}, suppliedPhoto = null, viewOption
     const close = () => closeEventCourseViewer();
     backdrop.querySelectorAll("[data-close-event-course]").forEach((button) => button.addEventListener("click", close));
     backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
-    state.eventCourseEscapeHandler = (event) => { if (event.key === "Escape") close(); };
+    state.eventCourseEscapeHandler = (event) => {
+      if (event.key === "Escape") close();
+      if (event.key === "Tab") {
+        const controls = [...backdrop.querySelectorAll('button:not(:disabled), input:not([hidden]), [tabindex="0"]')];
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
     document.addEventListener("keydown", state.eventCourseEscapeHandler);
     backdrop.querySelector("[data-event-course-photo-input]")?.addEventListener("change", (event) => saveEventCoursePhoto(item, event.currentTarget.files?.[0]));
+    const image = backdrop.querySelector(".event-course-photo img");
+    const showImageError = () => { image.hidden = true; backdrop.querySelector(".event-course-image-error").hidden = false; recentEventCoursePhoto = null; };
+    image.addEventListener("error", showImageError, { once: true });
+    if (image.complete && !image.naturalWidth) showImageError();
     backdrop.querySelector("[data-close-event-course]")?.focus();
   } catch (error) {
-    notify(messageFrom(error), "error");
+    if (isCurrent()) notify(messageFrom(error), "error");
   }
 }
 
@@ -10912,6 +10939,90 @@ function coachHubCard(view, title, meta, icon = "•") {
   </button>`;
 }
 
+function pastEventCardsHtml(events = []) {
+  return events.map(item => {
+    const date = new Date(item.due_at || item.effective_finished_at);
+    const validDate = !Number.isNaN(date.getTime());
+    const month = validDate ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(date) : "PAST";
+    const day = validDate ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(date) : "—";
+    const dateText = validDate ? new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "long", year: "numeric" }).format(date) : "Date not recorded";
+    return `<article class="past-event-card">
+      <div class="past-event-date" aria-hidden="true"><span>${month}</span><strong>${day}</strong></div>
+      <div class="past-event-copy"><span class="past-event-status ${item.course_photo_available ? "has-layout" : ""}">${item.course_photo_available ? "✓ Layout saved" : "No layout saved"}</span><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.details || "Location not recorded")}</p><small>${dateText}</small></div>
+      ${item.course_photo_available ? `<button class="secondary-btn" type="button" data-view-past-course="${escapeHtml(item.id)}" aria-label="View park layout for ${escapeHtml(item.title)}">VIEW LAYOUT <span aria-hidden="true">↗</span></button>` : `<span class="past-event-no-layout">No shared park photo was added for this event.</span>`}
+    </article>`;
+  }).join("");
+}
+
+async function renderPastEvents() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const root = document.querySelector("#view");
+  root.innerHTML = `<section id="past-events-page">
+    <div class="page-head past-events-head"><div><div class="eyebrow">Coach tools · Course library</div><h1>Past <span>events</span></h1><p>Finished contests and their saved park layouts, ready to revisit.</p></div><button class="secondary-btn" type="button" data-past-event-back>← COACH TOOLS</button></div>
+    <div class="past-events-note"><span aria-hidden="true">⌖</span><p>Events appear here automatically after they finish. Any shared park layout stays with its event.</p></div>
+    <form id="past-event-search-form" class="past-events-toolbar"><div class="field"><label for="past-event-search">Find a past event</label><input id="past-event-search" type="search" maxlength="120" placeholder="Event name or location" autocomplete="off"></div><button class="primary-btn" type="submit">SEARCH</button><button class="secondary-btn" type="button" data-past-event-refresh>REFRESH</button></form>
+    <div class="past-events-feedback" data-past-event-status role="status" aria-live="polite"></div>
+    <div class="past-events-list" data-past-event-list></div>
+    <div class="past-events-footer"><button class="secondary-btn" type="button" data-past-event-retry hidden>TRY AGAIN</button><button class="secondary-btn" type="button" data-past-event-more hidden>LOAD MORE EVENTS</button></div>
+  </section>`;
+  const page = root.querySelector("#past-events-page");
+  const list = page.querySelector("[data-past-event-list]"), status = page.querySelector("[data-past-event-status]");
+  const more = page.querySelector("[data-past-event-more]"), retry = page.querySelector("[data-past-event-retry]");
+  const search = page.querySelector("#past-event-search"), form = page.querySelector("form");
+  const isCurrent = () => state.view === "pastEvents" && state.user?.id === userId && state.sessionSetupVersion === setupVersion && page.isConnected;
+  let events = [], offset = 0, searchText = "", loading = false, opening = false, retryAppend = false;
+  const pageSize = 24;
+  const load = async (append = false) => {
+    if (loading || !isCurrent()) return;
+    loading = true;
+    retryAppend = append;
+    retry.hidden = true;
+    more.hidden = true;
+    if (!append) { offset = 0; searchText = search.value.trim(); events = []; list.innerHTML = ""; }
+    status.textContent = append ? "Loading more events…" : "Loading past events…";
+    list.setAttribute("aria-busy", "true");
+    const controls = [form.querySelector('[type="submit"]'), page.querySelector("[data-past-event-refresh]"), more, retry];
+    controls.forEach(button => { button.disabled = true; });
+    try {
+      // Fetch metadata and one look-ahead row, never the course images in a list.
+      const { data, error } = await withTimeout(client.rpc("get_past_contest_events", { p_search: searchText, p_limit: pageSize + 1, p_offset: offset }), "Past events", 15000);
+      if (!isCurrent()) return;
+      if (error) throw error;
+      const rows = data || [];
+      events.push(...rows.slice(0, pageSize).filter(item => !events.some(existing => existing.id === item.id)));
+      offset += Math.min(rows.length, pageSize);
+      list.innerHTML = pastEventCardsHtml(events);
+      more.hidden = rows.length <= pageSize;
+      status.textContent = events.length ? `${events.length} past ${events.length === 1 ? "event" : "events"}${more.hidden ? "" : " shown"}` : searchText ? "No past events match your search. Try another name or location." : "No past events yet. Finished contests will appear here with any saved park layout.";
+    } catch (error) {
+      if (!isCurrent()) return;
+      status.textContent = "Couldn't load past events. Check your connection and try again.";
+      retry.hidden = false;
+    } finally {
+      loading = false;
+      if (isCurrent()) { controls.forEach(button => { button.disabled = false; }); list.setAttribute("aria-busy", "false"); }
+    }
+  };
+  form.addEventListener("submit", event => { event.preventDefault(); void load(); });
+  page.querySelector("[data-past-event-refresh]").addEventListener("click", () => load());
+  page.querySelector("[data-past-event-back]").addEventListener("click", () => navigate("coachTools"));
+  more.addEventListener("click", () => load(true));
+  retry.addEventListener("click", () => load(retryAppend));
+  list.addEventListener("click", async event => {
+    const button = event.target.closest("[data-view-past-course]");
+    if (!button || opening || !isCurrent()) return;
+    const item = events.find(item => item.id === button.dataset.viewPastCourse);
+    if (!item) return;
+    opening = true;
+    const buttonHtml = button.innerHTML;
+    const restore = setButtonBusy(button, "OPENING…");
+    try { await openEventCourseViewer(item, null, { pastEvent: true, returnFocus: button }); }
+    finally { opening = false; restore(); button.innerHTML = buttonHtml; }
+  });
+  await load();
+}
+
 async function renderCoachTools() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   document.querySelector("#view").innerHTML = `
@@ -10921,6 +11032,7 @@ async function renderCoachTools() {
       ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
       ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
       ${coachHubCard("contests", "Events & Runs", "Manage attendance, merge duplicates and review private runs", "🏆")}
+      ${coachHubCard("pastEvents", "Past Events", "Saved park layouts from finished contests", "⌖")}
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
 }

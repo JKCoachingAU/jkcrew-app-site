@@ -7,18 +7,20 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const names = ['renderShell', 'navigate', 'resetPageExpansions', 'dailyVenueGroups', 'assignmentGroups', 'bindDailyVenueAccordions', 'bindSessionAssignmentAccordions', 'commandAccordionSection', 'planAccordionSection', 'activeSessionViewerList', 'sessionViewerPlanList', 'selectViewerListTab'];
+const names = ['renderShell', 'navigate', 'resetPageExpansions', 'dailyVenueGroups', 'dailyTiersHtml', 'assignmentGroups', 'bindDailyVenueAccordions', 'bindSessionAssignmentAccordions', 'commandAccordionSection', 'planAccordionSection', 'activeSessionViewerList', 'sessionViewerPlanList', 'selectViewerListTab'];
 const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 (async () => {
   const browser = await chromium.launch({headless: true, executablePath: process.env.JKCREW_BROWSER_PATH});
   try {
     const page = await browser.newPage({viewport: {width: 390, height: 844}});
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
     await page.setContent('<div id="app"></div>');
     await page.evaluate(({code, renderers}) => {
       window.app = document.querySelector('#app');
       window.state = {view: '', user: {id: 'test', email: 'test@example.test'}, profile: {role: 'athlete'}, sessionOpenDailyVenues: new Set(), sessionOpenAssignmentSections: new Set(), sessionViewerOpenAthleteId: '', sessionViewerActiveList: '', videoReviewRecordedReplies: new Map(), videoReviewMedia: new Map(), loadingOverlayToken: 0};
       window.liveRun = null;
-      for (const name of ['stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites', 'setSyncStatus', 'refreshNotificationCentre', 'refreshBoardChatUnread', 'showNotificationDrawer', 'dismissDailyFinishForNavigation']) window[name] = () => {};
+      for (const name of ['stopRunPlayback', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeEventCourseViewer', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'refreshLiveRunInvites', 'setSyncStatus', 'refreshNotificationCentre', 'refreshBoardChatUnread', 'showNotificationDrawer', 'dismissDailyFinishForNavigation']) window[name] = () => {};
       window.isCoachRole = role => role === 'coach';
       window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = () => false;
       window.refreshRiderFeatureAccess = async () => true;
@@ -34,6 +36,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       window.messageFrom = error => error.message;
       window.categoryDisplayInfo = category => ({label: category, description: 'Training list'});
       window.categoryRewardLabels = {};
+      window.dailyTierTwoHost = window.otherLandedHost = () => '';
       window.dailyVenues = assignments => [...new Set(assignments.map(item => item.venue))];
       window.venueIdentityKey = window.venueLabel = value => value;
       window.assignmentsForVenue = (items, venue) => items.filter(item => item.venue === venue);
@@ -69,6 +72,10 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         assert.equal(await page.locator('details[open]').count(), 0, role + ': closed on ' + view);
         assert.equal(await page.locator('[data-list-content]').count(), 0, role + ': no training tab preselected');
       }
+      // The renderer fixture mounts every section on every page, but production
+      // deliberately ignores daily accordion toggles outside the Session page.
+      // Navigate there before exercising in-page expansion persistence.
+      await page.evaluate(() => navigate('session'));
       await page.locator('.daily-venue-accordion > summary').click();
       await page.waitForFunction(() => state.sessionOpenDailyVenues.has('Park'));
       await page.evaluate(() => mount());
@@ -88,6 +95,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
     await page.locator('summary[data-view="command"]').click();
     await page.locator('summary[data-view="command"]').click();
     assert.equal(await page.locator('.sidebar-nav-group[open]').count(), 0, 'Sidebar group can be closed again');
+    assert.deepEqual(errors, [], 'No unhandled errors in the navigation fixture');
     console.log('PASS: all-role page-entry and same-page resets, closed active-training Daily lists, explicit expansion survives in-page refresh, training tab open/close and sidebar navigation.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

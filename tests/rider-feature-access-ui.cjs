@@ -49,6 +49,10 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.liveRun = null; window.clearDailyFeatureMounts = () => {};
       window.wait = () => Promise.resolve();
       window.qaCalls = []; window.qaNotices = []; window.qaActions = []; window.qaClosed = [];
+      window.qaSignOutOptions = []; window.qaEndedSessions = [];
+      // Auth teardown is covered by auth-startup; keep this isolated rider fixture
+      // mounted so subsequent assertions can exercise stale, restricted controls.
+      window.handleSessionOnce = async session => { qaEndedSessions.push(session); };
       window.qaDisabled = true; window.qaFailRead = false; window.qaFailWrite = false;
       window.qaHoldRead = false; window.qaHeldReads = []; window.qaHoldWrite = false; window.qaHeldWrites = [];
       window.qaRoster = [
@@ -79,7 +83,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
           query.then = (resolve, reject) => Promise.resolve({ data: table === 'profiles' ? qaRoster : [] }).then(resolve, reject);
           return query;
         },
-        auth: { signOut: async () => { qaActions.push('signout'); } },
+        auth: { signOut: async options => { qaActions.push('signout'); qaSignOutOptions.push(options); return { error: null }; } },
       };
       window.withTimeout = async promise => promise;
       window.notify = (message, tone) => { qaNotices.push({ message, tone }); document.querySelector('#toast').textContent = message; };
@@ -116,7 +120,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       for (const name of ['bindGoalActions', 'dismissCoachMessage', 'submitRiderSheetProposal', 'updateRiderProposalCounts', 'submitTrickRequest']) window[name] = () => {};
       window.athleteRunBuilderCtaHtml = () => '<button id="open-home-run-builder">Build run</button>';
       window.openRunBuilder = () => qaActions.push('#open-home-run-builder');
-      for (const name of ['stopRunPlayback', 'closeTrainingProgressViews', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'disconnectLiveRun', 'teardownRealtimeSync', 'dismissDailyFinishForNavigation']) window[name] = () => qaClosed.push(name);
+      for (const name of ['stopRunPlayback', 'closeTrainingProgressViews', 'closeAthleteReviewViewer', 'closeContestEventModal', 'closeEventCourseViewer', 'closeContestMergeModal', 'clearHelpVideoPreview', 'teardownCoachVideoReviewEditor', 'disconnectLiveRun', 'teardownRealtimeSync', 'dismissDailyFinishForNavigation']) window[name] = () => qaClosed.push(name);
       for (const name of ['setSyncStatus', 'refreshNotificationCentre', 'refreshBoardChatUnread', 'refreshLiveRunInvites', 'mountStartupPrompts', 'addAthlete', 'createStudent', 'addAthleteToGroup', 'removeAthleteFromGroup']) window[name] = () => {};
       window.showNotificationDrawer = () => qaActions.push('notifications');
       window.qaFeatureSurface = () => {
@@ -148,6 +152,8 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, 'rider-access-dashboard-phone.png'), fullPage: true, animations: 'disabled' });
     await page.locator('[data-rider-access-logout]').click();
     assert.deepEqual(await page.evaluate(() => qaActions), ['signout'], 'Sign out remains usable');
+    assert.deepEqual(await page.evaluate(() => qaSignOutOptions), [{ scope: 'local' }], 'Sign out is limited to this device');
+    assert.deepEqual(await page.evaluate(() => qaEndedSessions), [null], 'Successful sign out reaches session teardown');
     await page.evaluate(() => { qaActions = []; qaFeatureSurface(); });
     for (const selector of ['#open-home-run-builder', '[data-open-progress-run]', '[data-goal-toggle]', '#custom-feature', '#feature-link', 'summary']) await page.locator(selector).click();
     await page.locator('#open-home-run-builder').focus(); await page.keyboard.press('Enter'); await page.keyboard.press('Space');

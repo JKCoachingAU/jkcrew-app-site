@@ -9,8 +9,8 @@ async function dataChecks() {
   const rows = {run_plans:[{id:'run',athlete_id:'rider',coach_id:'coach',title:'Finals',image_data_url:'x'.repeat(3*1024*1024),points:[{x:1,y:2}]}],coach_athletes:[{athlete_id:'rider'}],profiles:[{id:'rider',display_name:'Rider',avatar:'x'.repeat(70000),manual_tricktionary:{large:true}}],event_course_photos:[{event_id:'event',image_data_url:'photo',updated_at:'today'}]};
   let photoGate = deferred();
   const client = {from(table){const call={table,columns:'*',filters:[]};calls.push(call);const q={select(c){call.columns=c;return q},eq(k,v){call.filters.push([k,v]);return q},in(k,v){call.filters.push([k,v]);return q},order(){return q},limit(){return q},maybeSingle(){return photoGate.promise},then(resolve,reject){const data=rows[table].map(r=>Object.fromEntries(Object.entries(r).filter(([k])=>call.columns.split(',').includes(k))));return Promise.resolve({data}).then(resolve,reject)}};return q}};
-  const ctx=vm.createContext({state,client,Date,Promise,Map});
-  vm.runInContext(source.match(/^const RUN_SUMMARY_SELECT = .*$/m)[0]+'\nlet recentEventCoursePhoto=null;\n'+['getRiderRunSummaries','getEventCoachRoster','getCoachContestRunPlans','getEventCoursePhoto'].map(extract).join('\n'),ctx);
+  const ctx=vm.createContext({state,client,Date,Promise,Map,setTimeout,clearTimeout});
+  vm.runInContext(source.match(/^const RUN_SUMMARY_SELECT = .*$/m)[0]+'\nlet recentEventCoursePhoto=null;\n'+['withTimeout','getRiderRunSummaries','getEventCoachRoster','getCoachContestRunPlans','getEventCoursePhoto'].map(extract).join('\n'),ctx);
   const roster = await ctx.getEventCoachRoster();
   const runs=await ctx.getCoachContestRunPlans(['event'],roster);await ctx.getRiderRunSummaries('rider');
   assert(calls.every(c=>!c.columns.includes('image_data_url')&&!c.columns.includes('avatar')&&c.columns!=='*'));
