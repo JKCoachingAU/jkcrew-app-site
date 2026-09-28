@@ -9,10 +9,11 @@ const code=names.map(name=>{const start=app.search(new RegExp('^(?:async )?funct
  await page.setContent('<html data-theme="dark"><body><div id="app"><div class="app-shell rider-shell" style="display:block"><main id="view"></main></div></div></body></html>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
  const harness=`
- const state={user:{id:'r0'},profile:{role:'athlete'}};window.requests=[];window.notices=[];
+ const state={user:{id:'r0'},profile:{role:'athlete'},view:'challenges',activeBattles:null,riderChallengesRenderVersion:0};window.requests=[];window.notices=[];
  const roster=Array.from({length:8},(_,i)=>({id:'r'+i,athlete_id:'r'+i,display_name:'Test Rider '+i,weekly_points:i*2}));
  const client={rpc:async(name,args)=>{window.requests.push({name,args});return {};}};
  const getLeaderboard=async()=>roster,getWeeklyRiderBattles=async()=>[],getMyWeeklyChallenge=async()=>null;
+ const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false;
  const hydrateRiderBattleIdentities=b=>b,categoryInfo={},notify=(message)=>window.notices.push(message),messageFrom=e=>e.message;
  const avatarHtml=p=>'<span class="avatar">'+p.display_name.slice(-1)+'</span>',escapeHtml=s=>String(s).replaceAll('<','&lt;').replaceAll('"','&quot;');
  const dateLabel=s=>s||'',setButtonBusy=button=>{button.disabled=true;return()=>button.disabled=false;},navigate=()=>{},showBattleRulesModal=()=>{},showAchievementCelebration=()=>{},respondWeeklyRiderBattle=()=>{},forfeitWeeklyRiderBattle=()=>{},renderCoachBattleViewer=()=>{};

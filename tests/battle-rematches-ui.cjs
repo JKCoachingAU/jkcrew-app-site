@@ -15,7 +15,7 @@ const extracted=names.map(name=>{const start=app.search(new RegExp('^(?:async )?
     for(const file of ['styles.css','battle-rematches.css'])await page.addStyleTag({content:fs.readFileSync(path.join(root,file),'utf8')});
     await page.addScriptTag({content:fs.readFileSync(path.join(root,'battle-rematches.js'),'utf8')});
     await page.addScriptTag({content:`
-      const state={user:{id:'r12'},profile:{role:'athlete'}};
+      const state={user:{id:'r12'},profile:{role:'athlete'},view:'challenges',activeBattles:null,riderChallengesRenderVersion:0};
       window.requests=[];window.notices=[];window.optionsReads=0;window.missing=[];window.holdOptions=false;
       const roster=Array.from({length:20},(_,i)=>({id:'r'+i,athlete_id:'r'+i,display_name:'Test Rider '+i,weekly_points:i*2,recent_training_points:20+i,active_battle_count:0}));
       window.battles=[{id:'old-battle',status:'completed',battle_size:6,team_count:3,duration_days:4,reward_points:7,participants:roster.slice(0,18).map((r,i)=>({...r,team_number:Math.floor(i/6)+1,is_winner:i<6,response:'accepted',points_delta:i<6?2:-1}))}];
@@ -24,6 +24,7 @@ const extracted=names.map(name=>{const start=app.search(new RegExp('^(?:async )?
         requests.push({name,args});return {};
       }};
       const getLeaderboard=async()=>roster,getWeeklyRiderBattles=async()=>battles,getMyWeeklyChallenge=async()=>null;
+      const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false;
       const hydrateRiderBattleIdentities=b=>b,categoryInfo={},notify=(message)=>notices.push(message),messageFrom=e=>e.message;
       const avatarHtml=p=>'<span class="avatar">'+p.display_name.slice(-1)+'</span>',escapeHtml=s=>String(s??'').replaceAll('<','&lt;').replaceAll('"','&quot;');
       const dateLabel=s=>s||'',setButtonBusy=button=>{const text=button.textContent;button.disabled=true;return()=>{button.disabled=false;button.textContent=text;};},navigate=()=>{},showBattleRulesModal=()=>{},showAchievementCelebration=()=>{},respondWeeklyRiderBattle=()=>{},forfeitWeeklyRiderBattle=()=>{},renderCoachBattleViewer=()=>{};

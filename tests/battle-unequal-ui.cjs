@@ -33,7 +33,7 @@ const extracted = names.map(name => {
     await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><html data-theme="dark"><body><div id="app"><div class="app-shell rider-shell" style="display:block"><main id="view"></main></div></div></body></html>');
     await page.addStyleTag({ content: fs.readFileSync(path.join(root, 'styles.css'), 'utf8') });
     await page.addScriptTag({ content: `
-      const state = { user: { id: 'r0' }, profile: { role: 'athlete' } };
+      const state = { user: { id: 'r0' }, profile: { role: 'athlete' }, view: 'challenges', activeBattles: null, riderChallengesRenderVersion: 0 };
       const roster = Array.from({length: 8}, (_, i) => ({id: 'r' + i, athlete_id: 'r' + i, display_name: 'Test Rider ' + i, weekly_points: i * 2}));
       window.requests = []; window.notices = []; window.holdRequest = false; window.failRequest = false;
       const client = {rpc: async (name, args) => {
@@ -43,6 +43,7 @@ const extracted = names.map(name => {
         return {};
       }};
       const getLeaderboard = async () => roster, getWeeklyRiderBattles = async () => [], getMyWeeklyChallenge = async () => null;
+      const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false;
       const hydrateRiderBattleIdentities = battles => battles, categoryInfo = {}, notify = message => notices.push(message), messageFrom = error => error.message;
       const avatarHtml = rider => '<span class="avatar">' + rider.display_name.slice(-1) + '</span>';
       const escapeHtml = value => String(value ?? '').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
