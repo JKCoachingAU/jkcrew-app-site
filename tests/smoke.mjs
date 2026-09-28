@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.148";
+const version = "2.14.149";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -581,7 +581,7 @@ assert(coachManualTricktionaryBody.includes("meta.titles?.[canonicalKey]"), "Coa
 assert(coachManualTricktionaryBody.includes("trick.id || sourceTitle"), "Renamed manual rows must retain their stable removal identity");
 const bindTricktionaryBody = functionBody("bindTricktionaryBoard");
 assert(bindTricktionaryBody.includes('event.pointerType === "mouse"'), "Desktop native drag and touch pointer drag must not both process one gesture");
-assert(bindTricktionaryBody.includes("if (!payload?.key || dropInFlight) return;"), "One physical Tricktionary drop must be rejected while another save is in flight");
+assert(bindTricktionaryBody.includes("if (!payload?.key || dropInFlight || !isCurrent()) return;"), "One physical Tricktionary drop must be rejected while another save is in flight");
 assert(bindTricktionaryBody.includes("dropInFlight = true;") && bindTricktionaryBody.includes("dropInFlight = false;"), "Tricktionary mutations must bracket each save with a single-flight lock");
 assert(bindTricktionaryBody.includes("updateTouchAutoScroll(event.clientY)"), "Touch dragging must edge-scroll so phone riders can reach off-screen categories");
 assert(bindTricktionaryBody.includes("window.scrollBy(0, touchAutoScrollVelocity)") && bindTricktionaryBody.includes("requestAnimationFrame(runTouchAutoScroll)"), "Touch edge scrolling must move smoothly one animation frame at a time");
@@ -629,9 +629,9 @@ assert(functionBody("hideTricktionaryEntry").includes("setTricktionaryEntryHidde
 assert(functionBody("restoreTricktionaryEntry").includes("setTricktionaryEntryHidden(athleteId, trickKey, false)"), "Undo must remove the Tricktionary tombstone");
 assert(bindTricktionaryBody.includes("showUndoToast") && bindTricktionaryBody.includes("restoreTricktionaryEntry(athleteId, entry.key)"), "A successful delete must offer an Undo action that restores the same canonical card");
 assert(functionBody("showUndoToast").includes(">Undo</button>"), "The reversible delete toast must expose an explicit Undo button");
-assert(functionBody("saveManualTrick").includes('rpc("add_manual_tricktionary_entry"'), "Rider manual additions must preserve concurrent merges through an atomic RPC");
+assert(functionBody("saveManualTrick").includes("submitManualTrickForm(event)") && functionBody("submitManualTrickForm").includes('rpc("add_manual_tricktionary_entry"'), "Rider manual additions must preserve concurrent merges through an atomic RPC");
 assert(functionBody("removeManualTrick").includes('rpc("remove_manual_tricktionary_entry"'), "Rider manual removals must be atomic");
-assert(functionBody("saveCoachManualTrick").includes('rpc("add_manual_tricktionary_entry"'), "Coach manual additions must preserve concurrent rider changes");
+assert(functionBody("saveCoachManualTrick").includes("submitManualTrickForm(event, true)"), "Coach manual additions must preserve concurrent rider changes");
 assert(functionBody("removeCoachManualTrick").includes('rpc("remove_manual_tricktionary_entry"'), "Coach manual removals must be atomic");
 assert(!app.includes("function saveTricktionaryProfileUpdate"), "Tricktionary edits must not use an unlocked whole-profile metadata overwrite");
 assert(tricktionaryHardeningMigration.includes("create or replace function public.set_tricktionary_category"), "The category update RPC must ship with the app");
@@ -935,7 +935,9 @@ const dailyCompletion = read("daily-completion.js");
 assert(dailyCompletion.includes('withTimeout(client.rpc("prepare_daily_finish"'), "Preparing a Daily finish must use a bounded request");
 assert(dailyCompletion.includes('withTimeout(client.rpc("confirm_daily_finish"'), "Saving a Daily finish must use a bounded request");
 assert(dailyCompletion.includes("finally { dailyFinishUi.requests.delete(key); restore(); }"), "Manual finish must restore its busy state");
-for (const asset of ["daily-completion", "progress-sharing", "battle-rematches", "active-battles", "bike-garage", "bike-preview"]) {
+assert.equal(read("riley-test/tricktionary-auto.js"), read("tricktionary-auto.js"), "Auto-sorting must match on the Riley path");
+assert(html.includes(`tricktionary-auto.js?v=${version}`) && serviceWorker.includes(`tricktionary-auto.js?v=${version}`), "Auto-sorting must be versioned and cached");
+for (const asset of ["daily-completion", "progress-sharing", "battle-rematches", "active-battles", "tricktionary-tools", "bike-garage", "bike-preview"]) {
   for (const extension of ["js", "css"]) {
     const file = `${asset}.${extension}`;
     assert.equal(read(`riley-test/${file}`), read(file), `${file} must match on the Riley path`);

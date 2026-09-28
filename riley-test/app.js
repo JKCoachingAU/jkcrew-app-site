@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.148";
+const RELEASE_VERSION = "2.14.149";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -76,6 +76,8 @@ const state = {
   plannerAthleteId: null,
   coachTricktionaryAthleteId: null,
   tricktionaryDrag: null,
+  tricktionaryRenderVersion: 0,
+  tricktionarySuggestionsCleanup: null,
   coachPreviewTab: "home",
   boardLeaderboardView: "weekly",
   leaderboardFallbackNotified: false,
@@ -594,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.148" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.149" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1936,6 +1938,8 @@ function notificationPrimaryView(view = "home") {
 }
 
 function renderShell() {
+  state.tricktionarySuggestionsCleanup?.();
+  if (typeof JKCrewTricktionaryTools !== "undefined") state.tricktionarySuggestionsCleanup = JKCrewTricktionaryTools.installSuggestions({ client, currentUser: () => state.user?.id, withTimeout });
   const role = state.profile.role;
   const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
   const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
@@ -2457,6 +2461,8 @@ async function navigate(view, options = {}) {
     }
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
+  if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.close();
+  state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
   state.activeBattles?.destroy();
   state.activeBattles = null;
   state.riderChallengesRenderVersion = (state.riderChallengesRenderVersion || 0) + 1;
@@ -2577,6 +2583,10 @@ async function navigate(view, options = {}) {
 }
 
 function teardownRealtimeSync() {
+  if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.reset();
+  state.tricktionarySuggestionsCleanup?.();
+  state.tricktionarySuggestionsCleanup = null;
+  state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
   state.activeBattles?.destroy();
   state.activeBattles = null;
   state.riderChallengesRenderVersion = (state.riderChallengesRenderVersion || 0) + 1;
@@ -3033,7 +3043,7 @@ async function getTricktionaryPagedRows(queryPage, pageSize = 800) {
 }
 
 async function getTricktionaryData(athleteId) {
-  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult, landingHistoryResult, landedAttemptsResult] = await Promise.all([
+  const [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult, landingHistoryResult, landedAttemptsResult, catalogResult] = await Promise.all([
     client.from("profiles").select(PROFILE_SELECT).eq("id", athleteId).single(),
     getTricktionaryPagedRows((from, to) => client.from("weekly_trick_assignments").select("*").eq("athlete_id", athleteId).order("week_start", { ascending: false }).order("sort_order", { ascending: true }).order("id", { ascending: true }).range(from, to)),
     getTricktionaryPagedRows((from, to) => client.from("assignment_progress").select("*").eq("athlete_id", athleteId).order("assignment_id", { ascending: true }).range(from, to)),
@@ -3043,6 +3053,7 @@ async function getTricktionaryData(athleteId) {
     getTricktionaryPagedRows((from, to) => client.from("percentage_attempts").select("*").eq("athlete_id", athleteId).order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
     getTricktionaryPagedRows((from, to) => client.rpc("get_tricktionary_landing_history", { p_athlete_id: athleteId }).order("id", { ascending: true }).range(from, to)),
     getTricktionaryPagedRows((from, to) => client.from("trick_attempts").select("id,athlete_id,trick_name,category,status,created_at,session_id").eq("athlete_id", athleteId).eq("status", "landed").order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
+    typeof JKCrewTricktionaryTools !== "undefined" ? JKCrewTricktionaryTools.loadCatalog({ client, athleteId, userId: state.user?.id, currentUser: () => state.user?.id, withTimeout }).then(data => ({data})).catch(() => ({data:[],unavailable:true})) : Promise.resolve({data:[]}),
   ]);
   [profileResult, assignmentsResult, progressResult, attemptsResult, sessionsResult, awardsResult, percentageAttemptsResult, landingHistoryResult, landedAttemptsResult].forEach((result) => { if (result.error) throw result.error; });
   return {
@@ -3055,6 +3066,8 @@ async function getTricktionaryData(athleteId) {
     percentageAttempts: percentageAttemptsResult.data || [],
     landingHistory: landingHistoryResult.data || [],
     landedAttempts: landedAttemptsResult.data || [],
+    catalog: catalogResult.data || [],
+    catalogUnavailable: Boolean(catalogResult.unavailable),
   };
 }
 
@@ -5320,7 +5333,7 @@ function trickObstacleCategory(assignment = {}) {
 }
 
 const TRICKTIONARY_SECTIONS = [
-  { id: "new", label: "New Tricks", hint: "Unsorted tricks land here first" },
+  { id: "new", label: "Needs sorting", hint: "Choose an obstacle for these tricks" },
   { id: "box", label: "Box", hint: "Box jump and jump-box tricks" },
   { id: "spine", label: "Spine", hint: "Spine tricks and transfers" },
   { id: "air", label: "Air", hint: "Quarter, ramp, flyout, and air tricks" },
@@ -5523,6 +5536,7 @@ function landedTricktionaryEntries(data = {}) {
       id: assignment.id || manualId || key,
       key,
       title: meta.titles[key] || assignment.trick_name,
+      notes: assignment.notes || "",
       sources: new Set(),
       category: assignment.category || "manual",
       obstacle: TRICKTIONARY_CATEGORY_LABELS[canonicalCategory] || "New Tricks",
@@ -5535,6 +5549,7 @@ function landedTricktionaryEntries(data = {}) {
       manualIds: [],
       memberKeys: new Set(),
     };
+    previous.tricktionaryContextNotes = [...new Set([previous.tricktionaryContextNotes, assignment.tricktionaryContextNotes || assignment.notes].filter(Boolean).flatMap(value => String(value).split("\n")))].join("\n");
     previous.count += Number(count);
     previous.sources.add(sourceOverride || categoryInfo[assignment.category]?.label || assignment.category || "Manual add");
     previous.memberKeys.add(sourceKey);
@@ -5595,7 +5610,8 @@ function landedTricktionaryEntries(data = {}) {
       if (!name) return;
       const key = JSON.stringify([name, component.category || "daily", day]);
       if (source === "session" && revokedSessionDays.has(key)) return;
-      const bucket = days.get(key) || { assignment: component, landedAt, assignmentEvidence: new Map(), sessionEvidence: new Map(), sources: new Set() };
+      const bucket = days.get(key) || { assignment: { ...component }, landedAt, assignmentEvidence: new Map(), sessionEvidence: new Map(), sources: new Set() };
+      bucket.assignment.tricktionaryContextNotes = [...new Set([bucket.assignment.tricktionaryContextNotes || bucket.assignment.notes, component.notes].filter(Boolean).flatMap(value => String(value).split("\n")))].join("\n");
       const evidence = source === "session" ? bucket.sessionEvidence : bucket.assignmentEvidence;
       const componentKey = `${evidenceKey}:${index}`;
       evidence.set(componentKey, Math.max(evidence.get(componentKey) || 0, Number(count)));
@@ -5675,12 +5691,13 @@ function landedTricktionaryEntries(data = {}) {
       updated_at: trick.addedAt || trick.createdAt || new Date().toISOString(),
     }, count, trick.addedAt || trick.createdAt || new Date().toISOString(), "Manual add", true, trick.id || title.toLowerCase());
   });
-  return [...byName.values()].map((entry) => ({
+  const entries = [...byName.values()].map((entry) => ({
     ...entry,
     source: [...entry.sources].join(", "),
     manualRemoveId: entry.manualIds[0] || "",
     memberKeys: [...entry.memberKeys],
   })).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+  return typeof JKCrewTricktionaryAuto !== "undefined" ? JKCrewTricktionaryAuto.organise(entries, {profile, catalog:data.catalog || []}) : entries;
 }
 
 function attemptsByTrick(attempts = [], aliases = {}, titles = {}, hidden = {}) {
@@ -5727,6 +5744,7 @@ function tricktionaryCardHtml(entry = {}, attemptMap = new Map(), editable = fal
     <div class="tricktionary-card-meta">
       <span>${escapeHtml(TRICKTIONARY_CATEGORY_LABELS[category] || "New Tricks")}</span>
       ${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}
+      ${editable && typeof JKCrewTricktionaryTools !== "undefined" ? JKCrewTricktionaryTools.cardButtonHtml(entry) : ""}
       ${editable ? `<button class="tricktionary-rename-btn" type="button" draggable="false" data-rename-tricktionary-entry="${escapeHtml(key)}" aria-label="Edit name for ${escapeHtml(entry.title)}">Edit name</button>` : ""}
       ${editable ? `<span class="tricktionary-drag-hint tricktionary-drag-handle">↕ Hold + drag to move or merge</span>` : ""}
     </div>
@@ -5779,8 +5797,9 @@ function tricktionaryBoardHtml(entries = [], attempts = [], options = {}) {
   };
   const topSection = TRICKTIONARY_SECTIONS[0];
   const categorySections = TRICKTIONARY_SECTIONS.slice(1);
-  const help = editable ? `<p class="tricktionary-help"><strong>Organise:</strong> drag a trick into any category or subcategory. On touch screens, hold the <strong>Hold + drag</strong> pill first. <strong>Merge duplicates:</strong> drop one trick onto another and every landed total and attempt will combine into one.</p>` : "";
+  const help = editable ? `<p class="tricktionary-help">Tap <strong>Sort trick</strong> to choose an obstacle. You can still drag to organise, or drop one duplicate onto another to merge.</p>` : "";
   return `<div class="tricktionary-board ${editable ? "is-editable" : "is-readonly"}" data-tricktionary-board="1">
+    ${editable && typeof JKCrewTricktionaryTools !== "undefined" ? JKCrewTricktionaryTools.toolbarHtml() : ""}
     ${help}
     ${zoneHtml(topSection, true)}
     <div class="tricktionary-category-grid">${categorySections.map((section, index) => zoneHtml(section, false, index + 1)).join("")}</div>
@@ -5935,9 +5954,23 @@ async function restoreTricktionaryEntry(athleteId, trickKey) {
   return setTricktionaryEntryHidden(athleteId, trickKey, false);
 }
 
-function bindTricktionaryBoard({ athleteId, refresh }) {
+function bindTricktionaryBoard({ athleteId, refresh, data, roster = [] }) {
   const board = document.querySelector("[data-tricktionary-board]");
   if (!board || !athleteId) return;
+  const viewerId = state.user?.id, setupVersion = state.sessionSetupVersion, currentView = state.view;
+  const renderVersion = state.tricktionaryRenderVersion, coach = isCoachRole(state.profile?.role);
+  const isCurrent = () => board.isConnected && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion
+    && state.view === currentView && state.tricktionaryRenderVersion === renderVersion
+    && (!coach || state.coachTricktionaryAthleteId === athleteId);
+  if (data && typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.bind({
+    board, athleteId, data, roster, entries: landedTricktionaryEntries(data), coach: isCoachRole(state.profile?.role),
+    userId: viewerId, currentUser: () => state.user?.id, isCurrent,
+    client, withTimeout, notify, refresh, loadData: getTricktionaryData, aggregate: landedTricktionaryEntries,
+    move: (key,category,subcategory) => {
+      if (!isCurrent()) throw new Error("The rider changed. Reopen their Tricktionary.");
+      return moveTricktionaryEntry(athleteId,key,category,subcategory);
+    },
+  });
   let dropInFlight = false;
   let touchAutoScrollFrame = 0;
   let touchAutoScrollVelocity = 0;
@@ -5963,7 +5996,7 @@ function bindTricktionaryBoard({ athleteId, refresh }) {
     if (!touchAutoScrollVelocity && touchAutoScrollFrame) stopTouchAutoScroll();
   };
   const performDrop = async (payload, targetCard, targetCategory, targetSubcategory) => {
-    if (!payload?.key || dropInFlight) return;
+    if (!payload?.key || dropInFlight || !isCurrent()) return;
     const targetEntry = tricktionaryDragEntry(targetCard);
     const category = targetEntry?.category || targetCategory?.dataset?.tricktionaryDropCategory || payload.category || "new";
     const subcategory = category === "new" ? "" : (targetEntry?.subcategory || targetSubcategory?.dataset?.tricktionaryDropSubcategory || tricktionarySubcategory({ title: payload.title }, category));
@@ -5980,13 +6013,17 @@ function bindTricktionaryBoard({ athleteId, refresh }) {
       } else if (targetCategory) {
         if (safeTricktionaryCategory(payload.category) === safeTricktionaryCategory(category) && String(payload.subcategory || "") === String(subcategory || "")) return;
         await moveTricktionaryEntry(athleteId, payload.key, category, subcategory);
+        if (coach && isCurrent() && typeof JKCrewTricktionaryTools !== "undefined") {
+          try { await JKCrewTricktionaryTools.teach({ client, withTimeout, coach:true, userId:viewerId, currentUser:() => state.user?.id, isCurrent }, payload, category, subcategory); }
+          catch (_) { notify("Placement saved. Use Change category to retry remembering it for the crew.", "error"); }
+        }
         const subcategoryLabel = [...TRICKTIONARY_STANDARD_SUBCATEGORIES, ...TRICKTIONARY_BOX_SUBCATEGORIES, ...TRICKTIONARY_AIR_SUBCATEGORIES].find((entry) => entry.id === subcategory)?.label;
         notify(`Moved to ${TRICKTIONARY_CATEGORY_LABELS[safeTricktionaryCategory(category)]}${subcategoryLabel ? ` · ${subcategoryLabel}` : ""}.`);
         changed = true;
       }
-      if (changed) {
+      if (changed && isCurrent()) {
         await refresh?.();
-        restoreTricktionaryViewState(viewState);
+        if (state.user?.id === viewerId && state.view === currentView) restoreTricktionaryViewState(viewState);
       }
     } catch (error) {
       notify(messageFrom(error), "error");
@@ -6319,9 +6356,13 @@ function previousTrainingSheetsHtml(data = {}) {
 }
 
 async function renderTricktionary() {
+  if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.close();
   if (isCoachRole(state.profile?.role)) return renderCoachTricktionary();
   if (state.profile?.role === "parent") return renderParentTricktionary();
-  const data = await getTricktionaryData(state.user.id);
+  const viewerId = state.user.id, setupVersion = state.sessionSetupVersion, currentView = state.view;
+  const renderVersion = state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
+  const data = await getTricktionaryData(viewerId);
+  if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion || state.view !== currentView || state.tricktionaryRenderVersion !== renderVersion) return;
   state.profile = data.profile || state.profile;
   const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: state.user.id }));
   document.querySelector("#view").innerHTML = `
@@ -6340,7 +6381,7 @@ async function renderTricktionary() {
   document.querySelector("[data-back-shred-zone]")?.addEventListener("click", () => navigate("shredZone"));
   document.querySelector("#manual-trick-form")?.addEventListener("submit", saveManualTrick);
   document.querySelectorAll("[data-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeManualTrick));
-  bindTricktionaryBoard({ athleteId: state.user.id, refresh: renderTricktionary });
+  bindTricktionaryBoard({ athleteId: state.user.id, refresh: renderTricktionary, data });
 }
 
 async function getWeeklyRiderBattles() {
@@ -6696,25 +6737,88 @@ function weeklyAttemptsHtml(attempts = [], profile = {}) {
   return `<div class="attempt-summary-list">${rows.map((row) => `<div class="list-row"><div><strong>${escapeHtml(row.title)}</strong><small>Attempted this week</small></div><span class="points">${row.count}</span></div>`).join("")}</div>`;
 }
 
-async function saveManualTrick(event) {
+const manualTrickSaveForms = new WeakMap();
+
+async function submitManualTrickForm(event, coach = false) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const title = String(form.get("title") || "").trim();
-  const count = Math.max(1, Number(form.get("count") || 1));
+  const form = event.currentTarget;
+  if (!form?.isConnected) return;
+  let saveState = manualTrickSaveForms.get(form);
+  if (!saveState) {
+    saveState = { busy: false, attempts: new Map() };
+    manualTrickSaveForms.set(form, saveState);
+  }
+  if (saveState.busy) return;
+  const viewerId = state.user?.id;
+  const athleteId = coach ? state.selectedAthleteId : viewerId;
+  const setupVersion = state.sessionSetupVersion;
+  const currentView = state.view;
+  const navigationToken = state.loadingOverlayToken;
+  if (!viewerId) return notify("Sign in before adding a trick.", "error");
+  if (coach ? !isCoachRole(state.profile?.role) || !athleteId : state.profile?.role !== "athlete") {
+    return notify(coach ? "Choose a rider before adding to their Tricktionary." : "Open your rider Tricktionary to add a trick.", "error");
+  }
+  const current = () => form.isConnected && state.user?.id === viewerId
+    && state.sessionSetupVersion === setupVersion && state.view === currentView
+    && state.loadingOverlayToken === navigationToken
+    && (coach ? isCoachRole(state.profile?.role) && state.selectedAthleteId === athleteId : state.profile?.role === "athlete");
+  const values = new FormData(form);
+  const title = String(values.get("title") || "").trim().replace(/\s+/g, " ");
+  const count = Number(values.get("count") || 1);
   if (!title) return;
-  const guessedCategory = tricktionaryCategoryFromText(title);
-  if (guessedCategory === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
-  const { error } = await client.rpc("add_manual_tricktionary_entry", {
-    p_athlete_id: state.user.id,
-    p_entry_id: crypto.randomUUID(),
-    p_title: title.slice(0, 120),
-    p_count: count,
-    p_category: guessedCategory,
-  });
-  if (error) return notify(messageFrom(error), "error");
-  cacheClear("roster");
-  notify("Trick added to your Tricktionary. No points were awarded.");
-  await renderTricktionary();
+  if (title.length > 120) return notify("Keep the trick name to 120 characters or fewer.", "error");
+  if (!Number.isInteger(count) || count < 1 || count > 999) return notify("Enter a landed count from 1 to 999.", "error");
+  const category = tricktionaryCategoryFromText(title);
+  if (category === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
+  const signature = JSON.stringify([viewerId, setupVersion, athleteId, title.toLowerCase(), count, category]);
+  let attempt = saveState.attempts.get(signature);
+  if (!attempt) {
+    attempt = { id: crypto.randomUUID(), saved: false };
+    saveState.attempts.set(signature, attempt);
+  }
+  saveState.busy = true;
+  const inputs = [...form.querySelectorAll("input, select, textarea")].map(input => [input, input.disabled]);
+  inputs.forEach(([input]) => { input.disabled = true; });
+  const button = form.querySelector('button[type="submit"], button');
+  const wasDisabled = button?.disabled;
+  const restoreButton = setButtonBusy(button, "Saving...");
+  form.setAttribute("aria-busy", "true");
+  try {
+    if (coach && !attempt.saved) {
+      const athlete = await withTimeout(selectedCoachAthleteProfile(), "Load rider", 10000);
+      if (!current()) return;
+      if (!athlete || athlete.id !== athleteId) throw new Error("Choose a rider before adding to their Tricktionary.");
+      const duplicate = manualTricktionary(athlete).find(trick => normalizeTrickKey(trick.title || trick.name || "") === normalizeTrickKey(title));
+      // A timed-out request may have committed. Its own saved entry is safe to retry.
+      if (duplicate && !(String(duplicate.id) === attempt.id && Number(duplicate.count) === count)) {
+        throw new Error("That trick is already in this rider's manual Tricktionary.");
+      }
+    }
+    if (!current()) return;
+    if (!attempt.saved) {
+      const { error } = await withTimeout(client.rpc("add_manual_tricktionary_entry", {
+        p_athlete_id: athleteId, p_entry_id: attempt.id, p_title: title, p_count: count, p_category: category,
+      }), "Save Tricktionary trick", 15000);
+      if (error) throw error;
+      attempt.saved = true;
+    }
+    if (!current()) return;
+    cacheClear("roster");
+    notify(coach ? "Trick added to the rider's Tricktionary. No points were awarded." : "Trick added to your Tricktionary. No points were awarded.");
+    await withTimeout(coach ? renderStudentProfile() : renderTricktionary(), "Refresh Tricktionary", 15000);
+  } catch (error) {
+    if (current()) notify(attempt.saved ? "Trick saved. Refresh this page to see it." : messageFrom(error), "error");
+  } finally {
+    saveState.busy = false;
+    inputs.forEach(([input, disabled]) => { input.disabled = disabled; });
+    restoreButton();
+    if (button) button.disabled = wasDisabled;
+    form.removeAttribute("aria-busy");
+  }
+}
+
+async function saveManualTrick(event) {
+  return submitManualTrickForm(event);
 }
 
 async function removeManualTrick(event) {
@@ -6727,12 +6831,18 @@ async function removeManualTrick(event) {
 }
 
 async function renderParentTricktionary() {
+  if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.close();
+  const viewerId = state.user?.id, setupVersion = state.sessionSetupVersion, currentView = state.view;
+  const renderVersion = state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
+  const valid = () => state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.view === currentView && state.tricktionaryRenderVersion === renderVersion;
   const context = await getParentRiderContext();
+  if (!valid()) return;
   if (!context.selected) {
     document.querySelector("#view").innerHTML = parentWaitingHtml();
     return;
   }
   const data = await getTricktionaryData(context.selected.id);
+  if (!valid()) return;
   const entries = landedTricktionaryEntries(data);
   document.querySelector("#view").innerHTML = `
     ${parentChildSwitcherHtml(context)}
@@ -6748,7 +6858,12 @@ async function renderParentTricktionary() {
 }
 
 async function renderCoachTricktionary() {
+  if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.close();
+  const viewerId = state.user?.id, setupVersion = state.sessionSetupVersion, currentView = state.view;
+  const renderVersion = state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
+  const valid = () => state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.view === currentView && state.tricktionaryRenderVersion === renderVersion;
   const roster = await getCoachRoster();
+  if (!valid()) return;
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach Tricktionary</div><h1>Rider <span>library</span></h1><p>Add students first, then you can view their landed tricks here.</p></div></div><div class="empty compact-empty">No students linked yet.</div>`;
     return;
@@ -6760,6 +6875,7 @@ async function renderCoachTricktionary() {
   }
   const athlete = roster.find((entry) => entry.id === state.coachTricktionaryAthleteId);
   const data = await getTricktionaryData(athlete.id);
+  if (!valid() || state.coachTricktionaryAthleteId !== athlete.id) return;
   const displayProfile = data.profile || athlete;
   const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
   const options = roster.map((entry) => `<option value="${entry.id}" ${entry.id === athlete.id ? "selected" : ""}>${escapeHtml(entry.display_name)}</option>`).join("");
@@ -6785,7 +6901,7 @@ async function renderCoachTricktionary() {
     state.selectedAthleteId = event.target.value;
     renderCoachTricktionary();
   });
-  bindTricktionaryBoard({ athleteId: athlete.id, refresh: renderCoachTricktionary });
+  bindTricktionaryBoard({ athleteId: athlete.id, refresh: renderCoachTricktionary, data, roster });
 }
 
 function riderProposalItemFromLine(category, line = "") {
@@ -14453,7 +14569,13 @@ function bindRiderProfileSelector() {
 }
 
 async function renderStudentProfile() {
+  const viewerId = state.user?.id, setupVersion = state.sessionSetupVersion, currentView = state.view;
+  const selectedId = state.selectedAthleteId, loadingToken = state.loadingOverlayToken;
+  const renderVersion = state.studentProfileRenderVersion = (state.studentProfileRenderVersion || 0) + 1;
+  const valid = () => state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.view === currentView
+    && state.selectedAthleteId === selectedId && state.loadingOverlayToken === loadingToken && state.studentProfileRenderVersion === renderVersion;
   const roster = await getCoachRoster();
+  if (!valid()) return;
   if (!roster.length) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Student profile</div><h1>No <span>students</span></h1><p>Add an athlete first, then you can set their weekly tricks.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
@@ -14478,6 +14600,7 @@ async function renderStudentProfile() {
     getRunPlans(athlete.id),
     getLeaderboard(),
   ]);
+  if (!valid()) return;
   const { assignments, awards } = schedule;
   if (templateError) throw templateError;
   if (parentLinkError) throw parentLinkError;
@@ -14974,28 +15097,7 @@ async function selectedCoachAthleteProfile() {
 }
 
 async function saveCoachManualTrick(event) {
-  event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const title = String(form.get("title") || "").trim();
-  const count = Math.max(1, Number(form.get("count") || 1));
-  if (!title) return;
-  const athlete = await selectedCoachAthleteProfile();
-  if (!athlete) return notify("Choose a rider before adding to their Tricktionary.", "error");
-  const current = manualTricktionary(athlete);
-  const guessedCategory = tricktionaryCategoryFromText(title);
-  if (guessedCategory === "foam") return notify("Foam Pit tricks do not appear in the Tricktionary.", "error");
-  const exists = current.some((trick) => String(trick.title || trick.name || "").trim().toLowerCase() === title.toLowerCase());
-  if (exists) return notify("That trick is already in this rider's manual Tricktionary.", "error");
-  const { error } = await client.rpc("add_manual_tricktionary_entry", {
-    p_athlete_id: athlete.id,
-    p_entry_id: crypto.randomUUID(),
-    p_title: title.slice(0, 120),
-    p_count: count,
-    p_category: guessedCategory,
-  });
-  if (error) return notify(messageFrom(error), "error");
-  notify("Trick added to the rider's Tricktionary. No points were awarded.");
-  await renderStudentProfile();
+  return submitManualTrickForm(event, true);
 }
 
 async function removeCoachManualTrick(event) {
