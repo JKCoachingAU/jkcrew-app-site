@@ -154,7 +154,7 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
       // not edit the other person's draft or save while it is read-only.
       await page.evaluate(() => seed({liveViewer:true}));
       assert(await page.locator('#finish-run-builder').isEnabled(), label + ': live viewer can finish Watch');
-      assert(await page.locator('[data-run-trick-index="1"]').isDisabled());
+      assert(await page.locator('[data-run-trick-index="17"]').isDisabled(), 'The selected live dot is read-only');
       assert(await page.locator('#run-builder-form button[type=submit]').first().isDisabled());
       const liveBefore = await page.evaluate(() => ({requests:requests.length,points:structuredClone(state.runBuilder.points)}));
       await page.click('#finish-run-builder');

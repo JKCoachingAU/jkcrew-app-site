@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.149";
+const RELEASE_VERSION = "2.14.150";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.149" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.150" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -9648,6 +9648,155 @@ function bindContestEventActions(events = [], attendance = [], runs = [], roster
 // Live run collaboration: concurrent edits for accepted calls; leases for legacy sessions.
 let liveRun = null, liveRunDiscoveryTimer = null, liveRunDiscoveryBusy = false, liveRunStarting = false, liveRunJoining = false;
 
+function liveRunCompanionContext() {
+  const b = state.runBuilder || {}, points = b.points || [];
+  const hash = value => { let h = 2166136261; for (let i = 0; i < value.length; i++) h = Math.imul(h ^ value.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
+  const photo = b.imageDataUrl || '';
+  if (liveRun && liveRun.companionPhoto !== photo) { liveRun.companionPhoto = photo; liveRun.companionPhotoKey = hash(photo); }
+  const scene = hash(`${b.contestItemId || ''}:${liveRun?.companionPhotoKey || hash(photo)}`);
+  return { scene, run: hash(scene + liveRunFingerprint(points)), points: points.map(p => p.id).filter(Boolean), duration: runPlaybackDefaultSeconds(points) };
+}
+
+function liveRunCompanionHtml() {
+  if (!liveRun?.companion || !state.runBuilder?.imageDataUrl || !liveRunSharedActive()) return '';
+  const c = liveRun.companion.inspect(), coach = state.user.id === liveRun.session.coach_id;
+  const peer = coach ? liveRun.session.athlete_name || 'Rider' : liveRun.session.coach_name || 'Coach';
+  const index = state.runBuilder.points?.findIndex(p => p.id === c.selection) ?? -1;
+  const status = c.status || (!c.ready ? 'Connecting coaching tools…' : c.watching ? 'Watching together · either person can pause or scrub' : c.peerWanted && !c.wanted ? `${peer} wants to watch together` : c.wanted ? `Waiting for ${peer} to join playback…` : c.pointing ? 'Tap or drag on the park to point · your route stays unchanged' : index >= 0 ? `${peer} is looking at dot ${index + 1}` : 'Both can edit · point out a landing or watch together');
+  const button = (action, text, pressed, disabled = !c.ready) => `<button type="button" class="secondary-btn compact-btn" data-live-companion-action="${action}" ${pressed == null ? '' : `aria-pressed="${pressed}"`} ${disabled ? 'disabled' : ''}>${text}</button>`;
+  return `<div class="live-run-companion"><div class="live-run-companion-actions">${button('point',c.pointing ? 'Finish pointing' : 'Point here',c.pointing)}${!coach ? button('follow',c.following ? 'Following coach' : 'Follow coach',c.following) : ''}${c.watching ? button('leave','Watch independently') : c.peerWanted && !c.wanted ? button('watch','Join playback') + button('leave','Not now') : c.wanted ? button('leave','Cancel invitation') : button('watch','Watch together',null,!c.ready || !state.runBuilder.points?.length)}</div><small class="live-run-companion-status" role="status">${escapeHtml(status)}</small></div>`;
+}
+
+function paintLiveRunCompanion() {
+  const l = liveRun, panel = document.querySelector('#run-builder-live');
+  if (!panel) return;
+  const slot = panel.querySelector('[data-live-run-companion]'), html = liveRunCompanionHtml();
+  if (slot && slot.innerHTML !== html) slot.innerHTML = html;
+  const c = l?.companion?.inspect();
+  const preview = panel.querySelector('#run-map .run-map-preview');
+  preview?.classList.toggle('is-pointing', Boolean(c?.pointing));
+  panel.querySelectorAll('.run-marker').forEach(el => {
+    const point = state.runBuilder?.points?.[Number(el.dataset.runPointNumber) - 1];
+    el.classList.toggle('is-peer-selected', Boolean(c?.selection && point?.id === c.selection));
+  });
+  let pointer = preview?.querySelector('.run-shared-pointer');
+  if (c?.pointer && preview) {
+    if (!pointer) { pointer = document.createElement('span'); pointer.className = 'run-shared-pointer'; pointer.setAttribute('aria-hidden','true'); preview.querySelector('.run-map-content')?.append(pointer); }
+    pointer.style.left = `${c.pointer.x}%`; pointer.style.top = `${c.pointer.y}%`;
+    pointer.textContent = state.user.id === l.session.coach_id ? 'Rider' : 'Coach';
+  } else pointer?.remove();
+}
+
+function liveRunCompanionPlaybackTarget(controls) {
+  return Boolean(controls && (controls.closest('#run-builder-live') || (liveRun?.session.id && controls.closest('.run-fullscreen-playback')?.dataset.liveSessionId === liveRun.session.id)));
+}
+
+function applyLiveRunCompanionPlayback(value) {
+  if (value.stopped) { if (liveRunCompanionPlaybackTarget(state.runPlayback?.controls)) stopRunPlayback(false); return; }
+  if (!liveRun?.companion || !document.querySelector('#run-builder-live')) return;
+  if (runBuilderStage() !== 'playback') {
+    state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), stage:'playback' };
+    refreshMountedRunBuilder();
+  }
+  const controls = document.querySelector('.run-fullscreen-playback[data-live-session-id] [data-run-playback-controls]') || document.querySelector('#run-builder-live [data-run-playback-controls]');
+  if (!controls) return;
+  stopRunPlayback(false);
+  const progress = Math.min(1, value.seconds / value.duration);
+  controls.dataset.runPlaybackSeconds = String(value.duration);
+  paintRunPlayback(controls, progress);
+  const button = controls.querySelector('[data-run-play-toggle]');
+  if (button) button.textContent = value.playing ? 'PAUSE' : progress >= 1 ? 'REPLAY' : 'PLAY RUN';
+  if (!value.playing) return;
+  const session = { controls, progress, duration:value.duration, startedAt:performance.now() };
+  state.runPlayback = session; controls.classList.add('is-playing');
+  const tick = timestamp => {
+    if (state.runPlayback !== session || !controls.isConnected) return;
+    const next = Math.min(1, session.progress + (timestamp-session.startedAt)/1000/session.duration);
+    paintRunPlayback(controls,next);
+    if (next >= 1) { stopRunPlayback(); if (button) button.textContent = 'REPLAY'; return; }
+    state.runPlaybackTimer = requestAnimationFrame(tick);
+  };
+  state.runPlaybackTimer = requestAnimationFrame(tick);
+}
+
+function sendLiveRunCompanionPlayback(action, controls, progress) {
+  const c = liveRun?.companion, shared = c?.inspect();
+  if (!shared?.watching || !liveRunCompanionPlaybackTarget(controls)) return false;
+  const p = shared.playback;
+  c.control(action === 'restart' ? {seconds:0,playing:false} : action === 'seek' ? {seconds:Math.max(0,Math.min(1,progress))*p.duration,playing:false} : {seconds:p.seconds >= p.duration ? 0 : p.seconds,playing:!p.playing});
+  return true;
+}
+
+function liveRunCompanionSelection(index) {
+  liveRun?.companion?.select(state.runBuilder?.points?.[Number(index)]?.id || null);
+}
+
+function bindLiveRunCompanion(root = document) {
+  const panel = root.matches?.('#run-builder-live') ? root : root.querySelector('#run-builder-live');
+  if (!panel) return;
+  paintLiveRunCompanion();
+  if (panel.dataset.companionBound) return;
+  panel.dataset.companionBound = 'true';
+  panel.addEventListener('click', event => {
+    const button = event.target.closest('[data-live-companion-action]'), c = liveRun?.companion;
+    const mode = event.target.closest('[data-run-mode], [data-run-builder-stage]');
+    if (mode && c?.inspect().watching && (mode.dataset.runMode || mode.dataset.runBuilderStage) !== 'playback') c.requestWatch(false);
+    if (button && c) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      const action = button.dataset.liveCompanionAction, s = c.inspect();
+      if (action === 'point') c.setPointing(!s.pointing);
+      if (action === 'follow') c.follow(!s.following);
+      if (action === 'watch') c.requestWatch(true);
+      if (action === 'leave') c.requestWatch(false);
+      return;
+    }
+    if (c?.inspect().pointing && event.target.closest('#run-map .run-map-preview') && !event.target.closest('[data-run-expand]')) { event.preventDefault(); event.stopImmediatePropagation(); }
+  },true);
+  let pointerId = null;
+  const point = event => {
+    const c = liveRun?.companion;
+    if (!c?.inspect().pointing || !event.target.closest('#run-map .run-map-preview') || event.target.closest('[data-run-expand]')) return;
+    if (event.type === 'pointerdown') pointerId = event.pointerId;
+    if (pointerId !== event.pointerId) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const rect = panel.querySelector('#run-map .run-map-content')?.getBoundingClientRect();
+    if (rect?.width && rect.height) c.point(Math.max(0,Math.min(100,(event.clientX-rect.left)/rect.width*100)),Math.max(0,Math.min(100,(event.clientY-rect.top)/rect.height*100)));
+  };
+  panel.addEventListener('pointerdown',point,true); panel.addEventListener('pointermove',point,true);
+  panel.addEventListener('pointerup',() => { pointerId = null; },true);
+  panel.addEventListener('pointercancel',() => { pointerId = null; },true);
+  // Selection is presence only. This never changes the saved route.
+  panel.addEventListener('focusin',event => {
+    const index = event.target.dataset.runTrickIndex ?? event.target.dataset.runTimeIndex;
+    if (index != null) liveRun?.companion?.select(state.runBuilder?.points?.[Number(index)]?.id || null);
+  });
+}
+
+function mountLiveRunCompanion(l) {
+  if (!window.JKLiveRunCompanion || l.companion) return;
+  l.companion = window.JKLiveRunCompanion.create({ sessionId:l.session.id, userId:state.user.id,
+    peerId:state.user.id === l.session.coach_id ? l.session.athlete_id : l.session.coach_id, coachId:l.session.coach_id,
+    send:payload => liveRun === l && Boolean(l.media?.sendMessage?.(payload)), context:liveRunCompanionContext,
+    onChange:snapshot => { if (!snapshot.ready) l.companionSelected = undefined; paintLiveRunCompanion(); }, onPlayback:applyLiveRunCompanionPlayback,
+    onSelection:id => {
+      if (liveRun !== l || state.draggedRunPoint != null) return;
+      // Never replace a field while the rider is typing or move the real route.
+      if (document.activeElement?.matches('#run-builder-live input, #run-builder-live textarea, #run-builder-live select')) return;
+      const index = state.runBuilder?.points?.findIndex(p => p.id === id) ?? -1;
+      if (index < 0 || state.runBuilder.selectedPointIndex === index) return;
+      state.runBuilder.selectedPointIndex = index;
+      if (runBuilderStage() !== 'playback') refreshMountedRunBuilder();
+      document.querySelector(`#run-builder-live [data-run-point-number="${index+1}"]`)?.scrollIntoView({block:'nearest',behavior:'instant'});
+    },
+  });
+  l.companionTimer = setInterval(() => {
+    if (liveRun !== l) return;
+    l.companion.tick();
+    const selected = state.runBuilder?.points?.[state.runBuilder.selectedPointIndex]?.id || null;
+    if (selected !== l.companionSelected && l.companion.select(selected)) l.companionSelected = selected;
+  },250);
+}
+
 function liveRunFingerprint(value) {
   const normalize = item => Array.isArray(item) ? item.map(normalize) : item && typeof item === "object"
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, normalize(item[key])])) : item;
@@ -9811,7 +9960,7 @@ function paintLiveRunControls() {
   const locked = !liveRunCanEdit();
   root.classList.toggle("run-live-readonly", Boolean(liveRun && locked));
   root.querySelectorAll("#run-builder-form input:not([data-run-scrub]), #run-builder-form textarea, #run-builder-form select, #run-builder-form button").forEach(el => {
-    const viewControl = el.matches("[data-run-mode], [data-run-builder-stage], #finish-run-builder, [data-run-play-toggle], [data-run-play-restart], [data-run-expand], #close-run-builder");
+    const viewControl = el.matches("[data-live-companion-action], [data-run-sheet-toggle], [data-run-dot-step], [data-run-mode], [data-run-builder-stage], #finish-run-builder, [data-run-play-toggle], [data-run-play-restart], [data-run-expand], #close-run-builder");
     if (viewControl) return;
     if (liveRun && (locked || el.matches("[data-run-copy]"))) {
       if (!el.disabled) { el.dataset.liveDisabled = "true"; el.disabled = true; }
@@ -9827,7 +9976,7 @@ function bindLiveRunControls(root = document) {
     const action = event.target.closest("[data-live-run-action]");
     if (action) { event.preventDefault(); void handleLiveRunAction(action.dataset.liveRunAction); return; }
     if (!liveRun || liveRunCanEdit()) return;
-    if (event.target.closest("[data-run-mode], [data-run-builder-stage], #finish-run-builder, [data-run-play-toggle], [data-run-play-restart], [data-run-expand], [data-run-scrub], #close-run-builder, #close-run-builder-top")) return;
+    if (event.target.closest("[data-live-companion-action], [data-run-sheet-toggle], [data-run-dot-step], [data-run-mode], [data-run-builder-stage], #finish-run-builder, [data-run-play-toggle], [data-run-play-restart], [data-run-expand], [data-run-scrub], #close-run-builder, #close-run-builder-top")) return;
     if (event.target.closest("#run-builder-form")) { event.preventDefault(); event.stopImmediatePropagation(); }
   }, true);
   panel.addEventListener("pointerdown", event => {
@@ -9977,8 +10126,8 @@ function paintSharedLiveRunDraft(draft, session) {
   root.querySelector(".run-line-overlay")?.remove();
   updateRunBuilderMapDom();
   root.querySelectorAll(".run-marker").forEach(el => {
-    const index = Number(el.dataset.runPointIndex), p = draft.points[index];
-    if (p) { el.dataset.runPointLabel = p.label || "NO TRICK"; el.setAttribute("aria-label",`${index + 1}. ${p.label || `Point ${index + 1}`}`); }
+    const index = Number(el.dataset.runPointNumber) - 1, p = draft.points[index];
+    if (p) { el.dataset.runPointLabel = index === 0 ? "Start location" : index === draft.points.length - 1 && !p.isTrick ? "Finish location" : p.label || "NO TRICK"; el.setAttribute("aria-label",`${index + 1}. ${el.dataset.runPointLabel}`); }
   });
   paintRunTimeBudget(draft.points);
   const budget = runTimeBudget(draft.points);
@@ -10174,9 +10323,12 @@ function connectLiveRun(result, clientId) {
     finally { l.ticking = false; }
   }, 300);
   if (result.session.call_status && result.session.call_status !== "idle") {
+    mountLiveRunCompanion(l);
     l.media = window.JKCrewLiveRunCall?.mount({client,userId:state.user.id,clientId,session:result.session,
       isCurrent:() => liveRun === l && [l.session.athlete_id,l.session.coach_id].includes(state.user?.id),
-      onSession:session => observeLiveRunSession(l,session),onEnd:() => handleLiveRunAction("leave")});
+      onSession:session => observeLiveRunSession(l,session),onEnd:() => handleLiveRunAction("leave"),
+      onMessage:payload => { if (liveRun === l) l.companion?.receive(payload); },
+      onDataState:ready => { if (liveRun === l) l.companion?.connect(ready); }});
     void loadLiveRunEvents(l);
   }
   paintLiveRunControls();
@@ -10184,9 +10336,14 @@ function connectLiveRun(result, clientId) {
 
 function disconnectLiveRun() {
   const l = liveRun;
+  // Fullscreen playback identifies its call through liveRun. Stop it before
+  // clearing that identity, including when sign-out tears the call down.
+  if (l?.companion) applyLiveRunCompanionPlayback({ stopped: true });
   liveRun = null;
   if (!l) return;
   clearInterval(l.timer);
+  clearInterval(l.companionTimer);
+  l.companion?.destroy();
   document.removeEventListener("visibilitychange", l.onVisible);
   l.imageCache = null;
   l.media?.destroy();
@@ -13042,6 +13199,7 @@ function openRunPlaybackFullscreen(event) {
   stopRunPlayback();
   const dialog = document.createElement("dialog");
   dialog.className = "run-view-dialog run-fullscreen-playback run-playback-surface";
+  if (source.closest("#run-builder-live") && typeof liveRun !== "undefined" && liveRun?.companion) dialog.dataset.liveSessionId = liveRun.session.id;
   dialog.setAttribute("aria-label", "Run playback");
   const preview = cloneRunDialogPreview(source);
   preview.querySelector(".run-expand")?.remove();
@@ -13096,6 +13254,7 @@ function openRunPlaybackFullscreen(event) {
     if (document.fullscreenElement === dialog) document.exitFullscreen().catch(() => {});
     dialog.remove();
     origin.focus();
+    if (typeof liveRun !== "undefined" && dialog.dataset.liveSessionId === liveRun?.session.id && liveRun?.companion?.inspect().watching) applyLiveRunCompanionPlayback(liveRun.companion.inspect().playback);
   }, { once: true });
   photo?.addEventListener("load", resize, { once: true });
   document.body.append(dialog);
@@ -13104,7 +13263,8 @@ function openRunPlaybackFullscreen(event) {
   document.addEventListener("fullscreenchange", fullscreenChange);
   resize();
   bindRunPlaybackControls(dialog);
-  dialog.querySelector("[data-run-play-toggle]").click();
+  if (typeof liveRun !== "undefined" && dialog.dataset.liveSessionId === liveRun?.session.id && liveRun?.companion?.inspect().watching) applyLiveRunCompanionPlayback(liveRun.companion.inspect().playback);
+  else dialog.querySelector("[data-run-play-toggle]").click();
   // The dialog also fills the screen in installed apps and browsers without Fullscreen API support.
   if (dialog.requestFullscreen) dialog.requestFullscreen().then(() => { dialog.dataset.nativeFullscreen = "true"; resize(); }).catch(() => {});
 }
@@ -13431,7 +13591,10 @@ function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
 }
 
 function runBuilderTrickEditorHtml(points = []) {
-  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">Step 2 · Add tricks</div><strong>ADD TRICKS & TIMING</strong><p class="run-phase-tip">Leave a trick blank to show NO TRICK in playback. Choose Edit Route if a dot needs moving.</p></div><div class="run-trick-editor-list">${points.map((point, index) => { if (index === 0) return ""; const pointNumber = index + 1; const role = index === points.length - 1 && !point.isTrick ? `FINISH · DOT ${pointNumber}` : `TRICK ${index} · DOT ${pointNumber}`; return `${index === points.length - 1 ? `<label class="run-final-type">Last dot<select data-run-final-type aria-label="Last dot type"><option value="finish" ${!point.isTrick ? "selected" : ""}>Finish location</option><option value="trick" ${point.isTrick ? "selected" : ""}>Trick</option></select></label>` : ""}<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" ${index === points.length - 1 && !point.isTrick ? "disabled" : ""} placeholder="${index === points.length - 1 && !point.isTrick ? "Finish location" : "Optional trick · blank = NO TRICK"}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>${runTimingRowHtml(points, index)}`; }).join("")}</div></div>`;
+  const focused = Boolean(liveRun && state.runBuilder?.imageDataUrl);
+  const selected = Math.max(0, Math.min(points.length - 1, Number(state.runBuilder?.selectedPointIndex) >= 0 ? Number(state.runBuilder.selectedPointIndex) : Math.min(1, points.length - 1)));
+  const navigator = focused ? `<div class="run-dot-navigator"><button type="button" data-run-dot-step="-1" aria-label="Previous dot" ${selected <= 0 ? "disabled" : ""}>←</button><span>Dot ${selected + 1} <small>of ${points.length}</small></span><button type="button" data-run-dot-step="1" aria-label="Next dot" ${selected >= points.length - 1 ? "disabled" : ""}>→</button></div>` : "";
+  return `<div class="run-sidebar-section run-trick-editor"><div><div class="eyebrow">${focused ? "Selected dot" : "Step 2 · Add tricks"}</div><strong>${focused ? "Trick & timing" : "ADD TRICKS & TIMING"}</strong><p class="run-phase-tip">${focused ? "Blank tricks show NO TRICK in playback." : "Leave a trick blank to show NO TRICK in playback. Choose Edit Route if a dot needs moving."}</p></div>${navigator}<div class="run-trick-editor-list">${points.map((point, index) => { if (focused && index !== selected) return ""; if (index === 0) return focused ? `<p class="run-phase-tip">Start location · set the travel time to dot 2.</p>${runTimingRowHtml(points, 0)}` : ""; const pointNumber = index + 1; const role = index === points.length - 1 && !point.isTrick ? `FINISH · DOT ${pointNumber}` : `TRICK ${index} · DOT ${pointNumber}`; return `${index === points.length - 1 ? `<label class="run-final-type">Last dot<select data-run-final-type aria-label="Last dot type"><option value="finish" ${!point.isTrick ? "selected" : ""}>Finish location</option><option value="trick" ${point.isTrick ? "selected" : ""}>Trick</option></select></label>` : ""}<label class="run-trick-entry"><b style="--run-color:${runPointColor(pointNumber)}">${pointNumber}</b><span><small>${role}</small><input type="text" value="${escapeHtml(point.label || "")}" maxlength="80" ${index === points.length - 1 && !point.isTrick ? "disabled" : ""} placeholder="${index === points.length - 1 && !point.isTrick ? "Finish location" : "Optional trick · blank = NO TRICK"}" data-run-trick-index="${index}" aria-label="Trick at dot ${pointNumber}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="${index === points.length - 1 ? "done" : "next"}"></span></label>${runTimingRowHtml(points, index)}`; }).join("")}</div></div>`;
 }
 
 function runBuilderPlaybackEditorHtml(points = []) {
@@ -13473,7 +13636,7 @@ function runBuilderPanel(runs = [], options = {}) {
     : builder.imageDataUrl;
   const liveTools = `<div data-live-run-bar>${liveRunBarHtml()}</div><div data-live-run-workspace>${liveRunWorkspaceHtml()}</div>`;
   const setupFirst = needsPhoto && !liveRun;
-  const body = `${state.profile?.role === "athlete" ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs · yours + coach’s</button></div>` : ""}${setupFirst ? "" : liveTools}<form id="run-builder-form" class="run-builder-form">
+  let body = `${state.profile?.role === "athlete" ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs · yours + coach’s</button></div>` : ""}${setupFirst ? "" : liveTools}<form id="run-builder-form" class="run-builder-form">
       ${needsPhoto ? runBuilderPhotoSetupHtml(builder) : `
       ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
       <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
@@ -13504,10 +13667,47 @@ function runBuilderPanel(runs = [], options = {}) {
     </form>
     ${setupFirst ? liveTools : ""}
     ${options.showRunList === false ? "" : `<div class="settings-divider"></div><div class="run-list">${runPlansHtml(runs)}</div>`}`;
+  // Live coaching keeps the course and one contextual editor together. The
+  // private planner retains its existing guided setup and saved-run library.
+  if (liveRun && !needsPhoto) {
+    const editorTitle = stage === "playback" ? "Run playback" : stage === "tricks" ? "Trick & timing" : selectedPoint ? `Dot ${selectedIndex + 1} · Route` : "Draw your route";
+    body = `<div data-live-run-bar>${liveRunBarHtml()}</div>
+      <form id="run-builder-form" class="run-builder-form run-workspace-form">
+        <div class="run-workspace-topbar">
+          <div class="field"><label class="sr-only" for="run-title">Run title</label><input id="run-title" name="title" value="${escapeHtml(builder.title || "")}" placeholder="Name your run" aria-label="Run title"></div>
+          <button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>Save run</button>
+          <details class="run-workspace-setup" ${!builder.contestItemId || liveRun.workspaceError ? "open" : ""}>
+            <summary aria-label="Event and course settings">Course <span aria-hidden="true">⌄</span></summary>
+            <div data-live-run-workspace>${liveRunWorkspaceHtml()}</div>
+            <div class="run-workspace-photo-actions"><label class="secondary-btn run-photo-button" for="run-photo">Change photo</label><button class="secondary-btn" type="button" id="crop-run-image">Crop photo</button><input id="run-photo" name="photo" type="file" accept="image/*" hidden></div>
+          </details>
+        </div>
+        <div class="run-workspace-layout">
+          <div class="run-map-stage">
+            <div class="run-workspace-toolbar">
+              <nav class="run-mode-tabs" aria-label="Live run tools">${[["route","Route"],["tricks","Tricks"],["playback","Watch"]].map(([mode,label]) => `<button type="button" data-run-mode="${mode}" class="${stage === mode ? "active" : ""}" aria-pressed="${stage === mode}" ${mode !== "route" && points.length < 2 ? "disabled" : ""}>${label}</button>`).join("")}</nav>
+              <div class="run-edit-toolbar"><button type="button" data-run-history="undo" aria-label="Undo last edit" ${runUndoStack.length ? "" : "disabled"}>↶</button><button type="button" data-run-history="redo" aria-label="Redo last edit" ${runRedoStack.length ? "" : "disabled"}>↷</button></div>
+            </div>
+            <div data-live-run-companion>${typeof liveRunCompanionHtml === "function" ? liveRunCompanionHtml() : ""}</div>
+            <div id="run-map" class="run-map run-map-${stage}">${runMapHtml(builderImageSource, points, "Shared course", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback")}</div>
+            <div class="run-workspace-map-caption"><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span><span>${stage === "route" ? "Tap to add · drag to move" : stage === "tricks" ? "Tap a dot to edit its trick" : "Watch your route together"}</span></div>
+            ${stage === "playback" && points.length ? runPlaybackControlsHtml(points, "builder") : ""}
+          </div>
+          <aside class="run-builder-sidebar run-workspace-editor" aria-label="Selected dot controls">
+            <div class="run-workspace-editor-head"><strong>${editorTitle}</strong><button type="button" data-run-sheet-toggle aria-expanded="${builder.liveToolsCollapsed ? "false" : "true"}" aria-controls="run-workspace-editor-body">${builder.liveToolsCollapsed ? "Show tools" : "Hide tools"}</button></div>
+            <div id="run-workspace-editor-body" ${builder.liveToolsCollapsed ? "hidden" : ""}>
+              ${stage === "route" ? `${runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points)}${runSegmentEditorHtml(points, builder.selectedSegmentIndex)}<div class="run-finish-actions"><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length < 2 ? "disabled" : ""}>Add tricks →</button><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>Clear route</button></div>` : stage === "tricks" ? `${runBuilderTrickEditorHtml(points)}${runSegmentEditorHtml(points, builder.selectedSegmentIndex)}${runTimeBudgetHtml(points)}<button class="primary-btn wide" id="finish-run-builder" type="button" ${points.length < 2 ? "disabled" : ""}>Watch run →</button>` : `${runTimeBudgetHtml(points)}${runBuilderPlaybackEditorHtml(points)}`}
+              ${stage === "tricks" ? `<details class="run-workspace-time-limit"><summary>Run time limit</summary>${runTimingEditorHtml(points)}</details>` : ""}
+            </div>
+          </aside>
+        </div>
+        <p class="run-save-feedback" data-run-save-feedback role="status" hidden></p>
+      </form>`;
+  }
   if (options.collapsed) {
     return closedPanelAccordion("Contest Run Planner", "The same visual dot-and-curve planner used by riders", body, "run-builder-panel");
   }
-  return `<section class="panel run-builder-live ${needsPhoto ? "run-builder-setup" : `run-builder-stage-${stage}`}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">Run Builder</div>${needsPhoto ? "" : `<div class="panel-meta">${stageCopy}</div>`}</div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
+  return `<section class="panel run-builder-live ${liveRun && !needsPhoto ? "run-coaching-workspace" : ""} ${needsPhoto ? "run-builder-setup" : `run-builder-stage-${stage}`}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">${liveRun ? "Live Run Builder" : "Run Builder"}</div>${needsPhoto || liveRun ? "" : `<div class="panel-meta">${stageCopy}</div>`}</div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
     ${body}
   </section>`;
 }
@@ -15411,6 +15611,35 @@ function bindRunBuilderActions(root = document) {
   root.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
   bindRunPlaybackControls(root);
   bindLiveRunControls(root);
+  if (typeof bindLiveRunCompanion === "function") bindLiveRunCompanion(root);
+  const workspace = root.matches?.(".run-coaching-workspace") ? root : root.querySelector(".run-coaching-workspace");
+  if (workspace && !workspace.dataset.workspaceBound) {
+    workspace.dataset.workspaceBound = "true";
+    workspace.addEventListener("click", event => {
+      const toggle = event.target.closest("[data-run-sheet-toggle]");
+      if (toggle) {
+        state.runBuilder.liveToolsCollapsed = !state.runBuilder.liveToolsCollapsed;
+        const collapsed = state.runBuilder.liveToolsCollapsed;
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        toggle.textContent = collapsed ? "Show tools" : "Hide tools";
+        workspace.querySelector("#run-workspace-editor-body").hidden = collapsed;
+        return;
+      }
+      const next = event.target.closest("[data-run-dot-step]");
+      const marker = event.target.closest("#run-map [data-run-point-number]");
+      if (runBuilderStage() !== "tricks" || (!next && !marker) || !liveRunCanEdit()) return;
+      const points = state.runBuilder.points || [];
+      const current = Number(state.runBuilder.selectedPointIndex) >= 0 ? Number(state.runBuilder.selectedPointIndex) : Math.min(1, points.length - 1);
+      const index = next ? current + Number(next.dataset.runDotStep) : Number(marker.dataset.runPointNumber) - 1;
+      if (index < 0 || index >= points.length) return;
+      state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), selectedPointIndex:index, liveToolsCollapsed:false };
+      void runBuilderRefreshView().then(() => {
+        document.querySelector(`[data-run-trick-index="${index}"]`)?.focus({preventScroll:true});
+        if (typeof liveRunCompanionSelection === "function") liveRunCompanionSelection(index);
+      });
+    });
+    if (runBuilderStage() === "tricks") workspace.querySelectorAll("#run-map [data-run-point-number]").forEach(marker => { marker.tabIndex = 0; });
+  }
 }
 
 async function updateRunFinalType(event) {
@@ -15547,7 +15776,7 @@ function updateRunBuilderMapDom(changedIndex = null) {
   }
   const markerIndexes = Number.isInteger(changedIndex) ? [changedIndex] : points.map((_point, index) => index);
   markerIndexes.forEach((index) => {
-    const marker = preview.querySelector(`[data-run-point-index="${index}"]`);
+    const marker = preview.querySelector(`[data-run-point-number="${index + 1}"]`);
     const point = points[index];
     if (!marker || !point) return;
     marker.style.left = `${point.x}%`;
@@ -15759,6 +15988,7 @@ function stopRunPlayback(reset = false) {
 function toggleRunPlayback(event) {
   const controls = event.currentTarget.closest("[data-run-playback-controls]");
   if (!controls) return;
+  if (typeof sendLiveRunCompanionPlayback === "function" && sendLiveRunCompanionPlayback("toggle", controls)) return;
   if (state.runPlayback?.controls === controls) {
     stopRunPlayback(false);
     return;
@@ -15790,6 +16020,7 @@ function toggleRunPlayback(event) {
 function scrubRunPlayback(event) {
   const controls = event.currentTarget.closest("[data-run-playback-controls]");
   if (!controls) return;
+  if (typeof sendLiveRunCompanionPlayback === "function" && sendLiveRunCompanionPlayback("seek", controls, Number(event.currentTarget.value || 0)/1000)) return;
   if (state.runPlayback?.controls === controls) stopRunPlayback(false);
   paintRunPlayback(controls, Number(event.currentTarget.value || 0) / 1000);
   const button = controls.querySelector("[data-run-play-toggle]");
@@ -15820,6 +16051,7 @@ function applyRunPlaybackDurationPreset(event) {
 function restartRunPlayback(event) {
   const controls = event.currentTarget.closest("[data-run-playback-controls]");
   if (!controls) return;
+  if (typeof sendLiveRunCompanionPlayback === "function" && sendLiveRunCompanionPlayback("restart", controls)) return;
   stopRunPlayback(false);
   paintRunPlayback(controls, 0);
   const button = controls.querySelector("[data-run-play-toggle]");

@@ -10,6 +10,7 @@ Live Run calls add audio/video to the existing two-person private run draft. The
 | --- | --- | --- |
 | `start` | Pair IDs, client ID, message ID, payload `{mode:'audio'|'video', draft?:snapshot}` | `{session,draft}` or `{busy:true,session:null}`. Both participants are reserved atomically; crossed starts cannot create two calls. Default draft is blank. Optional initial draft is validated. |
 | `get` | Session ID, bound client ID for an active call or ringing caller | Returns `{session}`. The caller can recover their seeded `draft` while ringing; the callee receives no draft until acceptance. After acceptance, either participant can recover the draft, including after the call ends. Active calls and ringing callers reject a different browser/device with a clear permission error. Access always requires the current linked pair. |
+| `status` | Session ID, same device binding as `get` | Returns only `{session}` without reading the draft. Uses the same authorization and expiry checks as `get`. |
 | `accept` | Session ID, callee client ID | `{session,draft}`. Caller cannot accept. Same accepting client retry is idempotent. If already expired/terminal, returns `{session,unavailable:true}`. |
 | `decline` | Session ID, callee client ID | `{session}`; never saves a run. |
 | `cancel` | Session ID, bound caller client ID | Cancels a ringing call only. Does not end an already-accepted call; use `end`. |
@@ -26,7 +27,7 @@ Session fields:
 - `status`: remains `active` throughout an accepted call and every save; becomes `ended` when call terminates. Legacy non-call saves retain their previous `saved` status behavior.
 - `call_mode`, `call_started_at`, `call_ended_at`, `call_end_reason`, `ring_expires_at`.
 - `athlete_name`, `coach_name`, `caller_name` are display-name snapshots; `created_by` identifies the caller.
-- `athlete_client_id` / `coach_client_id` bind the accepted call devices. Initial caller holds the draft edit lease. Accepting refreshes that lease; it does not silently take editing away.
+- `athlete_client_id` / `coach_client_id` bind the accepted call devices. Legacy calls retain edit leases; accepted modern calls use concurrent operations through `live_run_edit`.
 - `athlete_seen_at` / `coach_seen_at` track independent presence.
 - `saved_run_id`, `saved_version`, `saved_run_updated_at` identify the last committed run revision.
 
@@ -38,9 +39,9 @@ The existing course model has **one image per event**, keyed by `event_course_ph
 
 Use the active shared event catalogue (`dashboard_items.item_type='event'`). A task, completed event or expired event is rejected. An accepted new call can begin blank, but Save requires an available event, title, photo and at least start/finish dots. `courseSource:'event'` requires the exact current shared event image. Uploading a different photo switches the source to `upload`; the selected event remains. Adjusting the existing photo viewport preserves its course source. This avoids silently identifying another picture as the event's course.
 
-The existing `live_run_action` still handles `get`, `claim`, `release`, `heartbeat`, `patch`, `save`, `end`. Send its current `p_version` and bound editor client UUID. Existing 45-second exclusive edit leases, 300ms client flush, handover and stale-revision protection remain. Local unsent work must be retained by the client on lease/network conflicts, never blindly overwritten with fetched data.
+Accepted modern calls use `live_run_edit` with stable request IDs and point IDs. Both participants can edit concurrently; operations compare previous field values, merge disjoint edits and retain conflicting work for resolution. The 300ms client flush and stale-revision protection remain. Legacy sessions keep `live_run_action` and its 45-second edit lease. Local unsent work is retained on conflicts or network failures.
 
-For new accepted calls either authorized current editor can Save. The first save creates a private run owned by the session athlete and linked coach, with the actual saving actor in `created_by`. Further saves update that **same run**, do not duplicate it, and keep the call/edit lease active. Unchanged-version save retries return the same saved run. Outside edits to the saved run are checked through `updated_at` and cannot be overwritten by a stale call draft. The source is recorded in `run_plans.course_source`; course image/route/view are saved as a snapshot. Save never ends the training session or call and never awards scoring points.
+For accepted modern calls either authorized participant can Save. The first save creates a private run owned by the session athlete and linked coach, with the actual saving actor in `created_by`. Further saves update that **same run**, do not duplicate it, and keep the call/edit lease active. Unchanged-version save retries return the same saved run. Outside edits to the saved run are checked through `updated_at` and cannot be overwritten by a stale call draft. The source is recorded in `run_plans.course_source`; course image/route/view are saved as a snapshot. Save never ends the training session or call and never awards scoring points.
 
 ## Media infrastructure and verification
 
@@ -89,3 +90,43 @@ Regression checks: `tests/live-run-compact-client.cjs`,
 The two SQL tests use `tests/helpers/local-postgres.cjs`: provide
 `JKCREW_PG_BIN` and `JKCREW_PG_SOCKET` for a disposable local PostgreSQL server;
 the harness refuses non-`/tmp` sockets and creates/drops only its own test database.
+
+
+## Workspace and coaching tools (2.14.150)
+
+The accepted call uses one course workspace with Route, Tricks and Watch modes.
+Desktop tools sit beside the map; mobile tools show one selected dot below it and
+can be hidden. Course/event selection is collapsed after setup. The mobile video
+dock defaults to a shallow strip; both participants remain visible, and saving
+stays separate from End call. The ordinary private planner remains available.
+
+`live-run-companion.js` carries temporary pointers, selected-dot highlights and
+shared playback over the accepted pair's reliable ordered WebRTC data channel.
+Messages are scoped to the session and a fresh connection epoch, bounded to 4KB,
+validated and sequence-checked. They never write route or scoring data. Pointer
+mode suppresses normal map editing and expires remote highlights. Follow coach
+is optional and does not replace a field the rider is currently typing into.
+Watch together requires both participants to opt in. Either can play, pause or
+seek; monotonic timing and latency correction align playback. Course/run changes
+or connection loss stop shared playback; reconnect requires a fresh handshake and
+invitation. Fingerprints canonicalise JSON keys so local and PostgreSQL objects
+identify the same route. Leaving/signing out stops fullscreen animation as well
+as inline playback.
+
+Ringing polls use `status` every three seconds, with metadata-only heartbeat
+fallback for older backends. Recipient-filtered Realtime wakes signal fetching;
+connected calls fall back every twelve seconds when subscribed, five otherwise,
+and one while connecting. The existing compact course-image cache remains in
+use for shared edits. Low-data mode limits video to 320×180 and 180kbps per sender;
+Audio only releases the video track while preserving the microphone. Repeated
+media switches are serialized and late results after hangup are ignored. No new
+service or recurring cost is introduced.
+
+Verification includes the real two-browser shared builder/native WebRTC flow,
+canonical JSON responses, simultaneous edits, pointer safety, follow, invitation
+acceptance, synchronized inline/fullscreen playback, recoverable save failures,
+correct rider/event ownership and saving without disconnecting. Disposable
+PostgreSQL tests prove compact status keeps permissions/device binding/expiry and
+does not read draft data. Mobile widths 320/390/768/1280 and installed-app update
+regressions are covered. Physical iOS backgrounding and cross-network TURN remain
+separate device checks.

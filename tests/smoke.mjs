@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.149";
+const version = "2.14.150";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -97,6 +97,14 @@ for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, m
   assert(!/2\.11\.(16|44|45|46)/.test(contents), `${name} contains a stale asset version`);
 }
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
+for (const file of ["live-run-sync.js", "live-run-call.js", "live-run-companion.js"]) {
+  const tag = `src="${file}?v=${version}"`;
+  assert(html.includes(tag) && html.indexOf(tag) < html.indexOf(`src="app.js?v=${version}"`), `${file} loads before app integration`);
+  assert(serviceWorker.includes(`./${file}?v=${version}`), `${file} belongs to the current offline shell`);
+  assert.equal(read(`riley-test/${file}`), read(file), `${file} stays identical in both entry points`);
+}
+assert.equal(read("riley-test/index.html"), html, "Both entry points load the same coaching tools");
+
 assert(html.includes("initial-scale=1.0, viewport-fit=cover"), "Installed iPads must expose their safe-area insets to the app shell");
 assert(serviceWorker.includes('const CACHE_PREFIX = "jkcrew-shell-"'), "service worker should use the public cache namespace");
 assert(serviceWorker.includes(`const RELEASE_VERSION = "${version}"`), "service worker cache should use the current version");

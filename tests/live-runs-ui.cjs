@@ -3,6 +3,8 @@ const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const sync=require('../live-run-sync.js');
 const {createHash}=require('node:crypto');
 const compactResponses=[];
+// PostgREST/jsonb may reorder keys; every server response exercises that boundary.
+const wire=value=>JSON.parse(JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item));
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const names=[...new Set([
@@ -63,6 +65,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    if(kind==='live_run_action'&&session.call_status==='ringing'&&!['get','end'].includes(a))return{error:{message:'Accept an active call before editing this run.'}};
    if(a==='decline'){session.invitation_status='declined';session.status='ended';return ok();}
    if(a==='get')return ok();
+   if(a==='status')return {data:{session:wire(session)}};
    if(a==='signal'){if(!signals.some(s=>s.id===args.p_message_id))signals.push({id:args.p_message_id,seq:++signalSeq,role,kind:args.p_payload.kind,payload:args.p_payload.data});return ok();}
    if(a==='signals')return {data:{session:wire(session),signals:signals.filter(s=>s.role!==role&&s.seq>(args.p_after||0))}};
    if(a==='claim'){
@@ -81,7 +84,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
    throw Error(a);
   };
   await page.exposeFunction('server',async(kind,args)=>{
-   const response=await serve(kind.replace(/_compact$/, ''),args);
+   const response=wire(await serve(kind.replace(/_compact$/, ''),args));
    if(kind.endsWith('_compact')&&response.data?.draft){
     const result=structuredClone(response.data);
     result.image_key=createHash('sha256').update(result.draft.imageDataUrl||'').digest('hex');
@@ -98,6 +101,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
   await page.addStyleTag({content:fs.readFileSync(path.join(root,'live-run-call.css'),'utf8')});
   await page.addScriptTag({content:fs.readFileSync(path.join(root,'live-run-call.js'),'utf8')});
   await page.addScriptTag({content:fs.readFileSync(path.join(root,'live-run-sync.js'),'utf8')});
+  await page.addScriptTag({content:fs.readFileSync(path.join(root,'live-run-companion.js'),'utf8')});
   await page.addScriptTag({content:`
    const bindRiderSavedRuns=()=>{};
  const state={user:{id:${JSON.stringify(role==='coach'?'coach':'rider')}},profile:{role:${JSON.stringify(role)}},view:'contests',draggedRunPoint:null,runPointMapClickBlockUntil:0,runPointDragClickBlockUntil:0};
@@ -155,13 +159,56 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await Promise.all([rider,coach].map(p=>p.waitForFunction(()=>inspectMedia()?.connectionState==='connected'&&inspectMedia().remoteTracks===2)));
  for(const p of [rider,coach]){assert.equal(await p.evaluate(()=>inspectMedia().localTracks),2);assert(await p.evaluate(()=>nativePeers.length>0&&nativePeers.every(peer=>peer instanceof NativePC)));}
  assert(signals.some(s=>s.kind==='offer')&&signals.some(s=>s.kind==='answer')&&signals.some(s=>s.kind==='ice'),'Real offer/answer/ICE relayed in both-direction media connection');
+ // Both isolated browser sessions exchange ephemeral tools over native WebRTC.
+ for(const p of [rider,coach])await p.waitForFunction(()=>liveRun.companion?.inspect().ready);
+ await rider.locator('[data-live-companion-action="follow"]').click();
+ await coach.locator('#run-map [data-run-point-number="2"]').click();
+ await rider.waitForFunction(()=>inspect().draft.selectedPointIndex===1);
+ assert(await rider.locator('#run-map [data-run-point-number="2"]').evaluate(el=>el.classList.contains('is-peer-selected')));
+ const beforePoint=JSON.stringify(draft.points);
+ await coach.locator('[data-live-companion-action="point"]').click();
+ await coach.locator('#run-map .run-map-content').click({position:{x:55,y:55}});
+ await rider.waitForSelector('.run-shared-pointer');
+ assert.equal(JSON.stringify(draft.points),beforePoint,'Pointing does not add or move route dots');
+ await coach.locator('[data-live-companion-action="point"]').click();
+ await rider.locator('[data-live-companion-action="follow"]').click();
+ await coach.locator('[data-live-companion-action="watch"]').click();
+ await rider.waitForFunction(()=>liveRun.companion.inspect().peerWanted);
+ assert.equal(await rider.evaluate(()=>liveRun.companion.inspect().watching),false,'Shared playback requires acceptance');
+ await rider.locator('[data-live-companion-action="watch"]').click();
+ for(const p of [rider,coach])await p.waitForFunction(()=>liveRun.companion.inspect().watching&&runBuilderStage()==='playback');
+ await coach.locator('#run-builder-live [data-run-play-toggle]').click();
+ for(const p of [rider,coach])await p.waitForFunction(()=>liveRun.companion.inspect().playback.playing);
+ await rider.waitForTimeout(1100);
+ const positions=await Promise.all([rider,coach].map(p=>p.evaluate(()=>liveRun.companion.inspect().playback.seconds)));
+ assert(Math.abs(positions[0]-positions[1])<.35,'Both playback clocks agree within 350ms locally');
+ await coach.locator('[data-run-expand]').click();
+ assert(await coach.locator('.run-fullscreen-playback').isVisible());
+ await coach.locator('.run-fullscreen-playback [data-run-play-toggle]').click();
+ for(const p of [rider,coach])await p.waitForFunction(()=>!liveRun.companion.inspect().playback.playing);
+ await coach.locator('.run-fullscreen-close').click();
+ await rider.locator('#run-builder-live [data-run-scrub]').fill('500');
+ const seekPositions=await Promise.all([rider,coach].map(p=>p.evaluate(()=>liveRun.companion.inspect().playback.seconds)));
+ assert(Math.abs(seekPositions[0]-seekPositions[1])<.35,'Shared seek agrees after fullscreen closes');
+ await coach.locator('[data-run-mode="route"]').click();
+ for(const p of [rider,coach]){await p.waitForFunction(()=>!liveRun.companion.inspect().watching);await p.click('[data-run-mode="route"]');}
+ for(const width of [320,390,768,1280]){
+   await rider.setViewportSize({width,height:900});
+   assert(await rider.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Workspace has no horizontal overflow at '+width);
+   await rider.screenshot({path:'/tmp/jkcrew-live-workspace-'+width+'.png',fullPage:true});
+ }
+ await rider.setViewportSize({width:390,height:844});
+ console.log('PASS shared pointer, opt-in follow, two-person playback and responsive workspace');
  // The participant can keep the live call compact while editing the route.
- for(const p of [rider,coach]){await p.locator('[data-call="size"]').click();assert(await p.locator('[data-remote]').isVisible(),'Minimise keeps the other participant visible');assert(await p.locator('[data-local]').isVisible(),'Minimise keeps self preview visible');}
+ for(const p of [rider,coach]){if(!await p.locator('.run-call').evaluate(el=>el.classList.contains('is-minimized')))await p.locator('[data-call="size"]').click();assert(await p.locator('[data-remote]').isVisible(),'Minimise keeps the other participant visible');assert(await p.locator('[data-local]').isVisible(),'Minimise keeps self preview visible');}
  // One device moves a dot; the other receives the actual updated route.
+ await coach.click('[data-run-mode="tricks"]');
  await rider.locator('[data-run-point-index="1"]').scrollIntoViewIfNeeded();
  const marker=await rider.locator('[data-run-point-index="1"]').boundingBox();
- await rider.mouse.move(marker.x+marker.width/2,marker.y+marker.height/2);await rider.mouse.down();await rider.mouse.move(marker.x+35,marker.y+20,{steps:4});await rider.mouse.up();
+ await rider.mouse.move(marker.x+marker.width/2,marker.y+marker.height/2);await rider.mouse.down();await rider.mouse.move(marker.x+marker.width/2+35,marker.y+marker.height/2+20,{steps:4});await rider.mouse.up();
  try { await coach.waitForFunction(()=>inspect().draft.points[1].x>45); } catch(e) { console.log('Drag debug',marker,await rider.evaluate(()=>({points:inspect().draft.points,live:inspect().live})),await coach.evaluate(()=>({points:inspect().draft.points,live:inspect().live})));throw e; }
+ assert(await coach.evaluate(()=>{const p=state.runBuilder.points[1],m=document.querySelector('#run-map [data-run-point-number="2"]');return Math.abs(parseFloat(m.style.left)-p.x)<.001&&Math.abs(parseFloat(m.style.top)-p.y)<.001;}),'Remote moved dot renders at current coordinates in Tricks mode');
+ await coach.click('[data-run-mode="route"]');
  assert(!requests.filter(r=>r.kind==='live_run_edit').some(r=>r.args.p_ops.some(op=>op.key==='imageDataUrl')),'Normal edits do not resend park photo');
  await coach.click('[data-run-expand]');
  await rider.fill('#run-title','Finals with coach');
@@ -171,6 +218,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  assert(await coach.locator('#run-title').isEnabled(),'Coach edits immediately without a handover');
  await coach.locator('[data-run-builder-stage="tricks"]').last().evaluate(el=>el.scrollIntoView({block:'center'}));
  await coach.locator('[data-run-builder-stage="tricks"]').last().click();
+ await coach.locator('[data-run-point-number="2"]').click();
  await coach.fill('[data-run-trick-index="1"]','Barspin');
  // Set travel time by tapping the rendered line while the rider watches live.
  const timingLine=coach.locator('[data-edit-run-segment="1"]');await timingLine.scrollIntoViewIfNeeded();
@@ -181,7 +229,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  assert.equal(await coach.locator('.run-timing-row [data-run-time-index="1"][data-run-time-key="travelSeconds"]').inputValue(),'12');
  try { await rider.waitForFunction(()=>inspect().draft.points[1].label==='Barspin'&&inspect().draft.points[1].travelSeconds===12); } catch(e) { console.log('SYNC DEBUG',JSON.stringify({rider:await rider.evaluate(()=>inspect()),coach:await coach.evaluate(()=>inspect()),requests:requests.slice(-8)},null,2));throw e; }
  assert(await rider.locator('#run-title').isEnabled(),'Rider remains an editor while the coach edits');
- await coach.locator('[data-run-final-type]').selectOption('trick');await coach.fill('[data-run-trick-index="2"]','Flair');await coach.fill('[data-run-time-index="2"][data-run-time-key="holdSeconds"]','3');
+ await coach.click('[data-run-dot-step="1"]');await coach.locator('[data-run-final-type]').selectOption('trick');await coach.fill('[data-run-trick-index="2"]','Flair');await coach.fill('[data-run-time-index="2"][data-run-time-key="holdSeconds"]','3');
  await rider.waitForFunction(()=>inspect().draft.points[2].isTrick&&inspect().draft.points[2].label==='Flair'&&inspect().draft.points[2].holdSeconds===3);
  await coach.click('[data-run-mode="playback"]');await coach.click('[data-run-expand]');
  await coach.locator('.run-fullscreen-playback [data-run-scrub]').evaluate(el=>{el.value='1000';el.dispatchEvent(new Event('input',{bubbles:true}));});
@@ -221,7 +269,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  for(const p of [rider,coach]){assert.equal(await p.evaluate(()=>inspectMedia().connectionState),'connected','Actual media stays connected through handover, editing and both saves');assert.equal(await p.evaluate(()=>inspectMedia().remoteTracks),2);assert.equal(await p.evaluate(()=>mediaMounted),1,'Saving does not remount or reacquire media');}
  if(process.env.JKCREW_SCREENSHOT)await rider.screenshot({path:'/tmp/jkcrew-live-run-builder-connected-mobile.png'});
  // Simultaneous edits on different properties of the SAME dot must both survive.
- for(const p of [rider,coach]){await p.click('[data-run-mode="route"]');await p.locator('[data-run-builder-stage="tricks"]').last().click();}
+ for(const p of [rider,coach]){await p.click('[data-run-mode="tricks"]');await p.locator('[data-run-point-number="2"]').click();}
  holdEdits=true;
  await Promise.all([rider.fill('[data-run-trick-index="1"]','360'),coach.fill('[data-run-time-index="1"][data-run-time-key="holdSeconds"]','4')]);
  await rider.waitForFunction(()=>Boolean(liveRun.sending));await coach.waitForFunction(()=>Boolean(liveRun.sending));
@@ -251,7 +299,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  assert(await rider.locator('#run-title').isEnabled());assert(await coach.locator('#run-title').isEnabled());
  console.log('Concurrent edits, typing preservation, delayed ACK, overlap resolution and active media passed');
  // Choosing a missing course leaves the existing draft intact with a visible retry state.
- coach.once('dialog',d=>d.accept());await coach.locator('[data-live-event]').selectOption('event-two');
+ await coach.locator('.run-workspace-setup > summary').click();coach.once('dialog',d=>d.accept());await coach.locator('[data-live-event]').selectOption('event-two');
  await coach.waitForFunction(()=>document.querySelector('.live-run-workspace').textContent.includes('no course photo'));
  assert.equal(await coach.evaluate(()=>inspect().draft.contestItemId),'event-one');
  assert.equal(await coach.evaluate(()=>inspect().draft.points.length),3);
@@ -260,14 +308,33 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  const upload={name:'park.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#345c74"/></svg>')};
  await coach.locator('#run-photo').setInputFiles(upload);await rider.waitForFunction(()=>inspect().draft.contestItemId==='event-two'&&inspect().draft.imageDataUrl.startsWith('data:image/svg+xml'));
  assert.equal(draft.contestItemId,'event-two','Upload following failed fetch uses explicitly chosen event');
- await coach.locator('[data-live-event]').selectOption('event-three');await coach.waitForFunction(()=>inspect().draft.contestItemId==='event-three'&&inspect().draft.courseSource==='upload'&&!liveRun.busy);
+ if(await coach.locator('.run-workspace-setup').count())await coach.locator('.run-workspace-setup').evaluate(el=>{el.open=true;});await coach.locator('[data-live-event]').selectOption('event-three');await coach.waitForFunction(()=>inspect().draft.contestItemId==='event-three'&&inspect().draft.courseSource==='upload'&&!liveRun.busy);
  await coach.locator('#run-photo').setInputFiles(upload);await rider.waitForFunction(()=>inspect().draft.contestItemId==='event-three'&&inspect().draft.imageDataUrl.startsWith('data:image/svg+xml'));
  assert.equal(draft.contestItemId,'event-three','Event without existing course supports the rider/coach upload');
  for(const p of [rider,coach])assert.equal(await p.evaluate(()=>inspect().draft.imageDataUrl),draft.imageDataUrl,'Compact updates preserve the same course photo on both devices');
  assert(compactResponses.some(r=>r.role==='athlete'&&r.omitted),'Rider receives image-free edit responses');
  assert(compactResponses.some(r=>r.role==='coach'&&r.omitted),'Coach receives image-free edit responses');
  assert(compactResponses.some(r=>!r.omitted),'Initial or changed course photos still load');
- await coach.click('[data-live-run-action="leave"]');await coach.waitForFunction(()=>inspect().live===null);
+ // Leaving during fullscreen shared playback stops animation and native media.
+ await coach.locator('details.run-workspace-setup').evaluate(el=>el.open=false);
+ // Changing a course correctly clears the route; draw a new route before playback.
+ await coach.locator('[data-run-mode="route"]').click();
+ await coach.locator('#run-map .run-map-content').click({position:{x:35,y:35}});
+ await coach.locator('#run-map .run-map-content').click({position:{x:135,y:120}});
+ await rider.waitForFunction(()=>inspect().draft.points.length===2);
+
+ await coach.locator('[data-live-companion-action="watch"]').click();
+ await rider.waitForFunction(()=>liveRun.companion.inspect().peerWanted);
+ await rider.locator('[data-live-companion-action="watch"]').click();
+ try { for(const p of [rider,coach])await p.waitForFunction(()=>liveRun.companion.inspect().watching); }
+ catch(error) { for(const p of [rider,coach])console.error('Shared replay state',await p.evaluate(()=>({context:liveRunCompanionContext(),companion:liveRun.companion.inspect(),points:state.runBuilder.points})));throw error; }
+ await coach.locator('[data-run-expand]').click();
+ await coach.locator('.run-fullscreen-playback [data-run-play-toggle]').click();
+ await coach.waitForFunction(()=>Boolean(state.runPlayback));
+ coach.once('dialog',dialog=>dialog.accept());
+ await coach.evaluate(()=>leaveLiveRun());await coach.waitForFunction(()=>inspect().live===null);
+ assert.equal(await coach.evaluate(()=>state.runPlayback),null,'Fullscreen shared animation stops before session teardown');
+ await coach.locator('.run-fullscreen-close').click();
  assert.equal(session.call_status,'ended');assert.equal(await coach.evaluate(()=>mediaDestroyed),1);
  await rider.waitForFunction(()=>inspect().live.session.call_status==='ended');
  assert(await rider.locator('#run-title').isDisabled());
