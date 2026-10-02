@@ -64,3 +64,24 @@ runtime assets by approximately 48 KB and eliminates its polling. This is a loca
 asset-size measurement, not a measured mobile data or FPS improvement. No new
 service or recurring cost was introduced. Physical installed iOS/Android update
 behavior still needs a real-device check; browser update behavior was tested.
+
+## Follow-up: challenge qualification matches the weekly sheet
+
+A completed five-trick sheet could show only three challenge completions because
+the rider's sheet reset on Sunday while the challenge opened on Monday Brisbane
+time. Two saved Sunday landings were excluded by that timestamp cutoff.
+
+Migration `20261002092847_qualify_challenges_by_rider_sheet_week` adds an optional
+qualification week. Configured challenges count the selected sheet within each
+rider's local Sunday-to-Sunday boundaries. This also excludes the previous sheet,
+including Saturday overseas landings that a widened Brisbane window would count.
+Unconfigured challenges retain their existing rolling timestamp rules. Public
+challenge availability and deadlines, normal points and authorization are unchanged.
+
+Only the active Dialled challenge was configured for the sheet dated 27 September.
+The affected rider's API now returns 5/5 and completed, with exactly one +5 challenge
+award and the original ten Dialled points preserved. Other rider counts are
+unchanged. Forty additional database checks cover local boundaries, DST, legacy
+rules, Perfectionist qualification, permissions, paused/disabled riders and retry
+safety. Security advisor comparison reports no new findings. This server-side fix
+is available to existing installed clients on their next challenge refresh.
