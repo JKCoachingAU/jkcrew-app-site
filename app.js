@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.150";
+const RELEASE_VERSION = "2.14.151";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.150" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.151" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2693,7 +2693,7 @@ async function setupRealtimeSync() {
     if (item.notification_type === "live_run_invite") { void refreshLiveRunInvites(); return; }
     if (item.title) {
       notify(item.title);
-      if (item.payload?.celebration === "weekly_challenge") showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: "+5 leaderboard points", message: item.body || "Challenge complete. Massive work!" });
+      if (item.payload?.celebration === "weekly_challenge") showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: item.title, message: item.body || "Challenge complete. Massive work!" });
     }
   });
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_posts" }, () => {
@@ -4428,7 +4428,7 @@ function dailyVenueGroups(assignments, interactive = false, profile = null, sele
   }).join("") : `<div class="empty">No ${escapeHtml(info.label)} assigned for this week yet.</div>`;
   return `<section class="assignment-group daily-venue-group">
     <div class="assignment-group-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description} · grouped by riding location</div></div><div class="assignment-summary-actions"><span class="category-reward-pill">${categoryRewardLabels.daily}</span><div class="category-count">${complete}/${visibleAssignments.length}</div></div></div>
-    ${interactive && state.view === "session" ? dailyTiersHtml(state.user.id, `<div class="daily-venue-stack">${body}</div>`) : `<div class="daily-venue-stack">${body}</div>`}
+    <div class="daily-venue-stack">${body}</div>
   </section>`;
 }
 
@@ -6567,6 +6567,7 @@ async function renderChallenges({ background = false } = {}) {
   const challengeTarget = Number(weeklyChallenge?.target_count || 0);
   const challengeProgress = Number(weeklyChallenge?.progress || 0);
   const challengeReward = Math.max(0, Number(weeklyChallenge?.reward_points || 5));
+  const challengeCompleted = weeklyChallenge?.completed === true;
   const isPerfectionist = weeklyChallenge?.completion_rule === "percentage_perfect";
   const challengePercent = challengeTarget ? Math.round((challengeProgress / challengeTarget) * 100) : 0;
   const pointsByRider = new Map(leaderboard.map((row) => [row.athlete_id, Number(row.weekly_points || 0)]));
@@ -6582,7 +6583,7 @@ async function renderChallenges({ background = false } = {}) {
       <div class="panel-head"><div><div class="panel-title">${escapeHtml(weeklyChallenge?.title || "Next weekly challenge")}</div><div class="panel-meta">${weeklyChallenge ? `Weekly challenge · ${challengeReward} point reward` : "Coach JK is preparing the next crew target"}</div></div>${weeklyChallenge ? `<span class="pill">${challengeProgress}/${challengeTarget}</span>` : ""}</div>
       <h2>${escapeHtml(weeklyChallenge?.description || "A fresh BMX challenge is coming soon")}</h2><p>${weeklyChallenge ? (isPerfectionist ? `Land all 10 attempts on each of your ${challengeTarget} Percentage tricks to earn ${challengeReward} extra leaderboard points.` : `Complete ${challengeTarget} ${escapeHtml(categoryInfo[weeklyChallenge.category]?.label || weeklyChallenge.category)} item${challengeTarget === 1 ? "" : "s"} from your training sheet to earn ${challengeReward} leaderboard points.`) : "Your session sheet remains available while you wait."}</p>
       <div class="xp-bar" aria-label="Weekly challenge progress"><span style="width:${challengePercent}%"></span></div>
-      ${weeklyChallenge ? `<div class="challenge-progress-copy"><strong>${challengeProgress >= challengeTarget ? `Challenge complete · +${challengeReward} pts` : `${challengeTarget - challengeProgress} to go`}</strong><span>${challengePercent}%</span></div>` : ""}
+      ${weeklyChallenge ? `<div class="challenge-progress-copy"><strong>${challengeCompleted ? `Challenge complete · +${challengeReward} pts` : challengeProgress >= challengeTarget ? "Target reached · reward not yet confirmed" : `${challengeTarget - challengeProgress} to go`}</strong><span>${challengePercent}%</span></div>` : ""}
     </section>
     <section class="panel rider-battle-arena">
       <div class="panel-head"><div><div class="panel-title">Weekly rider battles</div><div class="panel-meta">Choose 1–20 points · maximum 3 active battles</div></div><span class="pill">${activeBattleCount}/3 active</span></div>
@@ -7974,103 +7975,21 @@ function clearDailyFeatureMounts() {
   for (const mounted of dailyFeatureMounts.values()) mounted.handle.destroy?.();
   dailyFeatureMounts.clear();
 }
-async function saveDailyTierTwoDraft(athleteId, { userId = state.user?.id, view = state.view } = {}) {
-  if (state.user?.id !== userId || state.view !== view || !isCoachRole(state.profile?.role)) throw new Error("The selected rider changed. Return to their list before saving.");
-  const mounted = dailyFeatureMounts.get(`${userId}:${view}:editor:${athleteId}`);
-  if (!mounted?.host.isConnected) return false;
-  if (typeof mounted.handle.saveIfDirty !== "function") throw new Error("Refresh this page before saving Tier 2.");
-  return mounted.handle.saveIfDirty();
-}
-function dailyTierTwoHost(athleteId) {
-  return `<div data-daily-tier-two-host="${escapeHtml(athleteId)}"></div>`;
-}
-// The selected Daily tier belongs to this viewer, rider and daily cycle.
-const dailyTierSelections = new Map();
-function dailyTiersHtml(athleteId, dailyHtml) {
-  const id = `daily-tiers-${encodeURIComponent(athleteId)}`;
-  return `<div class="daily-tiers" data-daily-tiers="${escapeHtml(athleteId)}">
-    <div class="daily-tier-tabs" role="tablist" aria-label="Daily Tricks tiers" hidden>
-      <button type="button" role="tab" id="${id}-tab-1" aria-controls="${id}-panel-1" aria-selected="true" data-daily-tier-tab="1"><span class="daily-tier-tab__index" aria-hidden="true">01</span><span class="daily-tier-tab__label">Daily</span></button>
-      <button type="button" role="tab" id="${id}-tab-2" aria-controls="${id}-panel-2" aria-selected="false" tabindex="-1" data-daily-tier-tab="2"><span class="daily-tier-tab__index" aria-hidden="true">02</span><span class="daily-tier-tab__label">Tier 2</span><small data-daily-tier-status>+4</small></button>
-    </div>
-    <div id="${id}-panel-1" role="tabpanel" aria-labelledby="${id}-tab-1" data-daily-tier-panel="1">${dailyHtml}</div>
-    <div id="${id}-panel-2" role="tabpanel" aria-labelledby="${id}-tab-2" data-daily-tier-panel="2" hidden>${dailyTierTwoHost(athleteId)}</div>
-  </div>`;
-}
-function syncDailyTierTabs(host, data, { select, focus = false } = {}) {
-  const shell = host.closest('[data-daily-tiers]');
-  if (!shell) return;
-  const available = !host.hidden;
-  const key = `${state.user?.id}:${state.view}:${host.dataset.dailyTierTwoHost}`;
-  const cycle = data?.local_date || "";
-  let choice = dailyTierSelections.get(key);
-  if (!choice || choice.cycle !== cycle) choice = { cycle, tier: available ? "2" : "1" };
-  if (available && !choice.available) choice.tier = "2";
-  if (select && available) choice.tier = select;
-  if (!available) choice.tier = "1";
-  choice.available = available;
-  dailyTierSelections.set(key, choice);
-  const tabs = shell.querySelector('.daily-tier-tabs');
-  tabs.hidden = !available;
-  shell.dataset.activeTier = choice.tier;
-  shell.querySelectorAll('[data-daily-tier-tab]').forEach(button => {
-    const selected = button.dataset.dailyTierTab === choice.tier;
-    button.setAttribute('aria-selected', String(selected));
-    button.tabIndex = selected ? 0 : -1;
-    if (focus && selected) button.focus({ preventScroll: true });
-  });
-  shell.querySelectorAll('[data-daily-tier-panel]').forEach(panel => { panel.hidden = panel.dataset.dailyTierPanel !== choice.tier; });
-  const status = shell.querySelector('[data-daily-tier-status]');
-  status.textContent = data?.completed_at ? '✓ +4' : data?.total_count ? `${Number(data.completed_count) || 0}/${Number(data.total_count)}` : '+4';
-  // Rebind on the newly rendered shell, while retaining the live Tier 2 host.
-  shell.onclick = event => {
-    const button = event.target.closest('[data-daily-tier-tab]');
-    if (!button || !tabs.contains(button)) return;
-    syncDailyTierTabs(host, data, { select: button.dataset.dailyTierTab });
-  };
-  shell.onkeydown = event => {
-    const button = event.target.closest('[data-daily-tier-tab]');
-    if (!button || !tabs.contains(button) || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const tier = event.key === 'Home' ? '1' : event.key === 'End' ? '2' : button.dataset.dailyTierTab === '1' ? '2' : '1';
-    syncDailyTierTabs(host, data, { select: tier, focus: true });
-  };
-}
 function otherLandedHost(athleteId) {
   return `<div data-other-landed-host="${escapeHtml(athleteId)}"></div>`;
 }
 function dailyFeatureHosts(athleteId) {
-  return dailyTierTwoHost(athleteId) + otherLandedHost(athleteId);
-}
-function tierTwoEditorSection(athleteId) {
-  if (!athleteId || !isCoachRole(state.profile?.role)) return "";
-  return planAccordionSection("Tier 2", "Bonus Daily list · unlocks after all Daily tricks · +4 points", `<div data-tier-two-editor-host="${escapeHtml(athleteId)}"></div>`);
+  return otherLandedHost(athleteId);
 }
 function mountDailyFeatures() {
   if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) { clearDailyFeatureMounts(); return; }
   const userId = state.user?.id, view = state.view, coach = isCoachRole(state.profile?.role);
-  const selector = "[data-daily-tier-two-host], [data-other-landed-host], [data-tier-two-editor-host]";
-  document.querySelectorAll(`#view ${selector.split(", ").join(", #view ")}`).forEach(host => {
-    const type = host.hasAttribute("data-other-landed-host") ? "other" : host.hasAttribute("data-tier-two-editor-host") ? "editor" : "tier";
-    const athleteId = host.dataset.otherLandedHost || host.dataset.tierTwoEditorHost || host.dataset.dailyTierTwoHost;
-    const key = `${userId}:${view}:${type}:${athleteId}`;
+  document.querySelectorAll("#view [data-other-landed-host]").forEach(host => {
+    const athleteId = host.dataset.otherLandedHost;
+    const key = `${userId}:${view}:other:${athleteId}`;
     const previous = dailyFeatureMounts.get(key);
     if (previous) {
-      if (host !== previous.host) {
-        if (type === "editor") {
-          let oldPanel = previous.host.closest("details"), newPanel = host.closest("details");
-          while (oldPanel && newPanel) {
-            newPanel.open = oldPanel.open;
-            oldPanel = oldPanel.parentElement?.closest("details");
-            newPanel = newPanel.parentElement?.closest("details");
-          }
-        }
-        host.replaceWith(previous.host);
-      }
-      if (type === "tier") {
-        syncDailyTierTabs(previous.host, previous.handle.getState?.());
-        void previous.handle.refresh?.({eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true});
-      }
+      if (host !== previous.host) host.replaceWith(previous.host);
       return;
     }
     const isCurrent = () => state.user?.id === userId && state.view === view && host.isConnected && !riderFeaturesDisabled() && !riderFeatureAccessUnknown();
@@ -8083,57 +8002,12 @@ function mountDailyFeatures() {
         if (view === "sessionViewer") void refreshSessionViewerLight({force:true});
       });
     };
-    const opened = data => {
-      if (isCurrent()) syncDailyTierTabs(host, data, { select: "2" });
-    };
-    let handle;
-    if (type === "other") handle = window.JKCrewOtherThingsLanded?.mount({element:host,client,athleteId,role:coach ? "coach" : "rider",venue:state.selectedVenue || "",isCurrent,onChanged:changed});
-    if (type === "tier") handle = window.JKCrewDailyTierTwo?.mount(host,{client,athleteId,canEdit:coach || athleteId === userId,canReveal:!coach && athleteId === userId,eligibleHint:!coach && state.activeTraining?.daily_result?.all_completed === true,observerId:coach ? userId : null,isCurrent,onChange:changed,onOpen:opened,onRender:data=>syncDailyTierTabs(host,data)});
-    if (type === "editor" && coach) handle = window.JKCrewDailyTierTwo?.mountEditor(host,{client,athleteId,isCurrent});
+    const handle = window.JKCrewOtherThingsLanded?.mount({element:host,client,athleteId,role:coach ? "coach" : "rider",venue:state.selectedVenue || "",isCurrent,onChanged:changed});
     if (handle) dailyFeatureMounts.set(key,{host,handle,userId,view});
   });
   for (const [key,mounted] of dailyFeatureMounts) {
     if (!mounted.host.isConnected || mounted.userId !== userId || mounted.view !== view) { mounted.handle.destroy?.(); dailyFeatureMounts.delete(key); }
   }
-}
-function dailyTierTwoIsUnlocked(context) {
-  return dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`)?.handle.getState?.()?.unlocked === true;
-}
-async function refreshDailyTierTwoAfterProgress(context, { present = false } = {}) {
-  if (!dailyFinishContextIsCurrent(context) || !window.JKCrewDailyTierTwo) return false;
-  mountDailyFeatures();
-  let mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
-  if (!mounted?.host.isConnected) return false;
-  // A slow ordinary tick must not pull a coach back from another list. Only
-  // select Daily when the server confirms there is an unlocked round to show.
-  if (present && context.viewer && (state.sessionViewerOpenAthleteId !== context.athleteId || state.sessionViewerActiveList !== "daily")) {
-    const round = await mounted.handle.refresh?.();
-    if (!dailyFinishContextIsCurrent(context) || !round?.unlocked) return false;
-    state.sessionViewerOpenAthleteId = context.athleteId;
-    state.sessionViewerActiveList = "daily";
-    await renderSessionViewer();
-    if (!dailyFinishContextIsCurrent(context)) return false;
-    mountDailyFeatures();
-    mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
-    if (!mounted?.host.isConnected) return false;
-  }
-  // The server decides whether a previously saved partial Daily is now a full
-  // checklist. Never rewrite that receipt or infer eligibility from local ticks.
-  if (present) return !!(await mounted.handle.present?.({ celebrate: true }));
-  await mounted.handle.refresh?.();
-  return false;
-}
-async function showDailyTierTwoAfterFinish(result, context, { celebrate = false } = {}) {
-  if (result?.all_completed !== true || !dailyFinishContextIsCurrent(context) || !window.JKCrewDailyTierTwo) return false;
-  if (context.viewer && (state.sessionViewerOpenAthleteId !== context.athleteId || state.sessionViewerActiveList !== "daily")) {
-    state.sessionViewerOpenAthleteId = context.athleteId;
-    state.sessionViewerActiveList = "daily";
-    await renderSessionViewer();
-  }
-  if (!dailyFinishContextIsCurrent(context)) return false;
-  mountDailyFeatures();
-  const mounted = dailyFeatureMounts.get(`${context.userId}:${context.view}:tier:${context.athleteId}`);
-  return !!(await mounted?.handle.present?.({ celebrate }));
 }
 const dailyFeatureObserver = new MutationObserver(() => {
   clearTimeout(dailyFeatureObserver.timer);
@@ -12140,7 +12014,7 @@ function sessionViewerPlanList(entry, activeGroupSession) {
   }).join("");
   return `<div class="viewer-inline-list viewer-list-tone-${activeList}" id="viewer-plan-${escapeHtml(entry.athlete.id)}" data-viewer-plan="${escapeHtml(entry.athlete.id)}">
     <div class="viewer-list-tabs" role="group" aria-label="Rider trick lists">${tabs}</div>
-    <div data-viewer-daily-pane ${activeList === "daily" ? "" : "hidden"}>${dailyTiersHtml(entry.athlete.id, activeList === "daily" ? sessionViewerListContent(entry, activeGroupSession, "daily") : "")}</div>
+    <div data-viewer-daily-pane ${activeList === "daily" ? "" : "hidden"}>${activeList === "daily" ? sessionViewerListContent(entry, activeGroupSession, "daily") : ""}</div>
     ${activeList && activeList !== "daily" ? sessionViewerListContent(entry, activeGroupSession, activeList) : !activeList ? `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>` : ""}
     ${otherLandedHost(entry.athlete.id)}
   </div>`;
@@ -12203,7 +12077,6 @@ function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
       </div>`}
       <button class="primary-btn compact-save-btn" type="submit">Save ${escapeHtml(info.label)}</button>
     </form>
-    ${listId === "daily" ? tierTwoEditorSection(entry.athlete.id) : ""}
   </details>`;
 }
 
@@ -12555,7 +12428,6 @@ async function saveSessionViewerAssignments(event) {
     .slice(0, listId === "percentage" ? 3 : undefined);
 
   try {
-    const tierTwoSaved = listId === "daily" && await saveDailyTierTwoDraft(athleteId, { userId, view });
     if (!isCurrent()) return;
     const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
     const info = categoryDisplayInfo(listId, athlete);
@@ -12570,7 +12442,7 @@ async function saveSessionViewerAssignments(event) {
     if (!isCurrent()) return;
     if (error) throw error;
     clearCoachCaches({ roster: false, command: true, sessionViewer: true, leaderboard: false });
-    notify(`${info.label}${tierTwoSaved ? " and Tier 2" : ""} saved for this rider.`);
+    notify(`${info.label} saved for this rider.`);
     await refreshSessionViewerLight({ force: true });
   } catch (error) {
     if (!isCurrent()) return;
@@ -14819,7 +14691,7 @@ async function renderStudentProfile() {
       <button class="danger-btn compact-btn" type="button" data-unlink-parent="${parent.id}">Unlink</button>
     </div>
   `).join("") : `<div class="empty">No parent viewers linked yet.</div>`;
-  const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete, tierTwoAthleteId: athlete.id });
+  const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete });
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
   const scoreXp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
@@ -15052,7 +14924,6 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
       <div class="venue-edit-panels">${dailyVenueEditors}</div>
       ${customVenueEditor}
     </div>`)}
-    ${options.tierTwoAthleteId ? tierTwoEditorSection(options.tierTwoAthleteId) : ""}
     ${otherCategoryEditor}
   </div>`;
 }
@@ -15089,7 +14960,6 @@ async function saveWeeklyAssignments(event) {
   button.disabled = true;
   button.textContent = "Saving...";
   try {
-    const tierTwoSaved = await saveDailyTierTwoDraft(athleteId, { userId, view });
     if (!isCurrent()) return;
     const { error } = await withTimeout(client.rpc("save_weekly_assignments", {
       p_athlete_id: athleteId,
@@ -15106,7 +14976,7 @@ async function saveWeeklyAssignments(event) {
       return;
     }
 
-    notify(tierTwoSaved ? "Weekly schedule and Tier 2 saved for this student." : "Weekly schedule saved for this student.");
+    notify("Weekly schedule saved for this student.");
     button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {
@@ -15140,7 +15010,6 @@ async function saveDailyVenueFromStudentProfile(event) {
   button.textContent = "Saving...";
 
   try {
-    const tierTwoSaved = await saveDailyTierTwoDraft(athleteId, { userId, view });
     if (!isCurrent()) return;
     const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
       p_athlete_id: athleteId,
@@ -15176,7 +15045,7 @@ async function saveDailyVenueFromStudentProfile(event) {
     state.coachPlanVenue = venueName;
     clearCoachCaches();
     state.sessionViewerPlanMemory = null;
-    notify(`${venueName} Daily Tricks${tierTwoSaved ? " and Tier 2" : ""} saved.`);
+    notify(`${venueName} Daily Tricks saved.`);
     button.textContent = "Saved";
     await renderStudentProfile();
   } catch (error) {

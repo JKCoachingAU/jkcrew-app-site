@@ -7,7 +7,7 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const names = ['renderShell', 'navigate', 'resetPageExpansions', 'dailyVenueGroups', 'dailyTiersHtml', 'assignmentGroups', 'bindDailyVenueAccordions', 'bindSessionAssignmentAccordions', 'commandAccordionSection', 'planAccordionSection', 'activeSessionViewerList', 'sessionViewerPlanList', 'selectViewerListTab'];
+const names = ['renderShell', 'navigate', 'resetPageExpansions', 'dailyVenueGroups',  'assignmentGroups', 'bindDailyVenueAccordions', 'bindSessionAssignmentAccordions', 'commandAccordionSection', 'planAccordionSection', 'activeSessionViewerList', 'sessionViewerPlanList', 'selectViewerListTab'];
 const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 (async () => {
   const browser = await chromium.launch({headless: true, executablePath: process.env.JKCREW_BROWSER_PATH});
@@ -36,7 +36,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       window.messageFrom = error => error.message;
       window.categoryDisplayInfo = category => ({label: category, description: 'Training list'});
       window.categoryRewardLabels = {};
-      window.dailyTierTwoHost = window.otherLandedHost = () => '';
+      window.otherLandedHost = () => '';
       window.dailyVenues = assignments => [...new Set(assignments.map(item => item.venue))];
       window.venueIdentityKey = window.venueLabel = value => value;
       window.assignmentsForVenue = (items, venue) => items.filter(item => item.venue === venue);
