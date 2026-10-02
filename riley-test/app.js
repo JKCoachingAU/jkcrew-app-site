@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.151";
+const RELEASE_VERSION = "2.14.152";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.151" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.152" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1996,7 +1996,7 @@ function renderShell() {
 async function refreshBoardChatUnread() {
   if (!state.user?.id || state.view === "board") return updateBoardChatNavBadge(0);
   const lastSeen = localStorage.getItem(CHAT_LAST_SEEN_KEY) || new Date(0).toISOString();
-  const { count, error } = await client.from("crew_posts").select("id", { count: "exact", head: true }).in("post_type", ["chat", "announcement"]).gt("created_at", lastSeen);
+  const { count, error } = await client.from("crew_posts").select("id", { count: "exact", head: true }).in("post_type", ["chat", "announcement"]).or(crewChatEventFilter()).gt("created_at", lastSeen);
   if (!error) updateBoardChatNavBadge(Number(count || 0));
 }
 
@@ -2696,7 +2696,8 @@ async function setupRealtimeSync() {
       if (item.payload?.celebration === "weekly_challenge") showAchievementCelebration({ kind: "challenge", eyebrow: "Weekly challenge complete", title: item.title, message: item.body || "Challenge complete. Massive work!" });
     }
   });
-  channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_posts" }, () => {
+  channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_posts" }, (payload) => {
+    if (!isVisibleCrewChatPost(payload.new || {})) return;
     if (state.view === "board") renderBoard();
     else refreshBoardChatUnread();
   });
@@ -3451,20 +3452,34 @@ async function getCoachContestRunPlans(eventIds = [], roster = []) {
 async function getCrewFeed() {
   const { data, error } = await client.rpc("get_crew_feed");
   if (error) throw error;
-  return data || [];
+  return (data || []).filter((post) => post.feed_type !== "landed" && isVisibleCrewChatPost({ ...post, post_type: post.feed_type }));
+}
+
+const CREW_CHAT_MILESTONE_EVENTS = ["rank_one", "leaderboard_overtake", "challenge_complete", "battle_result"];
+
+function crewChatEventFilter() {
+  // Filter on the server before the message limit and use the same rule for unread counts.
+  return `metadata->>event_type.is.null,metadata->>event_type.in.(${CREW_CHAT_MILESTONE_EVENTS.join(",")})`;
+}
+
+function isVisibleCrewChatPost(post = {}) {
+  if (!["chat", "announcement"].includes(post.post_type)) return false;
+  const eventType = post.metadata?.event_type;
+  return eventType == null || CREW_CHAT_MILESTONE_EVENTS.includes(eventType);
 }
 
 async function getBoardChat() {
   const { data: posts, error } = await client.from("crew_posts")
     .select("*, profiles:author_id(display_name, avatar)")
     .in("post_type", ["chat", "announcement"])
+    .or(crewChatEventFilter())
     .order("created_at", { ascending: false })
     .limit(60);
   if (error) throw error;
   const weekStart = new Date(weekStartDate());
   const visiblePosts = (posts || []).filter((post) => {
     const metadata = post.metadata || {};
-    return (String(post.body || "").trim() || metadata.media_path) && (metadata.pinned || new Date(post.created_at) >= weekStart);
+    return isVisibleCrewChatPost(post) && (String(post.body || "").trim() || metadata.media_path) && (metadata.pinned || new Date(post.created_at) >= weekStart);
   });
   const postIds = visiblePosts.map((post) => post.id);
   const { data: reactions, error: reactionError } = postIds.length
@@ -8849,12 +8864,12 @@ async function renderAthleteCrew() {
   const leader = leaderboard[0];
   const orderedFeed = [...feed].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   const feedHtml = orderedFeed.length ? orderedFeed.map((item) => `
-    <article class="feed-card chat-message ${item.author_id === state.user.id ? "mine" : ""} ${item.feed_type === "landed" ? "activity" : ""}">
+    <article class="feed-card chat-message ${item.author_id === state.user.id ? "mine" : ""}">
       ${avatarHtml({ display_name: item.author_name, avatar: item.avatar })}
       <div class="chat-bubble"><strong>${escapeHtml(item.author_name || "JKCREW")}</strong><p>${escapeHtml(item.body)}${item.points ? ` · +${item.points} pts` : ""}</p><small>${dateLabel(item.created_at)}</small></div>
     </article>`).join("") : `<div class="empty">No crew activity yet.</div>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and see live notifications when someone moves up or lands a trick.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Crew live</div><h1>JKCREW <span>feed</span></h1><p>Chat with the crew and catch leaderboard overtakes, new leaders, completed weekly challenges and battle results.</p></div></div>
     ${leader ? `<section class="panel leader-alert"><div class="live-dot"></div><div><div class="panel-title">Current leader: ${escapeHtml(leader.display_name)}</div><div class="panel-meta">${leader.weekly_points} points this week · new leaders show here</div></div></section>` : ""}
     <section class="panel crew-chat-panel">
       <div class="panel-head"><div><div class="panel-title">Group chat</div><div class="panel-meta">Newest messages first</div></div></div>
