@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.152";
+const RELEASE_VERSION = "2.14.153";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.152" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.153" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8932,7 +8932,7 @@ function contestDateTimeInputValue(value = "") {
 }
 
 function contestEventCardsHtml(events = [], runs = [], attendance = [], roster = [], viewOptions = {}) {
-  if (!events.length) return `<div class="contest-empty"><strong>No upcoming events yet</strong><span>Add the first event below. It will then be available to the whole crew.</span></div>`;
+  if (!events.length) return `<div class="contest-empty"><strong>No upcoming events yet</strong><span>${isCoachRole(state.profile?.role) ? "Tap + above to add an event for the crew." : state.profile?.role === "parent" ? "New crew events will appear here." : "Add the first event below. It will then be available to the whole crew."}</span></div>`;
   const parentView = Boolean(viewOptions.parentView || state.profile?.role === "parent");
   const athleteView = state.profile?.role === "athlete" && !parentView;
   const coachView = isCoachRole(state.profile?.role) && !parentView;
@@ -8958,14 +8958,36 @@ function contestEventCardsHtml(events = [], runs = [], attendance = [], roster =
 }
 
 function sharedContestEventFormHtml(events = []) {
+  const coachView = isCoachRole(state.profile?.role);
   return `<form id="shared-contest-event-form" class="shared-contest-event-form">
     <div class="field"><label for="shared-event-title">Event name</label><input id="shared-event-title" name="title" list="shared-event-titles" required maxlength="120" placeholder="C1 Gold Coast, Urban Session Brussels..."><datalist id="shared-event-titles">${events.map((item) => `<option value="${escapeHtml(item.title)}"></option>`).join("")}</datalist></div>
     <div class="field"><label for="shared-event-venue">Location / details</label><input id="shared-event-venue" name="details" maxlength="180" placeholder="Gold Coast, Brussels, park name..."></div>
     <div class="field"><label for="shared-event-start">Starts</label><input id="shared-event-start" name="dueAt" type="datetime-local" required></div>
     <div class="field"><label for="shared-event-end">Ends</label><input id="shared-event-end" name="endAt" type="datetime-local"></div>
-    <button class="primary-btn" type="submit">ADD EVENT + MARK ME GOING</button>
-    <small>Search the shared events above first. If it already exists, just tap “I'm going” instead of making it again.</small>
+    <button class="primary-btn" type="submit">${coachView ? "ADD EVENT" : "ADD EVENT + MARK ME GOING"}</button>
+    <small>${coachView ? "Visible to the whole crew. You can manage attendance and add a course photo after saving." : "Search the shared events above first. If it already exists, just tap “I'm going” instead of making it again."}</small>
+    <p class="shared-event-form-error" role="alert" hidden></p>
   </form>`;
+}
+
+function openCoachCreateEvent(events = []) {
+  if (!isCoachRole(state.profile?.role) || document.querySelector("#coach-create-event")) return;
+  const trigger = document.querySelector("#add-contest-event");
+  const dialog = document.createElement("dialog");
+  dialog.id = "coach-create-event";
+  dialog.className = "contest-event-modal contest-create-dialog";
+  dialog.setAttribute("aria-labelledby", "create-event-title");
+  dialog.innerHTML = `<header class="contest-event-modal-head"><div><div class="eyebrow">JKCREW event list</div><h2 id="create-event-title">Add an event</h2><p>Create a shared event for the crew.</p></div><button class="contest-event-modal-close" type="button" aria-label="Close add event">×</button></header>${sharedContestEventFormHtml(events)}`;
+  const form = dialog.querySelector("form");
+  const closeButton = dialog.querySelector(".contest-event-modal-close");
+  closeButton.addEventListener("click", () => { if (form.dataset.saving !== "true") dialog.close(); });
+  dialog.addEventListener("cancel", (event) => { if (form.dataset.saving === "true") event.preventDefault(); });
+  dialog.addEventListener("keydown", (event) => { if (event.key === "Escape" && form.dataset.saving === "true") event.preventDefault(); });
+  dialog.addEventListener("close", () => { dialog.remove(); if (trigger?.isConnected) trigger.focus(); }, { once: true });
+  form.addEventListener("submit", saveSharedContestEvent);
+  document.body.append(dialog);
+  dialog.showModal();
+  dialog.querySelector("#shared-event-title").focus();
 }
 
 function coachEventAttendanceEditorHtml(item = {}, attendees = [], roster = []) {
@@ -9420,27 +9442,39 @@ async function saveCoachEventAttendance(event) {
 
 async function saveSharedContestEvent(event) {
   event.preventDefault();
-  if (state.profile?.role !== "athlete") return notify("Only rider accounts can add shared events.", "error");
+  const coachView = isCoachRole(state.profile?.role);
+  if (!coachView && state.profile?.role !== "athlete") return notify("Only riders and coaches can add shared events.", "error");
   const formElement = event.currentTarget;
+  const dialog = formElement.closest("dialog");
+  if (formElement.dataset.saving === "true") return;
+  const errorElement = formElement.querySelector(".shared-event-form-error");
+  const showError = (message) => {
+    if (errorElement?.isConnected && (!dialog || dialog.open)) { errorElement.textContent = message; errorElement.hidden = false; }
+    else notify(message, "error");
+  };
+  if (errorElement) errorElement.hidden = true;
   const form = new FormData(formElement);
   const title = String(form.get("title") || "").trim();
   const details = String(form.get("details") || "").trim();
   const dueValue = String(form.get("dueAt") || "");
   const endValue = String(form.get("endAt") || "");
-  if (!title || !dueValue) return notify("Add the event name and start date.", "error");
+  if (!title || !dueValue) return showError("Add the event name and start date.");
   const dueAt = new Date(dueValue);
   const endAt = endValue ? new Date(endValue) : null;
-  if (Number.isNaN(dueAt.getTime()) || (endAt && Number.isNaN(endAt.getTime()))) return notify("Check the event dates.", "error");
-  if (endAt && endAt < dueAt) return notify("The event finish must be after it starts.", "error");
-  if ((endAt || new Date(dueAt.getTime() + (24 * 60 * 60 * 1000))) < new Date()) return notify("That event has already finished.", "error");
+  if (Number.isNaN(dueAt.getTime()) || (endAt && Number.isNaN(endAt.getTime()))) return showError("Check the event dates.");
+  if (endAt && endAt < dueAt) return showError("The event finish must be after it starts.");
+  if ((endAt || new Date(dueAt.getTime() + (24 * 60 * 60 * 1000))) < new Date()) return showError("That event has already finished.");
   const button = formElement.querySelector("button[type='submit']");
-  const restore = setButtonBusy(button, "CHECKING EVENTS...");
+  formElement.dataset.saving = "true";
+  const closeButton = dialog?.querySelector(".contest-event-modal-close");
+  if (closeButton) closeButton.disabled = true;
+  const restore = setButtonBusy(button, "SAVING EVENT...");
   try {
     let createdNew = false;
-    let { events } = await getSharedUpcomingEventData();
+    let { events } = await withTimeout(getSharedUpcomingEventData(), "Loading events", 15000);
     let sharedEvent = events.find((item) => normalizeContestEventTitle(item.title) === normalizeContestEventTitle(title) && contestEventDay(item.due_at) === contestEventDay(dueAt));
     if (!sharedEvent) {
-      const { data, error } = await client.from("dashboard_items").insert({
+      const { data, error } = await withTimeout(client.from("dashboard_items").insert({
         owner_id: state.user.id,
         created_by: state.user.id,
         item_type: "event",
@@ -9448,9 +9482,9 @@ async function saveSharedContestEvent(event) {
         details: details.slice(0, 180),
         due_at: dueAt.toISOString(),
         end_at: endAt ? endAt.toISOString() : null,
-      }).select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at").single();
+      }).select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at").single(), "Saving event", 15000);
       if (error?.code === "23505") {
-        ({ events } = await getSharedUpcomingEventData());
+        ({ events } = await withTimeout(getSharedUpcomingEventData(), "Loading events", 15000));
         sharedEvent = events.find((item) => normalizeContestEventTitle(item.title) === normalizeContestEventTitle(title) && contestEventDay(item.due_at) === contestEventDay(dueAt));
       } else if (error) throw error;
       else {
@@ -9459,12 +9493,19 @@ async function saveSharedContestEvent(event) {
       }
     }
     if (!sharedEvent?.id) throw new Error("That event may already exist. Search the shared list and tap “I'm going”.");
-    await setContestAttendance(sharedEvent.id, true);
-    notify(createdNew ? "Event added for the crew and you're marked as going." : "That event already exists — you're now marked as going.");
+    if (!coachView) await withTimeout(setContestAttendance(sharedEvent.id, true), "Saving attendance", 15000);
+    cacheClear("coach-command:");
+    dialog?.close();
+    notify(coachView
+      ? (createdNew ? "Event added to Upcoming Events." : "That event is already in Upcoming Events.")
+      : (createdNew ? "Event added for the crew and you're marked as going." : "That event already exists — you're now marked as going."));
     await renderContests();
   } catch (error) {
+    showError(messageFrom(error));
+  } finally {
+    delete formElement.dataset.saving;
+    if (closeButton) closeButton.disabled = false;
     restore();
-    notify(messageFrom(error), "error");
   }
 }
 
@@ -10659,12 +10700,13 @@ async function renderContests() {
     <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : parentView ? "Family event view · Read only" : "Events & private planning"}</div><h1>${parentView ? "Upcoming" : "Events &"} <span>${parentView ? "events" : "runs"}</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : parentView ? `The same event list ${escapeHtml(firstName(viewedAthlete))} sees. Open an event to view who is going and the shared course photo.` : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
     ${athleteView ? riderSavedRunsHtml(activeRuns) : ""}
     <section class="panel shared-events-panel athlete-event-palette">
-      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><h2>Upcoming events</h2><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : parentView ? `Read-only event access for ${escapeHtml(firstName(viewedAthlete))}. Private rider run plans are not displayed.` : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
+      <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><div class="shared-events-title"><h2>Upcoming events</h2>${coachView ? `<button id="add-contest-event" class="contest-event-add" type="button" aria-label="Add new event" title="Add new event" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ""}</div><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : parentView ? `Read-only event access for ${escapeHtml(firstName(viewedAthlete))}. Private rider run plans are not displayed.` : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
       ${contestEventCardsHtml(events, runs, attendance, roster, viewOptions)}
     </section>
     ${state.runBuilder ? runBuilderPanel([], { live: true, showRunList: false }) : ""}
     ${athleteView ? closedPanelAccordion("Your private run plans", `${activeRuns.length} active · hidden from other riders`, `<div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private planning</strong><p>Only your own saved runs load here. Event attendance never exposes your route or tricks.</p></div></div><div class="run-list">${runPlansHtml(runs)}</div>`, "contest-run-library") : ""}
     ${athleteView ? closedPanelAccordion("Add an event", "Can't find it above? Create it once for the whole crew", sharedContestEventFormHtml(events), "shared-event-create") : ""}`;
+  document.querySelector("#add-contest-event")?.addEventListener("click", () => openCoachCreateEvent(events));
   document.querySelector("#open-run-builder")?.addEventListener("click", openRunBuilder);
   document.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", openRunBuilder));
   bindContestEventActions(events, attendance, runs, roster, viewOptions);

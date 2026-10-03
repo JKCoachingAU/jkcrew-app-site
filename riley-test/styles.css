@@ -4290,6 +4290,24 @@ html.coaching-viewer-open body { overflow: hidden; }
   margin-bottom: 14px;
 }
 .shared-events-head h2 { margin: 3px 0 4px; font-size: clamp(1.55rem, 3vw, 2.2rem); text-transform: uppercase; }
+.shared-events-title { display: flex; align-items: center; gap: 12px; }
+.contest-event-add {
+  display: grid; place-items: center; flex: 0 0 44px;
+  width: 44px; height: 44px; padding: 10px;
+  border: 1px solid var(--aqua); border-radius: 12px;
+  background: rgba(0, 212, 197, 0.12); color: var(--aqua); cursor: pointer;
+}
+.contest-event-add svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.contest-event-add:hover { background: rgba(0, 212, 197, 0.24); }
+.contest-event-add:focus-visible { outline: 3px solid var(--aqua); outline-offset: 3px; }
+.contest-create-dialog { padding: 0; color: var(--text); }
+.contest-create-dialog::backdrop { background: rgba(0, 3, 7, 0.8); }
+.contest-create-dialog .shared-contest-event-form { padding: 20px; }
+.shared-event-form-error { grid-column: 1 / -1; margin: 0; color: #ff8ba0; font-size: 0.9rem; }
+@media (max-width: 520px) {
+  .contest-create-dialog .shared-contest-event-form { grid-template-columns: minmax(0, 1fr); }
+  .contest-create-dialog input { min-width: 0; width: 100%; font-size: 16px; }
+}
 .shared-events-head p { margin: 0; color: var(--muted); line-height: 1.42; }
 .contest-event-search {
   flex: 0 1 280px;
