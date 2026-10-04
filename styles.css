@@ -4133,6 +4133,7 @@ html.coaching-viewer-open body { overflow: hidden; }
 .run-bend-control { display: grid; gap: 7px; color: var(--muted); font: 800 0.63rem var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
 .run-bend-control > div { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; gap: 9px; }
 .run-bend-control input { width: 100%; accent-color: var(--aqua); }
+.run-bend-control input[type="range"] { min-height: 44px; touch-action: none; }
 .run-bend-control output { display: grid; min-height: 34px; place-items: center; border-radius: 10px; color: var(--yellow); background: rgba(247,209,84,0.08); }
 .run-bend-control-mobile { display: none; }
 .run-playback-controls {
@@ -11727,6 +11728,10 @@ html[data-theme="light"] .coach-shell .sidebar .nav-sub-btn:hover { color: #1323
 .run-segment-editor > small { color: var(--muted, #a7b6bb); }
 .run-segment-editor input { font-size: 18px; min-height: 44px; padding: 8px; border: 1px solid #20e3c370; border-radius: 9px; color: #fff; background: #031013; }
 .run-segment-editor [data-run-segment-total] { font-size: 14px; }
+.run-segment-bend { padding-top: 12px; border-top: 1px solid #20e3c330; }
+.run-segment-bend > span { color: var(--aqua); font-size: .75rem; }
+.run-segment-bend small { font: 400 .8rem var(--body); letter-spacing: 0; text-transform: none; }
+.run-segment-bend input[type="range"] { padding: 0; border: 0; background: transparent; }
 
 .run-duplicate-dialog { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid #20e3c380; border-radius: 20px; background: #09191c; color: #fff; }
 .run-duplicate-dialog::backdrop { background: #000b; }

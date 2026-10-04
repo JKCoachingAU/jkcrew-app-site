@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','runTiming','runTimedPosition','runPlaybackDefaultSeconds','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTimingRowHtml','runTimingEditorHtml','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runPointColor','runView','runPathBetween','runRouteSvg','runMapHtml','runBuilderStage','runBuilderTrickEditorHtml','updateRunTiming','bindRunBuilderActions','addRunBuilderPoint','updateRunBuilderMapDom','syncRunPhotoFrame','cloneRunDialogPreview','runPlaybackControlsHtml','formatRunPlaybackTime','runPlaybackSurface','paintRunPlayback','positionRunTrickLabel','setRunPlaybackDuration','rememberRunEdit','restoreRunEdit'];
+const names=['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','runTiming','runTimedPosition','runPlaybackDefaultSeconds','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTimingRowHtml','runTimingEditorHtml','bindRunBendControls','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runPointColor','runView','runPathBetween','runRouteSvg','runMapHtml','runBuilderStage','runBuilderTrickEditorHtml','updateRunTiming','bindRunBuilderActions','updateSelectedRunPoint','addRunBuilderPoint','updateRunBuilderMapDom','syncRunPhotoFrame','cloneRunDialogPreview','runPlaybackControlsHtml','formatRunPlaybackTime','runPlaybackSurface','paintRunPlayback','positionRunTrickLabel','setRunPlaybackDuration','rememberRunEdit','restoreRunEdit'];
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 (async()=>{
@@ -11,7 +11,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="host" style="padding:16px;max-width:1000px;margin:auto"></main>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
  await page.addScriptTag({content:`
- let editable=true;const liveRunCanEdit=()=>editable,bindLiveRunControls=()=>{},bindRiderSavedRuns=()=>{},bindRunPlaybackControls=()=>{},stopRunPlayback=()=>{};
+ let liveRun=null;let editable=true;const liveRunCanEdit=()=>editable,bindLiveRunControls=()=>{},bindRiderSavedRuns=()=>{},bindRunPlaybackControls=()=>{},stopRunPlayback=()=>{};
  const state={draggedRunPoint:null,runPointMapClickBlockUntil:0,runBuilder:{stage:'tricks',selectedPointIndex:3,points:[{x:10,y:15,travelSeconds:2},{x:80,y:15,travelSeconds:3},{x:80,y:45,travelSeconds:7},{x:15,y:45,travelSeconds:10,holdSeconds:2,label:'Manual'},{x:15,y:80,travelSeconds:12,label:'Barspin'},{x:80,y:80}]}};
  let runUndoStack=[],runRedoStack=[];const currentRunFormState=()=>({...state.runBuilder});const RUN_PLAYBACK_MAX_SECONDS=3600;
  const escapeHtml=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
@@ -27,7 +27,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  // Tap an actual rendered curve, not a synthetic event or its bounding-box corner.
  const tap=async locator=>{await locator.scrollIntoViewIfNeeded();const p=await locator.evaluate(el=>{const p=el.getPointAtLength(el.getTotalLength()/2);return new DOMPoint(p.x,p.y).matrixTransform(el.getScreenCTM()).toJSON();});await page.touchscreen.tap(p.x,p.y);};
  await tap(hit);
- const panel=page.locator('[data-run-segment-editor]'),input=panel.locator('input');
+ const panel=page.locator('[data-run-segment-editor]'),input=panel.locator('input[type=number]');
  assert(await panel.isVisible());assert.equal(await panel.locator('.run-segment-heading strong').innerText(),'Dot 4 → Dot 5');
  assert.equal(await input.inputValue(),'10');assert((await panel.innerText()).includes('Manual → Barspin'));
  assert.equal((await page.evaluate(()=>inspect())).points.length,6,'Line taps never add dots');
@@ -42,9 +42,9 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  assert.deepEqual(playback.map(x=>x.position),[3,3.5,4]);
  assert(Math.abs(playback[1].x-15)<.01&&Math.abs(playback[1].y-62.5)<.1,'Playhead is halfway along the correct physical line after half its time');
  // Touch +/- repeatedly without remounting inputs or resetting selected dots/zoom.
- await input.scrollIntoViewIfNeeded();await page.evaluate(()=>{window.originalInput=document.querySelector('[data-run-segment-editor] input');window.scale=visualViewport.scale;});
+ await input.scrollIntoViewIfNeeded();await page.evaluate(()=>{window.originalInput=document.querySelector('[data-run-segment-editor] input[type=number]');window.scale=visualViewport.scale;});
  for(let i=0;i<5;i++)await panel.getByRole('button',{name:'Increase travel time',exact:true}).tap();
- assert.equal(await input.inputValue(),'12');assert.equal(await page.evaluate(()=>originalInput===document.querySelector('[data-run-segment-editor] input')&&scale===visualViewport.scale),true);
+ assert.equal(await input.inputValue(),'12');assert.equal(await page.evaluate(()=>originalInput===document.querySelector('[data-run-segment-editor] input[type=number]')&&scale===visualViewport.scale),true);
  assert.equal((await page.evaluate(()=>inspect())).selectedPointIndex,3);
  assert.equal(await page.locator('[data-run-playback-controls]').getAttribute('data-run-playback-seconds'),'38');
  assert((await panel.locator('[data-run-segment-total]').innerText()).includes('38s planned'));
@@ -56,7 +56,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  // Newly loaded saved point JSON retains timing on its source dot.
  await page.evaluate(()=>{state.runBuilder.points=JSON.parse(JSON.stringify(state.runBuilder.points));render();});assert.equal(await input.inputValue(),'9.5');
  // Read-only live participants cannot change travel times even through an input event.
- await page.evaluate(()=>{editable=false;const input=document.querySelector('[data-run-segment-editor] input');input.value='40';input.dispatchEvent(new Event('input'));});assert.equal((await page.evaluate(()=>inspect())).points[3].travelSeconds,9.5);
+ await page.evaluate(()=>{editable=false;const input=document.querySelector('[data-run-segment-editor] input[type=number]');input.value='40';input.dispatchEvent(new Event('input'));});assert.equal((await page.evaluate(()=>inspect())).points[3].travelSeconds,9.5);
  await page.evaluate(()=>{editable=true;render();});
  // Hit areas follow a moved/bent dot. The visible route still has exactly five playback paths.
  await page.evaluate(()=>{state.runBuilder.points[4].x=30;state.runBuilder.points[4].bend=35;updateRunBuilderMapDom(4);});

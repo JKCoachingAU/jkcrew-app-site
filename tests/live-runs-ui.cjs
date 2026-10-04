@@ -9,7 +9,7 @@ const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const names=[...new Set([
  ...fs.readFileSync(path.join(__dirname,'run-framing.cjs'),'utf8').match(/const names = (\[[^;]+\]);/)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]))];
-names.push(...['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','updateRunFinalType','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy','setRunBuilderPhoto','runPhotoToDataUrl','fileToDataUrl'].filter(n=>!names.includes(n)));
+names.push(...['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','bindRunBendControls','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','currentRunFormState','refreshMountedRunBuilder','runBuilderRefreshView','runBuilderPanel','runBuilderStepsHtml','runBuilderRouteEditorHtml','runBuilderPlaybackEditorHtml','runTimingEditorHtml','updateRunFinalType','bindRunBuilderActions','runBuilderLoadingHtml','updateRunBuilderTrick','updateRunTiming','updateSelectedRunPoint','rememberRunEdit','restoreRunEdit','setRunBuilderStage','selectRunPoint','startRunPointDrag','stopRunPointDrag','focusRunBuilderTrick','deleteSelectedRunPoint','clearRunBuilder','withTimeout','setButtonBusy','setRunBuilderPhoto','runPhotoToDataUrl','fileToDataUrl'].filter(n=>!names.includes(n)));
 names.push('runBuilderPhotoSetupHtml');
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('function runBuilderLoadingHtml('));
@@ -224,10 +224,21 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  const timingLine=coach.locator('[data-edit-run-segment="1"]');await timingLine.scrollIntoViewIfNeeded();
  const lineMiddle=await timingLine.evaluate(el=>{const p=el.getPointAtLength(el.getTotalLength()/2);return new DOMPoint(p.x,p.y).matrixTransform(el.getScreenCTM()).toJSON();});
  await coach.touchscreen.tap(lineMiddle.x,lineMiddle.y);
- const lineTime=coach.locator('[data-run-segment-editor] input');
+ const lineTime=coach.locator('[data-run-segment-editor] input[type=number]');
  await lineTime.fill('12');await lineTime.press('Tab');
  assert.equal(await coach.locator('.run-timing-row [data-run-time-index="1"][data-run-time-key="travelSeconds"]').inputValue(),'12');
  try { await rider.waitForFunction(()=>inspect().draft.points[1].label==='Barspin'&&inspect().draft.points[1].travelSeconds===12); } catch(e) { console.log('SYNC DEBUG',JSON.stringify({rider:await rider.evaluate(()=>inspect()),coach:await coach.evaluate(()=>inspect()),requests:requests.slice(-8)},null,2));throw e; }
+ // Curve edits use the line endpoint, sync both ways, and survive the later shared save.
+ const curve=coach.locator('[data-run-segment-editor] [data-run-bend-index="2"]');
+ await curve.focus();await curve.press('End');
+ await rider.waitForFunction(()=>inspect().draft.points[2].bend===100);
+ await rider.locator('[data-edit-run-segment="1"]').focus();await rider.keyboard.press('Enter');
+ const riderCurve=rider.locator('[data-run-segment-editor] [data-run-bend-index="2"]');
+ assert.equal(await riderCurve.inputValue(),'100');
+ await riderCurve.focus();await riderCurve.press('ArrowLeft');
+ await coach.waitForFunction(()=>inspect().draft.points[2].bend===99);
+ assert.equal(await curve.inputValue(),'99','Remote curve updates reach the already-open line editor');
+ assert.equal(await coach.locator('[data-run-segment="3"]').getAttribute('d'),await rider.locator('[data-run-segment="3"]').getAttribute('d'),'Both participants see the same curve');
  assert(await rider.locator('#run-title').isEnabled(),'Rider remains an editor while the coach edits');
  await coach.click('[data-run-dot-step="1"]');await coach.locator('[data-run-final-type]').selectOption('trick');await coach.fill('[data-run-trick-index="2"]','Flair');await coach.fill('[data-run-time-index="2"][data-run-time-key="holdSeconds"]','3');
  await rider.waitForFunction(()=>inspect().draft.points[2].isTrick&&inspect().draft.points[2].label==='Flair'&&inspect().draft.points[2].holdSeconds===3);
@@ -265,6 +276,7 @@ const liveCode=app.slice(app.indexOf('// Live run collaboration:'),app.indexOf('
  await coach.fill('#run-title','Coach saved final');await rider.waitForFunction(()=>inspect().draft.title==='Coach saved final');
  await coach.click('#run-builder-form button[type="submit"]');await coach.waitForFunction(()=>inspect().live.session.saved_version===inspect().live.session.version);
  assert.equal(saves,1);assert.equal(session.athlete_id,'rider');assert.equal(draft.contestItemId,'event-one');assert.equal(session.call_status,'active');
+ assert.equal(draft.points[2].bend,99,'Shared saving retains the edited curve');
  assert.equal(await coach.evaluate(()=>mediaDestroyed),0);
  for(const p of [rider,coach]){assert.equal(await p.evaluate(()=>inspectMedia().connectionState),'connected','Actual media stays connected through handover, editing and both saves');assert.equal(await p.evaluate(()=>inspectMedia().remoteTracks),2);assert.equal(await p.evaluate(()=>mediaMounted),1,'Saving does not remount or reacquire media');}
  if(process.env.JKCREW_SCREENSHOT)await rider.screenshot({path:'/tmp/jkcrew-live-run-builder-connected-mobile.png'});

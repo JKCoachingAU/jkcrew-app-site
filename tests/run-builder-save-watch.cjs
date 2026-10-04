@@ -15,7 +15,7 @@ const names = [...new Set([
   ...fs.readFileSync(path.join(__dirname, 'run-framing.cjs'), 'utf8')
     .match(/const names = (\[[^;]+\]);/)[1].matchAll(/'([^']+)'/g),
 ].map(match => match[1]).concat([
-  'bindRunTimingControls', 'runSegmentEditorHtml', 'paintRunSegmentSelection', 'selectRunSegment',
+  'bindRunBendControls','bindRunTimingControls', 'runSegmentEditorHtml', 'paintRunSegmentSelection', 'selectRunSegment',
   'runTimeBudget', 'runTimeBudgetHtml', 'paintRunTimeBudget', 'currentRunFormState',
   'refreshMountedRunBuilder', 'runBuilderRefreshView', 'runBuilderPanel', 'runBuilderPhotoSetupHtml', 'runBuilderStepsHtml',
   'runBuilderRouteEditorHtml', 'runBuilderPlaybackEditorHtml', 'runTimingEditorHtml',
@@ -72,7 +72,7 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
           stopRunPlayback();liveRun=null;messages.length=0;invalids.length=0;sync.length=0;saveFailure=null;holdSave=false;pendingSave=null;failAfterSaveRender=false;
           state.runBuilder={id:options.saved?'saved-run':null,updatedAt:options.saved?'2026-09-11T00:00:00Z':null,coachId:'coach',athleteId:'rider',athleteName:'Test Rider',title:'Finals test run',notes:'Preserve these notes',venue:'Test park',planType:'competition',contestItemId:'test-contest',stage:'tricks',selectedPointIndex:17,
             imageDataUrl:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#23554e"/></svg>'),
-            points:Array.from({length:20},(_,i)=>({x:10+(i%5)*18,y:15+Math.floor(i/5)*20,label:i===0||i===19?'':i===8?'':'Trick '+i,bend:0,holdSeconds:i>0&&i<19?0.25:0,travelSeconds:i===0?3.6:3.2,...(i===0?{timeLimitSeconds:options.decimalLimit?60.5:60}:{})}))};
+            points:Array.from({length:20},(_,i)=>({x:10+(i%5)*18,y:15+Math.floor(i/5)*20,label:i===0||i===19?'':i===8?'':'Trick '+i,bend:i===1?40:i===2?-35:0,holdSeconds:i>0&&i<19?0.25:0,travelSeconds:i===0?3.6:3.2,...(i===0?{timeLimitSeconds:options.decimalLimit?60.5:60}:{})}))};
           if(options.liveViewer)liveRun={clientId:'viewer-tab',connected:true,session:{id:'shared',status:'active',invitation_status:'accepted',athlete_id:'rider',coach_id:'coach',athlete_name:'Test Rider',editor_id:state.user.id==='coach'?'rider':'coach',editor_client:'other-tab',lease_until:new Date(Date.now()+60000).toISOString()}};
           await renderContests();
         };
@@ -107,6 +107,8 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
       assert.equal(inserted.payload.created_by, role === 'coach' ? 'coach' : 'rider');
       assert.equal(inserted.payload.athlete_id, 'rider');
       assert.equal(inserted.payload.points.length, 20);
+      assert.equal(inserted.payload.points[1].bend, 40, 'New run preserves positive curve');
+      assert.equal(inserted.payload.points[2].bend, -35, 'New run preserves negative curve');
       assert.equal(inserted.payload.points[1].holdSeconds, 0.25, 'Legacy quarter-second holds are saved unchanged');
       assert.equal(inserted.payload.points[8].label, '', 'An unnamed trick does not block saving');
       assert.deepEqual(await page.evaluate(() => invalids), [], label + ': legacy timing passes native form validation');
@@ -149,6 +151,8 @@ const unusedHandlers = [...new Set([...extract('bindRunBuilderActions')
       assert.equal(savedWatch.payload.p_content.title, 'Finals edited before watching');
       assert.equal(savedWatch.payload.p_content.notes, 'Preserve these notes');
       assert.equal(savedWatch.payload.p_content.points[8].label, '');
+      assert.equal(savedWatch.payload.p_content.points[1].bend, 40, 'Existing run save preserves curves after Watch');
+      assert.equal(savedWatch.payload.p_content.points[2].bend, -35);
 
       // A coach or rider who is watching a shared draft may play it, but may
       // not edit the other person's draft or save while it is read-only.

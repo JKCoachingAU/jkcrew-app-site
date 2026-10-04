@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.155";
+const RELEASE_VERSION = "2.14.156";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.155" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.156" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -10052,8 +10052,11 @@ function paintSharedLiveRunDraft(draft, session) {
   root.querySelectorAll("[data-run-limit]").forEach(el => set(el,draft.points[0]?.timeLimitSeconds || 60,previous.points[0]?.timeLimitSeconds || 60));
   const point = draft.points[state.runBuilder.selectedPointIndex];
   set(root.querySelector("[data-selected-run-label]"), point?.label);
-  root.querySelectorAll("[data-selected-run-bend]").forEach(el => set(el,point?.bend || 0));
-  root.querySelectorAll("[data-selected-run-bend-output]").forEach(el => { el.textContent = point?.bend || 0; });
+  root.querySelectorAll("[data-run-bend-index]").forEach(el => set(el, draft.points[Number(el.dataset.runBendIndex)]?.bend || 0));
+  root.querySelectorAll("[data-run-bend-output-index]").forEach(el => {
+    const index = Number(el.dataset.runBendOutputIndex);
+    el.textContent = index === 0 ? "START" : draft.points[index]?.bend || 0;
+  });
   root.querySelector(".run-line-overlay")?.remove();
   updateRunBuilderMapDom();
   root.querySelectorAll(".run-marker").forEach(el => {
@@ -12950,9 +12953,9 @@ function runRouteSvg(points = [], editTiming = false) {
   const lines = safePoints.slice(1).map((point, index) => {
     const previous = safePoints[index];
     const pointNumber = index + 2;
-    return `<path data-run-segment="${pointNumber}" d="${runPathBetween(previous, point)}" stroke="${runPointColor(pointNumber)}" />${editTiming ? `<path class="run-segment-hit" data-edit-run-segment="${index}" d="${runPathBetween(previous, point)}" role="button" tabindex="0" aria-label="Dot ${index + 1} to dot ${pointNumber}: ${Math.round(timing[index].travel * 10) / 10} seconds. Edit travel time" />` : ""}`;
+    return `<path data-run-segment="${pointNumber}" d="${runPathBetween(previous, point)}" stroke="${runPointColor(pointNumber)}" />${editTiming ? `<path class="run-segment-hit" data-edit-run-segment="${index}" d="${runPathBetween(previous, point)}" role="button" tabindex="0" aria-label="Dot ${index + 1} to dot ${pointNumber}: ${Math.round(timing[index].travel * 10) / 10} seconds. Edit curve and travel time" />` : ""}`;
   }).join("");
-  return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" ${editTiming ? `aria-label="Route travel times"` : `aria-hidden="true"`}>${lines}</svg>`;
+  return `<svg class="run-line-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" ${editTiming ? `aria-label="Route curves and travel times"` : `aria-hidden="true"`}>${lines}</svg>`;
 }
 
 function runView(value = {}) {
@@ -13290,11 +13293,12 @@ function runSegmentEditorHtml(points, index) {
   if (!Number.isInteger(index) || index < 0 || index >= points.length - 1) return `<section class="run-segment-editor" data-run-segment-editor hidden></section>`;
   const name = i => i === 0 ? "Start location" : i === points.length - 1 && !points[i].isTrick ? "Finish location" : points[i].label?.trim() || "NO TRICK";
   const seconds = Math.round(runTiming(points)[index].travel * 10) / 10;
-  return `<section class="run-segment-editor" data-run-segment-editor aria-label="Selected line timing">
+  return `<section class="run-segment-editor" data-run-segment-editor aria-label="Selected line curve and timing">
     <div class="run-segment-heading"><strong>Dot ${index + 1} → Dot ${index + 2}</strong><button type="button" class="secondary-btn compact-btn" data-close-run-segment>Done</button></div>
     <p>${escapeHtml(name(index))} → ${escapeHtml(name(index + 1))}</p>
     <div class="run-time-field"><span>Travel time to next trick</span><span class="run-time-stepper"><button type="button" data-run-time-step="-1" aria-label="Decrease travel time">−</button><input type="number" inputmode="decimal" min="0.1" max="120" step="any" value="${seconds}" data-run-time-index="${index}" data-run-time-key="travelSeconds" aria-label="Seconds from dot ${index + 1} to dot ${index + 2}"><button type="button" data-run-time-step="1" aria-label="Increase travel time">+</button><small>seconds</small></span></div>
     <small>Travel only · trick time is separate</small>
+    <label class="run-bend-control run-segment-bend"><span>Curve this line</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(points[index + 1].bend || 0)))}" data-run-bend-index="${index + 1}" aria-label="Curve from dot ${index + 1} to dot ${index + 2}"><output data-run-bend-output-index="${index + 1}">${Number(points[index + 1].bend || 0)}</output></div><small>Slide either way to bend · 0 is straight</small></label>
     <strong data-run-segment-total>${runTimeBudget(points).total}s planned · ${runTimeBudget(points).message}</strong>
   </section>`;
 }
@@ -13320,6 +13324,12 @@ function selectRunSegment(event) {
   panel.outerHTML = runSegmentEditorHtml(state.runBuilder.points, index);
   const next = document.querySelector("#run-builder-live [data-run-segment-editor]");
   bindRunTimingControls(next);
+  bindRunBendControls(next);
+  state.runBuilder.liveToolsCollapsed = false;
+  const tools = document.querySelector("#run-workspace-editor-body");
+  if (tools) tools.hidden = false;
+  const toggle = document.querySelector("[data-run-sheet-toggle]");
+  if (toggle) { toggle.setAttribute("aria-expanded", "true"); toggle.textContent = "Hide tools"; }
   paintRunSegmentSelection();
   // Keep the photo in place and let the rider tap the number to open the keyboard.
   next.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -13536,7 +13546,7 @@ function runBuilderStepsHtml(stage = "route", pointCount = 0) {
 function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
   if (!selectedPoint) return `<div class="run-sidebar-section run-point-empty"><div class="eyebrow">Step 1 · Draw route</div><strong>TAP THE PARK TO START</strong><p>Tap empty space to add each dot. Drag a dot to move it. Add all tricks after the route is finished.</p></div>`;
   const pointRole = selectedIndex === 0 ? "START" : selectedIndex === points.length - 1 ? (selectedPoint.isTrick ? "TRICK" : "FINISH") : "ROUTE";
-  return `<div class="run-sidebar-section selected-run-point" data-selected-run-point="${selectedIndex}"><div class="run-selected-head"><div><div class="eyebrow">Route point</div><strong>DOT ${selectedIndex + 1}</strong></div><span class="run-point-role">${pointRole}</span></div><p class="run-phase-tip">Drag this dot on the course${selectedIndex > 0 ? ", then bend the line if needed." : "."}</p><label class="run-bend-control run-bend-control-sidebar"><span>Bend line into this dot</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend ${selectedIndex === 0 ? "disabled" : ""}><output data-selected-run-bend-output>${selectedIndex === 0 ? "START" : Number(selectedPoint.bend || 0)}</output></div></label>${selectedIndex === 0 && points.length > 1 ? runTimingRowHtml(points, 0) : ""}<button class="danger-btn" type="button" id="delete-selected-run-point">DELETE DOT ${selectedIndex + 1}</button></div>`;
+  return `<div class="run-sidebar-section selected-run-point" data-selected-run-point="${selectedIndex}"><div class="run-selected-head"><div><div class="eyebrow">Route point</div><strong>DOT ${selectedIndex + 1}</strong></div><span class="run-point-role">${pointRole}</span></div><p class="run-phase-tip">Drag this dot on the course${selectedIndex > 0 ? ", then bend the line if needed." : "."}</p><label class="run-bend-control run-bend-control-sidebar"><span>Bend line into this dot</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend data-run-bend-index="${selectedIndex}" ${selectedIndex === 0 ? "disabled" : ""}><output data-selected-run-bend-output data-run-bend-output-index="${selectedIndex}">${selectedIndex === 0 ? "START" : Number(selectedPoint.bend || 0)}</output></div></label>${selectedIndex === 0 && points.length > 1 ? runTimingRowHtml(points, 0) : ""}<button class="danger-btn" type="button" id="delete-selected-run-point">DELETE DOT ${selectedIndex + 1}</button></div>`;
 }
 
 function runBuilderTrickEditorHtml(points = []) {
@@ -13599,8 +13609,8 @@ function runBuilderPanel(runs = [], options = {}) {
         <div class="run-map-stage">
           <div id="run-map" class="run-map run-map-${stage}">${runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback")}</div>
           ${stage !== "playback" ? runSegmentEditorHtml(points, builder.selectedSegmentIndex) : ""}
-          <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Tap a line to edit its time · drag dots to adjust` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Tap a line to edit its time · add tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
-          ${stage === "route" && selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output>${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
+          <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Tap a line to curve it or change its time · drag dots to move` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Tap a line for curve & timing · add tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
+          ${stage === "route" && selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend data-run-bend-index="${selectedIndex}" aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output data-run-bend-output-index="${selectedIndex}">${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
           ${stage === "playback" && points.length ? `<p class="run-watch-total">${runPlaybackDefaultSeconds(points)} seconds planned · ${Math.abs(Math.round(((Number(points[0]?.timeLimitSeconds) || 60) - runPlaybackDefaultSeconds(points))*10)/10)} seconds ${runPlaybackDefaultSeconds(points) > (Number(points[0]?.timeLimitSeconds) || 60) ? "over limit" : "remaining"}</p>${runPlaybackControlsHtml(points, "builder")}` : ""}
         </div>
         <aside class="run-builder-sidebar">
@@ -13639,7 +13649,7 @@ function runBuilderPanel(runs = [], options = {}) {
             </div>
             <div data-live-run-companion>${typeof liveRunCompanionHtml === "function" ? liveRunCompanionHtml() : ""}</div>
             <div id="run-map" class="run-map run-map-${stage}">${runMapHtml(builderImageSource, points, "Shared course", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback")}</div>
-            <div class="run-workspace-map-caption"><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span><span>${stage === "route" ? "Tap to add · drag to move" : stage === "tricks" ? "Tap a dot to edit its trick" : "Watch your route together"}</span></div>
+            <div class="run-workspace-map-caption"><span>${points.length} ${points.length === 1 ? "dot" : "dots"}</span><span>${stage === "route" ? "Tap to add · tap a line to curve" : stage === "tricks" ? "Tap a dot to edit its trick" : "Watch your route together"}</span></div>
             ${stage === "playback" && points.length ? runPlaybackControlsHtml(points, "builder") : ""}
           </div>
           <aside class="run-builder-sidebar run-workspace-editor" aria-label="Selected dot controls">
@@ -15508,7 +15518,12 @@ function bindRunBuilderActions(root = document) {
   root.querySelectorAll("[data-run-history]").forEach(button => button.addEventListener("click", restoreRunEdit));
   root.querySelectorAll("[data-run-copy], [data-copy-saved-run]").forEach(button => button.addEventListener("click", openRunDuplicate));
   root.querySelectorAll("[data-run-mode]").forEach(button => button.addEventListener("click", async () => {
+    stopRunPlayback();
     state.runBuilder = { ...state.runBuilder, ...currentRunFormState(), stage: button.dataset.runMode };
+    if (button.dataset.runMode === "route" && state.runBuilder.points?.length && !(Number(state.runBuilder.selectedPointIndex) >= 0)) {
+      state.runBuilder.selectedPointIndex = state.runBuilder.points.length - 1;
+    }
+    state.runBuilder.liveToolsCollapsed = false;
     await runBuilderRefreshView();
   }));
   bindRunTimingControls(root);
@@ -15550,10 +15565,7 @@ function bindRunBuilderActions(root = document) {
   }, true);
   root.querySelector("#run-builder-form")?.addEventListener("submit", saveRunPlan);
   root.querySelector("[data-selected-run-label]")?.addEventListener("input", updateSelectedRunPoint);
-  root.querySelectorAll("[data-selected-run-bend]").forEach((control) => {
-    control.addEventListener("input", updateSelectedRunPoint);
-    control.addEventListener("change", updateSelectedRunPoint);
-  });
+  bindRunBendControls(root);
   root.querySelectorAll("[data-edit-run]").forEach((button) => button.addEventListener("click", editRunPlan));
   bindRunPlaybackControls(root);
   bindLiveRunControls(root);
@@ -15738,7 +15750,7 @@ function updateRunBuilderMapDom(changedIndex = null) {
 }
 
 function startRunPointDrag(event) {
-  if (!state.runBuilder?.points || runBuilderStage() !== "route") return;
+  if (!state.runBuilder?.points || runBuilderStage() !== "route" || !liveRunCanEdit()) return;
   event.preventDefault();
   event.stopPropagation();
   rememberRunEdit();
@@ -15783,7 +15795,10 @@ function dragRunPoint(event) {
 }
 
 function stopRunPointDrag() {
-  const shouldRefreshSelection = state.runPointDragMoved && state.runPointDragNeedsSelectionRefresh;
+  // Pointerdown selects the dot before click fires. Refresh even for a tap,
+  // otherwise the previous dot's (possibly disabled) bend slider stays mounted.
+  const shouldRefreshSelection = state.runPointDragNeedsSelectionRefresh || state.runBuilder?.liveToolsCollapsed;
+  if (state.runBuilder) state.runBuilder.liveToolsCollapsed = false;
   document.removeEventListener("pointermove", dragRunPoint);
   document.removeEventListener("pointerup", stopRunPointDrag);
   document.removeEventListener("pointercancel", stopRunPointDrag);
@@ -15805,7 +15820,10 @@ function stopRunPointDrag() {
   state.runPointDragMoved = false;
   state.runPointDragNeedsSelectionRefresh = false;
   state.draggedRunPoint = null;
-  if (shouldRefreshSelection) void runBuilderRefreshView();
+  if (shouldRefreshSelection) {
+    state.runBuilder = { ...state.runBuilder, ...currentRunFormState() };
+    void runBuilderRefreshView();
+  }
 }
 
 async function selectRunPoint(event) {
@@ -15819,16 +15837,26 @@ async function selectRunPoint(event) {
   await runBuilderRefreshView();
 }
 
+function bindRunBendControls(root) {
+  root.querySelectorAll("[data-run-bend-index]").forEach(control => {
+    if (control.dataset.bendBound) return;
+    control.dataset.bendBound = "true";
+    control.addEventListener("input", updateSelectedRunPoint);
+    control.addEventListener("change", updateSelectedRunPoint);
+  });
+}
+
 function updateSelectedRunPoint(event) {
-  const index = Number(state.runBuilder?.selectedPointIndex);
-  if (!state.runBuilder?.points?.[index]) return;
+  const isBend = event.currentTarget.hasAttribute("data-run-bend-index");
+  const index = Number(isBend ? event.currentTarget.dataset.runBendIndex : state.runBuilder?.selectedPointIndex);
+  if (!state.runBuilder?.points?.[index] || !liveRunCanEdit() || (isBend && index === 0)) return;
   rememberRunEdit();
   const point = { ...state.runBuilder.points[index] };
   if (event.currentTarget.matches("[data-selected-run-label]")) point.label = event.currentTarget.value.slice(0, 80);
-  if (event.currentTarget.matches("[data-selected-run-bend]")) {
+  if (isBend) {
     point.bend = Math.max(-100, Math.min(100, Number(event.currentTarget.value) || 0));
-    document.querySelectorAll("[data-selected-run-bend]").forEach((control) => { if (control !== event.currentTarget) control.value = String(point.bend); });
-    document.querySelectorAll("[data-selected-run-bend-output]").forEach((output) => { output.textContent = String(point.bend); });
+    document.querySelectorAll(`[data-run-bend-index="${index}"]`).forEach((control) => { if (control !== event.currentTarget) control.value = String(point.bend); });
+    document.querySelectorAll(`[data-run-bend-output-index="${index}"]`).forEach((output) => { output.textContent = String(point.bend); });
   }
   state.runBuilder.points[index] = point;
   const marker = document.querySelector(`[data-run-point-index="${index}"]`);

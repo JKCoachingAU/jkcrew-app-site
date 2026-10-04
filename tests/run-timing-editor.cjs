@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const names=['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','runBuilderStage','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTiming','runPlaybackDefaultSeconds','runTimingRowHtml','runTimingEditorHtml','runBuilderTrickEditorHtml','runPointColor','updateRunTiming','updateRunFinalType','updateRunBuilderTrick','runMapHtml','runView','runRouteSvg','runPathBetween','bindRunBuilderActions'];
+const names=['bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','runBuilderStage','bindRunBendControls','bindRunTimingControls','runSegmentEditorHtml','paintRunSegmentSelection','selectRunSegment','runTimeBudget','runTimeBudgetHtml','paintRunTimeBudget','runTiming','runPlaybackDefaultSeconds','runTimingRowHtml','runTimingEditorHtml','runBuilderTrickEditorHtml','runPointColor','updateRunTiming','updateRunFinalType','updateRunBuilderTrick','runMapHtml','runView','runRouteSvg','runPathBetween','bindRunBuilderActions'];
 const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+name+'\\(','m'));const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
 const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter(n=>!names.includes(n));
 (async()=>{
@@ -10,7 +10,7 @@ const handlers=[...extract('bindRunBuilderActions').matchAll(/addEventListener\(
  await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="host" class="content" style="padding:16px"></main>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
  await page.addScriptTag({content:`
- const bindLiveRunControls=()=>{};const liveRunCanEdit=()=>true;
+ const bindLiveRunControls=()=>{};let liveRun=null;const liveRunCanEdit=()=>true;
  const bindRiderSavedRuns=()=>{};
  const state={runBuilder:{points:Array.from({length:14},(_,i)=>({x:i*7,y:50,label:'Trick '+i,travelSeconds:7,holdSeconds:0})),selectedPointIndex:7}};
  const escapeHtml=s=>String(s);const rememberRunEdit=()=>{};const stopRunPlayback=()=>{},bindRunPlaybackControls=()=>{};
