@@ -109,11 +109,13 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.sessionViewerListContent = (entry, _session, listId) => `<div class="viewer-trick-list" data-qa-list="${listId}" data-qa-list-athlete="${entry.athlete.id}" style="min-height:160px">${escapeHtml(categoryDisplayInfo(listId, entry.athlete).label)} fixture</div>`;
       window.parkKingCardHtml = () => '';
       window.sessionGroupBattlesHtml = () => '';
+      window.otherLandedHost = () => '';
       for (const name of [
         'refreshParkKingCard', 'bindCoachBattleControls', 'showCoachBattleBuilder', 'navigate',
         'startViewerGroupSession', 'toggleViewerGroupSessionPause', 'endViewerGroupSession', 'addExtraRiderToGroupSession',
         'finishViewerDailyTimer', 'recordViewerAssignmentAction', 'recordViewerAssignmentAttempt', 'recordViewerPercentageAttempt',
         'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments',
+        'mountDailyFeatures',
       ]) window[name] = () => {};
       (0, eval)(code);
       const actualCounterAction = openSessionViewerCounter;
@@ -322,7 +324,8 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       await renderSessionViewer();
     });
     const finish = page.locator('[data-finish-daily-athlete="rider"]');
-    assert.equal(await finish.isDisabled(), true, 'Daily finish remains disabled before its venue list is complete');
+    assert.equal(await finish.isDisabled(), false, 'Daily finish supports a partial practice result before every trick is complete');
+    assert.equal(await page.locator('[data-finish-daily-athlete="empty"]').isDisabled(), true, 'Daily finish remains disabled for riders without a venue list');
     await page.evaluate(async () => { qaRows.find(row => row.id === 'daily-b').progress = { progress_date: qaToday }; await refreshSessionViewerLight(); });
     assert.equal(await finish.isDisabled(), false);
     await page.evaluate(async () => { qaSession.coach_group_session_participants[0].daily_finish_seconds = 90; await refreshSessionViewerLight(); });

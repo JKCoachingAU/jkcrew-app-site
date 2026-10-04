@@ -88,7 +88,7 @@ const snapshot = plain(sourceLines);
   const save = async values => {
     saved = undefined;
     await c.saveSessionViewerAssignments({ preventDefault() {}, currentTarget: {
-      values, dataset: { athleteId: 'rider', viewerAssignmentEditor: 'lines' }, querySelector: () => ({})
+      values, isConnected: true, dataset: { athleteId: 'rider', viewerAssignmentEditor: 'lines' }, querySelector: () => ({})
     } });
     assert(saved, 'Save submits through the real editor handler');
     assert.equal(rpcName, 'save_weekly_assignment_list');

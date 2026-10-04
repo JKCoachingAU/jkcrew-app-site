@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.153";
+const RELEASE_VERSION = "2.14.154";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.153" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.154" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -4416,7 +4416,7 @@ function percentageAssignmentList(assignments, emptyText = "No Percentage Tricks
       ? (nextAttempt ? `<div class="percentage-actions"><button class="primary-btn compact-btn" type="button" data-percentage-action="true" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}" data-athlete-id="${assignment.athlete_id || ""}">Land attempt ${nextAttempt}</button><button class="danger-btn compact-btn" type="button" data-percentage-action="false" data-percentage-attempt-number="${nextAttempt}" data-assignment-id="${assignment.id}" data-athlete-id="${assignment.athlete_id || ""}">Crash attempt ${nextAttempt}</button></div><small class="subcopy">Shortcut: tap circles to cycle landed, missed, clear.</small>` : `<small class="subcopy">Tap circles to cycle landed, missed, clear.</small>`)
       : "";
     return `<div class="percentage-card">
-      <div class="percentage-card-head"><div><strong>${escapeHtml(assignment.trick_name)}</strong><small>${summary.landed} landed · ${summary.missed} missed · ${summary.attempts}/10 attempts · ${percentagePointsStatus(summary)}</small></div>${result}</div>
+      <div class="percentage-card-head"><div><strong>${escapeHtml(assignment.trick_name)}${interactive && state.view === "sessionViewer" ? globalThis.JKPreviousWeekLandings?.marker(assignment) || "" : ""}</strong><small>${summary.landed} landed · ${summary.missed} missed · ${summary.attempts}/10 attempts · ${percentagePointsStatus(summary)}</small></div>${result}</div>
       <div class="attempt-dots">${attempts}</div>
       ${controls}
     </div>`;
@@ -12069,7 +12069,7 @@ function sessionViewerPlanList(entry, activeGroupSession) {
     const count = sessionViewerListCount(entry, tab.id);
     return `<button class="viewer-list-tab viewer-list-tone-${tab.id} ${tab.id === activeList ? "active" : ""}" type="button" data-viewer-list-tab="${tab.id}" aria-expanded="${tab.id === activeList}">${escapeHtml(tab.label)}<span>${count}</span></button>`;
   }).join("");
-  return `<div class="viewer-inline-list viewer-list-tone-${activeList}" id="viewer-plan-${escapeHtml(entry.athlete.id)}" data-viewer-plan="${escapeHtml(entry.athlete.id)}">
+  return `<div class="viewer-inline-list viewer-list-tone-${activeList}" id="viewer-plan-${escapeHtml(entry.athlete.id)}" data-viewer-plan="${escapeHtml(entry.athlete.id)}" data-athlete-country="${escapeHtml(entry.athlete.country_code || "AU")}">
     <div class="viewer-list-tabs" role="group" aria-label="Rider trick lists">${tabs}</div>
     <div data-viewer-daily-pane ${activeList === "daily" ? "" : "hidden"}>${activeList === "daily" ? sessionViewerListContent(entry, activeGroupSession, "daily") : ""}</div>
     ${activeList && activeList !== "daily" ? sessionViewerListContent(entry, activeGroupSession, activeList) : !activeList ? `<div class="panel-meta viewer-list-meta">Tap a trick list to open it.</div>` : ""}
@@ -12100,7 +12100,7 @@ function sessionViewerListContent(entry, activeGroupSession, listId) {
     const done = isAssignmentComplete(assignment);
     return `<div class="viewer-trick-row viewer-attempt-row ${done ? "complete" : ""} ${assignment.category === "bonus" ? "bonus-viewer-row" : ""}">
       <button class="assignment-check" type="button" data-viewer-assignment-action="${done ? "unlanded" : "landed"}" data-assignment-id="${assignment.id}" data-assignment-category="${assignment.category}" data-athlete-id="${assignment.athlete_id || entry.athlete.id}" aria-label="${done ? "Untick landed" : "Mark landed"}">${done ? "✓" : ""}</button>
-      <span>${listId === "lines" ? `<small class="viewer-line-number">Line ${index + 1}</small>` : ""}<strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(assignmentStatus(assignment))}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></span>
+      <span>${listId === "lines" ? `<small class="viewer-line-number">Line ${index + 1}</small>` : ""}<strong>${escapeHtml(presentation.title)}${globalThis.JKPreviousWeekLandings?.marker(assignment, presentation.title) || ""}</strong><small>${escapeHtml(assignmentStatus(assignment))}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></span>
     </div>`;
   }).join("") : `<div class="empty compact-empty">No ${escapeHtml(info.label)} assigned${listId === "daily" ? " for this venue" : ""}.</div>`;
   const label = listId === "daily" ? `${venueLabel(entry.venue)} ${info.label}` : info.label;
@@ -12171,7 +12171,22 @@ function sessionViewerRunList(entry) {
   return `<div class="panel-meta viewer-list-meta">${escapeHtml(run.title || "Contest Run")} · ${complete}/${points.length} complete</div><div class="viewer-trick-list">${list}</div>`;
 }
 
+function mountViewerPreviousWeekLandings() {
+  if (!isCoachRole(state.profile?.role) || state.view !== "sessionViewer") return;
+  const root = document.querySelector("[data-viewer-plan]");
+  if (!root) return;
+  const userId = state.user?.id;
+  const countryCode = root.dataset.athleteCountry || "AU";
+  window.JKPreviousWeekLandings.mount({
+    root, client, userId, athleteId: root.dataset.viewerPlan, countryCode,
+    weekStart: weekStartDateForCountry(countryCode),
+    landingDate: tricktionaryLandingDate, present: assignmentPresentation,
+    isCurrent: () => state.user?.id === userId && state.view === "sessionViewer" && isCoachRole(state.profile?.role),
+  });
+}
+
 function bindSessionViewerActions() {
+  if (window.JKPreviousWeekLandings) mountViewerPreviousWeekLandings();
   mountDailyFeatures();
   bindTrainingProgressActions();
   const setup = document.querySelector("#session-viewer-setup");
@@ -12179,7 +12194,10 @@ function bindSessionViewerActions() {
   setup?.addEventListener("toggle", () => {
     if (setupIsCurrent()) state.sessionViewerSetupOpen = setup.open;
   });
-  document.querySelector("#viewer-refresh")?.addEventListener("click", () => renderSessionViewer());
+  document.querySelector("#viewer-refresh")?.addEventListener("click", () => {
+    window.JKPreviousWeekLandings?.clear();
+    renderSessionViewer();
+  });
   document.querySelectorAll("[data-viewer-group]").forEach((button) => button.addEventListener("click", (event) => {
     const nextGroup = event.currentTarget.dataset.viewerGroup;
     if (!nextGroup || nextGroup === state.sessionViewerGroup) return;
@@ -12584,6 +12602,7 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
 }
 
 function bindSessionViewerFastActions() {
+  if (window.JKPreviousWeekLandings) mountViewerPreviousWeekLandings();
   mountDailyFeatures();
   bindTrainingProgressActions();
   document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {

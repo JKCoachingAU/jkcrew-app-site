@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.153";
+const version = "2.14.154";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -97,7 +97,7 @@ for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, m
   assert(!/2\.11\.(16|44|45|46)/.test(contents), `${name} contains a stale asset version`);
 }
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
-for (const file of ["live-run-sync.js", "live-run-call.js", "live-run-companion.js"]) {
+for (const file of ["live-run-sync.js", "live-run-call.js", "live-run-companion.js", "previous-week-landings.js"]) {
   const tag = `src="${file}?v=${version}"`;
   assert(html.includes(tag) && html.indexOf(tag) < html.indexOf(`src="app.js?v=${version}"`), `${file} loads before app integration`);
   assert(serviceWorker.includes(`./${file}?v=${version}`), `${file} belongs to the current offline shell`);

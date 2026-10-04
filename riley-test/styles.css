@@ -12438,3 +12438,25 @@ html[data-theme="light"] .run-workspace-topbar > .primary-btn { color:white; }
   #run-builder-live.run-coaching-workspace .run-live-bar small { font-size:11px; }
   body.has-live-run-call #run-builder-live { padding-bottom:110px; }
 }
+
+/* Previous-week landings stay distinct from this week's scoring controls. */
+.viewer-inline-list .previous-week-landing {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; margin-left: 7px; vertical-align: 1px;
+  border: 1px solid rgb(115 224 107 / 35%); border-radius: 50%;
+  color: #8bea80; background: rgb(115 224 107 / 10%);
+  font: 700 12px/1 var(--body); text-transform: none;
+}
+.viewer-inline-list .previous-week-landing[hidden] { display: none; }
+.previous-week-status {
+  display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0 12px;
+  color: var(--muted); font: 500 11px/1.5 var(--body); letter-spacing: 0; text-transform: none;
+}
+.previous-week-legend-tick { color: #8bea80; font-weight: 700; }
+.previous-week-status button {
+  border: 0; border-bottom: 1px solid currentColor; background: transparent;
+  color: var(--aqua); font: inherit; min-height: 32px; padding: 4px 8px; cursor: pointer;
+}
+.previous-week-status button:focus-visible { outline: 2px solid var(--aqua); outline-offset: 3px; }
+html[data-theme="light"] .previous-week-landing,
+html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
