@@ -4857,6 +4857,13 @@ html.contest-merge-open body { overflow: hidden; }
   color: var(--text);
   font: 900 clamp(1.5rem, 4vw, 2.2rem)/0.85 var(--display);
 }
+.session-stat-bar small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.6rem;
+  line-height: 1.3;
+}
 .daily-session-hub {
   padding: 14px;
   border-color: rgba(32,227,195,0.22);
