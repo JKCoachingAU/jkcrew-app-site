@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.156";
+const RELEASE_VERSION = "2.14.157";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.156" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.157" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -18064,23 +18064,31 @@ async function updateProfile(event) {
 
 async function updatePassword(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const passwordForm = event.currentTarget;
+  if (!passwordForm?.isConnected || passwordForm.dataset.submitting === "true" || !state.user?.id || state.signingOut) return;
+  const form = new FormData(passwordForm);
   const password = form.get("password");
   const confirmPassword = form.get("confirmPassword");
   if (password !== confirmPassword) return notify("Passwords do not match.", "error");
-  const button = event.currentTarget.querySelector("button");
-  button.disabled = true;
-  button.textContent = "Changing...";
-  const { error } = await client.auth.updateUser({ password });
-  if (error) {
-    button.disabled = false;
-    button.textContent = "Change password";
-    return notify(messageFrom(error), "error");
+  const userId = state.user.id;
+  const isCurrent = () => passwordForm.isConnected && state.user?.id === userId && !state.signingOut;
+  passwordForm.dataset.submitting = "true";
+  passwordForm.setAttribute("aria-busy", "true");
+  const restore = setButtonBusy(passwordForm.querySelector("button"), "Changing...");
+  try {
+    const { error } = await withTimeout(client.auth.updateUser({ password }), "Password update", 15000);
+    if (!isCurrent()) return;
+    if (error) throw error;
+    // Keep edits made while the submitted password was being saved.
+    if (passwordForm.elements.password.value === password && passwordForm.elements.confirmPassword.value === confirmPassword) passwordForm.reset();
+    notify("Password changed.");
+  } catch (error) {
+    if (isCurrent()) notify(authErrorMessage(error, "Your password could not be updated. Please try again."), "error");
+  } finally {
+    delete passwordForm.dataset.submitting;
+    passwordForm.removeAttribute("aria-busy");
+    restore();
   }
-  event.currentTarget.reset();
-  button.disabled = false;
-  button.textContent = "Change password";
-  notify("Password changed.");
 }
 
 document.addEventListener("pointerdown", () => { void unlockNotificationSound(); }, { passive: true });
