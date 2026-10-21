@@ -1608,6 +1608,7 @@ button.attempt-dot:hover { transform: translateY(-1px); border-color: var(--aqua
 .group-tuesday { --group-accent: #83b7ff; }
 .group-wednesday { --group-accent: #d59cff; }
 .group-online { --group-accent: #ffd45a; }
+.group-elite { --group-accent: #7de25b; }
 .group-injured { --group-accent: #ff6c55; }
 .group-column.drag-over { border-color: var(--group-accent, var(--aqua)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--group-accent, var(--aqua)) 18%, transparent); }
 .group-head { margin-bottom: 12px; }
@@ -7969,6 +7970,7 @@ html[data-theme="light"] .success-burst {
 .coach-shell .group-tuesday { --group-accent: var(--coach-aqua); }
 .coach-shell .group-wednesday { --group-accent: var(--coach-blue); }
 .coach-shell .group-online { --group-accent: var(--coach-gold); }
+.coach-shell .group-elite { --group-accent: var(--coach-green); }
 .coach-shell .group-injured { --group-accent: var(--coach-coral); }
 .coach-shell .group-injured .compact-empty {
   border-color: rgba(255,108,85,0.22);

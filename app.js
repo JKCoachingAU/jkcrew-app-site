@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.157";
+const RELEASE_VERSION = "2.14.159";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -596,7 +596,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.157" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.159" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -3807,6 +3807,7 @@ const coachGroups = [
   ["tuesday", "Tuesday Team"],
   ["wednesday", "Wednesday Team"],
   ["online", "Online Training"],
+  ["elite", "Elite Riders"],
   [injuredGroupId, "Injured Athletes"],
 ];
 const heatStatuses = {
@@ -14201,9 +14202,10 @@ async function renderCrew() {
         ${riderAccessToggleHtml(athlete, access)}
         ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
       </div>`;
-    }).join("") : `<div class="empty compact-empty">${groupId === injuredGroupId ? "Drop injured athletes here." : "Drop students here."}</div>`;
+    }).join("") : `<div class="empty compact-empty">${groupId === "elite" ? "Choose Elite Riders in a rider’s profile, or drag them here." : groupId === injuredGroupId ? "Drop injured athletes here." : "Drop students here."}</div>`;
     const groupMeta = groupId === injuredGroupId
       ? `${athletes.length} athlete${athletes.length === 1 ? "" : "s"} out injured`
+      : groupId === "elite" ? `${athletes.length} rider${athletes.length === 1 ? "" : "s"}`
       : `${athletes.length} student${athletes.length === 1 ? "" : "s"}`;
     return `<section class="group-column group-${groupId}" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${groupMeta}</div></div></div><div class="group-list">${students}</div></section>`;
   }).join("");
@@ -14262,6 +14264,7 @@ async function addAthleteToGroup(athleteId, groupName) {
   if (error) return notify(messageFrom(error), "error");
   await client.from("coach_athletes").update({ group_name: groupName }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
   cacheClear("roster");
+  cacheClear("session-viewer-roster:");
   notify("Student added to group.");
   await renderCrew();
 }
@@ -14279,6 +14282,7 @@ async function removeAthleteFromGroup(athleteId, groupName) {
     await client.from("coach_athletes").update({ group_name: remainingGroups[0].group_name }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
   }
   cacheClear("roster");
+  cacheClear("session-viewer-roster:");
   notify("Student removed from that group.");
   await renderCrew();
 }
@@ -15214,6 +15218,7 @@ async function saveCoachAthleteProfile(event) {
   if (groupError) return notify(messageFrom(groupError), "error");
   await client.from("coach_athletes").update({ group_name: groupNames[0] }).eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId);
   cacheClear("roster");
+  cacheClear("session-viewer-roster:");
   notify("Rider profile details saved.");
   await renderStudentProfile();
 }
