@@ -61,7 +61,7 @@ const extract = name => {
         return loadAthleteUciHome(view, state.profile, () => state.view === 'home' && state.user.id === userId && qa.generation === generation && document.querySelector('#view') === view);
       };
     });
-    await page.addScriptTag({ content: ['boardUciSourceUrl', 'boardUciDate', 'boardUciSearchText', 'athleteUciCardHtml', 'loadAthleteUciHome', 'uciProfileLinkHtml', 'bindUciProfileLink', 'saveUciProfileLink'].map(extract).join('\n') });
+    await page.addScriptTag({ content: ['boardUciSourceUrl', 'boardUciDate', 'boardUciSearchText', 'athleteUciCardHtml', 'loadAthleteUciHome', 'uciProfileLinkHtml', 'bindUciProfileLink', 'invalidateLeaderboardUciLinks', 'saveUciProfileLink'].map(extract).join('\n') });
 
     eq(await page.evaluate(() => athleteUciCardHtml({ display_name: 'KINDERMANN Lars' }, qaSnapshot)), '', 'A familiar display name alone never fabricates a UCI identity');
     await page.evaluate(() => qaRender(''));

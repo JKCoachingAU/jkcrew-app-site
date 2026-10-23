@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.161";
+const RELEASE_VERSION = "2.14.162";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -600,7 +600,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.161" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.162" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2753,6 +2753,7 @@ function isRelevantRealtimePayload(table, payload = {}) {
 }
 
 function invalidateCachesForRealtime(table) {
+  if (table === "profiles") { cacheClear("leaderboard"); invalidateLeaderboardUciLinks(); }
   if (table === "trick_help_requests") invalidateHelpRequestData();
   if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
   if (table === "coach_group_session_participants") {
@@ -7830,7 +7831,6 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
     .map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`)
     .join("");
   const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
-  const xp = riderXpSummary(row);
   const country = countryBadge(row);
   const hasStarted = points > 0 || Boolean(row.daily_pb_seconds);
   const meta = row.daily_pb_seconds ? `PB Daily Time: ${formatPbTime(row.daily_pb_seconds)}` : "";
@@ -7838,7 +7838,7 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const ghostLabel = ghostModeLabelHtml(row);
   const content = `
     <div class="rank">#${rank}</div>
-    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge} ${levelBadgeHtml(xp.current_badge, true)}</strong>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><span data-leader-uci="${escapeHtml(row.athlete_id)}"></span>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
     <div class="points ${hasStarted ? "" : "dns-points"}" ${row.isBenchmarkBot ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
@@ -8470,7 +8470,100 @@ function boardUciSearchText(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().trim();
 }
 
-function updateBoardUciRows(panel, category) {
+function invalidateLeaderboardUciLinks() {
+  state.leaderboardUciVersion = (state.leaderboardUciVersion || 0) + 1;
+  cacheClear("leaderboard-uci:");
+}
+
+async function getLeaderboardUciLinks({ force = false } = {}) {
+  const viewerId = state.user?.id;
+  if (!viewerId) return [];
+  const setupVersion = state.sessionSetupVersion;
+  const scope = `leaderboard-uci:${viewerId}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}:${setupVersion}`;
+  const currentGeneration = state.leaderboardUciVersion || 0;
+  const refreshing = state.inFlight.get(`${scope}:${currentGeneration}`);
+  if (force && refreshing && state.leaderboardUciForcedVersion === currentGeneration) return refreshing;
+  if (force) invalidateLeaderboardUciLinks();
+  const generation = state.leaderboardUciVersion || 0;
+  if (force) state.leaderboardUciForcedVersion = generation;
+  const key = `${scope}:${generation}`;
+  const cached = cacheGet(key, 60000);
+  if (cached) return cached;
+  if (state.inFlight.has(key)) return state.inFlight.get(key);
+  const request = (async () => {
+    const { data, error } = await withTimeout(client.rpc("get_leaderboard_uci_links"), "JKC UCI links", 8000);
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error("JKC rider links couldn’t load.");
+    if ((state.leaderboardUciVersion || 0) !== generation || state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) throw new Error("Rider links changed. Refresh to see the latest links.");
+    cacheSet(key, data);
+    return data;
+  })().finally(() => {
+    if (state.inFlight.get(key) === request) {
+      state.inFlight.delete(key);
+      if (state.leaderboardUciForcedVersion === generation) state.leaderboardUciForcedVersion = null;
+    }
+  });
+  state.inFlight.set(key, request);
+  return request;
+}
+
+function boardUciMembers(rawLeaderboard, links, snapshot) {
+  const visible = new Set(rawLeaderboard.filter(row => !row.isBenchmarkBot).map(row => row.athlete_id));
+  const identities = new Map();
+  for (const link of links) {
+    if (!visible.has(link.athlete_id) || !/^\d{11}$/.test(link.uci_id || "")) continue;
+    if (!identities.has(link.uci_id)) identities.set(link.uci_id, new Set());
+    identities.get(link.uci_id).add(link.athlete_id);
+  }
+  const members = new Map();
+  for (const [uciId, athletes] of identities) {
+    const match = window.JKCUciRankings?.findRider(snapshot, uciId);
+    if (athletes.size === 1 && match) members.set(uciId, { athleteId: [...athletes][0], match });
+  }
+  return members;
+}
+
+function leaderUciRankHtml(match, snapshot) {
+  const category = match.categoryKey === "women" ? "Women" : "Men";
+  const label = `UCI ${category}’s world ranking #${match.row.rank} · ${boardUciDate(match.category.rankingDate)}${snapshot.stale ? " · Last available ranking" : ""}`;
+  return `<span class="leader-uci-rank" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span>UCI <b>#${escapeHtml(match.row.rank)}</b></span><small>${category}</small></span>`;
+}
+
+async function loadJkcBoardUciRanks(panel, rawLeaderboard, current, { force = false } = {}) {
+  const status = panel.querySelector("[data-board-uci-status]");
+  status.textContent = "Checking UCI world rankings…";
+  try {
+    const links = await getLeaderboardUciLinks({ force });
+    if (!current()) return;
+    if (!links.some(link => rawLeaderboard.some(row => row.athlete_id === link.athlete_id))) {
+      panel.querySelectorAll("[data-leader-uci]").forEach(slot => { slot.textContent = ""; });
+      status.textContent = "";
+      return;
+    }
+    const snapshot = await window.JKCUciRankings.load({ force });
+    if (!current()) return;
+    const members = boardUciMembers(rawLeaderboard, links, snapshot);
+    const byAthlete = new Map([...members.values()].map(member => [member.athleteId, member.match]));
+    panel.querySelectorAll("[data-leader-uci]").forEach(slot => {
+      const match = byAthlete.get(slot.dataset.leaderUci);
+      slot.innerHTML = match ? leaderUciRankHtml(match, snapshot) : "";
+    });
+    const dates = [...new Set([...byAthlete.values()].map(match => boardUciDate(match.category.rankingDate)))];
+    status.textContent = members.size ? `UCI world ranks · ${dates.join(" / ")}${snapshot.stale ? " · Last available rankings; latest update couldn’t be confirmed." : ""}` : "";
+    if (snapshot.stale) {
+      const retry = document.createElement("button");
+      retry.type = "button"; retry.className = "uci-refresh-btn"; retry.dataset.boardUciRetry = ""; retry.textContent = "Refresh UCI";
+      retry.addEventListener("click", () => { void loadJkcBoardUciRanks(panel, rawLeaderboard, current, { force: true }); });
+      status.append(retry);
+    }
+  } catch (_) {
+    if (!current()) return;
+    status.innerHTML = '<span>UCI ranks couldn’t load. JKC scores are still available.</span><button type="button" class="uci-refresh-btn" data-board-uci-retry>Retry UCI</button>';
+    status.querySelector("[data-board-uci-retry]").addEventListener("click", () => { void loadJkcBoardUciRanks(panel, rawLeaderboard, current, { force: true }); });
+  }
+}
+
+function updateBoardUciRows(panel, category, members = new Map()) {
   const query = boardUciSearchText(state.boardUciSearch);
   const filtered = category.rows.filter(row => !query || boardUciSearchText(`${row.name} ${row.nation}`).includes(query));
   const visible = filtered.slice(0, state.boardUciLimit || 50);
@@ -8478,9 +8571,10 @@ function updateBoardUciRows(panel, category) {
   panel.querySelector("[data-uci-rows]").innerHTML = visible.map(row => {
     const movement = row.change == null || !Number.isFinite(Number(row.change)) ? "" : Number(row.change);
     const movementLabel = movement === "" || movement === 0 ? "" : `${movement > 0 ? "Up" : "Down"} ${Math.abs(movement)} place${Math.abs(movement) === 1 ? "" : "s"}`;
-    return `<div class="uci-ranking-row" role="row">
+    const isJkc = members.get(row.uciId)?.match.row === row;
+    return `<div class="uci-ranking-row${isJkc ? " is-jkc" : ""}" role="row">
       <div class="uci-rank" role="cell">${escapeHtml(row.rank)}</div>
-      <div class="uci-rider" role="cell"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.nation)}${movementLabel ? ` <span class="uci-movement ${movement > 0 ? "up" : "down"}" aria-label="${escapeHtml(movementLabel)}">${movement > 0 ? "↑" : "↓"} ${Math.abs(movement)}</span>` : ""}</small></div>
+      <div class="uci-rider" role="cell"><div class="uci-rider-name"><strong>${escapeHtml(row.name)}</strong>${isJkc ? '<span class="uci-jkc-mark" title="JKC rider" aria-label="JKC rider"><img src="icons/jkc-logo.png?v=2.11.77" width="22" height="22" alt="">JKC</span>' : ""}</div><small>${escapeHtml(row.nation)}${movementLabel ? ` <span class="uci-movement ${movement > 0 ? "up" : "down"}" aria-label="${escapeHtml(movementLabel)}">${movement > 0 ? "↑" : "↓"} ${Math.abs(movement)}</span>` : ""}</small></div>
       <div class="uci-points" role="cell">${number.format(Number(row.points))}</div>
     </div>`;
   }).join("");
@@ -8515,14 +8609,16 @@ async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
     const pointsKey = allTime ? "all_time_points" : "weekly_points";
     const rows = leaderboardWithBenchmark(allTime ? [...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))) : rawLeaderboard, pointsKey);
     content.removeAttribute("aria-busy");
-    content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${allTime ? "JKC all-time rankings" : "JKC weekly rankings"}</div><div class="panel-meta">${allTime ? "Total points since joining" : "Resets Sunday evening in each rider's country"} · Badges and levels follow original lifetime XP.</div></div><div class="panel-meta">${rows.length} riders</div></div><div class="leaderboard">${compactLeaderboardHtml(rows, pointsKey)}</div>`;
+    content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${allTime ? "JKC all-time rankings" : "JKC weekly rankings"}</div><div class="panel-meta">${allTime ? "Total points since joining" : "Resets Sunday evening in each rider's country"}</div></div><div class="panel-meta">${rows.length} riders</div></div><div class="board-uci-status" data-board-uci-status role="status"></div><div class="leaderboard">${compactLeaderboardHtml(rows, pointsKey)}</div>`;
     content.querySelectorAll("[data-public-athlete]").forEach(button => button.addEventListener("click", openPublicAthleteProfile));
+    void loadJkcBoardUciRanks(panel, rows, current, { force });
     return;
   }
   const categoryKey = selected === "uciWomen" ? "women" : "men";
   const title = `UCI ${categoryKey === "women" ? "Women" : "Men"}’s World Rankings`;
   content.setAttribute("aria-busy", "true");
   content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${title}</div><div class="panel-meta">BMX Freestyle Park · Elite</div></div></div><div class="empty compact-empty" role="status">Loading official UCI rankings…</div>`;
+  const linksRequest = getLeaderboardUciLinks({ force }).then(links => ({ links }), () => ({ failed: true }));
   try {
     if (typeof JKCUciRankings === "undefined") throw new Error("Rankings are unavailable.");
     const snapshot = await JKCUciRankings.load({ force });
@@ -8533,17 +8629,32 @@ async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
     content.innerHTML = `<div class="panel-head board-rankings-head uci-rankings-head"><div><div class="eyebrow">BMX Freestyle Park · Elite</div><div class="panel-title">${title}</div><div class="uci-ranking-date">Official ranking · <time datetime="${escapeHtml(category.rankingDate)}">${boardUciDate(category.rankingDate)}</time></div></div><a class="uci-source-link" href="${escapeHtml(boardUciSourceUrl(category.sourceUrl))}" target="_blank" rel="noopener noreferrer">Official UCI source ↗</a></div>
       <div class="uci-refresh-status ${snapshot.stale ? "is-stale" : ""}"><p>${snapshot.stale ? "Showing the last available rankings. The latest update could not be confirmed." : "Synced automatically each week."}${snapshot.checkedAt ? ` <span>Last checked ${boardUciDate(snapshot.checkedAt)}.</span>` : ""}</p><button type="button" class="uci-refresh-btn" data-uci-retry>${snapshot.stale ? "Try again" : "Refresh"}</button></div>
       <div class="uci-search-field"><label for="board-uci-search">Find a rider</label><input id="board-uci-search" type="search" inputmode="search" autocomplete="off" maxlength="100" placeholder="Rider name or country code" value="${escapeHtml(state.boardUciSearch || "")}" data-uci-search></div>
+      <div class="board-uci-status" data-uci-members-status role="status">Finding JKC riders…</div>
       <div class="uci-rankings-table" role="table" aria-label="${title}"><div class="uci-ranking-row uci-ranking-labels" role="row"><span role="columnheader">Rank</span><span role="columnheader">Rider / nation</span><span role="columnheader">UCI points</span></div><div role="rowgroup" data-uci-rows></div></div>
       <div class="empty compact-empty" data-uci-empty hidden></div><div class="uci-ranking-footer"><span class="panel-meta" role="status" data-uci-count></span><button type="button" class="secondary-btn" data-uci-more hidden></button></div>`;
-    updateBoardUciRows(panel, category);
+    let members = new Map();
+    updateBoardUciRows(panel, category, members);
+    void linksRequest.then(result => {
+      if (!current()) return;
+      const status = panel.querySelector("[data-uci-members-status]");
+      if (result.failed) {
+        status.innerHTML = '<span>JKC rider highlights couldn’t load.</span><button type="button" class="uci-refresh-btn" data-board-uci-retry>Retry JKC highlights</button>';
+        status.querySelector("[data-board-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
+        return;
+      }
+      members = boardUciMembers(rawLeaderboard, result.links, snapshot);
+      const count = [...members.values()].filter(member => member.match.categoryKey === categoryKey).length;
+      status.textContent = count ? `${count} JKC rider${count === 1 ? "" : "s"} in this ranking · Look for the JKC logo` : "";
+      updateBoardUciRows(panel, category, members);
+    });
     panel.querySelector("[data-uci-search]").addEventListener("input", event => {
       state.boardUciSearch = event.target.value;
       state.boardUciLimit = 50;
-      updateBoardUciRows(panel, category);
+      updateBoardUciRows(panel, category, members);
     });
     panel.querySelector("[data-uci-more]").addEventListener("click", () => {
       state.boardUciLimit = (state.boardUciLimit || 50) + 50;
-      updateBoardUciRows(panel, category);
+      updateBoardUciRows(panel, category, members);
     });
     panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
   } catch (error) {
@@ -14949,6 +15060,7 @@ async function saveUciProfileLink(event, athleteId) {
     if (state.profile?.id === athleteId) state.profile.uci_id = data.uci_id;
     cacheClear("roster");
     cacheClear("session-viewer-roster:");
+    invalidateLeaderboardUciLinks();
     feedback.textContent = match ? `Linked to ${match.row.name}. Their latest UCI rank will appear on Home.` : "UCI link removed.";
   } catch (error) {
     if (current()) feedback.textContent = `Couldn’t save: ${messageFrom(error)} Your selection is still here; try again.`;

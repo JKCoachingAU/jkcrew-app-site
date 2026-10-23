@@ -1049,6 +1049,7 @@ html[data-theme="light"] .tricktionary-rename-btn {
   margin-right: -2px;
 }
 .leader-row .person-name { white-space: normal; }
+.leader-row .avatar { flex-shrink: 0; }
 .rank-medal { display: inline-block; margin-left: 5px; font-size: 0.96rem; vertical-align: -1px; }
 .last-place { filter: saturate(1.1); }
 .leader-badges { display: flex; gap: 4px; margin-top: 4px; font-size: 0.9rem; }
@@ -5462,6 +5463,18 @@ html.contest-merge-open body { overflow: hidden; }
 .uci-ranking-labels span:last-child { text-align: right; }
 .uci-rank { color: var(--muted); font: 700 0.8rem var(--mono); }
 .uci-rider { min-width: 0; }
+.uci-rider-name { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; }
+.uci-rider-name > strong { min-width: 0; }
+.uci-ranking-row.is-jkc { background: linear-gradient(100deg, var(--aqua-soft), transparent); box-shadow: inset 3px 0 var(--aqua); }
+.uci-ranking-row.is-jkc .uci-rank { color: var(--aqua); }
+.uci-jkc-mark { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 3px 7px 3px 3px; border: 1px solid color-mix(in srgb, var(--aqua) 38%, transparent); border-radius: 999px; background: var(--surface); color: var(--aqua); font: 800 0.6rem var(--mono); letter-spacing: 0.04em; }
+.uci-jkc-mark img { width: 22px; height: 22px; border-radius: 50%; object-fit: contain; background: #05090c; }
+.board-uci-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+.board-uci-status:empty { display: none; }
+.leader-uci-rank { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; margin-top: 5px; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--purple) 40%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--purple) 9%, transparent); color: var(--text); font: 700 0.68rem var(--mono); line-height: 1.4; }
+.leader-uci-rank > span { white-space: nowrap; }
+.leader-uci-rank b { color: var(--text); font-weight: 900; }
+.leader-uci-rank small { font-size: 0.58rem; text-transform: uppercase; }
 .uci-rider strong { display: block; overflow-wrap: anywhere; color: var(--text); font-size: 0.95rem; line-height: 1.35; }
 .uci-rider small { display: flex; align-items: center; gap: 12px; margin-top: 4px; color: var(--muted); font: 700 0.68rem var(--mono); }
 .uci-points { text-align: right; color: var(--aqua); font: 800 1.35rem var(--display); font-variant-numeric: tabular-nums; }
@@ -5480,6 +5493,7 @@ html.contest-merge-open body { overflow: hidden; }
   .uci-ranking-row { grid-template-columns: 32px minmax(0, 1fr) 72px; gap: 8px; padding: 13px 2px; }
   .uci-ranking-labels { font-size: 0.55rem; letter-spacing: 0.02em; }
   .uci-rider strong { font-size: 0.88rem; }
+  .uci-ranking-row.is-jkc { padding-left: 8px; }
   .uci-points { font-size: 1.2rem; }
   .uci-refresh-status { padding: 10px; align-items: flex-start; }
   .uci-refresh-status span { display: block; }
