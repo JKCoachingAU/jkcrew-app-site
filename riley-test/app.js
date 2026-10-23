@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.159";
+const RELEASE_VERSION = "2.14.160";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at";
 const state = {
@@ -80,6 +80,10 @@ const state = {
   tricktionarySuggestionsCleanup: null,
   coachPreviewTab: "home",
   boardLeaderboardView: "weekly",
+  boardRenderVersion: 0,
+  boardRankingsRenderVersion: 0,
+  boardUciSearch: "",
+  boardUciLimit: 50,
   leaderboardFallbackNotified: false,
   videoReviewStatus: "all",
   videoReviewRider: "all",
@@ -596,7 +600,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.159" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.160" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -8395,34 +8399,157 @@ async function endSession() {
   await navigate("home");
 }
 
+function boardLeaderboardViews() {
+  return [["weekly", "JKC Weekly"], ["allTime", "JKC All-Time"], ["uciMen", "UCI Men"], ["uciWomen", "UCI Women"]];
+}
+
+function boardRankingsShellHtml() {
+  const selected = boardLeaderboardViews().some(([id]) => id === state.boardLeaderboardView) ? state.boardLeaderboardView : "weekly";
+  return `<section class="panel board-rankings-panel" data-board-rankings>
+    <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">${boardLeaderboardViews().map(([id, label]) => `<button type="button" id="board-tab-${id}" role="tab" aria-controls="board-ranking-content" aria-selected="${id === selected}" tabindex="${id === selected ? 0 : -1}" class="${id === selected ? "active" : ""}" data-board-view="${id}">${label}</button>`).join("")}</div>
+    <div id="board-ranking-content" role="tabpanel" aria-labelledby="board-tab-${selected}" tabindex="0" data-board-ranking-content></div>
+  </section>`;
+}
+
+function boardUciSourceUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" && (url.hostname === "uci.org" || url.hostname.endsWith(".uci.org") || url.hostname === "uci.ch" || url.hostname.endsWith(".uci.ch"))) return url.href;
+  } catch (_) {}
+  return "https://dataride.uci.ch/";
+}
+
+function boardUciDate(value) {
+  const date = new Date(String(value || "").slice(0, 10) + "T12:00:00Z");
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function boardUciSearchText(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().trim();
+}
+
+function updateBoardUciRows(panel, category) {
+  const query = boardUciSearchText(state.boardUciSearch);
+  const filtered = category.rows.filter(row => !query || boardUciSearchText(`${row.name} ${row.nation}`).includes(query));
+  const visible = filtered.slice(0, state.boardUciLimit || 50);
+  const number = new Intl.NumberFormat("en-AU", { maximumFractionDigits: 2 });
+  panel.querySelector("[data-uci-rows]").innerHTML = visible.map(row => {
+    const movement = row.change == null || !Number.isFinite(Number(row.change)) ? "" : Number(row.change);
+    const movementLabel = movement === "" || movement === 0 ? "" : `${movement > 0 ? "Up" : "Down"} ${Math.abs(movement)} place${Math.abs(movement) === 1 ? "" : "s"}`;
+    return `<div class="uci-ranking-row" role="row">
+      <div class="uci-rank" role="cell">${escapeHtml(row.rank)}</div>
+      <div class="uci-rider" role="cell"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.nation)}${movementLabel ? ` <span class="uci-movement ${movement > 0 ? "up" : "down"}" aria-label="${escapeHtml(movementLabel)}">${movement > 0 ? "↑" : "↓"} ${Math.abs(movement)}</span>` : ""}</small></div>
+      <div class="uci-points" role="cell">${number.format(Number(row.points))}</div>
+    </div>`;
+  }).join("");
+  const empty = panel.querySelector("[data-uci-empty]");
+  empty.hidden = filtered.length > 0;
+  empty.textContent = query ? "No riders match that name or country code. Try another search." : "No riders are listed in this ranking yet.";
+  panel.querySelector("[data-uci-count]").textContent = `${filtered.length ? `Showing ${visible.length} of ${filtered.length}` : "0"} riders${query ? ` · ${category.rows.length} in this ranking` : ""}`;
+  const more = panel.querySelector("[data-uci-more]");
+  more.hidden = visible.length >= filtered.length;
+  more.textContent = `Show ${Math.min(50, Math.max(0, filtered.length - visible.length))} more riders`;
+}
+
+async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
+  const panel = document.querySelector("[data-board-rankings]");
+  if (!panel || state.view !== "board") return;
+  const version = state.boardRankingsRenderVersion = (state.boardRankingsRenderVersion || 0) + 1;
+  const viewerId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
+  const selected = boardLeaderboardViews().some(([id]) => id === state.boardLeaderboardView) ? state.boardLeaderboardView : "weekly";
+  state.boardLeaderboardView = selected;
+  const current = () => panel.isConnected && state.view === "board" && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.boardRankingsRenderVersion === version;
+  const content = panel.querySelector("[data-board-ranking-content]");
+  content.setAttribute("aria-labelledby", `board-tab-${selected}`);
+  panel.querySelectorAll("[data-board-view]").forEach(button => {
+    const active = button.dataset.boardView === selected;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  if (selected === "weekly" || selected === "allTime") {
+    const allTime = selected === "allTime";
+    const pointsKey = allTime ? "all_time_points" : "weekly_points";
+    const rows = leaderboardWithBenchmark(allTime ? [...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))) : rawLeaderboard, pointsKey);
+    content.removeAttribute("aria-busy");
+    content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${allTime ? "JKC all-time rankings" : "JKC weekly rankings"}</div><div class="panel-meta">${allTime ? "Total points since joining" : "Resets Sunday evening in each rider's country"} · Badges and levels follow original lifetime XP.</div></div><div class="panel-meta">${rows.length} riders</div></div><div class="leaderboard">${compactLeaderboardHtml(rows, pointsKey)}</div>`;
+    content.querySelectorAll("[data-public-athlete]").forEach(button => button.addEventListener("click", openPublicAthleteProfile));
+    return;
+  }
+  const categoryKey = selected === "uciWomen" ? "women" : "men";
+  const title = `UCI ${categoryKey === "women" ? "Women" : "Men"}’s World Rankings`;
+  content.setAttribute("aria-busy", "true");
+  content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${title}</div><div class="panel-meta">BMX Freestyle Park · Elite</div></div></div><div class="empty compact-empty" role="status">Loading official UCI rankings…</div>`;
+  try {
+    if (typeof JKCUciRankings === "undefined") throw new Error("Rankings are unavailable.");
+    const snapshot = await JKCUciRankings.load({ force });
+    if (!current()) return;
+    const category = snapshot.categories?.[categoryKey];
+    if (!category || !Array.isArray(category.rows) || !category.rankingDate) throw new Error("Rankings are unavailable.");
+    content.removeAttribute("aria-busy");
+    content.innerHTML = `<div class="panel-head board-rankings-head uci-rankings-head"><div><div class="eyebrow">BMX Freestyle Park · Elite</div><div class="panel-title">${title}</div><div class="uci-ranking-date">Official ranking · <time datetime="${escapeHtml(category.rankingDate)}">${boardUciDate(category.rankingDate)}</time></div></div><a class="uci-source-link" href="${escapeHtml(boardUciSourceUrl(category.sourceUrl))}" target="_blank" rel="noopener noreferrer">Official UCI source ↗</a></div>
+      <div class="uci-refresh-status ${snapshot.stale ? "is-stale" : ""}"><p>${snapshot.stale ? "Showing the last available rankings. The latest update could not be confirmed." : "Synced automatically each week."}${snapshot.checkedAt ? ` <span>Last checked ${boardUciDate(snapshot.checkedAt)}.</span>` : ""}</p><button type="button" class="uci-refresh-btn" data-uci-retry>${snapshot.stale ? "Try again" : "Refresh"}</button></div>
+      <div class="uci-search-field"><label for="board-uci-search">Find a rider</label><input id="board-uci-search" type="search" inputmode="search" autocomplete="off" maxlength="100" placeholder="Rider name or country code" value="${escapeHtml(state.boardUciSearch || "")}" data-uci-search></div>
+      <div class="uci-rankings-table" role="table" aria-label="${title}"><div class="uci-ranking-row uci-ranking-labels" role="row"><span role="columnheader">Rank</span><span role="columnheader">Rider / nation</span><span role="columnheader">UCI points</span></div><div role="rowgroup" data-uci-rows></div></div>
+      <div class="empty compact-empty" data-uci-empty hidden></div><div class="uci-ranking-footer"><span class="panel-meta" role="status" data-uci-count></span><button type="button" class="secondary-btn" data-uci-more hidden></button></div>`;
+    updateBoardUciRows(panel, category);
+    panel.querySelector("[data-uci-search]").addEventListener("input", event => {
+      state.boardUciSearch = event.target.value;
+      state.boardUciLimit = 50;
+      updateBoardUciRows(panel, category);
+    });
+    panel.querySelector("[data-uci-more]").addEventListener("click", () => {
+      state.boardUciLimit = (state.boardUciLimit || 50) + 50;
+      updateBoardUciRows(panel, category);
+    });
+    panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
+  } catch (error) {
+    if (!current()) return;
+    content.removeAttribute("aria-busy");
+    content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${title}</div><div class="panel-meta">BMX Freestyle Park · Elite</div></div></div><div class="uci-ranking-error" role="status"><strong>Rankings couldn’t load</strong><p>Check your connection and try again. JKC rankings are still available.</p><div class="actions"><button type="button" class="secondary-btn" data-uci-retry>Try again</button><a class="uci-source-link" href="${escapeHtml(boardUciSourceUrl())}" target="_blank" rel="noopener noreferrer">Open official UCI rankings ↗</a></div></div>`;
+    panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
+  }
+}
+
+function bindBoardRankings(rawLeaderboard) {
+  const panel = document.querySelector("[data-board-rankings]");
+  const select = button => {
+    if (!button || button.dataset.boardView === state.boardLeaderboardView) return;
+    state.boardLeaderboardView = button.dataset.boardView;
+    state.boardUciSearch = "";
+    state.boardUciLimit = 50;
+    void renderBoardRankings(rawLeaderboard);
+  };
+  const tabs = [...panel.querySelectorAll("[data-board-view]")];
+  tabs.forEach((button, index) => {
+    button.addEventListener("click", () => select(button));
+    button.addEventListener("keydown", event => {
+      const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      tabs[next].focus();
+      select(tabs[next]);
+    });
+  });
+  void renderBoardRankings(rawLeaderboard);
+}
+
 async function renderBoard() {
+  const version = state.boardRenderVersion = (state.boardRenderVersion || 0) + 1;
+  const viewerId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
   const [rawLeaderboard, boardChat, openReports] = await Promise.all([getLeaderboard(), getBoardChat(), getOpenCrewReports()]);
-  const leaderboard = leaderboardWithBenchmark(rawLeaderboard, "weekly_points");
-  const allTimeLeaderboard = leaderboardWithBenchmark([...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))), "all_time_points");
-  const activeBoardView = state.boardLeaderboardView === "allTime" ? "allTime" : "weekly";
-  const activeRows = activeBoardView === "allTime" ? allTimeLeaderboard : leaderboard;
-  const activePointsKey = activeBoardView === "allTime" ? "all_time_points" : "weekly_points";
-  const boardTitle = activeBoardView === "allTime" ? "All-time rankings" : "Weekly rankings";
-  const boardMeta = activeBoardView === "allTime" ? "Total points since joining" : "Resets Sunday evening in each rider's country";
+  if (state.view !== "board" || state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion || state.boardRenderVersion !== version) return;
   const mentionableUsers = boardMentionableUsers(rawLeaderboard);
   state.boardMentionableCache = mentionableUsers;
   const canPost = canPostBoardChat();
   localStorage.setItem(CHAT_LAST_SEEN_KEY, new Date().toISOString());
   updateBoardChatNavBadge(0);
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">This week</div><h1>The <span>crew board</span></h1><p>Every landed trick moves the crew. The board resets at Sunday midnight in each rider's country.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
+    <div class="page-head"><div><div class="eyebrow">JKCREW & world rankings</div><h1>The <span>crew board</span></h1><p>Follow the crew and the world’s best BMX Freestyle Park riders.</p></div><div class="actions">${pointsHelpHtml()}</div></div>
     ${scoreAdjustmentPanel(rawLeaderboard)}
-    <section class="panel board-rankings-panel">
-      <div class="panel-head board-rankings-head">
-        <div><div class="panel-title">${boardTitle}</div><div class="panel-meta">${boardMeta} · Badges and levels follow original lifetime XP.</div></div>
-        <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">
-          <button type="button" class="${activeBoardView === "weekly" ? "active" : ""}" data-board-view="weekly">Weekly</button>
-          <button type="button" class="${activeBoardView === "allTime" ? "active" : ""}" data-board-view="allTime">All-time</button>
-        </div>
-        <div class="panel-meta">${activeRows.length} riders</div>
-      </div>
-      <div class="leaderboard">${compactLeaderboardHtml(activeRows, activePointsKey)}</div>
-    </section>
+    ${boardRankingsShellHtml()}
     <section class="panel board-chat-panel jkc-crew-chat">
       <div class="jkc-chat-stripe" aria-hidden="true"></div>
       <div class="panel-head jkc-chat-head">
@@ -8435,10 +8562,7 @@ async function renderBoard() {
       ${canPost ? boardChatComposerHtml(mentionableUsers) : `<div class="empty compact-empty">Crew chat is read-only for parent accounts.</div>`}
     </section>`;
   document.querySelectorAll("[data-public-athlete]").forEach((button) => button.addEventListener("click", openPublicAthleteProfile));
-  document.querySelectorAll("[data-board-view]").forEach((button) => button.addEventListener("click", () => {
-    state.boardLeaderboardView = button.dataset.boardView || "weekly";
-    renderBoard();
-  }));
+  bindBoardRankings(rawLeaderboard);
   document.querySelector("#score-adjust-form")?.addEventListener("submit", submitScoreAdjustment);
   document.querySelector("#point-recalc-form")?.addEventListener("submit", submitPointRecalculation);
   document.querySelector("#board-chat-form")?.addEventListener("submit", submitBoardChat);
