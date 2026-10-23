@@ -55,6 +55,9 @@ window.getXpSummary = async () => ({}); window.getXpHistory = async () => [];
 window.normalizeXpSummary = () => ({}); window.xpProgressHtml = () => '';
 window.levelBadgesAccordionHtml = () => ''; window.xpHistoryHtml = () => '';
 window.getCoachRoster = async () => []; window.coachDailyPbSettingsHtml = () => '';
+window.bikeGarageTeaserHtml = () => '';
+// UCI profile linking has its own browser coverage in uci-home-ui.cjs.
+window.uciProfileLinkHtml = () => ''; window.bindUciProfileLink = () => {};
 window.avatarHtml = () => '<div class="avatar profile-avatar">FR</div>';
 window.pushNotificationSettingsHtml = () => '<p>Push notifications unavailable in isolated fixture.</p>';
 window.normalizedTheme = value => value || 'dark'; window.countryOptionsHtml = () => '<option value="AU">Australia</option>';

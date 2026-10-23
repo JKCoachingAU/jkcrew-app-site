@@ -84,5 +84,19 @@
     return pending;
   }
 
-  window.JKCUciRankings = Object.freeze({ load });
+  function findRider(data, uciId) {
+    const id = String(uciId || "");
+    if (!/^\d{11}$/.test(id)) return null;
+    const matches = [];
+    for (const categoryKey of ["men", "women"]) {
+      const category = data?.categories?.[categoryKey];
+      for (const row of category?.rows || []) {
+        if (row.uciId === id) matches.push({ row, category, categoryKey });
+      }
+    }
+    // Never guess from a nickname or choose an arbitrary duplicate identity.
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  window.JKCUciRankings = Object.freeze({ load, findRider });
 })();

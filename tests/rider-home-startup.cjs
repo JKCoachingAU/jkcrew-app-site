@@ -11,6 +11,10 @@ const email = 'home-fixture@example.test';
 const profile = { id: riderId, email, display_name: 'Home Test Rider', role: 'athlete', app_theme: 'dark', country_code: 'AU', country_name: 'Australia', xp_total: 45, level: 1, goals: [], rider_extra_tricks: [], achievements: [], badges: [], onboarding_completed_at: new Date().toISOString() };
 const user = { id: riderId, aud: 'authenticated', role: 'authenticated', email, email_confirmed_at: new Date().toISOString(), app_metadata: { provider: 'email', providers: ['email'] }, user_metadata: { display_name: profile.display_name }, identities: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 const activeSession = { id: '33333333-3333-4333-8333-333333333333', athlete_id: riderId, started_at: new Date().toISOString(), ended_at: null, total_points: 12, daily_completed_seconds: null, daily_completed_at: null, daily_venue: 'Test park' };
+const uciSnapshot = { schemaVersion: 1, checkedAt: new Date().toISOString(), categories: {
+  men: { rankingDate: '2026-10-20', sourceUrl: 'https://dataride.uci.org/iframe/RankingDetails/156', rows: [{ uciId: '10000000001', name: 'KINDERMANN Lars', nation: 'GER', rank: 13, points: 2610, change: 2 }] },
+  women: { rankingDate: '2026-10-20', sourceUrl: 'https://dataride.uci.org/iframe/RankingDetails/157', rows: [{ uciId: '10000000002', name: 'NORRIS Alirah', nation: 'AUS', rank: 18, points: 1985, change: -1 }] },
+} };
 function session() {
   const now = Math.floor(Date.now() / 1000), encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   const token = encode({ alg: 'HS256', typ: 'JWT' }) + '.' + encode({ sub: riderId, aud: 'authenticated', role: 'authenticated', email, iat: now, exp: now + 3600, iss: 'https://soanwttlorlgdfrzbvtp.supabase.co/auth/v1', session_id: '22222222-2222-4222-8222-222222222222' }) + '.isolated-fixture-signature';
@@ -28,28 +32,36 @@ function session() {
   const origin = 'http://127.0.0.1:' + server.address().port;
   const browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
   let checks = 0;
+  const startupMeasurements = [];
   const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
   const ok = (value, message) => { assert(value, message); checks++; };
   async function scenario(initial = {}) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
-    const controls = { rankings: 'ok', battles: 'ok', active: 'ok', week: 'ok', milestones: 'ok', ...initial };
+    const controls = { rankings: 'ok', battles: 'ok', active: 'ok', week: 'ok', milestones: 'ok', uci: 'ok', ...initial };
+    const scenarioProfile = { ...profile, uci_id: initial.uciId || null };
     const held = new Map(), counts = {}, errors = [], unexpected = [];
     const headers = { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-expose-headers': 'Content-Range', 'content-range': '*/0' };
     await context.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url());
       if (url.origin === origin) return route.continue();
-      if (url.hostname !== 'soanwttlorlgdfrzbvtp.supabase.co') return route.abort();
       const json = (value, status = 200) => route.fulfill({ status, headers, body: request.method() === 'HEAD' ? '' : JSON.stringify(value) }).catch(() => {});
+      if (url.hostname === 'raw.githubusercontent.com' && url.pathname === '/JKCoachingAU/jkcrew-app-site/uci-rankings/rankings.json') {
+        counts.uci = (counts.uci || 0) + 1;
+        let mode = controls.uci;
+        if (mode === 'stall') mode = await new Promise(resolve => { const pending = held.get('uci') || []; pending.push(resolve); held.set('uci', pending); });
+        return mode === 'fail' ? json({}, 503) : json(uciSnapshot);
+      }
+      if (url.hostname !== 'soanwttlorlgdfrzbvtp.supabase.co') return route.abort();
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
       if (url.pathname === '/auth/v1/token') return json(session());
       if (url.pathname === '/auth/v1/user') return json(user);
       if (url.pathname === '/auth/v1/logout') return json({});
       if (!url.pathname.startsWith('/rest/v1/')) { unexpected.push(url.pathname); return route.abort(); }
       const name = url.pathname.slice('/rest/v1/'.length);
-      if (name === 'profiles' && url.searchParams.get('select') === profileSelect) return json([profile]);
+      if (name === 'profiles' && url.searchParams.get('select') === profileSelect) return json([scenarioProfile]);
       if (name === 'rpc/get_rider_feature_access') return json([{ athlete_id: riderId, features_disabled: false }]);
-      if (name === 'rpc/ensure_current_profile') return json(profile);
-      if (name === 'profiles') return json([profile]);
+      if (name === 'rpc/ensure_current_profile') return json(scenarioProfile);
+      if (name === 'profiles') return json([scenarioProfile]);
       const keys = { 'rpc/get_weekly_leaderboard': 'rankings', 'rpc/get_my_rider_battles': 'battles', 'rpc/get_effective_weekly_assignments': 'week', 'rpc/get_my_progress_milestones': 'milestones' };
       const key = keys[name] || (name === 'training_sessions' && url.searchParams.get('ended_at') === 'is.null' ? 'active' : '');
       if (key) {
@@ -75,6 +87,7 @@ function session() {
     const started = Date.now(); await page.getByRole('button', { name: 'Enter JKCREW', exact: true }).click();
     await page.locator('.athlete-scoreboard').waitFor(); await page.waitForFunction(() => !document.querySelector('#app').inert);
     const startupMs = Date.now() - started;
+    startupMeasurements.push(startupMs);
     const release = (key, mode = 'ok') => { const pending = held.get(key) || []; held.delete(key); pending.forEach(resolve => resolve(mode)); };
     const close = async () => { eq(errors, [], 'No browser exceptions'); eq(unexpected, [], 'No unexpected backend endpoints'); for (const key of held.keys()) release(key); await context.close(); };
     return { page, context, controls, held, counts, errors, release, close, startupMs };
@@ -82,7 +95,7 @@ function session() {
   try {
     {
       const t = await scenario({ rankings: 'stall', active: 'stall' }), page = t.page;
-      ok(t.startupMs < 3500, 'Home is usable before stalled optional requests settle');
+      ok(t.startupMs < 3500, `Home is usable before stalled optional requests settle (${t.startupMs}ms; budget 3500ms)`);
       eq(await page.locator('.athlete-scoreboard h1').textContent(), profile.display_name);
       eq(await page.locator('.score-ranking-stat .stat-value').nth(0).textContent(), '—', 'Pending points are unknown, not fabricated zero');
       await page.waitForFunction(() => document.querySelector('.battle-ranking-stat .stat-value')?.textContent.includes('1W'));
@@ -139,9 +152,31 @@ function session() {
       eq(await page.evaluate(() => state.activeTraining), null);
       eq(await page.locator('.score-ranking-stat .stat-value').nth(1).textContent(), '#1');
       eq(await page.locator('.xp-title').textContent(), 'Level 145 XP');
+      eq(t.counts.uci || 0, 0, 'Unlinked riders make no UCI download during full app startup');
+      eq(await page.locator('.home-uci-card').count(), 0, 'Unlinked Home does not show a guessed world ranking');
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(50);
       await page.screenshot({ path: '/tmp/jkcrew-home-loaded-mobile.png', fullPage: true });
+      await t.close();
+    }
+    {
+      const t = await scenario({ uciId: '10000000001', uci: 'stall' }), page = t.page;
+      ok(t.startupMs < 3500, `A stalled UCI feed does not gate full Home startup (${t.startupMs}ms; budget 3500ms)`);
+      await page.locator('.home-uci-card').waitFor();
+      eq(await page.locator('.home-uci-card').getAttribute('aria-busy'), 'true', 'Linked rider sees the optional ranking loading state');
+      await page.waitForFunction(() => document.querySelector('.score-ranking-stat .stat-value')?.textContent === '7pts');
+      ok(t.held.has('uci'), 'Home and JKC score are usable while UCI response is still pending');
+      t.release('uci');
+      await page.waitForFunction(() => document.querySelector('.home-uci-rank')?.textContent === '#13');
+      eq(await page.locator('.home-uci-detail strong').textContent(), 'Men’s Elite · 2,610 UCI points', 'Full app resolves exact linked UCI rank and points');
+      eq(await page.locator('.home-uci-card time').textContent(), '20 Oct 2026', 'Full app labels the official publication date');
+      await page.screenshot({ path: '/tmp/jkcrew-home-uci-linked-mobile.png', fullPage: true });
+      await page.locator('[data-home-uci-board]').click();
+      await page.locator('[data-uci-search]').waitFor();
+      eq(await page.getByRole('tab', { selected: true }).textContent(), 'UCI Men', 'Home ranking opens the correct real leaderboard tab');
+      eq(await page.locator('[data-uci-search]').inputValue(), 'KINDERMANN Lars', 'Home ranking opens the rider’s matching leaderboard result');
+      eq(await page.locator('[data-uci-rows] [role="row"]').count(), 1, 'Full app search filters to the linked rider');
+      eq(t.counts.uci, 1, 'Home-to-board navigation reuses the same cached UCI snapshot');
       await t.close();
     }
     for (const invalidation of ['account', 'signout', 'navigation', 'token', 'version', 'disabled', 'unknown', 'replaced-view']) {
@@ -177,6 +212,6 @@ function session() {
       eq(await page.evaluate(() => state.timer === window.nextTimer), true, 'Stale Home timer does not clear a newer page timer');
       await t.close();
     }
-    console.log('PASS: ' + checks + ' full-page rider Home startup, independent failure/timeout/retry, primary actions, timer, secondary form preservation and stale-access/account checks. No production traffic.');
+    console.log('PASS: ' + checks + ' full-page rider Home startup, independent failure/timeout/retry, UCI card/board integration, primary actions, timer, secondary form preservation and stale-access/account checks. No production traffic. Startup ms: ' + startupMeasurements.join(', '));
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

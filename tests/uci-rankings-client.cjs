@@ -13,9 +13,18 @@ function client({ stored, blocked = false, reply = async () => ({ ok: true, json
     fetch: (url, options) => { calls.push({ url, options }); return reply(url, options); }
   };
   vm.runInNewContext(source, context);
-  return { load: context.window.JKCUciRankings.load, calls, storage };
+  return { ...context.window.JKCUciRankings, calls, storage };
 }
 (async () => {
+  const matcher = client();
+  const identities = data();
+  identities.categories.men.rows[0].uciId = '10124058738';
+  identities.categories.women.rows[0].uciId = '10165130053';
+  assert.equal(matcher.findRider(identities, '10165130053').categoryKey, 'women');
+  assert.equal(matcher.findRider(identities, '19999999999'), null, 'Unlisted IDs never match by name');
+  assert.equal(matcher.findRider(identities, ''), null, 'Empty IDs never match an arbitrary row');
+  identities.categories.men.rows.push({ ...identities.categories.women.rows[0] });
+  assert.equal(matcher.findRider(identities, '10165130053'), null, 'Ambiguous identities are not displayed');
   let release;
   const single = client({ reply: () => new Promise(resolve => { release = () => resolve({ ok: true, json: async () => data() }); }) });
   const first = single.load(), second = single.load(); release();
