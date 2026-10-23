@@ -1,0 +1,138 @@
+name: Update UCI BMX Freestyle rankings
+
+on:
+  schedule:
+    # UCI normally publishes weekly on Tuesday. A daily check also catches
+    # delayed releases and recovers automatically from a temporary outage.
+    - cron: '23 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-uci-rankings
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'JKCoachingAU/jkcrew-app-site' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the published application source
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Fetch and validate both official rankings
+        run: node tools/update-uci-rankings.mjs --output /tmp/uci-rankings.json
+
+      - name: Publish the validated snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+
+          const repository = process.env.GITHUB_REPOSITORY;
+          if (repository !== 'JKCoachingAU/jkcrew-app-site') throw new Error('Unexpected repository');
+          const branch = 'uci-rankings';
+          const path = 'rankings.json';
+          const content = readFileSync('/tmp/uci-rankings.json', 'utf8');
+          if (Buffer.byteLength(content) > 900_000) throw new Error('Ranking snapshot is unexpectedly large');
+          const snapshot = JSON.parse(content);
+          const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+            && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+          if (snapshot.schemaVersion !== 1 || !Number.isFinite(Date.parse(snapshot.checkedAt))) {
+            throw new Error('Unsupported or incomplete ranking snapshot');
+          }
+          const checkedAt = Date.parse(snapshot.checkedAt);
+          if (checkedAt > Date.now() + 300_000 || checkedAt < Date.now() - 3_600_000) {
+            throw new Error('The source check did not complete during this run');
+          }
+          for (const category of ['men', 'women']) {
+            const ranking = snapshot.categories?.[category];
+            if (!ranking || !validDate(ranking.rankingDate) || !Array.isArray(ranking.rows) || !ranking.rows.length) {
+              throw new Error(`Missing validated ${category} rankings`);
+            }
+          }
+
+          const api = async (suffix, method = 'GET', body) => {
+            const response = await fetch(`https://api.github.com/repos/${repository}/${suffix}`, {
+              method,
+              headers: {
+                Authorization: `Bearer ${process.env.GH_TOKEN}`,
+                Accept: 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'Content-Type': 'application/json',
+              },
+              body: body === undefined ? undefined : JSON.stringify(body),
+              signal: AbortSignal.timeout(30_000),
+            });
+            const result = await response.json();
+            return { status: response.status, ok: response.ok, data: result };
+          };
+          const requireSuccess = (result, operation) => {
+            if (!result.ok) throw new Error(`${operation} failed (HTTP ${result.status})`);
+            return result.data;
+          };
+
+          // Fetch and validate everything before creating a ref or changing a file.
+          // A failed UCI download leaves the last good public snapshot untouched.
+          let ref = await api(`git/ref/heads/${branch}`);
+          let previous = null;
+          if (ref.ok) {
+            const existing = await api(`contents/${path}?ref=${branch}`);
+            if (existing.ok) {
+              previous = existing.data;
+              const oldSnapshot = JSON.parse(Buffer.from(previous.content, 'base64').toString('utf8'));
+              if (Date.parse(oldSnapshot.checkedAt) > checkedAt) throw new Error('Refusing an older source check');
+              for (const category of ['men', 'women']) {
+                const oldDate = oldSnapshot.categories?.[category]?.rankingDate;
+                if (!validDate(oldDate) || snapshot.categories[category].rankingDate < oldDate) {
+                  throw new Error(`Refusing to replace ${category} with an older ranking`);
+                }
+              }
+            } else if (existing.status !== 404) {
+              requireSuccess(existing, 'Reading published snapshot');
+            }
+          } else if (ref.status === 404) {
+            const main = requireSuccess(await api('git/ref/heads/main'), 'Reading main ref');
+            requireSuccess(await api('git/refs', 'POST', {
+              ref: `refs/heads/${branch}`, sha: main.object.sha,
+            }), 'Creating rankings data branch');
+          } else {
+            requireSuccess(ref, 'Reading rankings data branch');
+          }
+
+          const encoded = Buffer.from(content).toString('base64');
+          const result = await api(`contents/${path}`, 'PUT', {
+            message: `Refresh UCI BMX Freestyle rankings (${snapshot.checkedAt.slice(0, 10)})`,
+            branch,
+            content: encoded,
+            ...(previous ? { sha: previous.sha } : {}),
+          });
+          // A SHA conflict is never force-overwritten. A subsequent scheduled
+          // run can retry safely using the newly published revision.
+          requireSuccess(result, 'Publishing rankings');
+          const verified = requireSuccess(await api(`contents/${path}?ref=${branch}`), 'Verifying published rankings');
+          if (Buffer.from(verified.content, 'base64').toString('utf8') !== content) {
+            throw new Error('Published ranking snapshot did not match');
+          }
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `UCI BMX Freestyle Park rankings checked at ${snapshot.checkedAt}.\n\n` +
+            ['men', 'women'].map(category => {
+              const ranking = snapshot.categories[category];
+              return `- ${category}: ${ranking.rows.length} riders; official ranking date ${ranking.rankingDate}.`;
+            }).join('\n') + '\n\nPublished to the uci-rankings data branch. Application source and JKC scores are unchanged.\n');
+          NODE
