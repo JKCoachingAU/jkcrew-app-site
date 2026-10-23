@@ -10,7 +10,7 @@ const state={user:{id:'coach'},profile:{role:'coach'},view:'command'};
 let liveRun=null,liveRunDiscoveryBusy=false,liveRunDiscoveryTimer=null;
 window.rows=[];window.queries=[];window.joins=[];window.notices=[];window.sounds=[];window.failReads=false;window.holdRead=false;window.releaseRead=null;
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const isCoachRole=role=>['coach','admin'].includes(role),riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false;
+const isCoachRole=role=>['coach','admin'].includes(role),riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false,riderRecoveryActive=()=>false;
 const notify=message=>notices.push(message),playNotificationSound=kind=>sounds.push(kind),messageFrom=e=>e.message||String(e);
 const setButtonBusy=(button,label)=>{const previous=button.textContent;button.disabled=true;button.textContent=label;return()=>{button.disabled=false;button.textContent=previous;};};
 async function joinLiveRun(id,accept){joins.push({id,accept});}

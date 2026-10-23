@@ -22,7 +22,7 @@ const wait=()=>Promise.resolve();
 const withTimeout=(promise,label,ms)=>testRealTimeout(promise,label,timeoutOverrides[label]??ms);
 const cancelScreenLoading=()=>{state.loadingOverlayToken++;app.inert=false;},loadingScreenCopy=()=>({}),beginScreenLoading=()=>++state.loadingOverlayToken,finishScreenLoading=()=>{};
 const closeJkcYard=()=>{},teardownRealtimeSync=()=>{},dismissDailyFinishForNavigation=()=>{},closeTrainingProgressViews=()=>{},closeAthleteReviewViewer=()=>{},closeContestEventModal=()=>{},closeEventCourseViewer=()=>{},resetVideoReviewPrivateState=()=>{},clearDailyFeatureMounts=()=>{},applyTheme=()=>{},recordMyAppOpen=()=>{},startRiderFeatureAccessWatch=()=>{},setupRealtimeSync=async()=>{},isRileyTestRoute=()=>false;
-const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false;
+const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false,riderRecoveryActive=()=>false;
 const refreshRiderFeatureAccess=async()=>true,isCoachRole=role=>role==='coach',notify=message=>notices.push(message);
 const navigate=async view=>{state.view=view;paints.push({kind:'navigate',view,user:state.user?.id});};
 function renderShell(){paints.push({kind:'shell',user:state.user?.id,profile:state.profile?.id});app.innerHTML='<main id="view" data-user="'+escapeHtml(state.user?.id)+'" data-profile="'+escapeHtml(state.profile?.id)+'">Rider dashboard</main>';}

@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.162";
+const version = "2.14.163";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -858,7 +858,7 @@ assert(!/goals|contest_run/.test(viewerTabs), "Session Viewer should not expose 
 assert(functionBody("sessionViewerPlanList").includes("viewer-list-tone-${tab.id}"), "Coach Session tabs must carry the rider category colours");
 
 assert(
-  app.includes('const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";'),
+  app.includes('const shellClass = recovery ? "rider-shell recovery-shell" : isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";'),
   "Each account experience must expose its own visual-system scope",
 );
 assert(app.includes('class="app-shell ${shellClass}"'), "The app shell must apply the scoped account experience");

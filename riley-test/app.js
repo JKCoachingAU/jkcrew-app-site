@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.162";
+const RELEASE_VERSION = "2.14.163";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -135,12 +135,17 @@ const state = {
   riderAccessCheckedAt: 0,
   riderAccessRequest: null,
   riderAccessTimer: null,
+  recoveryMount: null,
 };
 
 const RIDER_ACCESS_MESSAGE = "You don't have access to this feature, contact your coach";
 
 function riderFeaturesDisabled() {
   return state.profile?.role === "athlete" && state.riderAccess?.features_disabled === true;
+}
+
+function riderRecoveryActive() {
+  return state.profile?.role === "athlete" && state.riderAccess?.recovery_mode === true;
 }
 
 function riderFeatureAccessUnknown() {
@@ -153,7 +158,7 @@ function showRiderAccessMessage() {
 
 async function refreshRiderFeatureAccess({ force = false, enforce = true } = {}) {
   if (state.profile?.role !== "athlete" || !state.user?.id) return true;
-  if (!force && state.riderAccess && Date.now() - state.riderAccessCheckedAt < 10000) return !riderFeaturesDisabled();
+  if (!force && state.riderAccess && Date.now() - state.riderAccessCheckedAt < 10000) return riderRecoveryActive() || !riderFeaturesDisabled();
   const userId = state.user.id;
   const setupVersion = state.sessionSetupVersion;
   if (!state.riderAccessRequest) {
@@ -177,6 +182,26 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
     return false;
   }
   if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return false;
+  if (enforce && document.querySelector("#view") && riderRecoveryActive()) {
+    const recoveryHost = document.querySelector("#rider-recovery-home");
+    if (!recoveryHost || !document.querySelector(".recovery-shell") || (recoveryHost.dataset.recoveryEpisode || "") !== (state.riderAccess.recovery_episode_id || "")) {
+      state.recoveryMount?.destroy();
+      state.recoveryMount = null;
+      closeRestrictedRiderFeatures();
+      renderShell();
+      await navigate("home", { accessChecked: true });
+    }
+    return true;
+  }
+  if (enforce && document.querySelector(".recovery-shell") && !riderRecoveryActive()) {
+    state.recoveryMount?.destroy();
+    state.recoveryMount = null;
+    window.JKCRecovery?.cleanup({ clearDrafts: true });
+    renderShell();
+    await navigate("home", { accessChecked: true });
+    if (!riderFeaturesDisabled()) void setupRealtimeSync().catch(error => console.warn("Realtime reconnect unavailable", error));
+    return !riderFeaturesDisabled();
+  }
   if (enforce && riderFeaturesDisabled() && document.querySelector("#view") && !document.querySelector("#rider-access-dashboard")) {
     closeRestrictedRiderFeatures();
     await navigate("home", { accessChecked: true });
@@ -184,7 +209,7 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
     await navigate("home", { accessChecked: true });
     if (!state.realtimeChannel) void setupRealtimeSync().catch(error => console.warn("Realtime reconnect unavailable", error));
   }
-  return !riderFeaturesDisabled();
+  return riderRecoveryActive() || !riderFeaturesDisabled();
 }
 
 function closeRestrictedRiderFeatures() {
@@ -198,6 +223,9 @@ function closeRestrictedRiderFeatures() {
   closeTrainingProgressViews();
   closeAthleteReviewViewer();
   closeContestEventModal();
+  closeContestMergeModal();
+  closeEventCourseViewer();
+  clearHelpVideoPreview();
   stopRunPlayback();
   disconnectLiveRun();
   closeJkcYard();
@@ -214,14 +242,18 @@ function startRiderFeatureAccessWatch() {
 }
 
 function guardRiderFeatureInteraction(event) {
-  if (!riderFeaturesDisabled() && !riderFeatureAccessUnknown()) return;
+  if (!riderRecoveryActive() && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()) return;
   const target = event.target?.closest?.('button, a, input, select, textarea, summary, [role="button"], form');
   if (!target || !document.querySelector("#view")) return;
   if (target.matches('[data-view="home"], #sign-out, [data-rider-access-logout], [data-rider-access-retry]')) return;
+  if (riderRecoveryActive() && (target.closest('[data-recovery-scope], #app-update-notice') || target.matches('#retry-current-view, #install-app'))) return;
   if (event.type === "keydown" && !["Enter", " "].includes(event.key)) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (["click", "submit", "keydown"].includes(event.type)) showRiderAccessMessage();
+  if (["click", "submit", "keydown"].includes(event.type)) {
+    if (riderRecoveryActive()) notify("Recovery mode is on. Your check-in and plan are on your home screen.");
+    else showRiderAccessMessage();
+  }
 }
 
 // Capture before delegated feature handlers, including keyboard and inline home actions.
@@ -230,6 +262,47 @@ window.addEventListener("focus", () => { void refreshRiderFeatureAccess({ force:
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void refreshRiderFeatureAccess({ force: true });
 });
+
+async function renderRiderRecoveryHome() {
+  if (!riderRecoveryActive()) return renderAthleteHome();
+  const userId = state.user.id, setupVersion = state.sessionSetupVersion;
+  state.recoveryMount?.destroy();
+  state.recoveryMount = null;
+  const host = document.querySelector("#view");
+  host.innerHTML = '<section id="rider-recovery-home" data-recovery-scope aria-label="Your recovery"></section>';
+  const element = host.querySelector("#rider-recovery-home");
+  element.dataset.recoveryEpisode = state.riderAccess?.recovery_episode_id || "";
+  const isCurrent = () => state.user?.id === userId && state.sessionSetupVersion === setupVersion && riderRecoveryActive() && element.isConnected;
+  if (!window.JKCRecovery) throw new Error("Recovery could not load. Please retry.");
+  const mounted = await window.JKCRecovery.mountAthlete({
+    element, client, userId, athleteId: userId, displayName: state.profile.display_name, isCurrent,
+    onModeChanged: () => refreshRiderFeatureAccess({ force: true }),
+    onAccount: signOutCurrentDevice,
+  });
+  if (!isCurrent()) { mounted?.destroy(); return; }
+  state.recoveryMount = mounted;
+}
+
+async function renderRecoveryCoach() {
+  if (!isCoachRole(state.profile?.role)) throw new Error("Only your authorized coach can manage recovery.");
+  const userId = state.user.id, setupVersion = state.sessionSetupVersion, athleteId = state.selectedAthleteId;
+  const roster = await getCoachRoster();
+  if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion || state.view !== "recovery" || state.selectedAthleteId !== athleteId) return;
+  const athlete = roster.find(row => row.id === athleteId);
+  if (!athlete) throw new Error("Choose a rider from your crew to manage recovery.");
+  const host = document.querySelector("#view");
+  host.innerHTML = '<div class="actions"><button class="secondary-btn compact-btn" id="recovery-back" type="button">← Rider profile</button></div><section id="coach-recovery-page" data-recovery-scope></section>';
+  host.querySelector("#recovery-back").addEventListener("click", () => navigate("student"));
+  const element = host.querySelector("#coach-recovery-page");
+  const isCurrent = () => state.user?.id === userId && state.sessionSetupVersion === setupVersion && state.view === "recovery" && state.selectedAthleteId === athleteId && element.isConnected;
+  if (!window.JKCRecovery) throw new Error("Recovery could not load. Please retry.");
+  const mounted = await window.JKCRecovery.mountCoach({
+    element, client, userId, athleteId, displayName: athlete.display_name, isCurrent,
+    onChanged: () => cacheClear("roster"),
+  });
+  if (!isCurrent()) { mounted?.destroy(); return; }
+  state.recoveryMount = mounted;
+}
 
 async function renderRestrictedRiderHome() {
   const renderVersion = ++state.athleteHomeRenderVersion;
@@ -364,7 +437,7 @@ const parentNav = [
 function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (view === "battleViewer") return "battleViewer";
-  if (["crew", "student", "studentPreview", "parentPreview"].includes(view)) return "crew";
+  if (["crew", "student", "studentPreview", "parentPreview", "recovery"].includes(view)) return "crew";
   if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "pastEvents"].includes(view)) return "coachTools";
   if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
@@ -600,7 +673,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.162" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.163" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1505,7 +1578,10 @@ async function handleSession(session) {
   clearInterval(state.riderAccessTimer);
   teardownRealtimeSync();
   document.querySelector("#live-run-invitation")?.remove();
+  state.recoveryMount?.destroy();
+  state.recoveryMount = null;
   if ((state.user?.id || "") !== nextUserId) {
+    window.JKCRecovery?.cleanup({ clearDrafts: true });
     if (state.user) app.innerHTML = "";
     dismissDailyFinishForNavigation();
     closeTrainingProgressViews();
@@ -1565,7 +1641,7 @@ async function handleSession(session) {
     const pushView = new URL(window.location.href).searchParams.get("push");
     const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
     state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
-    if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) state.view = "home";
+    if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) state.view = "home";
     if (pushView) {
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete("push");
@@ -1943,12 +2019,13 @@ function notificationPrimaryView(view = "home") {
 
 function renderShell() {
   state.tricktionarySuggestionsCleanup?.();
-  if (typeof JKCrewTricktionaryTools !== "undefined") state.tricktionarySuggestionsCleanup = JKCrewTricktionaryTools.installSuggestions({ client, currentUser: () => state.user?.id, withTimeout });
+  if (!riderRecoveryActive() && typeof JKCrewTricktionaryTools !== "undefined") state.tricktionarySuggestionsCleanup = JKCrewTricktionaryTools.installSuggestions({ client, currentUser: () => state.user?.id, withTimeout });
   const role = state.profile.role;
-  const shellClass = isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
-  const nav = isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
+  const recovery = riderRecoveryActive();
+  const shellClass = recovery ? "rider-shell recovery-shell" : isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
+  const nav = recovery ? [["home", "Recovery"]] : isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
   const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
-  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span>${navNotificationBadge(id)}</button>`).join("");
+  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"><span class="nav-icon">${navIcons[id] || "•"}</span><span>${label}</span>${recovery ? "" : navNotificationBadge(id)}</button>`).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
         <details class="sidebar-nav-group" data-nav-group="${group.id}">
@@ -1962,7 +2039,7 @@ function renderShell() {
     <div class="app-shell ${shellClass}">
       <aside class="sidebar">
         <div class="sidebar-brand logo-sidebar-brand"><img src="icons/jkc-logo.png?v=2.11.77" alt="JK Coaching logo"><span>JK Coaching</span></div>
-        <div class="role-pill">${escapeHtml(role)} account</div>
+        <div class="role-pill">${recovery ? "Recovery mode" : `${escapeHtml(role)} account`}</div>
         <nav class="nav-list">${sidebarNavHtml}</nav>
         <div class="sidebar-user">${avatarHtml(state.profile, "sidebar-avatar")}<strong>${escapeHtml(state.profile.display_name)}</strong><span>${escapeHtml(state.user.email)}</span></div>
       </aside>
@@ -1971,7 +2048,7 @@ function renderShell() {
           <div class="topbar-title"><img class="topbar-logo" src="icons/jkc-logo.png?v=2.11.77" alt="">JKCREW live</div>
           <div class="topbar-actions">
             <span class="sync-status" id="sync-status" aria-live="polite"><i></i><b>${navigator.onLine ? "Saved" : "Offline"}</b></span>
-            <button class="parent-notification-bell notification-centre-bell" id="notification-centre-bell" type="button" aria-label="Open notifications"><span aria-hidden="true">●</span><b>Updates</b><i aria-hidden="true"></i></button>
+            ${recovery ? '<button class="secondary-btn compact-btn" id="sign-out" type="button">Sign out</button>' : '<button class="parent-notification-bell notification-centre-bell" id="notification-centre-bell" type="button" aria-label="Open notifications"><span aria-hidden="true">●</span><b>Updates</b><i aria-hidden="true"></i></button>'}
             <div class="topbar-meta">${new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</div>
           </div>
         </header>
@@ -1990,14 +2067,16 @@ function renderShell() {
     navigate(button.dataset.view);
   }));
   document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
+  if (recovery) document.querySelector("#sign-out")?.addEventListener("click", signOutCurrentDevice);
   setSyncStatus();
-  if (!riderFeaturesDisabled() && !riderFeatureAccessUnknown()) {
+  if (!recovery && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()) {
     refreshNotificationCentre({ renderNav: false });
     refreshBoardChatUnread();
   }
 }
 
 async function refreshBoardChatUnread() {
+  if (riderRecoveryActive()) return;
   if (!state.user?.id || state.view === "board") return updateBoardChatNavBadge(0);
   const lastSeen = localStorage.getItem(CHAT_LAST_SEEN_KEY) || new Date(0).toISOString();
   const { count, error } = await client.from("crew_posts").select("id", { count: "exact", head: true }).in("post_type", ["chat", "announcement"]).or(crewChatEventFilter()).gt("created_at", lastSeen);
@@ -2005,7 +2084,7 @@ async function refreshBoardChatUnread() {
 }
 
 function mountStartupPrompts() {
-  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
+  if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   if (!mountWhatsNewPrompt() && !mountBattleIntroPrompt()) mountPushSetupPrompt();
 }
 
@@ -2066,8 +2145,11 @@ async function getAppNotifications(limit = 50) {
 }
 
 async function refreshNotificationCentre({ renderNav = true } = {}) {
+  if (riderRecoveryActive()) return [];
+  const userId = state.user?.id;
   try {
     const items = await getAppNotifications();
+    if (riderRecoveryActive() || state.user?.id !== userId) return [];
     state.notificationUnread = items.filter((item) => !item.read_at);
     const count = state.notificationUnread.length;
     const bell = document.querySelector("#notification-centre-bell");
@@ -2106,6 +2188,7 @@ async function markAllNotificationsRead() {
 }
 
 async function showNotificationDrawer() {
+  if (riderRecoveryActive()) return;
   document.querySelector("#notification-centre-drawer")?.remove();
   const backdrop = document.createElement("div");
   backdrop.id = "notification-centre-drawer";
@@ -2117,6 +2200,7 @@ async function showNotificationDrawer() {
   backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
   try {
     const items = await getAppNotifications();
+    if (!backdrop.isConnected || riderRecoveryActive()) return;
     const unread = items.filter((item) => !item.read_at).length;
     backdrop.querySelector(".parent-notification-loading").outerHTML = `<div class="notification-centre-actions"><span>${unread ? `${unread} unread` : "You're up to date"}</span>${unread ? `<button class="secondary-btn compact-btn" type="button" data-read-all>Mark all read</button>` : ""}</div><div class="parent-notification-body notification-centre-list">${items.length ? items.map((item) => `<button type="button" class="${item.read_at ? "" : "unread"}" data-app-notification="${item.id}" data-notification-view="${escapeHtml(item.view || "home")}"><span>${escapeHtml(String(item.notification_type || "update").replaceAll("_", " "))}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || "")}</small><time>${dateLabel(item.created_at)}</time></button>`).join("") : `<div class="parent-empty-note"><strong>No notifications yet</strong><span>Battle, coaching, sheet, event and achievement updates will appear here.</span></div>`}</div>`;
     backdrop.querySelector("[data-read-all]")?.addEventListener("click", async () => { close(); await markAllNotificationsRead(); });
@@ -2130,6 +2214,7 @@ async function showNotificationDrawer() {
       await refreshNotificationCentre();
     }));
   } catch (error) {
+    if (!backdrop.isConnected || riderRecoveryActive()) return;
     backdrop.querySelector(".parent-notification-loading").innerHTML = `<div class="parent-empty-note"><strong>Updates could not load</strong><span>${escapeHtml(messageFrom(error))}</span></div>`;
   }
 }
@@ -2446,6 +2531,16 @@ async function navigate(view, options = {}) {
       return;
     }
   }
+  if (riderRecoveryActive()) {
+    view = "home";
+    if (liveRun || !document.querySelector(".recovery-shell")) closeRestrictedRiderFeatures();
+    if (!document.querySelector(".recovery-shell")) renderShell();
+  } else if (document.querySelector(".recovery-shell")) {
+    state.recoveryMount?.destroy();
+    state.recoveryMount = null;
+    window.JKCRecovery?.cleanup({ clearDrafts: true });
+    renderShell();
+  }
   if (state.profile?.role === "athlete" && view !== "home" && (riderFeaturesDisabled() || riderFeatureAccessUnknown())) return showRiderAccessMessage();
   const previousView = state.view;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
@@ -2465,6 +2560,8 @@ async function navigate(view, options = {}) {
     }
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
+  state.recoveryMount?.destroy();
+  state.recoveryMount = null;
   if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.close();
   state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
   state.activeBattles?.destroy();
@@ -2516,7 +2613,8 @@ async function navigate(view, options = {}) {
   });
   const loadingToken = setLoading();
   const renders = {
-    home: state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
+    home: riderRecoveryActive() ? renderRiderRecoveryHome : state.profile?.role === "parent" ? renderParentHome : renderAthleteHome,
+    recovery: renderRecoveryCoach,
     coaching: renderAthleteCoaching,
     parentWeek: renderParentWeek,
     parentCoaching: renderParentCoaching,
@@ -2553,7 +2651,11 @@ async function navigate(view, options = {}) {
     if (!renders[view]) throw new Error("That screen is not available.");
     await renders[view]();
     if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
-    if ((riderFeaturesDisabled() || riderFeatureAccessUnknown()) && !document.querySelector("#rider-access-dashboard")) {
+    if (riderRecoveryActive() && !document.querySelector("#rider-recovery-home")) {
+      closeRestrictedRiderFeatures();
+      return navigate("home", { accessChecked: true });
+    }
+    if (!riderRecoveryActive() && (riderFeaturesDisabled() || riderFeatureAccessUnknown()) && !document.querySelector("#rider-access-dashboard")) {
       closeRestrictedRiderFeatures();
       return navigate("home", { accessChecked: true });
     }
@@ -2579,7 +2681,7 @@ async function navigate(view, options = {}) {
   } finally {
     if (finishScreenLoading(loadingToken)) document.querySelector("#view")?.removeAttribute("aria-busy");
   }
-  if (navigationCompleted && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()) void refreshLiveRunInvites();
+  if (navigationCompleted && !riderRecoveryActive() && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()) void refreshLiveRunInvites();
   if (navigationCompleted && state.startupPromptsPending) {
     state.startupPromptsPending = false;
     mountStartupPrompts();
@@ -2644,10 +2746,11 @@ function realtimeFilter(column, values = []) {
 
 async function setupRealtimeSync() {
   if (!state.user?.id || !state.session?.access_token) return;
-  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
+  if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
+  const userId = state.user.id, setupVersion = state.sessionSetupVersion;
   client.realtime.setAuth(state.session.access_token);
   const athleteIds = await realtimeVisibleAthleteIds();
-  if (!state.user?.id || !state.session?.access_token) return;
+  if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion || !state.session?.access_token || riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   const channel = client.channel(`jkcrew-progress-sync:${state.user.id}`);
   setupLiveRunDiscovery(channel);
   const athleteFilter = realtimeFilter("athlete_id", athleteIds);
@@ -2674,6 +2777,7 @@ async function setupRealtimeSync() {
     { table: "weekly_rider_battles", filter: `opponent_id=eq.${state.user.id}` },
   );
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "park_king_events" }, (payload) => {
+    if (riderRecoveryActive() || state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return;
     const event = payload.new || {};
     cacheClear("park-king:");
     cacheClear("park-kings:");
@@ -2692,6 +2796,7 @@ async function setupRealtimeSync() {
     scheduleRealtimeRefresh("event-attendance");
   });
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "app_notifications", filter: `recipient_id=eq.${state.user.id}` }, (payload) => {
+    if (riderRecoveryActive() || state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return;
     const item = payload.new || {};
     refreshNotificationCentre();
     if (item.notification_type === "live_run_invite") { void refreshLiveRunInvites(); return; }
@@ -2701,12 +2806,14 @@ async function setupRealtimeSync() {
     }
   });
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_posts" }, (payload) => {
+    if (riderRecoveryActive() || state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return;
     if (!isVisibleCrewChatPost(payload.new || {})) return;
     if (state.view === "board") renderBoard();
     else refreshBoardChatUnread();
   });
   subscriptions.filter((entry) => entry.filter).forEach(({ table, filter }) => {
     channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
+    if (riderRecoveryActive() || state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return;
       if (!isRelevantRealtimePayload(table, payload)) return;
       if (table === "profiles" && payload.new?.id === state.user.id) state.profile = { ...state.profile, ...payload.new };
       invalidateCachesForRealtime(table);
@@ -2791,11 +2898,11 @@ function clearCoachCaches({ roster = false, command = true, sessionViewer = true
 
 function scheduleRealtimeRefresh(reason = "sync") {
   if (!state.user?.id || !state.profile) return;
-  if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
+  if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   if (state.syncRefreshTimer) clearTimeout(state.syncRefreshTimer);
   state.syncRefreshTimer = setTimeout(async () => {
     state.syncRefreshTimer = null;
-    if (!state.user?.id || !state.profile) return;
+    if (!state.user?.id || !state.profile || riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
     try {
       if (state.view === "session") await requestRiderSessionRefresh({ force: true });
       else if (state.view === "coaching" && state.profile.role === "athlete") await renderAthleteCoaching();
@@ -7247,6 +7354,7 @@ async function loadAthleteUciHome(view, profile, isCurrent, { force = false } = 
 }
 
 async function renderAthleteHome() {
+  if (riderRecoveryActive()) return renderRiderRecoveryHome();
   if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return renderRestrictedRiderHome();
   const renderVersion = ++state.athleteHomeRenderVersion;
   const viewerId = state.user?.id;
@@ -10798,6 +10906,7 @@ async function openLiveRunInvitation(id) {
 }
 
 async function refreshLiveRunInvites() {
+  if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
   pruneLiveRunWaiting();
   if (liveRunDiscoveryBusy || !state.user?.id || !(state.profile?.role === "athlete" || isCoachRole(state.profile?.role)) ||
     document.hidden) return;
@@ -10811,7 +10920,7 @@ async function refreshLiveRunInvites() {
     // Stored drafts and accepted calls are not a queue of riders waiting for their coach.
     if (coachView) query = query.eq("call_status", "ringing").eq("invitation_status", "pending").gt("ring_expires_at", now);
     const { data, error } = await query.order("updated_at", { ascending: false }).limit(20);
-    if (error || userId !== state.user?.id) return;
+    if (error || userId !== state.user?.id || riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) return;
     const validCalls = (data || []).filter(s => s.status === "active" && Date.parse(s.expires_at) > Date.now() &&
       ["idle", "ringing", "active"].includes(s.call_status || "idle") &&
       (s.call_status !== "ringing" || Date.parse(s.ring_expires_at) > Date.now()));
@@ -14477,6 +14586,7 @@ async function renderCrew() {
           <span><strong>${escapeHtml(athlete.display_name)}</strong>${access.features_disabled ? '<small class="rider-access-label">Dashboard only</small>' : ""}</span>
         </button>
         ${riderAccessToggleHtml(athlete, access)}
+        <button class="rider-access-toggle recovery-access-toggle ${access.recovery_mode ? "is-recovery" : ""}" type="button" data-open-recovery="${escapeHtml(athlete.id)}" aria-label="Manage recovery for ${escapeHtml(athlete.display_name)}">${access.recovery_mode ? "Recovery on" : "Recovery"}</button>
         ${(athlete.groupNames || [athlete.groupName]).length > 1 ? `<button class="remove-group-btn" type="button" data-remove-athlete-group="${athlete.id}" data-remove-group="${groupId}" aria-label="Remove ${escapeHtml(athlete.display_name)} from ${escapeHtml(label)}">×</button>` : ""}
       </div>`;
     }).join("") : `<div class="empty compact-empty">${groupId === "elite" ? "Choose Elite Riders in a rider’s profile, or drag them here." : groupId === injuredGroupId ? "Drop injured athletes here." : "Drop students here."}</div>`;
@@ -14528,6 +14638,10 @@ async function renderCrew() {
   });
   document.querySelectorAll("[data-remove-athlete-group]").forEach((button) => button.addEventListener("click", () => removeAthleteFromGroup(button.dataset.removeAthleteGroup, button.dataset.removeGroup)));
   document.querySelectorAll("[data-rider-access-toggle]").forEach(button => button.addEventListener("click", toggleRiderFeatureAccess));
+  document.querySelectorAll("[data-open-recovery]").forEach(button => button.addEventListener("click", () => {
+    state.selectedAthleteId = button.dataset.openRecovery;
+    navigate("recovery");
+  }));
 }
 
 async function addAthleteToGroup(athleteId, groupName) {
@@ -15148,6 +15262,7 @@ async function renderStudentProfile() {
       <form id="avatar-form" class="avatar-form"><input id="avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-avatar">Upload / change picture</button><button class="danger-btn" type="button" id="remove-avatar">Remove picture</button></form>
     </section>
     <section class="student-profile-primary-actions" aria-label="Training list actions">
+      <button class="secondary-btn recovery-access-toggle" type="button" id="manage-rider-recovery">Recovery & check-ins</button>
       <button class="primary-btn" type="button" id="edit-current-list">Edit current list</button>
       <button class="secondary-btn next-week-list-btn" type="button" id="schedule-next-week-list">Schedule next week's list</button>
       ${template ? `<button class="secondary-btn" type="button" id="import-monday-plan">Load Monday plan</button>` : ""}
@@ -15209,6 +15324,7 @@ async function renderStudentProfile() {
   mountDailyFeatures();
   bindRiderProfileSelector();
   document.querySelector("#back-to-students").addEventListener("click", () => navigate("crew"));
+  document.querySelector("#manage-rider-recovery")?.addEventListener("click", () => navigate("recovery"));
   document.querySelector("#edit-current-list")?.addEventListener("click", () => {
     const editor = document.querySelector('[data-profile-panel="student plan builder"]');
     if (!editor) return;

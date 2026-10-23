@@ -18,7 +18,7 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
    window.categoryInfo={dialled:{label:'Dialled'},percentage:{label:'Percentage'}};window.battleFormatOptionsHtml=()=>'<option value="1">1v1</option>';
    window.requestWeeklyRiderBattle=window.updateRiderBattlePicker=window.respondWeeklyRiderBattle=window.forfeitWeeklyRiderBattle=window.showBattleRulesModal=()=>{};
    window.showAchievementCelebration=value=>celebrations.push(value);window.notify=value=>notices.push(value);
-   window.riderFeaturesDisabled=window.riderFeatureAccessUnknown=()=>false;window.realtimeVisibleAthleteIds=async()=>['rider'];window.setupLiveRunDiscovery=()=>{};
+   window.riderFeaturesDisabled=window.riderFeatureAccessUnknown=window.riderRecoveryActive=()=>false;window.realtimeVisibleAthleteIds=async()=>['rider'];window.setupLiveRunDiscovery=()=>{};
    window.refreshNotificationCentre=window.refreshLiveRunInvites=()=>{};
   });
   await page.addScriptTag({content:['getMyWeeklyChallenge','renderChallenges','setupRealtimeSync','realtimeFilter'].map(extract).join('\n')});

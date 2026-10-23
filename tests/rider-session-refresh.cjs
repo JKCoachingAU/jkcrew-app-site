@@ -84,6 +84,7 @@ const names = [
       window.weekStartDateForCountry = () => '2026-09-13';
       window.normalizeAssignmentProgress = (_assignment, progress) => progress || {};
       window.reconcileAwardedProgress = (_assignment, progress) => progress;
+      window.riderRecoveryActive = () => false;
       window.riderFeaturesDisabled = () => !qa.access;
       window.riderFeatureAccessUnknown = () => false;
       window.refreshRiderFeatureAccess = async () => qa.access;

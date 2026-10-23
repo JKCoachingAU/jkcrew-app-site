@@ -12,11 +12,11 @@ const extract = name => {
 };
 const names = [
   'isTransientRequestError', 'retryNetworkRequest',
-  'riderFeaturesDisabled', 'riderFeatureAccessUnknown', 'showRiderAccessMessage',
+  'riderFeaturesDisabled', 'riderFeatureAccessUnknown', 'riderRecoveryActive', 'showRiderAccessMessage',
   'refreshRiderFeatureAccess', 'closeRestrictedRiderFeatures', 'startRiderFeatureAccessWatch',
   'guardRiderFeatureInteraction', 'renderRestrictedRiderHome', 'riderAccessToggleHtml',
   'toggleRiderFeatureAccess', 'renderCrew', 'renderShell', 'navigate', 'resetPageExpansions',
-  'signOutCurrentDevice', 'athleteHomeSectionStatus', 'getAthleteHomeVerifiedLeaderboard', 'renderAthleteHome',
+  'signOutCurrentDevice', 'athleteHomeSectionStatus', 'getAthleteHomeVerifiedLeaderboard', 'athleteUciCardHtml', 'loadAthleteUciHome', 'renderAthleteHome',
   'shredZoneIcon', 'shredZoneTeaserHtml', 'closeJkcYard',
 ];
 const accessConstant = app.match(/^const RIDER_ACCESS_MESSAGE = .*;$/m)?.[0];

@@ -75,7 +75,7 @@ const declaration = name => {
       window.canPostBoardChat = () => true;
       window.containsGifUrl = () => false;
       window.extractBoardMentions = () => [];
-      window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = () => false;
+      window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = window.riderRecoveryActive = () => false;
       window.realtimeVisibleAthleteIds = async () => ['rider'];
       window.setupLiveRunDiscovery = () => {};
     });
