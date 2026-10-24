@@ -1,0 +1,1443 @@
+{
+  "schemaVersion": 1,
+  "year": 2027,
+  "checkedAt": "2026-10-24T12:27:49.044Z",
+  "lastSuccessfulCalendarCheckAt": "2026-10-24T12:27:49.044Z",
+  "refreshStatus": "ok",
+  "calendarEventCount": 32,
+  "events": [
+    {
+      "id": "uci-bfr-2027-80618",
+      "uciId": "80618",
+      "name": "AusCycling BMX Freestyle State Championships - Queensland",
+      "startDate": "2027-01-30",
+      "endDate": "2027-01-30",
+      "venue": "Beenleigh Skate Park",
+      "country": "Australia",
+      "countryCode": "AUS",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": null,
+        "email": "info@auscycling.org.au",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80618",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80618",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-80246",
+      "uciId": "80246",
+      "name": "Australian National Championships - Park",
+      "startDate": "2027-02-13",
+      "endDate": "2027-02-14",
+      "venue": "Gold Coast",
+      "country": "Australia",
+      "countryCode": "AUS",
+      "discipline": "Park",
+      "classification": "CN",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "National-championship points require this country’s UCI sporting nationality. Federation selection and licence rules apply.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.auscycling.org.au/",
+        "email": "bmx.events@auscycling.org.au",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80246",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80246",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-80619",
+      "uciId": "80619",
+      "name": "Ride The Dragon",
+      "startDate": "2027-03-19",
+      "endDate": "2027-03-21",
+      "venue": "Banga Ramp Park",
+      "country": "Lithuania",
+      "countryCode": "LTU",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://bangaramppark.lt/",
+        "email": "martynas@bangaramppark.lt",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80619",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80619",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-80624",
+      "uciId": "80624",
+      "name": "Oceanian Continental Championships - Park",
+      "startDate": "2027-03-21",
+      "endDate": "2027-03-21",
+      "venue": "Gold Coast",
+      "country": "Australia",
+      "countryCode": "AUS",
+      "discipline": "Park",
+      "classification": "CC",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "Continental-championship points require the relevant UCI sporting nationality. National-federation selection and entry rules apply.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.oceaniacycling.org/",
+        "email": "events@oceaniacycling.org",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80624",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80624",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-81205",
+      "uciId": "81205",
+      "name": "Riders serie 1",
+      "startDate": "2027-03-21",
+      "endDate": "2027-03-21",
+      "venue": "Caracas",
+      "country": "Venezuela",
+      "countryCode": "VEN",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": null,
+        "email": null,
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/81205",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/81205",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-80616",
+      "uciId": "80616",
+      "name": "Costa Rica Freestyle Series 1",
+      "startDate": "2027-04-04",
+      "endDate": "2027-04-04",
+      "venue": "Parque 10Cio Jaco, Puntarenas",
+      "country": "Costa Rica",
+      "countryCode": "CRC",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.fecoci.net/",
+        "email": "fecoci@fecoci.net",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80616",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80616",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-81204",
+      "uciId": "81204",
+      "name": "Riders serie 2",
+      "startDate": "2027-04-25",
+      "endDate": "2027-04-25",
+      "venue": "Caracas",
+      "country": "Venezuela",
+      "countryCode": "VEN",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://fvciclismo.net/",
+        "email": "FVCICLISMO@GMAIL.COM",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/81204",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/81204",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "organiser-2027-fise-montpellier",
+      "uciId": null,
+      "name": "FISE Montpellier",
+      "startDate": "2027-05-05",
+      "endDate": "2027-05-09",
+      "venue": "Rives du Lez, Montpellier",
+      "country": "France",
+      "countryCode": "FRA",
+      "discipline": "Park",
+      "classification": "Unconfirmed",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [],
+      "eligibilityNote": "Festival window is published. A 2027 UCI World Cup class, rider categories and entry requirements are not yet confirmed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year’s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+      "sourceTitle": "Official organiser announcement",
+      "matchUciName": "FISE.*Montpellier|Montpellier.*FISE",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "sources": [
+        {
+          "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+          "title": "Official organiser announcement",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "changes": []
+    },
+    {
+      "id": "organiser-2027-butcher-jam",
+      "uciId": null,
+      "name": "Butcher Jam",
+      "startDate": "2027-05-14",
+      "endDate": "2027-05-16",
+      "venue": "Jugendpark Schlachthof, Flensburg",
+      "country": "Germany",
+      "countryCode": "GER",
+      "discipline": "Park",
+      "classification": "Unconfirmed",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [],
+      "eligibilityNote": "Organiser’s festival dates are published. UCI classification, categories and rider entry requirements remain unconfirmed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://sportpiraten.com/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year’s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://sportpiraten.com/",
+      "sourceTitle": "Official organiser announcement",
+      "matchUciName": "Butcher Jam",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "sources": [
+        {
+          "url": "https://sportpiraten.com/",
+          "title": "Official organiser announcement",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-80615",
+      "uciId": "80615",
+      "name": "Costa Rica Freestyle Series 2",
+      "startDate": "2027-06-13",
+      "endDate": "2027-06-13",
+      "venue": "Parque 10Cio Jaco, Puntarenas",
+      "country": "Costa Rica",
+      "countryCode": "CRC",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": null,
+        "email": "fecoci@fecoci.net",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80615",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80615",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-80620",
+      "uciId": "80620",
+      "name": "Einfach Extrem Essen",
+      "startDate": "2027-06-18",
+      "endDate": "2027-06-20",
+      "venue": "Kennedyplatz",
+      "country": "Germany",
+      "countryCode": "GER",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": null,
+        "email": "william.gothe@pulsepublishing.de",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80620",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80620",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "organiser-2027-german-nationals",
+      "uciId": null,
+      "name": "German National Championships — Park",
+      "startDate": "2027-07-29",
+      "endDate": "2027-08-01",
+      "venue": "Stuttgart",
+      "country": "Germany",
+      "countryCode": "GER",
+      "discipline": "Park",
+      "classification": "CN pending",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER"
+      ],
+      "categories": [],
+      "eligibilityNote": "German sporting nationality required for national-championship points. Die Finals event window. Exact BMX Park days and UCI calendar registration remain unconfirmed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://bmx-meisterschaft.de/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year’s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://bmx-meisterschaft.de/",
+      "sourceTitle": "Official organiser announcement",
+      "matchUciName": "Deutsche|German National",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "sources": [
+        {
+          "url": "https://bmx-meisterschaft.de/",
+          "title": "Official organiser announcement",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-81206",
+      "uciId": "81206",
+      "name": "Vulkan BMX",
+      "startDate": "2027-08-06",
+      "endDate": "2027-08-08",
+      "venue": "Im Lierchesseifen",
+      "country": "Germany",
+      "countryCode": "GER",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.woodstyle-bmx.de/",
+        "email": "woodstyle-birresborn@web.de",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/81206",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/81206",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-79863",
+      "uciId": "79863",
+      "name": "2027 UCI Cycling World Championships — BMX Freestyle Park",
+      "startDate": "2027-09-02",
+      "endDate": "2027-09-04",
+      "venue": "Cluses, Haute-Savoie",
+      "country": "France",
+      "countryCode": "FRA",
+      "discipline": "Park",
+      "classification": "CM",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "confirmed",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian riders are eligible through their national federation, subject to selection and the published entry quotas.",
+      "registration": {
+        "status": "pending",
+        "url": null,
+        "email": "contact@uci.ch",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/79863",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/79863",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        },
+        {
+          "url": "https://www.hautesavoie2027.com/sites/default/files/2026-09/calendrier_2209_2026_en.pdf",
+          "title": "Official organiser Park programme",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": [],
+      "dateNote": "Park: 2–4 September; 5 September is the weather contingency day. UCI’s broader combined registration window also includes Flatland."
+    },
+    {
+      "id": "uci-bfr-2027-80617",
+      "uciId": "80617",
+      "name": "Costa Rica Freestyle Series 3",
+      "startDate": "2027-09-26",
+      "endDate": "2027-09-26",
+      "venue": "Parque 10Cio Jaco, Puntarenas",
+      "country": "Costa Rica",
+      "countryCode": "CRC",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.fecoci.net/",
+        "email": "fecoci@fecoci.net",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/80617",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/80617",
+          "title": "UCI event listing",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "changes": []
+    },
+    {
+      "id": "organiser-2027-bmx-european-series",
+      "uciId": null,
+      "name": "BMX Freestyle European Series",
+      "startDate": null,
+      "endDate": null,
+      "venue": "Host cities to be announced",
+      "country": "Europe",
+      "countryCode": "EUR",
+      "discipline": "Park",
+      "classification": "Unconfirmed",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [],
+      "eligibilityNote": "Proposed May–September season; stops, exact dates, categories, UCI points status and rider entry rules are unpublished.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.bmxseries.com/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year’s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://www.bmxseries.com/",
+      "sourceTitle": "Official organiser announcement",
+      "matchUciName": "^BMX Freestyle European Series$",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastCheckedAt": "2026-10-24T12:27:49.044Z",
+      "lastVerifiedAt": "2026-10-24T12:27:49.044Z",
+      "sources": [
+        {
+          "url": "https://www.bmxseries.com/",
+          "title": "Official organiser announcement",
+          "checkedAt": "2026-10-24T12:27:49.044Z"
+        }
+      ],
+      "changes": []
+    }
+  ],
+  "qualification": {
+    "status": "revision_pending",
+    "title": "LA28 qualification pathway under revision",
+    "summary": "UCI confirmed that the 2026 Urban Cycling World Championships in Riyadh (3–7 November) will not take place. On 19 October it said the LA28 BMX Freestyle pathway is being revised with the IOC, with details expected in November. This does not cancel the 2027 Worlds in France.",
+    "rankingNote": "General UCI world-ranking points and Olympic qualification points are different. The published Q-Series entry document references the 7 December 2027 ranking, but the revised pathway must be checked before relying on it for Olympic qualification.",
+    "sourceUrl": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+    "sources": [
+      {
+        "url": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+        "title": "UCI sporting consequences — 19 October 2026"
+      },
+      {
+        "url": "https://assets.ctfassets.net/761l7gh5x5an/3vr04WEKnPPYbtUuFEh1mZ/23b4048c816f51a591cab34ef9c60000/14092026_-_Olympic_Qualifier_Series_-_Qualification_System_-_EN_vFinal.pdf",
+        "title": "Published Q-Series entry rules — subject to revision"
+      },
+      {
+        "url": "https://www.uci.org/event-hub/olympic-games-la-28/6GXnG3xrI6q68i4eF4Nb9R",
+        "title": "Official LA28 documents"
+      }
+    ],
+    "checkedAt": "2026-10-24T12:27:49.044Z"
+  },
+  "announcements": [
+    {
+      "id": "uci-la28-2026-worlds-cancelled-v1",
+      "title": "2026 Worlds cancelled; LA28 pathway being revised",
+      "summary": "UCI confirmed that the Riyadh 2026 Worlds will not take place. The planned initial BMX Freestyle Olympic qualification opportunity is affected; revised pathway details are due in November.",
+      "impactGermany": "German riders should not plan points from Riyadh 2026. Continue checking German Cycling selection and the revised UCI pathway; 2027 UCI ranking events are not automatically direct Olympic qualification events.",
+      "impactAustralia": "Australian riders should not plan points from Riyadh 2026. Continue checking AusCycling selection and the revised UCI pathway; 2027 UCI ranking events are not automatically direct Olympic qualification events.",
+      "deadlines": [
+        {
+          "date": null,
+          "label": "Revised qualification pathway expected in November 2026; UCI has not given an exact release day."
+        }
+      ],
+      "sourceUrl": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+      "publishedAt": "2026-10-19T00:00:00Z",
+      "verifiedAt": "2026-10-24T11:50:00Z",
+      "significant": true,
+      "notify": false
+    }
+  ],
+  "reviewCandidates": [
+    {
+      "id": "source-343de38bc9b0ac764c28b404d4d1c147",
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/3VR4HXhjyqVBEzL53UEeYN/1b5877f49f399d4c9ed3eeb82ca02ed2/BMX_Freestyle_Rule_changes_2027-ENG_Upcoming_amendments.pdf",
+      "title": "Official BMX Freestyle / LA28 document",
+      "kind": "qualification_document",
+      "contentHash": "324d90cffdda825086c41d6da8dabbd9964451de9f3b06d0ed3db17a257bef1b",
+      "detectedAt": "2026-10-24T12:27:49.044Z",
+      "status": "dismissed",
+      "reason": "New official source found; verify its meaning before publishing any qualification claim or notification.",
+      "reviewedAt": "2026-10-24T12:27:46.454413Z",
+      "reviewNote": "Read the UCI memorandum dated 29 September 2026 in full. Its 1 January 2027 amendment concerns judging the final trick when run time expires (article 6bis.6.031). It does not introduce or revise LA28 qualification quotas, ranking dates, entry deadlines or points eligibility."
+    },
+    {
+      "id": "source-0c2bb9cbc44effa4ef69c4b61f8ab867",
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/74mXMQQSD1VJOU3Hm0RMgh/e4a5145364f688985655c60529d86de9/2026_UCI_BFR_Rules_-_Part_VIbis_-_Rule_Changes_on_01.01.2026_-_ENG.pdf",
+      "title": "Official BMX Freestyle / LA28 document",
+      "kind": "qualification_document",
+      "contentHash": "39e4452c890afb9adbc60e51cfa1989d6386b984a0e753afcd05813bc5654f03",
+      "detectedAt": "2026-10-24T12:27:49.044Z",
+      "status": "dismissed",
+      "reason": "New official source found; verify its meaning before publishing any qualification claim or notification.",
+      "reviewedAt": "2026-10-24T12:27:46.454413Z",
+      "reviewNote": "Read the historical memorandum dated 6 October 2025, effective 1 January 2026. Its entry, format and world-ranking rules are already part of the baseline. National and continental ranking restrictions are reflected in the schedule. This is not a new LA28 qualification announcement."
+    }
+  ],
+  "sourceChecks": [
+    {
+      "url": "https://www.uci.org/api/calendar/upcoming?discipline=BFR&year=2027",
+      "title": "https://www.uci.org/api/calendar/upcoming?discipline=BFR&year=2027",
+      "kind": "calendar",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "739f51766165e13e1e60123a3260491c432af969ce3498ed19972baac53053e2"
+    },
+    {
+      "url": "https://www.uci.org/api/calendar/past?discipline=BFR&year=2027",
+      "title": "https://www.uci.org/api/calendar/past?discipline=BFR&year=2027",
+      "kind": "calendar",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "876205c188355bc191aaae9b7a89b317d7727a52e6f2b3644cc348b2e02d9f88"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80618",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80618",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80246",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80246",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80619",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80619",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80621",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80621",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80249",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80249",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80616",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80616",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80624",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80624",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/81205",
+      "title": "https://www.uci.org/competition-details/2027/BFR/81205",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80241",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80241",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/81204",
+      "title": "https://www.uci.org/competition-details/2027/BFR/81204",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80236",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80236",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80620",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80620",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80237",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80237",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80239",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80239",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80615",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80615",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80240",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80240",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80234",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80234",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80248",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80248",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80245",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80245",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/81206",
+      "title": "https://www.uci.org/competition-details/2027/BFR/81206",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80247",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80247",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80242",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80242",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80625",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80625",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/79863",
+      "title": "https://www.uci.org/competition-details/2027/BFR/79863",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80244",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80244",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80617",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80617",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80622",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80622",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80235",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80235",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80250",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80250",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80243",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80243",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80238",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80238",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/80623",
+      "title": "https://www.uci.org/competition-details/2027/BFR/80623",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+      "title": "2026 UCI Urban Cycling World Championships: sporting consequences of the event not taking place",
+      "kind": "qualification_news",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "fa85ff8237525b4bc8b3b56c1525b9db1b9e3f987281b6f6d4da5d4c8228a680"
+    },
+    {
+      "url": "https://www.uci.org/pressrelease/the-uci-and-saudi-cycling-federation-confirm-that-the-2026-uci-urban-cycling-world-championships-will-not-proceed/AsZUTThGT0DsbQPmWS58d",
+      "title": "The UCI and Saudi Cycling Federation confirm that the 2026 UCI Urban Cycling World Championships will not proceed",
+      "kind": "qualification_news",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "8e95368eb72e1e0e3eddb6e1a8e682152948d988b3d597a414634010f63aa60d"
+    },
+    {
+      "url": "https://www.uci.org/event-hub/olympic-games-la-28/6GXnG3xrI6q68i4eF4Nb9R",
+      "title": "UCI LA28 official documents",
+      "kind": "qualification_hub",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "167c088289a71c92e62d74e0f4d4d8bb59c9dd83b9a6047f6fbc6b3f6edee2bc"
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/3vr04WEKnPPYbtUuFEh1mZ/23b4048c816f51a591cab34ef9c60000/14092026_-_Olympic_Qualifier_Series_-_Qualification_System_-_EN_vFinal.pdf",
+      "title": "2028 Q-Series - Qualification System (Version 10.08.2026)",
+      "kind": "qualification_document",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "6b0335769862aa0a33b36ec36e691e161b8d8862324bc06274fe45a1a4ea2548"
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/73az93YUIYgyAWhHXPVRPf/359042b3f7ca0c4df81c030ac66f04f9/6BIS-BFR-20260101-E.pdf",
+      "title": "Official BMX Freestyle / LA28 document",
+      "kind": "qualification_document",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "2374322d295051c920af46b8d7d4d43b36e8e43f02eb0703e30b774d35001538"
+    },
+    {
+      "url": "https://www.hautesavoie2027.com/sites/default/files/2026-09/calendrier_2209_2026_en.pdf",
+      "title": "Haute-Savoie 2027 competition programme",
+      "kind": "organiser_programme",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "d1d057e4d265e779a6a495766602a085a390316ebeacd2af8ec11a54b99fec43"
+    },
+    {
+      "url": "https://bmx-meisterschaft.de/",
+      "title": "German National Championships — Park official announcement",
+      "kind": "organiser_announcement",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "7a8febe26797cdd08e7f0f2a17979f3f72b816373c2562677fb2c3ab3173c27d"
+    },
+    {
+      "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+      "title": "FISE Montpellier official announcement",
+      "kind": "organiser_announcement",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "6a338f04030779168221209dd5f8474c789ec1d5e069bb12d2a2133fb88e7e99"
+    },
+    {
+      "url": "https://sportpiraten.com/",
+      "title": "Butcher Jam official announcement",
+      "kind": "organiser_announcement",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "5a465c5e8868fd452f73b94d265218ddf6b19052dc6d487272f182a1153255dd"
+    },
+    {
+      "url": "https://www.bmxseries.com/",
+      "title": "BMX Freestyle European Series official announcement",
+      "kind": "organiser_announcement",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "8c20e9cbce07555c007371b7af68d18326f44707eeda4f3280c7419ab97e67d9"
+    },
+    {
+      "url": "https://www.fise.fr/en",
+      "title": "FISE official announcements",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "b66a3ff7e7c7ffa17ff15df923e29c78cb6f702edd5f85a673899d44a0f9f528"
+    },
+    {
+      "url": "https://auscycling.org.au/events",
+      "title": "AusCycling events",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "5021902b80a4c0e69fb1e8a12ff39a321dc47e330bfe0355934ba579cd804609"
+    },
+    {
+      "url": "https://www.uec.ch/en/",
+      "title": "UEC official announcements",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://bangaramppark.lt/",
+      "title": "Banga Ramp Park official organiser",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "02ac447ce556f3e734c5293f93542e69db7b0a7eb12a04194dd4407f0b588a6d"
+    },
+    {
+      "url": "https://www.oceaniacycling.org/",
+      "title": "Oceania Cycling Confederation",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "2dc7b52257f9edc83f38a621ac538cf5fe419580ee6273dae2d9d9c7e79e8bb0"
+    },
+    {
+      "url": "https://www.fecoci.net/",
+      "title": "Costa Rica Cycling Federation",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "59b2a1eac2f5124027ffc72cd8a66d72053e7800f27e1a500fbbd3ef5f9aa942"
+    },
+    {
+      "url": "https://fvciclismo.net/",
+      "title": "Venezuela Cycling Federation",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "fee7eb7ec557003765b2ff82d6cdd4ca8ef8c3ccdb8f82db073f5099f30ceb03"
+    },
+    {
+      "url": "https://www.woodstyle-bmx.de/",
+      "title": "Vulkan BMX official organiser",
+      "kind": "organiser_discovery",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "1c1091a442ffb00b6595e8c452bfd04c6a1485c43f3a6082877aa80f6ec119c3"
+    },
+    {
+      "url": "https://www.uci.org/regulations/3MyLDDrwJCJJ0BGGOFzOat",
+      "title": "Official UCI regulations and amendments",
+      "kind": "rules_hub",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "1c50abe114abb96e5f33fd956e1f6f31768c33c210bbaaf5fcecf1376bcec68d"
+    },
+    {
+      "url": "https://www.uci.org/api/news/listing?pageIndex=0&pageSize=50",
+      "title": "https://www.uci.org/api/news/listing?pageIndex=0&pageSize=50",
+      "kind": "news_index",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "4bdd597599efc72d7fe3448e7b78df3ba77275109ec72c215be2d546ecfdc59c"
+    },
+    {
+      "url": "https://www.uci.org/api/news/listing?pageIndex=1&pageSize=50",
+      "title": "https://www.uci.org/api/news/listing?pageIndex=1&pageSize=50",
+      "kind": "news_index",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "4bdd597599efc72d7fe3448e7b78df3ba77275109ec72c215be2d546ecfdc59c"
+    },
+    {
+      "url": "https://www.uci.org/api/news/listing?pageIndex=2&pageSize=50",
+      "title": "https://www.uci.org/api/news/listing?pageIndex=2&pageSize=50",
+      "kind": "news_index",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "1eea07582e6821696848f7e26dca5dffa502238aba9013117142f6c7e233ec9c"
+    },
+    {
+      "url": "https://www.uci.org/api/news/listing?pageIndex=3&pageSize=50",
+      "title": "https://www.uci.org/api/news/listing?pageIndex=3&pageSize=50",
+      "kind": "news_index",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "5dde1e6cf87b46d8d73efb234cb3e19147d138d99250dfceae99b418385edb29"
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/3VR4HXhjyqVBEzL53UEeYN/1b5877f49f399d4c9ed3eeb82ca02ed2/BMX_Freestyle_Rule_changes_2027-ENG_Upcoming_amendments.pdf",
+      "title": "Official BMX Freestyle / LA28 document",
+      "kind": "qualification_document",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "324d90cffdda825086c41d6da8dabbd9964451de9f3b06d0ed3db17a257bef1b"
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/74mXMQQSD1VJOU3Hm0RMgh/e4a5145364f688985655c60529d86de9/2026_UCI_BFR_Rules_-_Part_VIbis_-_Rule_Changes_on_01.01.2026_-_ENG.pdf",
+      "title": "Official BMX Freestyle / LA28 document",
+      "kind": "qualification_document",
+      "status": "ok",
+      "checkedAt": "2026-10-24T12:27:49.044Z",
+      "lastSuccessfulCheckAt": "2026-10-24T12:27:49.044Z",
+      "contentHash": "39e4452c890afb9adbc60e51cfa1989d6386b984a0e753afcd05813bc5654f03"
+    }
+  ],
+  "sourceNotes": "Calendar fields refresh automatically from UCI. Organiser and qualification changes require evidence review before changing eligibility, Olympic rules or sending notifications."
+}
