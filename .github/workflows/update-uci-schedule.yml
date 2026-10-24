@@ -1,0 +1,41 @@
+name: Update UCI 2027 Schedule
+
+on:
+  schedule:
+    - cron: '3 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-uci-schedule
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'JKCoachingAU/jkcrew-app-site' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the published application source
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Restore the last checked schedule
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/publish-uci-schedule.mjs restore /tmp/uci-schedule.json
+      - name: Check official calendars and qualification sources
+        run: node tools/uci-schedule.mjs /tmp/uci-schedule.json
+      - name: Publish the validated snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/publish-uci-schedule.mjs publish /tmp/uci-schedule.json
