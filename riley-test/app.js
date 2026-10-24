@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.165";
+const RELEASE_VERSION = "2.14.166";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -422,7 +422,7 @@ const coachNavGroups = [
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Battles & Challenges"]] },
-  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["uciSchedule", "UCI 2027 Schedule"], ["pastEvents", "Past Events"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["uciTracker", "Road to LA28"], ["uciSchedule", "UCI 2027 Schedule"], ["pastEvents", "Past Events"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["bikeGarage", "Bike Garage"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
@@ -438,7 +438,7 @@ function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (view === "battleViewer") return "battleViewer";
   if (["crew", "student", "studentPreview", "parentPreview", "recovery"].includes(view)) return "crew";
-  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "uciSchedule", "pastEvents"].includes(view)) return "coachTools";
+  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "uciSchedule", "uciTracker", "pastEvents"].includes(view)) return "coachTools";
   if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
@@ -450,7 +450,7 @@ function parentPrimaryView(view = "") {
 
 function athletePrimaryView(view = "") {
   if (["bikeGarage", "shredZone", "jkcYard"].includes(view)) return "home";
-  if (view === "uciSchedule") return "contests";
+  if (["uciSchedule", "uciTracker"].includes(view)) return "contests";
   return view === "coaching" ? "home" : view;
 }
 
@@ -674,7 +674,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.165" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.166" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2544,6 +2544,8 @@ async function navigate(view, options = {}) {
   }
   if (state.profile?.role === "athlete" && view !== "home" && (riderFeaturesDisabled() || riderFeatureAccessUnknown())) return showRiderAccessMessage();
   const previousView = state.view;
+  if (state.uciTrackerMount?.hasUnsavedChanges() && !riderRecoveryActive()
+      && !window.confirm("You have unsaved event or result changes. Leave this page and discard them?")) return;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
   if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
   if (view !== previousView) dismissDailyFinishForNavigation();
@@ -2569,6 +2571,8 @@ async function navigate(view, options = {}) {
   state.activeBattles = null;
   state.uciScheduleMount?.destroy();
   state.uciScheduleMount = null;
+  state.uciTrackerMount?.destroy();
+  state.uciTrackerMount = null;
   state.riderChallengesRenderVersion = (state.riderChallengesRenderVersion || 0) + 1;
   clearInterval(state.timer);
   if (previousView === "bikeGarage" && view !== previousView && typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
@@ -2631,6 +2635,7 @@ async function navigate(view, options = {}) {
     battleViewer: renderCoachBattleViewer,
     coachTools: renderCoachTools,
     uciSchedule: renderUciSchedule,
+    uciTracker: () => renderUciTracker(),
     pastEvents: renderPastEvents,
     more: renderCoachMore,
     bikeGarage: renderBikeGarage,
@@ -2695,6 +2700,8 @@ async function navigate(view, options = {}) {
 function teardownRealtimeSync() {
   state.uciScheduleMount?.destroy();
   state.uciScheduleMount = null;
+  state.uciTrackerMount?.destroy();
+  state.uciTrackerMount = null;
   if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.reset();
   state.tricktionarySuggestionsCleanup?.();
   state.tricktionarySuggestionsCleanup = null;
@@ -7348,7 +7355,7 @@ function athleteUciCardHtml(profile, snapshot = null, { loading = false, error =
     <div class="home-uci-heading"><span class="eyebrow">UCI world ranking</span><span class="home-uci-discipline">BMX Freestyle Park</span></div>
     <div class="home-uci-body"><strong class="home-uci-rank">${match ? `#${escapeHtml(match.row.rank)}` : "—"}</strong><div class="home-uci-detail">${match ? `<strong>${category}’s Elite · ${points} UCI points</strong><span>${escapeHtml(match.row.name)}</span><small>Official ranking · <time datetime="${escapeHtml(match.category.rankingDate)}">${boardUciDate(match.category.rankingDate)}</time></small>` : `<strong>${loading ? "Loading your world ranking…" : error ? "World ranking unavailable" : "Not in the current rankings"}</strong><span>${loading ? "Your dashboard is ready to use." : error ? "Your saved rider link is safe. Try again." : "Your UCI rider link is saved. Check it in Profile if needed."}</span>`}</div></div>
     ${snapshot?.stale ? `<p class="home-uci-status" role="status">Last available rankings · latest update not confirmed.</p>` : ""}
-    <div class="home-uci-actions">${match ? `<button class="home-uci-board" type="button" data-home-uci-board>View world rankings <span aria-hidden="true">↗</span></button>` : ""}${error || snapshot?.stale ? `<button class="secondary-btn compact-btn" type="button" data-home-uci-retry>Try again</button>` : ""}</div>
+    <div class="home-uci-actions">${match ? `<button class="home-uci-board" type="button" data-home-uci-board>View world rankings <span aria-hidden="true">↗</span></button>` : ""}<button class="home-uci-board" type="button" data-home-uci-tracker>Road to LA28 <span aria-hidden="true">→</span></button>${error || snapshot?.stale ? `<button class="secondary-btn compact-btn" type="button" data-home-uci-retry>Try again</button>` : ""}</div>
   </section>`;
 }
 
@@ -7358,6 +7365,8 @@ async function loadAthleteUciHome(view, profile, isCurrent, { force = false } = 
   const request = host.uciRequest = (host.uciRequest || 0) + 1;
   const current = () => isCurrent() && view.querySelector("#athlete-home-uci") === host && host.uciRequest === request;
   host.innerHTML = athleteUciCardHtml(profile, null, { loading: true });
+  const bindTracker = () => host.querySelector("[data-home-uci-tracker]")?.addEventListener("click", () => { if (current()) navigate("uciTracker"); });
+  bindTracker();
   try {
     const snapshot = await window.JKCUciRankings.load({ force });
     if (!current()) return;
@@ -7377,6 +7386,7 @@ async function loadAthleteUciHome(view, profile, isCurrent, { force = false } = 
   host.querySelector("[data-home-uci-retry]")?.addEventListener("click", () => {
     if (current()) void loadAthleteUciHome(view, profile, isCurrent, { force: true });
   });
+  bindTracker();
 }
 
 async function renderAthleteHome() {
@@ -11117,6 +11127,7 @@ async function renderContests() {
   document.querySelector("#view").innerHTML = `
     ${parentView ? parentChildSwitcherHtml(parentContext) : ""}
     <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : parentView ? "Family event view · Read only" : "Events & private planning"}</div><h1>${parentView ? "Upcoming" : "Events &"} <span>${parentView ? "events" : "runs"}</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : parentView ? `The same event list ${escapeHtml(firstName(viewedAthlete))} sees. Open an event to view who is going and the shared course photo.` : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
+    ${coachView || athleteView ? `<div class="uci-tracker-shortcut"><div><strong>Road to LA28</strong><span>Track event entries, result evidence and UCI points.</span></div><button class="secondary-btn" type="button" data-open-uci-tracker>Open tracker →</button></div>` : ""}
     ${athleteView ? riderSavedRunsHtml(activeRuns) : ""}
     <section class="panel shared-events-panel athlete-event-palette">
       <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><div class="shared-events-title"><h2>Upcoming events</h2>${coachView ? `<button id="add-contest-event" class="contest-event-add" type="button" aria-label="Add new event" title="Add new event" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ""}</div><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : parentView ? `Read-only event access for ${escapeHtml(firstName(viewedAthlete))}. Private rider run plans are not displayed.` : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
@@ -11126,6 +11137,7 @@ async function renderContests() {
     ${athleteView ? closedPanelAccordion("Your private run plans", `${activeRuns.length} active · hidden from other riders`, `<div class="contest-private-note compact"><span aria-hidden="true">🔒</span><div><strong>Private planning</strong><p>Only your own saved runs load here. Event attendance never exposes your route or tricks.</p></div></div><div class="run-list">${runPlansHtml(runs)}</div>`, "contest-run-library") : ""}
     ${athleteView ? closedPanelAccordion("Add an event", "Can't find it above? Create it once for the whole crew", sharedContestEventFormHtml(events), "shared-event-create") : ""}`;
   document.querySelector("#add-contest-event")?.addEventListener("click", () => openCoachCreateEvent(events));
+  document.querySelector("[data-open-uci-tracker]")?.addEventListener("click", () => navigate("uciTracker"));
   document.querySelector("#open-run-builder")?.addEventListener("click", openRunBuilder);
   document.querySelectorAll("[data-build-event-run]").forEach((button) => button.addEventListener("click", openRunBuilder));
   bindContestEventActions(events, attendance, runs, roster, viewOptions);
@@ -11711,6 +11723,30 @@ async function renderUciSchedule() {
   });
 }
 
+async function renderUciTracker() {
+  if (!isCoachRole(state.profile?.role) && state.profile?.role !== "athlete") return navigate("home");
+  const root = document.querySelector("#view");
+  const userId = state.user.id;
+  const setupVersion = state.sessionSetupVersion;
+  const isActive = () => state.view === "uciTracker" && state.user?.id === userId
+    && state.sessionSetupVersion === setupVersion && root.isConnected;
+  state.uciTrackerMount?.destroy();
+  if (!window.JKCUciTracker) throw new Error("The event tracker could not load. Update the app and try again.");
+  state.uciTrackerMount = window.JKCUciTracker.mount(root, {
+    client, userId, role: state.profile.role, isActive,
+    onBack: () => navigate(isCoachRole(state.profile?.role) ? "coachTools" : "contests"),
+    onOpenSchedule: () => navigate("uciSchedule"),
+    onOpenEvent: async eventId => {
+      if (!isActive()) return;
+      await navigate("contests");
+      if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion || state.view !== "contests") return;
+      const button = [...document.querySelectorAll("#view [data-open-contest-event]")].find(button => button.dataset.openContestEvent === eventId);
+      if (button) button.click();
+      else notify("This event is no longer upcoming. Your saved entry and result remain in Road to LA28.");
+    },
+  });
+}
+
 async function renderCoachTools() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   document.querySelector("#view").innerHTML = `
@@ -11720,6 +11756,7 @@ async function renderCoachTools() {
       ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
       ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
       ${coachHubCard("contests", "Events & Runs", "Manage attendance, merge duplicates and review private runs", "🏆")}
+      ${coachHubCard("uciTracker", "Road to LA28", "Rider points, event entries and actions needing your attention", "↗")}
       ${coachHubCard("uciSchedule", "UCI 2027 Schedule", "Official points events, entry details and LA28 qualification updates", "◎")}
       ${coachHubCard("pastEvents", "Past Events", "Saved park layouts from finished contests", "⌖")}
     </section>`;
@@ -12269,6 +12306,7 @@ async function renderCoachCommand() {
     <section class="panel command-uci-panel coach-tone-blue" data-command-uci aria-labelledby="command-uci-title">
       <div class="panel-head"><div><div class="eyebrow">BMX Freestyle Park · Your crew</div><h2 id="command-uci-title">UCI rider leaderboard</h2></div><span class="uci-jkc-mark" aria-label="JKC riders"><img src="icons/jkc-logo.png?v=2.11.77" width="22" height="22" alt="">JKC</span></div>
       <div data-command-uci-content></div>
+      <div class="uci-tracker-shortcut"><div><strong>Road to LA28</strong><span>Manage your riders’ entries, results and next actions.</span></div><button class="secondary-btn" type="button" data-view="uciTracker">Open tracker →</button></div>
     </section>
     ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
     <section class="command-management-stack">
@@ -18726,6 +18764,10 @@ function shouldDeferAppUpdate() {
 }
 function applyPendingAppUpdate() {
   if (serviceWorkerRefreshStarted) return;
+  if (typeof state !== "undefined" && state.uciTrackerMount?.hasUnsavedChanges()) {
+    if (typeof notify === "function") notify("Save your event or result changes before updating the app.");
+    return;
+  }
   if ((typeof state !== "undefined" && state.authPendingForm?.isConnected) || (typeof liveRun !== "undefined" && liveRun)) {
     if (typeof notify === "function") notify("Finish your current sign-in or live run before updating.");
     return;

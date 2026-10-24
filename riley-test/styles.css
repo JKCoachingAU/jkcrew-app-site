@@ -12630,3 +12630,10 @@ html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
 .uci-event-status { display:inline-flex;align-items:center;align-self:flex-start;width:fit-content;border:1px solid currentColor;border-radius:6px;padding:4px 7px;font:600 11px/1.35 "Roboto Mono",monospace;letter-spacing:.04em; }
 .uci-event-status-cancelled { color:var(--red,#ff6857); }
 .uci-event-status-provisional,.uci-event-status-review_required { color:var(--yellow,#ffcf3d); }
+/* Compact links into private event preparation, shared by Home and Coach Command. */
+.uci-tracker-shortcut { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.uci-tracker-shortcut > div { display: grid; gap: 4px; min-width: 0; }
+.uci-tracker-shortcut strong { color: var(--text); }
+.uci-tracker-shortcut span { color: var(--muted); font-size: .9rem; }
+.uci-tracker-shortcut button { flex-shrink: 0; min-height: 44px; }
+@media (max-width: 560px) { .uci-tracker-shortcut { align-items: stretch; flex-direction: column; padding: 14px; } }

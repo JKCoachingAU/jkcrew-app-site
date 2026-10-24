@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../uci-rankings.js'), 'utf8');
 const date = new Date().toISOString().slice(0, 10);
-const data = (name = 'Official rider') => ({ schemaVersion: 1, checkedAt: new Date().toISOString(), categories: Object.fromEntries(['men', 'women'].map(key => [key, { rankingDate: date, sourceUrl: 'https://dataride.uci.org/iframe/RankingDetails/239', rows: [{ rank: 1, name, nation: 'AUS', points: 123, uciId: '100001' }] }])) });
+const data = (name = 'Official rider') => ({ schemaVersion: 1, eventBreakdowns: {}, checkedAt: new Date().toISOString(), categories: Object.fromEntries(['men', 'women'].map(key => [key, { rankingDate: date, sourceUrl: 'https://dataride.uci.org/iframe/RankingDetails/239', rows: [{ rank: 1, name, nation: 'AUS', points: 123, uciId: '100001' }] }])) });
 function client({ stored, blocked = false, reply = async () => ({ ok: true, json: async () => data() }) } = {}) {
   const calls = [], storage = new Map(stored ? [['jkcrew-uci-rankings-v1', JSON.stringify(stored)]] : []);
   const context = { URL, AbortController, Date, setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 40)), clearTimeout,
@@ -25,6 +25,25 @@ function client({ stored, blocked = false, reply = async () => ({ ok: true, json
   assert.equal(matcher.findRider(identities, ''), null, 'Empty IDs never match an arbitrary row');
   identities.categories.men.rows.push({ ...identities.categories.women.rows[0] });
   assert.equal(matcher.findRider(identities, '10165130053'), null, 'Ambiguous identities are not displayed');
+  const evidence = data();
+  evidence.categories.men.rows[0].uciId = '10124058738';
+  evidence.categories.women.rows[0].uciId = '10165130053';
+  const original = { status: 'current', category: 'men', rankingDate: date, checkedAt: new Date().toISOString(), sourceUrl: 'https://dataride.uci.org/iframe/RiderRankingDetails/1', totalPoints: 123,
+    events: [{id:'one',name:'World Cup',date,placing:2,points:123,classCode:'CDM',className:'World Cup',inclusion:'counted'}, {id:'two',name:'C1 event',date,placing:4,points:50,classCode:'C1',className:'Class 1',inclusion:'outside_best_results'}] };
+  evidence.eventBreakdowns['10124058738'] = original;
+  assert.equal(matcher.findBreakdown(evidence, '10124058738').events.length, 2, 'Official breakdown retains counted and excluded results');
+  assert.equal(matcher.findBreakdown({...evidence,stale:true}, '10124058738').status, 'stale', 'Failed overall refresh cannot present fresh event evidence');
+  for (const change of [
+    {category:'women'}, {totalPoints:124}, {rankingDate:'2020-01-01'}, {sourceUrl:'https://example.com/uci'},
+    {events:[...original.events,original.events[0]]}, {events:[{...original.events[0],points:122}]},
+    {events:[{...original.events[0],inclusion:'olympic'}]}, {events:[{...original.events[0],points:null}]},
+  ]) {
+    evidence.eventBreakdowns['10124058738'] = {...original,...change};
+    assert.equal(matcher.findBreakdown(evidence, '10124058738'), null, 'Mismatched or unsafe evidence rejected: '+JSON.stringify(change));
+  }
+  evidence.eventBreakdowns['10124058738'] = {...original,status:'stale',rankingDate:'2026-01-01'};
+  assert.equal(matcher.findBreakdown(evidence, '10124058738').status, 'stale', 'Historical retained evidence explicitly stale');
+  assert.equal(matcher.findBreakdown(evidence, '10165130053'), null, 'Missing rider breakdown is not an invented zero');
   let release;
   const single = client({ reply: () => new Promise(resolve => { release = () => resolve({ ok: true, json: async () => data() }); }) });
   const first = single.load(), second = single.load(); release();
@@ -47,6 +66,9 @@ function client({ stored, blocked = false, reply = async () => ({ ok: true, json
   assert.equal((await retryStatus.load({ force: true })).stale, false, 'Successful retry clears warning');
   const restored = client({ stored: saved }); await restored.load();
   assert.equal(restored.calls.length, 0, 'Refresh restores recent public snapshot');
+  const aggregateOnly = data(); delete aggregateOnly.eventBreakdowns;
+  const upgraded = client({stored:{data:aggregateOnly,loadedAt:Date.now()}}); await upgraded.load();
+  assert.equal(upgraded.calls.length, 1, 'Aggregate-only pre-release cache refreshes for new event evidence');
   const old = { data: data(), loadedAt: 1 };
   const offline = client({ stored: old, reply: async () => { throw Error('Offline'); } });
   assert.equal((await offline.load()).stale, true, 'Offline results are labelled cached');

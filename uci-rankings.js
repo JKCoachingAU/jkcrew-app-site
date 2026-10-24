@@ -50,6 +50,8 @@
       if (!stored) return;
       snapshot = validate(stored.data);
       loadedAt = Number(stored.loadedAt) || 0;
+      // A release adding event evidence should refresh old aggregate-only caches.
+      if (!snapshot.eventBreakdowns) loadedAt = 0;
       if (loadedAt > Date.now()) loadedAt = 0;
     } catch { /* Storage may be blocked or contain a snapshot from an older release. */ }
   }
@@ -98,5 +100,40 @@
     return matches.length === 1 ? matches[0] : null;
   }
 
-  window.JKCUciRankings = Object.freeze({ load, findRider });
+  function findBreakdown(data, uciId) {
+    const match = findRider(data, uciId);
+    const item = data?.eventBreakdowns?.[String(uciId)];
+    if (!match || !item || !["current", "stale", "unavailable"].includes(item.status)) return null;
+    if (item.category !== match.categoryKey) return null;
+    try {
+      const source = new URL(item.sourceUrl);
+      if (source.protocol !== "https:" || !["dataride.uci.org", "dataride.uci.ch", "www.uci.org"].includes(source.hostname) || source.username || source.password) return null;
+      if (item.status === "unavailable") return { status: "unavailable", category: item.category, sourceUrl: source.href, events: [] };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.rankingDate) || !Number.isFinite(Date.parse(item.rankingDate))
+          || item.rankingDate > match.category.rankingDate || !Number.isFinite(Date.parse(item.checkedAt))
+          || Date.parse(item.checkedAt) > Date.now() + 86400000 || !Number.isFinite(item.totalPoints) || item.totalPoints < 0
+          || !Array.isArray(item.events) || !item.events.length || item.events.length > 300) return null;
+      if (item.status === "current" && (item.rankingDate !== match.category.rankingDate || item.totalPoints !== match.row.points)) return null;
+      const ids = new Set();
+      let counted = 0;
+      const events = item.events.map(event => {
+        if (!event || typeof event.id !== "string" || !event.id || event.id.length > 100 || ids.has(event.id)
+            || typeof event.name !== "string" || !event.name.trim() || event.name.length > 300
+            || !["counted", "outside_best_results"].includes(event.inclusion)
+            || !Number.isFinite(event.points) || event.points < 0
+            || !/^\d{4}-\d{2}-\d{2}$/.test(event.date) || !Number.isFinite(Date.parse(event.date))
+            || !["string", "number"].includes(typeof event.placing) || String(event.placing).length > 40
+            || String(event.classCode || "").length > 30 || String(event.className || "").length > 100) throw Error("Invalid event evidence");
+        ids.add(event.id);
+        if (event.inclusion === "counted") counted += event.points;
+        return { id: event.id, name: event.name, date: event.date, placing: event.placing, points: event.points,
+          classCode: String(event.classCode || ""), className: String(event.className || ""), inclusion: event.inclusion };
+      });
+      if (Math.abs(counted - item.totalPoints) > .001) return null;
+      return { status: data.stale && item.status === "current" ? "stale" : item.status, category: item.category,
+        rankingDate: item.rankingDate, checkedAt: item.checkedAt, sourceUrl: source.href, totalPoints: item.totalPoints, events };
+    } catch { return null; }
+  }
+
+  window.JKCUciRankings = Object.freeze({ load, findRider, findBreakdown });
 })();
