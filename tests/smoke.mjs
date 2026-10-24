@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.163";
+const version = "2.14.164";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1444,6 +1444,8 @@ const coachSharedEventsSummaryRenderer = new Function(`
   const contestEventFacesHtml = () => "";
   const escapeHtml = (value) => String(value ?? "");
   const dateLabel = (value) => String(value ?? "");
+  ${functionBody("contestEventDateLabel")}
+  ${functionBody("contestEventStatusHtml")}
   ${functionBody("coachSharedEventsSummaryHtml")}
   return coachSharedEventsSummaryHtml;
 `)();
@@ -1543,7 +1545,7 @@ assert(functionBody("rememberCoachingReplies").includes("localStorage.setItem"),
 assert(functionBody("setupRealtimeSync").includes('"trick_help_requests"'), "Video request updates must arrive through realtime sync");
 assert(functionBody("scheduleRealtimeRefresh").includes('state.view === "coaching"'), "Realtime coach replies must refresh the open Coaching screen");
 assert(functionBody("scheduleRealtimeRefresh").includes('state.view === "videoReviews"'), "Realtime rider submissions must refresh the coach's open review inbox");
-assert(app.includes('["home", "board", "command", "videoReviews"]'), "An open coach app must follow video-review push notifications into the review studio");
+assert(app.includes('["home", "board", "command", "videoReviews", "uciSchedule"]'), "An open coach app must follow video-review push notifications into the review studio");
 assert(css.includes(".athlete-coaching-cta"), "Athlete Home needs released Coaching-card styling");
 assert(css.includes(".coaching-reply-badge"), "Athlete Home needs visible unread-reply badge styling");
 for (const selector of [".coaching-composer-grid", ".coaching-review-row", ".coaching-review-status", ".coaching-viewer-backdrop", ".coaching-viewer-media"]) {
@@ -1670,7 +1672,25 @@ assert(coachReviewReset.includes("clearTimeout(state.videoReviewSearchTimer)"), 
 assert(functionBody("navigate").includes("state.videoReviewRecordedReplies.size > 0"), "Leaving Video Reviews must warn before discarding an unsent review");
 assert(functionBody("navigate").includes("[...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia)"), "Leaving Video Reviews must release downloaded private video Blobs");
 assert(functionBody("navigate").includes('view === previousView && view === "videoReviews"'), "Re-clicking Video Reviews must not hide an active recorder behind a loading screen");
-assert(app.includes('"videoReviews"]'), "Coach review links must be able to open the Video Reviews view directly");
+const foregroundPushRouteMatch = app.match(/const allowedViews = isCoachRole\(state\.profile\.role\) \? (\[[^;]+?\]) : (\[[^;]+?\]);/);
+assert(foregroundPushRouteMatch, "Foreground push navigation must retain an explicit role-specific route allowlist");
+const coachPushRoutes = new Set(JSON.parse(foregroundPushRouteMatch[1]));
+const riderPushRoutes = new Set(JSON.parse(foregroundPushRouteMatch[2]));
+for (const route of ["home", "board", "command", "videoReviews", "uciSchedule"]) {
+  assert(coachPushRoutes.has(route), `Coach push links must still open ${route}`);
+}
+for (const route of ["home", "coaching", "board", "challenges", "uciSchedule"]) {
+  assert(riderPushRoutes.has(route), `Rider push links must still open ${route}`);
+}
+for (const route of ["command", "videoReviews"]) {
+  assert(!riderPushRoutes.has(route), `Rider push allowlist must not expose coach-only ${route}`);
+}
+const startupPushRouteMatch = app.match(/const allowedPushViews = new Set\((\[[^;]+\])\);/);
+assert(startupPushRouteMatch, "Cold-start push links must retain an explicit route allowlist");
+const startupPushRoutes = new Set(JSON.parse(startupPushRouteMatch[1]));
+for (const route of ["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore", "uciSchedule"]) {
+  assert(startupPushRoutes.has(route), `Cold-start push links must preserve the ${route} route`);
+}
 assert(!functionBody("videoReviewCardHtml").includes("data-review-record-toggle"), "Legacy summary cards must not create a second review recorder");
 assert(css.includes(".coach-review-recorder.is-recording"), "Active coach recording needs a clear visual state");
 assert(css.includes(".coach-review-recording-canvas"), "The attached Safari recording canvas needs safe off-screen styling");

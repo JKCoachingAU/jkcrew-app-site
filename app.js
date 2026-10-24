@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.163";
+const RELEASE_VERSION = "2.14.164";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -422,7 +422,7 @@ const coachNavGroups = [
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Battles & Challenges"]] },
-  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["pastEvents", "Past Events"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["uciSchedule", "UCI 2027 Schedule"], ["pastEvents", "Past Events"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["bikeGarage", "Bike Garage"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
@@ -438,7 +438,7 @@ function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (view === "battleViewer") return "battleViewer";
   if (["crew", "student", "studentPreview", "parentPreview", "recovery"].includes(view)) return "crew";
-  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "pastEvents"].includes(view)) return "coachTools";
+  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "uciSchedule", "pastEvents"].includes(view)) return "coachTools";
   if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
@@ -450,6 +450,7 @@ function parentPrimaryView(view = "") {
 
 function athletePrimaryView(view = "") {
   if (["bikeGarage", "shredZone", "jkcYard"].includes(view)) return "home";
+  if (view === "uciSchedule") return "contests";
   return view === "coaching" ? "home" : view;
 }
 
@@ -673,7 +674,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.163" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.164" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1639,7 +1640,7 @@ async function handleSession(session) {
     recordMyAppOpen();
     applyTheme(data.app_theme);
     const pushView = new URL(window.location.href).searchParams.get("push");
-    const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
+    const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "uciSchedule", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
     state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
     if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) state.view = "home";
     if (pushView) {
@@ -2566,6 +2567,8 @@ async function navigate(view, options = {}) {
   state.tricktionaryRenderVersion = (state.tricktionaryRenderVersion || 0) + 1;
   state.activeBattles?.destroy();
   state.activeBattles = null;
+  state.uciScheduleMount?.destroy();
+  state.uciScheduleMount = null;
   state.riderChallengesRenderVersion = (state.riderChallengesRenderVersion || 0) + 1;
   clearInterval(state.timer);
   if (previousView === "bikeGarage" && view !== previousView && typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
@@ -2627,6 +2630,7 @@ async function navigate(view, options = {}) {
     sessionViewer: renderSessionViewer,
     battleViewer: renderCoachBattleViewer,
     coachTools: renderCoachTools,
+    uciSchedule: renderUciSchedule,
     pastEvents: renderPastEvents,
     more: renderCoachMore,
     bikeGarage: renderBikeGarage,
@@ -2689,6 +2693,8 @@ async function navigate(view, options = {}) {
 }
 
 function teardownRealtimeSync() {
+  state.uciScheduleMount?.destroy();
+  state.uciScheduleMount = null;
   if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.reset();
   state.tricktionarySuggestionsCleanup?.();
   state.tricktionarySuggestionsCleanup = null;
@@ -3368,7 +3374,27 @@ async function getDashboardItems(athleteId) {
   return data || [];
 }
 
+function contestEventStatusHtml(item = {}) {
+  const labels = { cancelled: "CANCELLED", provisional: "PROVISIONAL", review_required: "UPDATE NEEDS REVIEW" };
+  const label = labels[item.uci_schedule_status];
+  return label ? `<span class="uci-event-status uci-event-status-${item.uci_schedule_status}">${label}</span>` : "";
+}
+
+function contestEventDateLabel(item = {}, field = "due_at", options = null) {
+  const value = item[field];
+  if (!value) return "Date to be confirmed";
+  if (!item.uci_schedule_date_only && !options) return dateLabel(value);
+  return new Intl.DateTimeFormat("en-AU", {
+    ...(options || { day: "numeric", month: "short", year: "numeric" }),
+    ...(item.uci_schedule_date_only ? { timeZone: "UTC" } : {}),
+  }).format(new Date(value));
+}
+
 function contestEventEndsAt(item = {}) {
+  // A date-only event remains upcoming through its final calendar day.
+  if (item.uci_schedule_date_only && (item.end_at || item.due_at)) {
+    return new Date(`${(item.end_at || item.due_at).slice(0, 10)}T23:59:59.999Z`);
+  }
   if (item.end_at) return new Date(item.end_at);
   if (item.due_at) return new Date(new Date(item.due_at).getTime() + (24 * 60 * 60 * 1000));
   return null;
@@ -3392,7 +3418,7 @@ function contestEventDay(value = "") {
 
 async function getSharedUpcomingEventData() {
   const { data: eventRows, error: eventError } = await client.from("dashboard_items")
-    .select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at")
+    .select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at,uci_schedule_date_only,uci_schedule_status")
     .eq("item_type", "event")
     .eq("completed", false)
     .order("due_at", { ascending: true, nullsFirst: false })
@@ -5410,9 +5436,9 @@ function closedPanelAccordion(title, meta, body, className = "") {
 }
 
 function dashboardDateLabel(item) {
-  if (item.due_at && item.end_at) return ` · ${dateLabel(item.due_at)} → ${dateLabel(item.end_at)}`;
-  if (item.due_at) return ` · Starts ${dateLabel(item.due_at)}`;
-  if (item.end_at) return ` · Finishes ${dateLabel(item.end_at)}`;
+  if (item.due_at && item.end_at) return ` · ${contestEventDateLabel(item)} → ${contestEventDateLabel(item, "end_at")}`;
+  if (item.due_at) return ` · Starts ${contestEventDateLabel(item)}`;
+  if (item.end_at) return ` · Finishes ${contestEventDateLabel(item, "end_at")}`;
   return "";
 }
 
@@ -7631,7 +7657,7 @@ function parentNextItemHtml(items = []) {
     .sort((a, b) => (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER));
   const item = upcoming.find((entry) => !entry.due_at || new Date(entry.end_at || entry.due_at).getTime() >= now) || upcoming[0];
   if (!item) return `<div class="parent-empty-note"><strong>Nothing due</strong><span>No upcoming event or task has been added yet.</span></div>`;
-  return `<article class="parent-next-item"><span>${escapeHtml(item.item_type || "Update")}</span><strong>${escapeHtml(item.title)}</strong><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small><button class="parent-text-action" type="button" data-parent-open-view="parentCalendar">Open Calendar</button></article>`;
+  return `<article class="parent-next-item"><span>${escapeHtml(item.item_type || "Update")}</span><strong>${escapeHtml(item.title)}</strong><small>${item.due_at ? contestEventDateLabel(item) : "Date to be confirmed"}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small><button class="parent-text-action" type="button" data-parent-open-view="parentCalendar">Open Calendar</button></article>`;
 }
 
 function parentLatestFeedbackHtml(requests = []) {
@@ -7817,7 +7843,7 @@ async function renderParentCoaching() {
 
 function parentAgendaItemHtml(item = {}) {
   const when = item.due_at || item.created_at;
-  return `<article class="parent-agenda-item ${item.completed ? "complete" : ""}"><div class="parent-agenda-date"><strong>${when ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(when)) : "--"}</strong><span>${when ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(when)) : "TBC"}</span></div><div><span>${escapeHtml(item.item_type || "Item")}${item.completed ? " · complete" : ""}</span><strong>${escapeHtml(item.title || "Upcoming item")}</strong><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div></article>`;
+  return `<article class="parent-agenda-item ${item.completed ? "complete" : ""}"><div class="parent-agenda-date"><strong>${when ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(when)) : "--"}</strong><span>${when ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(when)) : "TBC"}</span></div><div><span>${escapeHtml(item.item_type || "Item")}${item.completed ? " · complete" : ""}</span><strong>${escapeHtml(item.title || "Upcoming item")}</strong><small>${item.due_at ? contestEventDateLabel(item) : "Date to be confirmed"}${item.end_at ? ` → ${contestEventDateLabel(item, "end_at")}` : ""}${item.details ? ` · ${escapeHtml(item.details)}` : ""}</small></div></article>`;
 }
 
 async function renderParentCalendar() {
@@ -9333,8 +9359,8 @@ function contestEventCardsHtml(events = [], runs = [], attendance = [], roster =
     const mergeSelected = state.contestMergeSourceId === item.id;
     return `<article class="contest-event-card ${going ? "is-going" : ""} ${coachView ? "coach-merge-event" : ""} ${mergeSelected ? "merge-source-selected" : ""}" data-contest-event-card data-contest-event-id="${escapeHtml(item.id)}" data-event-search="${escapeHtml(searchText)}" ${coachView ? 'draggable="true"' : ""}>
       <button class="contest-event-main" type="button" data-open-contest-event="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.title)} and see who is going">
-        <span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span>
-        <span class="contest-event-copy"><span class="eyebrow">${going ? (parentView ? `${escapeHtml(viewerFirstName)} is going` : "You're going") : "Upcoming event"}${linkedRuns ? ` · ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"}` : ""}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
+        <span class="contest-event-date"><span>${item.due_at ? contestEventDateLabel(item, "due_at", { month: "short" }) : "TBC"}</span><strong>${item.due_at ? contestEventDateLabel(item, "due_at", { day: "2-digit" }) : "--"}</strong></span>
+        <span class="contest-event-copy"><span class="eyebrow">${going ? (parentView ? `${escapeHtml(viewerFirstName)} is going` : "You're going") : "Upcoming event"}${linkedRuns ? ` · ${linkedRuns} private ${linkedRuns === 1 ? "run" : "runs"}` : ""}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong>${contestEventStatusHtml(item)}<span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? contestEventDateLabel(item) : "Date to be confirmed"}${item.end_at ? ` → ${contestEventDateLabel(item, "end_at")}` : ""}</small></span>
         <span class="contest-event-going">${contestEventFacesHtml(attendees)}</span>
         <span class="contest-event-chevron" aria-hidden="true">›</span>
       </button>
@@ -9395,11 +9421,11 @@ function coachContestEventEditorHtml(item = {}) {
   if (!isCoachRole(state.profile?.role)) return "";
   return `<details class="coach-event-details-editor">
     <summary><span><strong>EDIT EVENT DETAILS</strong><small>Correct the name, location or dates for every rider</small></span><i aria-hidden="true">+</i></summary>
-    <form data-coach-event-edit="${escapeHtml(item.id)}">
+    <form data-coach-event-edit="${escapeHtml(item.id)}" data-date-only="${Boolean(item.uci_schedule_date_only)}">${item.uci_schedule_date_only ? `<p class="muted">Official dates only; event times are still to be confirmed.</p>` : ""}
       <div class="field coach-event-edit-title"><label for="coach-event-title-${escapeHtml(item.id)}">Event name</label><input id="coach-event-title-${escapeHtml(item.id)}" name="title" required minlength="3" maxlength="120" value="${escapeHtml(item.title || "")}"></div>
       <div class="field coach-event-edit-details"><label for="coach-event-details-${escapeHtml(item.id)}">Location / details</label><input id="coach-event-details-${escapeHtml(item.id)}" name="details" maxlength="180" value="${escapeHtml(item.details || "")}" placeholder="Venue, city or event details"></div>
-      <div class="field"><label for="coach-event-start-${escapeHtml(item.id)}">Starts</label><input id="coach-event-start-${escapeHtml(item.id)}" name="dueAt" type="datetime-local" required value="${escapeHtml(contestDateTimeInputValue(item.due_at))}"></div>
-      <div class="field"><label for="coach-event-end-${escapeHtml(item.id)}">Ends</label><input id="coach-event-end-${escapeHtml(item.id)}" name="endAt" type="datetime-local" value="${escapeHtml(contestDateTimeInputValue(item.end_at))}"></div>
+      <div class="field"><label for="coach-event-start-${escapeHtml(item.id)}">Starts</label><input id="coach-event-start-${escapeHtml(item.id)}" name="dueAt" type="${item.uci_schedule_date_only ? "date" : "datetime-local"}" required value="${escapeHtml(item.uci_schedule_date_only ? contestEventDay(item.due_at) : contestDateTimeInputValue(item.due_at))}"></div>
+      <div class="field"><label for="coach-event-end-${escapeHtml(item.id)}">Ends</label><input id="coach-event-end-${escapeHtml(item.id)}" name="endAt" type="${item.uci_schedule_date_only ? "date" : "datetime-local"}" value="${escapeHtml(item.uci_schedule_date_only ? contestEventDay(item.end_at) : contestDateTimeInputValue(item.end_at))}"></div>
       <button class="primary-btn" type="submit">SAVE EVENT DETAILS</button>
     </form>
   </details>`;
@@ -9435,7 +9461,7 @@ function contestEventModalHtml(item = {}, attendees = [], runs = [], roster = []
   const linkedRuns = runs.filter((run) => run.contest_item_id === item.id && !run.archived_at).length;
   const coachView = isCoachRole(state.profile?.role) && !parentView;
   return `<section class="contest-event-modal" role="dialog" aria-modal="true" aria-labelledby="contest-event-modal-title">
-    <header class="contest-event-modal-head"><div><div class="eyebrow">Upcoming event</div><h2 id="contest-event-modal-title">${escapeHtml(item.title)}</h2><p>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close event">×</button></header>
+    <header class="contest-event-modal-head"><div><div class="eyebrow">Upcoming event</div><h2 id="contest-event-modal-title">${escapeHtml(item.title)}</h2>${contestEventStatusHtml(item)}<p>${item.due_at ? contestEventDateLabel(item) : "Date to be confirmed"}${item.end_at ? ` → ${contestEventDateLabel(item, "end_at")}` : ""}</p></div><button class="contest-event-modal-close" type="button" data-close-contest-event aria-label="Close event">×</button></header>
     ${item.details ? `<div class="contest-event-location"><span aria-hidden="true">⌖</span><strong>${escapeHtml(item.details)}</strong></div>` : ""}
     ${contestEventCourseHtml(item, viewOptions)}
     <div class="contest-attendee-section"><div class="panel-head"><div><div class="panel-title">Who's going</div><div class="panel-meta">${attendees.length} confirmed</div></div></div>
@@ -9759,9 +9785,11 @@ async function saveCoachContestEventEdit(event) {
   const form = new FormData(formElement);
   const title = String(form.get("title") || "").trim();
   const details = String(form.get("details") || "").trim();
-  const dueAt = new Date(String(form.get("dueAt") || ""));
+  const dateOnly = formElement.dataset.dateOnly === "true";
+  const startValue = String(form.get("dueAt") || "");
+  const dueAt = new Date(dateOnly && startValue ? `${startValue}T12:00:00Z` : startValue);
   const endValue = String(form.get("endAt") || "");
-  const endAt = endValue ? new Date(endValue) : null;
+  const endAt = endValue ? new Date(dateOnly ? `${endValue}T12:00:00Z` : endValue) : null;
   if (title.length < 3 || Number.isNaN(dueAt.getTime())) return notify("Add the event name and start date.", "error");
   if (endAt && (Number.isNaN(endAt.getTime()) || endAt < dueAt)) return notify("The event finish must be after it starts.", "error");
   const button = formElement.querySelector("button[type='submit']");
@@ -9869,7 +9897,7 @@ async function saveSharedContestEvent(event) {
         details: details.slice(0, 180),
         due_at: dueAt.toISOString(),
         end_at: endAt ? endAt.toISOString() : null,
-      }).select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at").single(), "Saving event", 15000);
+      }).select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at,uci_schedule_date_only,uci_schedule_status").single(), "Saving event", 15000);
       if (error?.code === "23505") {
         ({ events } = await withTimeout(getSharedUpcomingEventData(), "Loading events", 15000));
         sharedEvent = events.find((item) => normalizeContestEventTitle(item.title) === normalizeContestEventTitle(title) && contestEventDay(item.due_at) === contestEventDay(dueAt));
@@ -11658,6 +11686,31 @@ async function renderPastEvents() {
   await load();
 }
 
+async function renderUciSchedule() {
+  if (!isCoachRole(state.profile?.role) && state.profile?.role !== "athlete") return navigate("home");
+  const root = document.querySelector("#view");
+  const userId = state.user.id;
+  const setupVersion = state.sessionSetupVersion;
+  const isCurrent = () => state.view === "uciSchedule" && state.user?.id === userId && state.sessionSetupVersion === setupVersion && root.isConnected;
+  state.uciScheduleMount?.destroy();
+  if (!window.UCI2027Schedule) throw new Error("The UCI schedule could not load. Update the app and try again.");
+  state.uciScheduleMount = window.UCI2027Schedule.mount(root, {
+    client,
+    canManage: isCoachRole(state.profile?.role),
+    isCurrent,
+    onBack: () => navigate(isCoachRole(state.profile?.role) ? "coachTools" : "contests"),
+    onEventAdded: () => { cacheClear("coach-command:"); },
+    onOpenEvent: async (eventId) => {
+      if (!isCurrent()) return;
+      await navigate("contests");
+      if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion || state.view !== "contests") return;
+      const button = [...document.querySelectorAll("#view [data-open-contest-event]")].find(button => button.dataset.openContestEvent === eventId);
+      if (button) button.click();
+      else notify("This event is no longer upcoming. Check Past Events for its saved layout.");
+    },
+  });
+}
+
 async function renderCoachTools() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   document.querySelector("#view").innerHTML = `
@@ -11667,6 +11720,7 @@ async function renderCoachTools() {
       ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
       ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
       ${coachHubCard("contests", "Events & Runs", "Manage attendance, merge duplicates and review private runs", "🏆")}
+      ${coachHubCard("uciSchedule", "UCI 2027 Schedule", "Official points events, entry details and LA28 qualification updates", "◎")}
       ${coachHubCard("pastEvents", "Past Events", "Saved park layouts from finished contests", "⌖")}
     </section>`;
   document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -12029,8 +12083,8 @@ function coachSharedEventsSummaryHtml(events = [], attendance = []) {
     const coachGoing = attendees.some((row) => row.athlete_id === state.user?.id);
     return `<article class="contest-event-card ${coachGoing ? "is-going" : ""} ${extraClass}">
       <button class="contest-event-main" type="button" data-view="contests" aria-label="Open ${escapeHtml(item.title)} in Events and Runs">
-        <span class="contest-event-date"><span>${item.due_at ? new Intl.DateTimeFormat("en-AU", { month: "short" }).format(new Date(item.due_at)) : "TBC"}</span><strong>${item.due_at ? new Intl.DateTimeFormat("en-AU", { day: "2-digit" }).format(new Date(item.due_at)) : "--"}</strong></span>
-        <span class="contest-event-copy"><span class="eyebrow">${coachGoing ? "Coach attending" : "Upcoming event"}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong><span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? dateLabel(item.due_at) : "Date to be confirmed"}${item.end_at ? ` → ${dateLabel(item.end_at)}` : ""}</small></span>
+        <span class="contest-event-date"><span>${item.due_at ? contestEventDateLabel(item, "due_at", { month: "short" }) : "TBC"}</span><strong>${item.due_at ? contestEventDateLabel(item, "due_at", { day: "2-digit" }) : "--"}</strong></span>
+        <span class="contest-event-copy"><span class="eyebrow">${coachGoing ? "Coach attending" : "Upcoming event"}</span><strong class="contest-event-title">${escapeHtml(item.title)}</strong>${contestEventStatusHtml(item)}<span class="contest-event-detail">${item.details ? escapeHtml(item.details) : "Event details to be confirmed"}</span><small>${item.due_at ? contestEventDateLabel(item) : "Date to be confirmed"}${item.end_at ? ` → ${contestEventDateLabel(item, "end_at")}` : ""}</small></span>
         <span class="contest-event-going">${contestEventFacesHtml(attendees)}</span>
         <span class="contest-event-chevron" aria-hidden="true">›</span>
       </button>
@@ -18703,7 +18757,7 @@ window.addEventListener("load", async () => {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
-    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command", "videoReviews"] : ["home", "coaching", "board", "challenges"];
+    const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command", "videoReviews", "uciSchedule"] : ["home", "coaching", "board", "challenges", "uciSchedule"];
     const view = allowedViews.includes(event.data.view) ? event.data.view : (isCoachRole(state.profile.role) ? "command" : "home");
     navigate(view);
   });

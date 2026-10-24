@@ -4,7 +4,7 @@ const {chromium}=require('playwright');
 const root=require('path').resolve(__dirname,'..');
 const source=fs.readFileSync(root+'/app.js','utf8');
 const extract=name=>{const start=source.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=source.slice(start);return rest.slice(0,rest.indexOf('\n}')+2)};
-const names=['renderContests','sharedContestEventFormHtml','openCoachCreateEvent','saveSharedContestEvent','setButtonBusy','withTimeout','bindContestEventActions','contestEventCardsHtml'];
+const names=['renderContests','sharedContestEventFormHtml','openCoachCreateEvent','saveSharedContestEvent','setButtonBusy','withTimeout','bindContestEventActions','contestEventCardsHtml','contestEventDateLabel','contestEventStatusHtml'];
 const fixture=`
 const state={view:'contests',user:{id:'coach-a'},profile:{role:'coach'}};
 const isCoachRole=role=>['coach','admin'].includes(role);

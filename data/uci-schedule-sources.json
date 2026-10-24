@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-24T11:50:00Z",
+  "allowedHosts": [
+    "www.uci.org",
+    "uci.org",
+    "assets.ctfassets.net",
+    "www.hautesavoie2027.com",
+    "hautesavoie2027.com",
+    "bmx-meisterschaft.de",
+    "www.bmx-meisterschaft.de",
+    "www.montpellier-tourisme.fr",
+    "sportpiraten.com",
+    "www.sportpiraten.com",
+    "www.bmxseries.com",
+    "bmxseries.com",
+    "www.fise.fr",
+    "www.auscycling.org.au",
+    "auscycling.org.au",
+    "www.uec.ch",
+    "uec.ch",
+    "www.germancycling.de",
+    "germancycling.de",
+    "bangaramppark.lt",
+    "www.bangaramppark.lt",
+    "www.oceaniacycling.org",
+    "oceaniacycling.org",
+    "www.fecoci.net",
+    "fecoci.net",
+    "fvciclismo.net",
+    "www.fvciclismo.net",
+    "www.woodstyle-bmx.de",
+    "woodstyle-bmx.de"
+  ],
+  "watchSources": [
+    {
+      "url": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+      "title": "UCI: sporting implications of the 2026 Worlds cancellation",
+      "kind": "qualification_news"
+    },
+    {
+      "url": "https://www.uci.org/pressrelease/the-uci-and-saudi-cycling-federation-confirm-that-the-2026-uci-urban-cycling-world-championships-will-not-proceed/AsZUTThGT0DsbQPmWS58d",
+      "title": "UCI: 2026 Riyadh Worlds will not proceed",
+      "kind": "qualification_news"
+    },
+    {
+      "url": "https://www.uci.org/event-hub/olympic-games-la-28/6GXnG3xrI6q68i4eF4Nb9R",
+      "title": "UCI LA28 official documents",
+      "kind": "qualification_hub",
+      "discoverDocuments": true
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/3vr04WEKnPPYbtUuFEh1mZ/23b4048c816f51a591cab34ef9c60000/14092026_-_Olympic_Qualifier_Series_-_Qualification_System_-_EN_vFinal.pdf",
+      "title": "Published Q-Series qualification system \u2014 subject to revision",
+      "kind": "qualification_document"
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/73az93YUIYgyAWhHXPVRPf/359042b3f7ca0c4df81c030ac66f04f9/6BIS-BFR-20260101-E.pdf",
+      "title": "UCI BMX Freestyle regulations",
+      "kind": "rules_document"
+    },
+    {
+      "url": "https://www.hautesavoie2027.com/sites/default/files/2026-09/calendrier_2209_2026_en.pdf",
+      "title": "Haute-Savoie 2027 competition programme",
+      "kind": "organiser_programme"
+    },
+    {
+      "url": "https://bmx-meisterschaft.de/",
+      "title": "German National Championships \u2014 Park official announcement",
+      "kind": "organiser_announcement"
+    },
+    {
+      "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+      "title": "FISE Montpellier official announcement",
+      "kind": "organiser_announcement"
+    },
+    {
+      "url": "https://sportpiraten.com/",
+      "title": "Butcher Jam official announcement",
+      "kind": "organiser_announcement"
+    },
+    {
+      "url": "https://www.bmxseries.com/",
+      "title": "BMX Freestyle European Series official announcement",
+      "kind": "organiser_announcement"
+    },
+    {
+      "url": "https://www.fise.fr/en",
+      "title": "FISE official announcements",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://auscycling.org.au/events",
+      "title": "AusCycling events",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://www.uec.ch/en/",
+      "title": "UEC official announcements",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://bangaramppark.lt/",
+      "title": "Banga Ramp Park official organiser",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://www.oceaniacycling.org/",
+      "title": "Oceania Cycling Confederation",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://www.fecoci.net/",
+      "title": "Costa Rica Cycling Federation",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://fvciclismo.net/",
+      "title": "Venezuela Cycling Federation",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://www.woodstyle-bmx.de/",
+      "title": "Vulkan BMX official organiser",
+      "kind": "organiser_discovery"
+    },
+    {
+      "url": "https://www.uci.org/regulations/3MyLDDrwJCJJ0BGGOFzOat",
+      "title": "Official UCI regulations and amendments",
+      "kind": "rules_hub",
+      "discoverDocuments": true
+    }
+  ],
+  "events": [
+    {
+      "id": "organiser-2027-german-nationals",
+      "uciId": null,
+      "name": "German National Championships \u2014 Park",
+      "startDate": "2027-07-29",
+      "endDate": "2027-08-01",
+      "venue": "Stuttgart",
+      "country": "Germany",
+      "countryCode": "GER",
+      "discipline": "Park",
+      "classification": "CN pending",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER"
+      ],
+      "categories": [],
+      "eligibilityNote": "German sporting nationality required for national-championship points. Die Finals event window. Exact BMX Park days and UCI calendar registration remain unconfirmed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://bmx-meisterschaft.de/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year\u2019s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://bmx-meisterschaft.de/",
+      "sourceTitle": "Official organiser announcement",
+      "evidence": [
+        "29\\.07\\.-01\\.08\\.2027",
+        "Deutsche Meisterschaften Park und Flatland",
+        "Stuttgart"
+      ],
+      "matchUciName": "Deutsche|German National"
+    },
+    {
+      "id": "organiser-2027-fise-montpellier",
+      "uciId": null,
+      "name": "FISE Montpellier",
+      "startDate": "2027-05-05",
+      "endDate": "2027-05-09",
+      "venue": "Rives du Lez, Montpellier",
+      "country": "France",
+      "countryCode": "FRA",
+      "discipline": "Park",
+      "classification": "Unconfirmed",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [],
+      "eligibilityNote": "Festival window is published. A 2027 UCI World Cup class, rider categories and entry requirements are not yet confirmed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year\u2019s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+      "sourceTitle": "Official organiser announcement",
+      "evidence": [
+        "05 au 09 mai 2027",
+        "BMX Freestyle Park"
+      ],
+      "matchUciName": "FISE.*Montpellier|Montpellier.*FISE"
+    },
+    {
+      "id": "organiser-2027-butcher-jam",
+      "uciId": null,
+      "name": "Butcher Jam",
+      "startDate": "2027-05-14",
+      "endDate": "2027-05-16",
+      "venue": "Jugendpark Schlachthof, Flensburg",
+      "country": "Germany",
+      "countryCode": "GER",
+      "discipline": "Park",
+      "classification": "Unconfirmed",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [],
+      "eligibilityNote": "Organiser\u2019s festival dates are published. UCI classification, categories and rider entry requirements remain unconfirmed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://sportpiraten.com/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year\u2019s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://sportpiraten.com/",
+      "sourceTitle": "Official organiser announcement",
+      "evidence": [
+        "14.[\u2013-]16\\. Mai 2027",
+        "BMX"
+      ],
+      "matchUciName": "Butcher Jam"
+    },
+    {
+      "id": "organiser-2027-bmx-european-series",
+      "uciId": null,
+      "name": "BMX Freestyle European Series",
+      "startDate": null,
+      "endDate": null,
+      "venue": "Host cities to be announced",
+      "country": "Europe",
+      "countryCode": "EUR",
+      "discipline": "Park",
+      "classification": "Unconfirmed",
+      "classificationStatus": "unconfirmed",
+      "status": "provisional",
+      "dateStatus": "provisional",
+      "eligibilityStatus": "pending",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [],
+      "eligibilityNote": "Proposed May\u2013September season; stops, exact dates, categories, UCI points status and rider entry rules are unpublished.",
+      "registration": {
+        "status": "pending",
+        "url": "https://www.bmxseries.com/",
+        "email": null,
+        "deadline": null,
+        "note": "The 2027 rider entry form, deadline and eligible categories are not yet verified."
+      },
+      "rankingPoints": {
+        "status": "unconfirmed",
+        "note": "An announcement or a previous year\u2019s UCI classification does not establish 2027 ranking points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "No Olympic qualification-points status is confirmed for this event."
+      },
+      "sourceUrl": "https://www.bmxseries.com/",
+      "sourceTitle": "Official organiser announcement",
+      "evidence": [
+        "May[\u2013-]September 2027",
+        "Host city applications open"
+      ],
+      "matchUciName": "^BMX Freestyle European Series$"
+    }
+  ],
+  "eventOverrides": [
+    {
+      "id": "uci-bfr-2027-79863",
+      "sourceUrl": "https://www.hautesavoie2027.com/sites/default/files/2026-09/calendrier_2209_2026_en.pdf",
+      "sourceHash": "d1d057e4d265e779a6a495766602a085a390316ebeacd2af8ec11a54b99fec43",
+      "title": "Official organiser Park programme",
+      "fields": {
+        "name": "2027 UCI Cycling World Championships \u2014 BMX Freestyle Park",
+        "startDate": "2027-09-02",
+        "endDate": "2027-09-04",
+        "venue": "Cluses, Haute-Savoie",
+        "dateStatus": "confirmed",
+        "dateNote": "Park: 2\u20134 September; 5 September is the weather contingency day. UCI\u2019s broader combined registration window also includes Flatland."
+      }
+    }
+  ],
+  "qualification": {
+    "status": "revision_pending",
+    "title": "LA28 qualification pathway under revision",
+    "summary": "UCI confirmed that the 2026 Urban Cycling World Championships in Riyadh (3\u20137 November) will not take place. On 19 October it said the LA28 BMX Freestyle pathway is being revised with the IOC, with details expected in November. This does not cancel the 2027 Worlds in France.",
+    "rankingNote": "General UCI world-ranking points and Olympic qualification points are different. The published Q-Series entry document references the 7 December 2027 ranking, but the revised pathway must be checked before relying on it for Olympic qualification.",
+    "sourceUrl": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+    "sources": [
+      {
+        "url": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+        "title": "UCI sporting consequences \u2014 19 October 2026"
+      },
+      {
+        "url": "https://assets.ctfassets.net/761l7gh5x5an/3vr04WEKnPPYbtUuFEh1mZ/23b4048c816f51a591cab34ef9c60000/14092026_-_Olympic_Qualifier_Series_-_Qualification_System_-_EN_vFinal.pdf",
+        "title": "Published Q-Series entry rules \u2014 subject to revision"
+      },
+      {
+        "url": "https://www.uci.org/event-hub/olympic-games-la-28/6GXnG3xrI6q68i4eF4Nb9R",
+        "title": "Official LA28 documents"
+      }
+    ]
+  },
+  "announcements": [
+    {
+      "id": "uci-la28-2026-worlds-cancelled-v1",
+      "title": "2026 Worlds cancelled; LA28 pathway being revised",
+      "summary": "UCI confirmed that the Riyadh 2026 Worlds will not take place. The planned initial BMX Freestyle Olympic qualification opportunity is affected; revised pathway details are due in November.",
+      "impactGermany": "German riders should not plan points from Riyadh 2026. Continue checking German Cycling selection and the revised UCI pathway; 2027 UCI ranking events are not automatically direct Olympic qualification events.",
+      "impactAustralia": "Australian riders should not plan points from Riyadh 2026. Continue checking AusCycling selection and the revised UCI pathway; 2027 UCI ranking events are not automatically direct Olympic qualification events.",
+      "deadlines": [
+        {
+          "date": null,
+          "label": "Revised qualification pathway expected in November 2026; UCI has not given an exact release day."
+        }
+      ],
+      "sourceUrl": "https://www.uci.org/pressrelease/2026-uci-urban-cycling-world-championships-sporting-consequences-of-the-event-not-taking-place/3ZNMfDGDFpxPQDPlnE76Wx",
+      "publishedAt": "2026-10-19T00:00:00Z",
+      "verifiedAt": "2026-10-24T11:50:00Z",
+      "significant": true,
+      "notify": false
+    }
+  ],
+  "reviewedSources": [
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/3VR4HXhjyqVBEzL53UEeYN/1b5877f49f399d4c9ed3eeb82ca02ed2/BMX_Freestyle_Rule_changes_2027-ENG_Upcoming_amendments.pdf",
+      "contentHash": "324d90cffdda825086c41d6da8dabbd9964451de9f3b06d0ed3db17a257bef1b",
+      "reviewedAt": "2026-10-24T12:27:46.454413Z",
+      "outcome": "dismissed",
+      "note": "Read the UCI memorandum dated 29 September 2026 in full. Its 1 January 2027 amendment concerns judging the final trick when run time expires (article 6bis.6.031). It does not introduce or revise LA28 qualification quotas, ranking dates, entry deadlines or points eligibility."
+    },
+    {
+      "url": "https://assets.ctfassets.net/761l7gh5x5an/74mXMQQSD1VJOU3Hm0RMgh/e4a5145364f688985655c60529d86de9/2026_UCI_BFR_Rules_-_Part_VIbis_-_Rule_Changes_on_01.01.2026_-_ENG.pdf",
+      "contentHash": "39e4452c890afb9adbc60e51cfa1989d6386b984a0e753afcd05813bc5654f03",
+      "reviewedAt": "2026-10-24T12:27:46.454413Z",
+      "outcome": "dismissed",
+      "note": "Read the historical memorandum dated 6 October 2025, effective 1 January 2026. Its entry, format and world-ranking rules are already part of the baseline. National and continental ranking restrictions are reflected in the schedule. This is not a new LA28 qualification announcement."
+    }
+  ],
+  "reviewWorkflow": {
+    "instructions": "Review pending snapshot candidates against official sources. To dismiss or publish a candidate, append its exact url and contentHash to reviewedSources with reviewedAt, outcome (dismissed or published), and an evidence note. A new hash always requires a fresh review. For verified material rules, append an announcement with a unique id per substantive revision, sourceUrl, verifiedAt, national impacts and verified deadlines; set notify true only for a new significant change. Historical baseline announcements retain notify false. Update qualification and any reviewed eventOverrides as appropriate, then run the publisher. Never approve Olympic qualification points solely because an event awards general UCI ranking points."
+  }
+}

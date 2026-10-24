@@ -1,0 +1,112 @@
+/* Competition planning uses the same JKC colours and type as the rest of the app. */
+.uci-schedule{--schedule-muted:color-mix(in srgb,var(--text) 62%,var(--muted));max-width:1450px;margin:0 auto;padding-bottom:32px;min-width:0}
+.uci-schedule *{box-sizing:border-box}
+.uci-schedule-heading{margin:0 0 28px}
+.uci-schedule-heading h1{margin:10px 0 14px;font:900 clamp(38px,5vw,74px)/.96 var(--display);font-style:italic;text-transform:uppercase;letter-spacing:-.025em}
+.uci-schedule-heading h1 span{color:var(--aqua)}
+.uci-schedule-heading p{max-width:690px;margin:0;color:var(--schedule-muted);font-size:17px;line-height:1.6}
+.uci-schedule-back{border:0;background:transparent;color:var(--schedule-muted);padding:8px 12px 8px 0;min-height:44px;margin-bottom:14px}
+.uci-schedule h2{font:800 28px/1.1 var(--display);margin:0;color:var(--text)}
+.uci-schedule .eyebrow{font:600 11px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--aqua)}
+.uci-schedule p{line-height:1.55}
+.uci-schedule a{color:var(--aqua);overflow-wrap:anywhere;text-underline-offset:3px}
+.uci-schedule a:focus-visible,.uci-schedule button:focus-visible,.uci-schedule summary:focus-visible,.uci-schedule input:focus-visible,.uci-schedule select:focus-visible{outline:2px solid var(--aqua);outline-offset:4px}
+.uci-schedule-monitor{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:18px 22px;margin-bottom:18px}
+.uci-schedule-monitor strong{font-size:14px}
+.uci-schedule-monitor p{font:500 12px/1.5 var(--mono);color:var(--schedule-muted);margin:6px 0}
+.uci-schedule-monitor small{display:block;color:var(--schedule-muted);font-size:13px;line-height:1.45;max-width:730px}
+.uci-schedule-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;max-width:100%;border:1px solid var(--line);border-radius:10px;padding:12px 16px;font:700 14px/1.3 var(--body);white-space:normal;text-align:center;transition:border-color .15s,background-color .15s;flex-shrink:0;cursor:pointer}
+.uci-schedule-button.is-secondary{color:var(--text);background:var(--surface-2)}
+.uci-schedule-button.is-primary{color:#06211d;background:linear-gradient(110deg,#43e5cc,#20bfc7);border-color:#43d8c9}
+.uci-schedule-button:not(:disabled):hover{border-color:var(--aqua)}
+.uci-schedule-button:disabled{opacity:.65;cursor:default}
+.uci-schedule-qualification{position:relative;background:linear-gradient(120deg,color-mix(in srgb,var(--aqua) 7%,var(--surface)),color-mix(in srgb,var(--purple) 8%,var(--surface)));border:1px solid color-mix(in srgb,var(--aqua) 35%,var(--line));border-radius:18px;padding:24px;margin-bottom:18px;overflow:hidden}
+.uci-schedule-qualification:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--aqua),#2b9fe8,var(--purple))}
+.uci-schedule-qualification-heading{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
+.uci-schedule-qualification-heading>.uci-schedule-badge{margin-left:auto}
+.uci-schedule-olympic-mark{display:grid;place-items:center;width:52px;height:52px;background:var(--aqua-soft);color:var(--aqua);border:1px solid color-mix(in srgb,var(--aqua) 40%,var(--line));border-radius:13px;font:900 31px/1 var(--display);font-style:italic}
+.uci-schedule-qualification h2{margin:3px 0 0}
+.uci-schedule-qualification>p{font-size:15px;color:var(--schedule-muted);max-width:1100px;margin:17px 0 0}
+.uci-schedule-qualification p.uci-schedule-distinction{padding:14px 16px;background:color-mix(in srgb,var(--surface) 60%,transparent);border-radius:9px;font-size:13px;line-height:1.6}
+.uci-schedule-distinction strong{color:var(--text)}
+.uci-schedule-source-row{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:10px}
+.uci-schedule-source-row a{display:inline-flex;align-items:center;min-height:44px;font-size:13px;line-height:1.4}
+.uci-schedule-badge{display:inline-flex;align-items:center;min-height:25px;padding:5px 8px;border-radius:5px;font:600 10px/1.25 var(--mono);letter-spacing:.02em;background:var(--surface-2);color:var(--schedule-muted);border:1px solid var(--line);max-width:100%}
+.uci-schedule-badge.is-confirmed{color:var(--aqua);background:var(--aqua-soft);border-color:color-mix(in srgb,var(--aqua) 35%,var(--line))}
+.uci-schedule-badge.is-warning{color:color-mix(in srgb,var(--yellow) 85%,var(--text));background:color-mix(in srgb,var(--yellow) 8%,var(--surface));border-color:color-mix(in srgb,var(--yellow) 35%,var(--line))}
+.uci-schedule-badge.is-danger{color:color-mix(in srgb,var(--red) 70%,var(--text));background:color-mix(in srgb,var(--red) 8%,var(--surface));border-color:color-mix(in srgb,var(--red) 35%,var(--line))}
+.uci-schedule-announcements{margin-top:14px;border-top:1px solid var(--line)}
+.uci-schedule-announcements summary{display:flex;align-items:center;gap:12px;min-height:48px;cursor:pointer;font-weight:600;font-size:14px}
+.uci-schedule-announcements summary>span{border-radius:5px;background:var(--surface-2);padding:3px 7px;font:600 11px/1.5 var(--mono);color:var(--aqua)}
+.uci-schedule-announcements article{padding:14px 0;border-top:1px solid var(--line)}
+.uci-schedule-announcements h3{margin:0;font-size:17px;line-height:1.3}
+.uci-schedule-announcements p{font-size:14px;color:var(--schedule-muted);margin:9px 0}
+.uci-schedule-announcements a{display:inline-flex;align-items:center;min-height:44px;font-size:13px}
+.uci-schedule-announcements small{display:block;font:500 11px/1.5 var(--mono);color:var(--schedule-muted)}
+.uci-schedule-alerts{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 18px;border:1px solid var(--line);border-radius:12px;margin-bottom:30px;background:var(--surface)}
+.uci-schedule-alerts>div{flex:1;min-width:190px}
+.uci-schedule-alerts strong{font-size:14px}
+.uci-schedule-alerts p{font-size:13px;color:var(--schedule-muted);margin:4px 0 0;max-width:720px}
+.uci-schedule-alerts [aria-checked=true]{color:var(--aqua);border-color:color-mix(in srgb,var(--aqua) 35%,var(--line));background:var(--aqua-soft)}
+.uci-schedule-alerts>.uci-schedule-load-error{flex-basis:100%}
+.uci-schedule-list-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;margin:26px 0 18px}
+.uci-schedule-list-heading h2{margin:6px 0 0;font-size:32px}
+.uci-schedule-list-heading>span{color:var(--schedule-muted);font:500 12px/1.5 var(--mono);white-space:nowrap}
+.uci-schedule-filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-bottom:20px}
+.uci-schedule-filters label{display:flex;flex-direction:column;gap:8px;font:600 10px/1.4 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--schedule-muted);min-width:0}
+.uci-schedule-filters input,.uci-schedule-filters select{min-height:46px;width:100%;min-width:0;border:1px solid color-mix(in srgb,var(--text) 15%,var(--line));border-radius:9px;background:var(--surface);color:var(--text);padding:11px 12px;font:400 16px/1.4 var(--body);letter-spacing:normal;text-transform:none}
+.uci-schedule-filters input::placeholder{color:var(--schedule-muted);opacity:.8}
+.uci-schedule-event-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.uci-schedule-event{position:relative;min-width:0;border:1px solid color-mix(in srgb,var(--aqua) 18%,var(--line));border-radius:17px;padding:22px;background:linear-gradient(145deg,color-mix(in srgb,var(--aqua) 3%,var(--surface)),var(--surface));box-shadow:0 8px 24px rgba(0,0,0,.05);overflow-wrap:anywhere}
+.uci-schedule-event.is-cancelled{border-color:color-mix(in srgb,var(--red) 40%,var(--line))}
+.uci-schedule-event-heading{display:flex;gap:14px;align-items:flex-start;margin-bottom:19px}
+.uci-schedule-event-heading>div:last-child{min-width:0;flex:1}
+.uci-schedule-event-heading h2{font-size:26px;line-height:1.1;margin:9px 0 7px}
+.uci-schedule-badges{display:flex;flex-wrap:wrap;gap:6px}
+.uci-schedule-date{width:55px;min-height:65px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;background:color-mix(in srgb,var(--yellow) 8%,var(--surface));border:1px solid color-mix(in srgb,var(--yellow) 30%,var(--line));border-radius:10px;color:var(--yellow);gap:5px}
+.uci-schedule-date span{font:600 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em}
+.uci-schedule-date strong{font:900 28px/1 var(--display);color:var(--text);white-space:nowrap}
+.uci-schedule-date.is-pending strong{font-size:21px}
+.uci-schedule-date-note{font-size:12px;margin:5px 0 0;color:var(--yellow)}
+.uci-schedule-event-dates{color:var(--schedule-muted);font-size:13px;margin:0}
+.uci-schedule-facts{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:15px;padding:0 0 19px;border-bottom:1px solid var(--line)}
+.uci-schedule-facts>div:first-child{grid-column:1/-1}
+.uci-schedule-facts dt{font:600 10px/1.5 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--schedule-muted);margin-bottom:5px}
+.uci-schedule-facts dd{margin:0;font-size:14px;line-height:1.5}
+.uci-schedule-pending{color:var(--yellow);font-size:12px}
+.uci-schedule-points{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:18px 0 8px}
+.uci-schedule-points p{font-size:12px;line-height:1.5;color:var(--schedule-muted);margin:8px 0}
+.uci-schedule-details{border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.uci-schedule-details>summary{display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:48px;font-size:13px;font-weight:600;cursor:pointer;padding:10px 0}
+.uci-schedule-details>summary>span{font-size:18px;color:var(--aqua)}
+.uci-schedule-details[open]>summary>span{transform:rotate(180deg)}
+.uci-schedule-details>div{padding:8px 0 17px}
+.uci-schedule-details strong{font-size:13px}
+.uci-schedule-details p{font-size:13px;line-height:1.55;color:var(--schedule-muted);margin:7px 0}
+.uci-schedule-details p.uci-schedule-detail-note{font-size:12px;color:var(--yellow)}
+.uci-schedule-registration{margin-top:20px}
+.uci-schedule-text-link{min-height:44px;display:inline-flex;align-items:center;font-size:13px}
+.uci-schedule-details p.uci-schedule-deadline{color:var(--text)}
+.uci-schedule-sources{display:flex;flex-direction:column;gap:2px;margin-top:16px}
+.uci-schedule-sources a{font-size:13px;min-height:44px;display:flex;align-items:center;gap:5px;line-height:1.4}
+.uci-schedule-sources small{font:400 10px/1.5 var(--mono);color:var(--schedule-muted);margin-top:8px}
+.uci-schedule-change{border-left:2px solid var(--yellow);padding:10px 13px;margin-top:16px;background:color-mix(in srgb,var(--yellow) 6%,var(--surface));font-size:12px;border-radius:0 7px 7px 0}
+.uci-schedule-change ul{padding-left:15px;margin:7px 0 0;line-height:1.5;color:var(--schedule-muted)}
+.uci-schedule-warning{font-size:12px;color:var(--yellow);background:color-mix(in srgb,var(--yellow) 6%,var(--surface));padding:12px;border-radius:8px;margin:16px 0 0}
+.uci-schedule-event-status{color:var(--aqua);font-size:13px;line-height:1.5;margin:15px 0 0}
+.uci-schedule-event-status:empty{display:none}
+.uci-schedule-event-status.is-error,.uci-schedule-load-error{color:color-mix(in srgb,var(--red) 60%,var(--text));font-size:13px;line-height:1.5}
+.uci-schedule-event-actions{margin-top:18px;display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.uci-schedule-event-actions>.is-primary{width:100%;font-size:13px;min-height:48px}
+.uci-schedule-added{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--aqua);line-height:1.5;flex:1;min-width:150px}
+.uci-schedule-added>span{display:grid;place-items:center;border-radius:50%;width:22px;height:22px;flex-shrink:0;background:var(--aqua-soft);border:1px solid color-mix(in srgb,var(--aqua) 35%,var(--line))}
+.uci-schedule-event-actions>.is-secondary{font-size:12px;padding:10px 13px}
+.uci-schedule-empty{grid-column:1/-1;text-align:center;padding:40px 24px;border:1px dashed var(--line);border-radius:15px;background:var(--surface)}
+.uci-schedule-empty strong{font-size:21px}
+.uci-schedule-empty p{color:var(--schedule-muted);font-size:15px;margin:12px 0 22px}
+.uci-schedule-loading{display:flex;justify-content:center;align-items:center;gap:13px;padding:48px 20px;color:var(--schedule-muted);font-size:15px;border:1px solid var(--line);border-radius:15px}
+.uci-schedule-loading>span{width:18px;height:18px;flex-shrink:0;border:2px solid var(--line);border-top-color:var(--aqua);border-radius:50%;animation:uci-schedule-spin .9s linear infinite}
+@keyframes uci-schedule-spin{to{transform:rotate(360deg)}}
+@media(max-width:1050px){.uci-schedule-event-grid{grid-template-columns:1fr}.uci-schedule-qualification-heading>.uci-schedule-badge{margin-left:0}}
+@media(max-width:600px){.uci-schedule-heading{margin-bottom:22px}.uci-schedule-heading p{font-size:15px}.uci-schedule-monitor{align-items:flex-start;flex-wrap:wrap;padding:16px;gap:14px}.uci-schedule-monitor>.uci-schedule-button{width:100%}.uci-schedule-qualification{padding:18px 16px}.uci-schedule-qualification-heading{gap:11px}.uci-schedule-olympic-mark{width:42px;height:46px;font-size:28px}.uci-schedule-qualification h2{font-size:25px}.uci-schedule-qualification>.uci-schedule-badge{flex-basis:100%}.uci-schedule-qualification>p{font-size:14px}.uci-schedule-filters{grid-template-columns:1fr 1fr;gap:12px 9px}.uci-schedule-filters>label:first-child{grid-column:1/-1}.uci-schedule-filters select{font-size:14px;padding-right:3px}.uci-schedule-event{padding:18px 15px}.uci-schedule-event-heading{gap:11px}.uci-schedule-event-heading h2{font-size:25px}.uci-schedule-date{width:48px}.uci-schedule-points{gap:12px}.uci-schedule-alerts{padding:16px}.uci-schedule-alerts>div{min-width:100%}.uci-schedule-alerts>.uci-schedule-button{width:100%}.uci-schedule-list-heading h2{font-size:29px}.uci-schedule-list-heading>span{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.uci-schedule *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
