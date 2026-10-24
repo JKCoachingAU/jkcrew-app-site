@@ -3255,6 +3255,51 @@ html.coaching-viewer-open body { overflow: hidden; }
   box-shadow: 0 0 0 4px var(--aqua-soft);
 }
 .command-leaderboard-panel { margin-bottom: 14px; }
+.command-uci-panel { margin-bottom: 14px; }
+.command-uci-panel .panel-head { align-items: center; flex-direction: row; gap: 14px; margin-bottom: 12px; }
+.command-uci-panel .panel-head > div { min-width: 0; }
+.command-uci-panel h2 { margin: 7px 0 0; font: 900 1.7rem var(--display); text-transform: uppercase; }
+.command-uci-intro { margin: 0 0 18px; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+.command-uci-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.command-uci-category { min-width: 0; }
+.command-uci-category-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.command-uci-category-head h3 { margin: 0; font: 900 1.2rem var(--display); text-transform: uppercase; }
+.command-uci-category-head h3 small { margin-left: 5px; color: var(--muted); font: 700 0.62rem var(--mono); }
+.command-uci-category-head .uci-source-link { min-height: 44px; display: inline-flex; align-items: center; font-size: 0.72rem; }
+.command-uci-columns, .command-uci-row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 85px; align-items: center; gap: 10px; }
+.command-uci-columns { padding: 13px 10px 8px; color: var(--muted); font: 700 0.58rem var(--mono); text-transform: uppercase; }
+.command-uci-columns span:not(:first-child) { text-align: right; }
+.command-uci-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.command-uci-row { width: 100%; min-height: 62px; padding: 11px 10px; color: var(--text); border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--aqua) 3%, transparent); text-align: left; }
+.command-uci-row:hover, .command-uci-row:focus-visible { border-color: var(--aqua); background: var(--aqua-soft); }
+.command-uci-name { min-width: 0; display: grid; gap: 5px; }
+.command-uci-name strong { font-size: 0.9rem; overflow-wrap: anywhere; }
+.command-uci-name small { color: var(--muted); font: 700 0.6rem var(--mono); }
+.command-uci-rank, .command-uci-points { text-align: right; font: 900 1.15rem var(--display); font-variant-numeric: tabular-nums; }
+.command-uci-rank { color: var(--text); }
+.command-uci-points { color: var(--aqua); }
+.command-uci-empty { padding: 15px 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+.command-uci-footer { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 0.75rem; line-height: 1.5; }
+.command-uci-footer > span { flex: 1 1 220px; }
+html[data-theme="light"] .coach-shell .command-uci-panel {
+  --text: #142126;
+  --muted: #4c616b;
+  --aqua: #006e64;
+  --aqua-soft: rgba(0, 110, 100, 0.08);
+  --surface: #fffdf8;
+  --line: #cad4d6;
+  background: linear-gradient(145deg, #fffdf8, #f0f5f4);
+  color: var(--text);
+}
+html[data-theme="light"] .coach-shell .command-uci-panel .eyebrow { color: var(--aqua); }
+@media (max-width: 1100px) { .command-uci-groups { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) {
+  .command-uci-panel h2 { font-size: 1.4rem; }
+  .command-uci-columns, .command-uci-row { grid-template-columns: minmax(0, 1fr) 62px 66px; gap: 6px; }
+  .command-uci-columns { font-size: 0.5rem; letter-spacing: 0; }
+  .command-uci-name strong { font-size: 0.83rem; }
+  .command-uci-rank, .command-uci-points { font-size: 1.05rem; }
+}
 .command-leaderboard-list {
   display: grid;
   gap: 7px;

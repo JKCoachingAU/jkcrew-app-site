@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.164";
+const RELEASE_VERSION = "2.14.165";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -674,7 +674,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.164" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.165" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -12131,10 +12131,77 @@ async function reviewRiderSheetProposal(event) {
   await renderCoachCommand();
 }
 
+function commandUciRosterMembers(roster, snapshot) {
+  const members = boardUciMembers(roster.map(rider => ({ athlete_id: rider.id })), roster.map(rider => ({ athlete_id: rider.id, uci_id: rider.uci_id })), snapshot);
+  return [...members.values()].filter(member => member.match.row.points > 0).map(member => ({ ...member, rider: roster.find(rider => rider.id === member.athleteId) }));
+}
+
+function commandUciLeaderboardHtml(roster, snapshot) {
+  const members = commandUciRosterMembers(roster, snapshot);
+  const number = new Intl.NumberFormat("en-AU", { maximumFractionDigits: 2 });
+  return `<p class="command-uci-intro">${members.length} JKC rider${members.length === 1 ? "" : "s"} with UCI points · World ranks within each category</p>
+    <div class="command-uci-groups">${["men", "women"].map(key => {
+      const category = snapshot.categories[key];
+      const label = key === "women" ? "Women" : "Men";
+      const rows = members.filter(member => member.match.categoryKey === key).sort((a, b) => a.match.row.rank - b.match.row.rank || a.rider.display_name.localeCompare(b.rider.display_name));
+      return `<section class="command-uci-category" aria-label="JKC ${label}’s UCI rankings">
+        <div class="command-uci-category-head"><h3>${label} <small>Elite</small></h3><a class="uci-source-link" href="${escapeHtml(boardUciSourceUrl(category.sourceUrl))}" target="_blank" rel="noopener noreferrer" aria-label="Official UCI ${label}’s ranking source">${boardUciDate(category.rankingDate)} ↗</a></div>
+        ${rows.length ? `<div class="command-uci-columns" aria-hidden="true"><span>Rider</span><span>World rank</span><span>UCI points</span></div><ol class="command-uci-list">${rows.map(({ athleteId, rider, match }) => `<li><button class="command-uci-row" type="button" data-command-uci-rider="${escapeHtml(athleteId)}" aria-label="${escapeHtml(`${rider.display_name}, ${label}’s world rank ${match.row.rank}, ${number.format(match.row.points)} UCI points. View world rankings.`)}"><span class="command-uci-name"><strong>${escapeHtml(rider.display_name)}</strong><small>${escapeHtml(match.row.nation)}</small></span><span class="command-uci-rank">#${match.row.rank}</span><span class="command-uci-points">${number.format(match.row.points)}</span></button></li>`).join("")}</ol>` : `<p class="command-uci-empty">No linked riders with points in this ranking.</p>`}
+      </section>`;
+    }).join("")}</div>
+    ${!members.length ? '<p class="command-uci-intro">Check each rider’s UCI ID in their profile to link their official ranking.</p>' : ""}
+    <div class="command-uci-footer"><span data-command-uci-status role="status">${snapshot.stale ? "Last available rankings · latest update not confirmed." : "Updates automatically with the UCI feed."} Last checked ${boardUciDate(snapshot.checkedAt)}.</span><button class="uci-refresh-btn" type="button" data-command-uci-retry>${snapshot.stale ? "Try again" : "Refresh"}</button></div>`;
+}
+
+async function loadCommandUciLeaderboard(panel, roster, isCurrent, { force = false } = {}) {
+  const content = panel?.querySelector("[data-command-uci-content]");
+  const current = () => isCurrent() && panel?.isConnected && document.querySelector("[data-command-uci]") === panel;
+  if (!content || !current() || panel.uciPending) return;
+  if (!roster.some(rider => /^\d{11}$/.test(rider.uci_id || ""))) {
+    content.innerHTML = '<p class="command-uci-empty">Link your riders’ UCI IDs in their profiles to see their world ranks and points here.</p>';
+    return;
+  }
+  panel.uciPending = true;
+  content.setAttribute("aria-busy", "true");
+  content.querySelectorAll("[data-command-uci-retry]").forEach(button => { button.disabled = true; });
+  const status = content.querySelector("[data-command-uci-status]");
+  if (status) status.textContent = "Checking the latest UCI rankings…";
+  else content.innerHTML = '<p class="command-uci-empty" role="status">Loading your riders’ UCI rankings…</p>';
+  try {
+    const snapshot = await window.JKCUciRankings.load({ force });
+    if (!current()) return;
+    content.innerHTML = commandUciLeaderboardHtml(roster, snapshot);
+    const members = new Map(commandUciRosterMembers(roster, snapshot).map(member => [member.athleteId, member.match]));
+    content.querySelectorAll("[data-command-uci-rider]").forEach(button => button.addEventListener("click", () => {
+      const match = members.get(button.dataset.commandUciRider);
+      if (!current() || !match) return;
+      state.boardLeaderboardView = match.categoryKey === "women" ? "uciWomen" : "uciMen";
+      state.boardUciSearch = match.row.name;
+      state.boardUciLimit = 50;
+      navigate("board");
+    }));
+  } catch (_) {
+    if (!current()) return;
+    const previousStatus = content.querySelector("[data-command-uci-status]");
+    if (previousStatus) previousStatus.textContent = "Showing the last available rankings. Couldn’t refresh — please try again.";
+    else content.innerHTML = '<div class="command-uci-empty" role="status"><p>UCI rankings couldn’t load. Check your connection and try again.</p><button class="uci-refresh-btn" type="button" data-command-uci-retry>Try again</button></div>';
+  } finally {
+    panel.uciPending = false;
+    if (current()) {
+      content.removeAttribute("aria-busy");
+      content.querySelectorAll("[data-command-uci-retry]").forEach(button => {
+        button.disabled = false;
+        button.onclick = () => { if (current()) void loadCommandUciLeaderboard(panel, roster, isCurrent, { force: true }); };
+      });
+    }
+  }
+}
+
 async function renderCoachCommand() {
   const renderVersion = state.commandRenderVersion = (state.commandRenderVersion || 0) + 1;
   const viewerId = state.user?.id;
-  const isCurrent = () => state.view === "command" && state.user?.id === viewerId && state.commandRenderVersion === renderVersion;
+  const setupVersion = state.sessionSetupVersion;
+  const isCurrent = () => state.view === "command" && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.commandRenderVersion === renderVersion;
   // Start independent requests together; ranking never blocks the dashboard.
   const rosterRequest = getCoachRoster({ summary: true });
   const leaderboardRequest = getLeaderboard().then(data => ({ data }), error => ({ error }));
@@ -12199,6 +12266,10 @@ async function renderCoachCommand() {
       <div class="shared-events-head"><div><div class="eyebrow">Events & private planning</div><h2>Upcoming events</h2><p>The same event list riders see. Open Events & Runs to manage attendance, course photos, private runs and duplicates.</p></div><span class="command-event-count">${upcoming} upcoming</span></div>
       ${coachSharedEventsSummaryHtml(sharedEventData.events, sharedEventData.attendance)}
     </section>
+    <section class="panel command-uci-panel coach-tone-blue" data-command-uci aria-labelledby="command-uci-title">
+      <div class="panel-head"><div><div class="eyebrow">BMX Freestyle Park · Your crew</div><h2 id="command-uci-title">UCI rider leaderboard</h2></div><span class="uci-jkc-mark" aria-label="JKC riders"><img src="icons/jkc-logo.png?v=2.11.77" width="22" height="22" alt="">JKC</span></div>
+      <div data-command-uci-content></div>
+    </section>
     ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
     <section class="command-management-stack">
       ${commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events and parent updates", `${listRequestCount + pendingRequests} request${listRequestCount + pendingRequests === 1 ? "" : "s"} · ${upcoming} event${upcoming === 1 ? "" : "s"}`, teamSections)}
@@ -12219,6 +12290,7 @@ async function renderCoachCommand() {
     });
   };
   showRanking(leaderboardRequest);
+  void loadCommandUciLeaderboard(document.querySelector("[data-command-uci]"), roster, isCurrent);
   state.coachOtherLandedQueue?.destroy();
   const landedHost = document.querySelector("[data-command-other-landed]");
   state.coachOtherLandedQueue = window.JKCrewOtherThingsLanded?.mountCoachQueue?.({
@@ -14167,7 +14239,7 @@ async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
     return cacheSet(cacheKey, []);
   }
   const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
-    client.from("profiles").select(summary ? "id,display_name,country_code,level,last_app_opened_at" : PROFILE_SELECT).in("id", ids).order("display_name"),
+    client.from("profiles").select(summary ? "id,display_name,country_code,level,last_app_opened_at,uci_id" : PROFILE_SELECT).in("id", ids).order("display_name"),
     summary ? { data: [], error: null } : client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
     client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
   ]);

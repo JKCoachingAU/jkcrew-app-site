@@ -27,6 +27,7 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  const navigate=async view=>{state.view=view;document.querySelector('#view').innerHTML='<h1>'+view+'</h1>'};
  const commandAccordionSection=()=>'',coachRunReviewQueueHtml=()=>'',coachListRequestsHtml=()=>'',coachTrickRequestsHtml=()=>'',coachEventRunPlansHtml=()=>'',coachCalendarForm=()=>'',weeklyNotificationControlsHtml=()=>'',commandMetricCard=()=>'',highPriorityTodoHtml=()=>'',coachBroadcastComposerHtml=()=>'',coachSharedEventsSummaryHtml=()=>'',commandParkKingsAccordionHtml=()=>'',commandHubAccordion=()=>'';
  ${[...extract('renderCoachCommand').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter((n,i,a)=>a.indexOf(n)===i).map(n=>'const '+n+'=()=>{};').join('\n')}
+ ${extract('loadCommandUciLeaderboard')}
  ${extract('renderCoachCommand')}
  window.start=async()=>{await renderCoachCommand();window.ready=true;};start();
  `});
