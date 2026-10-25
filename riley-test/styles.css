@@ -3270,6 +3270,15 @@ html.coaching-viewer-open body { overflow: hidden; }
 .command-uci-columns { padding: 13px 10px 8px; color: var(--muted); font: 700 0.58rem var(--mono); text-transform: uppercase; }
 .command-uci-columns span:not(:first-child) { text-align: right; }
 .command-uci-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.command-uci-more { margin-top: 8px; }
+.command-uci-more > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: color-mix(in srgb, var(--blue) 5%, transparent); font: 700 0.8rem var(--body); cursor: pointer; list-style: none; touch-action: manipulation; }
+.command-uci-more > summary::-webkit-details-marker { display: none; }
+.command-uci-more > summary:focus-visible { outline: 2px solid var(--aqua); outline-offset: 3px; }
+.command-uci-more > summary b { font-size: 1.1rem; color: var(--muted); }
+.command-uci-more .command-uci-more-open, .command-uci-more[open] .command-uci-more-closed { display: none; }
+.command-uci-more[open] .command-uci-more-open { display: inline; }
+.command-uci-more[open] > summary { margin-bottom: 8px; }
+.command-uci-more[open] > summary b { transform: rotate(180deg); }
 .command-uci-row { width: 100%; min-height: 62px; padding: 11px 10px; color: var(--text); border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--aqua) 3%, transparent); text-align: left; }
 .command-uci-row:hover, .command-uci-row:focus-visible { border-color: var(--aqua); background: var(--aqua-soft); }
 .command-uci-name { min-width: 0; display: grid; gap: 5px; }

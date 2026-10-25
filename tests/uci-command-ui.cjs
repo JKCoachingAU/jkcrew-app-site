@@ -98,6 +98,7 @@ const ok = (actual, label) => { assert(actual, label); checks++; };
   ok(content.includes('#13') && content.includes('#8'), 'Official world ranks remain visible rather than filtered positions');
   ok(/2[,.]?610/.test(content) && /1[,.]?985/.test(content), 'Official points are visible for men and women');
   ok(content.includes('20 Oct 2026') && content.includes('21 Oct 2026'), 'Each category shows its actual ranking date');
+  await page.locator('details').filter({ has: page.locator('[data-command-uci-rider="man-7"]') }).locator('summary').click();
   await page.locator('[data-command-uci-rider="man-7"]').click();
   eq(await page.evaluate(() => [qa.navigations.at(-1), state.boardLeaderboardView, state.boardUciSearch]), ['board','uciMen','RIDER Male 7'], 'A rider below the first five opens the official Men leaderboard at their exact UCI name');
   await page.evaluate(() => qaRender());
