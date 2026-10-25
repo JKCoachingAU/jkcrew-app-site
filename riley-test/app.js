@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.174";
+const RELEASE_VERSION = "2.14.175";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -677,7 +677,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.174" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.175" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -3450,7 +3450,7 @@ function contestEventEndsAt(item = {}) {
 }
 
 function contestEventIsUpcoming(item = {}, now = Date.now()) {
-  if (item.completed) return false;
+  if (item.completed || item.uci_schedule_status === "cancelled") return false;
   const endsAt = contestEventEndsAt(item);
   return !endsAt || endsAt.getTime() >= now;
 }
@@ -5031,7 +5031,7 @@ function calendarItemsHtml(events = [], roster = []) {
 function combinedCoachCalendarItems(commandData = {}) {
   const calendarEvents = (commandData.calendar || []).map((event) => ({ ...event, source: "coach" }));
   const riderItems = (commandData.dashboardItems || [])
-    .filter((item) => item.due_at)
+    .filter((item) => item.due_at && (item.item_type !== "event" || item.uci_schedule_status !== "cancelled"))
     .map((item) => ({
       id: item.id,
       athlete_id: item.owner_id,
@@ -8056,7 +8056,7 @@ async function showParentNotificationDrawer() {
     const items = [
       ...messages.map((message) => ({ at: message.sent_at, type: "Coach message", title: message.message, view: "parentCoaching" })),
       ...feedback.map((request) => ({ at: request.replied_at || request.created_at, type: "Video feedback", title: request.question || "Coach feedback returned", view: "parentCoaching" })),
-      ...dashboardItems.filter((item) => !item.completed).map((item) => ({ at: item.created_at || item.due_at, type: item.item_type || "Calendar", title: item.title, view: "parentCalendar" })),
+      ...dashboardItems.filter((item) => !item.completed && (item.item_type !== "event" || item.uci_schedule_status !== "cancelled")).map((item) => ({ at: item.created_at || item.due_at, type: item.item_type || "Calendar", title: item.title, view: "parentCalendar" })),
     ].filter((item) => item.at).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 16);
     let seenAt = 0;
     try { seenAt = Number(localStorage.getItem(parentNotificationSeenKey(context.selected.id)) || 0); } catch (_) {}
@@ -15009,7 +15009,7 @@ async function renderCoachPreview(mode = "student") {
   const weeklyPercent = weeklyCompletionPercent(assignments, awards);
   const weeklyItems = completionAssignments(assignments);
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
-  const events = dashboardItems.filter((item) => item.item_type === "event");
+  const events = dashboardItems.filter((item) => item.item_type === "event" && item.uci_schedule_status !== "cancelled");
   const visibleFeedback = helpRequests.filter(athleteHelpHasReply);
   const tabs = coachPreviewTabs(mode);
   if (!tabs.some(([id]) => id === state.coachPreviewTab)) state.coachPreviewTab = "home";
@@ -15120,7 +15120,7 @@ function coachPreviewTricktionaryHtml({ athlete, tricktionaryData }) {
 }
 
 function coachStudentPreviewContestsHtml({ dashboardItems, runs }) {
-  const events = dashboardItems.filter((item) => item.item_type === "event");
+  const events = dashboardItems.filter((item) => item.item_type === "event" && item.uci_schedule_status !== "cancelled");
   return `<div class="phone-preview-content">
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Contests</div><div class="panel-meta">Events visible in the rider Contests tab</div></div></div>${dashboardItemsHtml(events, false)}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Run planner</div><div class="panel-meta">Saved rider run plans</div></div></div>${runPlansHtml(runs)}</section>

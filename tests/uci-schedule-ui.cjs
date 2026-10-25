@@ -55,6 +55,15 @@ let browser;
   eq(await page.locator('[data-schedule-event="confirmed-au"] .uci-schedule-event-dates').textContent(), '30 Jan 2027 – 31 Jan 2027', 'Dates keep the calendar day and year');
   ok((await page.locator('.uci-schedule-distinction').textContent()).includes('Ranking points ≠ Olympic qualification points'), 'Ranking and Olympic points are explicitly distinguished');
   eq(await page.locator('[data-schedule-event="provisional-de"] .uci-schedule-pending').textContent(), '· unconfirmed', 'Provisional UCI classification is not falsely confirmed');
+  const firstEvent = page.locator('[data-schedule-event="confirmed-au"]');
+  eq(await firstEvent.locator('.uci-schedule-points').allTextContents(), ['UCI ranking pointsOlympic eligibility pending'], 'Main cards keep compact factual point statuses');
+  eq(await firstEvent.getByText('Listed for general UCI ranking points.', { exact: true }).isVisible(), false, 'Repeated ranking explanation stays out of the main card');
+  eq(await firstEvent.getByText('Olympic counting rules await verification.', { exact: true }).isVisible(), false, 'Repeated Olympic explanation stays out of the main card');
+  await firstEvent.locator('summary').click();
+  eq(await firstEvent.getByText('Listed for general UCI ranking points.', { exact: true }).isVisible(), true, 'Verified point detail remains available in the disclosure');
+  eq(await firstEvent.getByText('Olympic counting rules await verification.', { exact: true }).isVisible(), true, 'Olympic status detail remains available in the disclosure');
+  await firstEvent.locator('summary').click();
+
   eq(await page.locator('[data-schedule-event="cancelled"] [data-schedule-add]').isDisabled(), true, 'Cancelled event cannot be added');
   eq(await page.locator('[data-schedule-event="unsafe"] [data-schedule-add]').textContent(), 'Waiting for official dates', 'Undated watchlist events explain why calendar saving is unavailable');
   eq(await page.locator('[data-schedule-event="unsafe"] [data-schedule-add]').isDisabled(), true, 'Undated event cannot be saved with invented dates');

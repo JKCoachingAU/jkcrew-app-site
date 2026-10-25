@@ -91,7 +91,7 @@
     function upcomingEventsHtml(){
       const today=new Date().toISOString().slice(0,10);
       const events=data.events.filter(e=>{
-        if(e.unavailable||e.completed)return false;
+        if(e.unavailable||e.completed||e.uci_schedule_status==="cancelled")return false;
         const end=validDate(e.end_at)?e.end_at:validDate(e.due_at)?e.due_at:null;
         if(!end)return true;
         return e.uci_schedule_date_only?end.slice(0,10)>=today:Date.parse(end)+(e.end_at?0:86400000)>=Date.now();
