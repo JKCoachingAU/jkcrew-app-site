@@ -95,8 +95,7 @@ const ok = (actual, label) => { assert(actual, label); checks++; };
   ok(await page.evaluate(() => qa.eventOpened), 'Selected event actually opens');
   ok(await page.locator('nav [data-view="contests"]').evaluate(el => el.classList.contains('active')), 'Opening an event selects Contests');
   eq(await page.locator('nav [data-view="uciTracker"]').evaluate(el => el.classList.contains('active')), false, 'Event view deselects LA28');
-  await page.evaluate(() => { state.profile.role = 'parent'; return navigate('uciTracker'); });
-  eq(await page.evaluate(() => state.view), 'home', 'Parent does not get rider/coach tracker');
+  // Linked parent scope and read-only routing are exercised in uci-parent-integration.cjs.
   const countBeforeBlocked = await page.evaluate(() => qa.mounts.length);
   await page.evaluate(() => { state.profile.role = 'athlete'; qa.access = false; return navigate('uciTracker'); });
   eq(await page.evaluate(() => qa.mounts.length), countBeforeBlocked, 'Disabled rider cannot mount tracker');

@@ -44,7 +44,7 @@
     const filters = { search: "", status: "all", region: "all" };
     const timers = new Set();
     const active = () => !stopped && root.isConnected && (!options.isCurrent || options.isCurrent());
-    const canManage = () => options.canManage === true && data?.canManage === true;
+    const canManage = () => options.parentView !== true && options.canManage === true && data?.canManage === true;
     const callback = (name, value) => { if (typeof options[name] === "function") options[name](value); };
     async function rpc(name, args) {
       let timer;
@@ -141,12 +141,13 @@
       const request = ++sequence;
       loading = true; loadError = ""; render();
       try {
-        const next = await rpc("get_uci_2027_schedule");
+        const next = await rpc(options.parentView === true ? "get_parent_uci_2027_schedule" : "get_uci_2027_schedule");
         if (!active() || request !== sequence) return;
         if (!Array.isArray(next.events) || next.events.some(event => !event || typeof event.id !== "string" || !event.name || event.categories != null && !Array.isArray(event.categories))) throw Error("Invalid schedule");
+        if (options.parentView === true && (next.readOnly !== true || next.canManage !== false)) throw Error("Parent access could not be confirmed");
         data = next;
         errors.clear(); messages.clear();
-      } catch (error) { if (active() && request === sequence) loadError = errorMessage(error, "load"); }
+      } catch (error) { if (active() && request === sequence) { if (options.parentView === true) data = null; loadError = errorMessage(error, "load"); } }
       finally { if (active() && request === sequence) { loading = false; render(); } }
     }
     async function add(eventId) {

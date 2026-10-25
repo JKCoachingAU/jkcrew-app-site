@@ -143,3 +143,13 @@ html[data-theme=light] .uci-tracker{background:#f4f5f8;border:1px solid var(--ut
 .uci-tracker-official-events article>div:first-child>.uci-tracker-inclusion{display:flex;align-items:center;gap:5px;margin:7px 0 0;font-size:11px;line-height:1.4;color:var(--ut-muted)}
 .uci-tracker-inclusion.is-counted>span{color:var(--ut-blue)}
 @media(max-width:430px){.uci-tracker-ledger-actions{gap:12px}.uci-tracker-ledger-actions>.uci-tracker-button{font-size:13px;padding:10px 12px}.uci-tracker-total>strong{font-size:32px}.uci-tracker-total>small{font-size:10px}}
+
+/* Parents follow the same verified rider data without editing controls. */
+.uci-tracker-parent-note{font-size:12px;color:var(--ut-muted)!important;margin:-4px 0 18px}
+.uci-tracker-parent-ranking{border:1px solid var(--ut-line);border-top:3px solid var(--ut-blue);border-radius:15px;background:linear-gradient(125deg,var(--ut-bg),color-mix(in srgb,var(--ut-purple) 6%,var(--ut-bg)));padding:20px;margin-bottom:22px}
+.uci-tracker-parent-ranking dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0 14px}
+.uci-tracker-parent-ranking dt{font:600 11px/1.4 var(--mono,monospace);color:var(--ut-muted);text-transform:uppercase;letter-spacing:.06em}
+.uci-tracker-parent-ranking dd{font:800 clamp(34px,7vw,48px)/1.1 var(--display,Arial,sans-serif);color:var(--ut-blue);margin:6px 0 0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.uci-tracker-parent-ranking p{font-size:13px;color:var(--ut-muted);margin:8px 0}
+.uci-tracker-parent-ranking small{border-top:1px solid var(--ut-line);padding-top:12px;margin-top:10px}
+@media(max-width:430px){.uci-tracker-parent-ranking{padding:16px}.uci-tracker-parent-ranking dl{gap:14px}.uci-tracker-parent-ranking .uci-tracker-row{gap:5px}.uci-tracker-toolbar>div{min-width:0}.uci-tracker-toolbar h2{overflow-wrap:anywhere}}

@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.173";
+const RELEASE_VERSION = "2.14.174";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -431,6 +431,7 @@ const parentNav = [
   ["parentWeek", "Week"],
   ["parentCoaching", "Coaching"],
   ["contests", "Contests"],
+  ["uciTracker", "LA28"],
   ["parentCalendar", "Calendar"],
   ["parentMore", "More"],
 ];
@@ -445,6 +446,7 @@ function coachPrimaryView(view = "") {
 }
 
 function parentPrimaryView(view = "") {
+  if (view === "uciSchedule") return "uciTracker";
   if (["profile", "tricktionary", "bikeGarage", "shredZone", "jkcYard"].includes(view)) return "parentMore";
   return view;
 }
@@ -675,7 +677,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.173" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.174" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7628,9 +7630,14 @@ function rememberParentAthleteId(athleteId = "") {
 }
 
 async function getParentRiderContext() {
+  const parentId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const current = () => state.user?.id === parentId && state.sessionSetupVersion === setupVersion && state.profile?.role === "parent";
+  const empty = { links: [], athletes: [], selected: null, relationship: "" };
+  if (!parentId || !current()) return empty;
   const { data: links, error } = await client.from("parent_athletes")
     .select("athlete_id, relationship")
-    .eq("parent_id", state.user.id);
+    .eq("parent_id", parentId);
+  if (!current()) return empty;
   if (error) throw error;
   const ids = [...new Set((links || []).map((link) => link.athlete_id).filter(Boolean))];
   if (!ids.length) return { links: [], athletes: [], selected: null, relationship: "" };
@@ -7638,6 +7645,7 @@ async function getParentRiderContext() {
     .select(PROFILE_SELECT)
     .in("id", ids)
     .order("display_name");
+  if (!current()) return empty;
   if (athleteError) throw athleteError;
   const preferredId = state.parentAthleteId || storedParentAthleteId();
   const selected = (athletes || []).find((athlete) => athlete.id === preferredId) || athletes?.[0] || null;
@@ -7675,6 +7683,8 @@ function renderCurrentParentView() {
     parentCoaching: renderParentCoaching,
     contests: renderContests,
     parentCalendar: renderParentCalendar,
+    uciTracker: renderUciTracker,
+    uciSchedule: renderUciSchedule,
     parentMore: renderParentMore,
     tricktionary: renderParentTricktionary,
     profile: renderProfile,
@@ -7686,9 +7696,19 @@ function bindParentPageActions() {
   bindDailyVenueAccordions();
   bindSessionAssignmentAccordions();
   document.querySelector("#parent-athlete-select")?.addEventListener("change", async (event) => {
-    rememberParentAthleteId(event.currentTarget.value);
+    const childId = event.currentTarget.value, parentId = state.user?.id, currentView = state.view, setupVersion = state.sessionSetupVersion;
+    rememberParentAthleteId(childId);
     cacheClear("schedule:");
-    await renderCurrentParentView();
+    state.uciTrackerMount?.destroy();
+    state.uciTrackerMount = null;
+    document.querySelector("#view").innerHTML = '<p class="subcopy" role="status">Loading your rider…</p>';
+    try { await renderCurrentParentView(); }
+    catch (error) {
+      if (state.profile?.role !== "parent" || state.user?.id !== parentId || state.view !== currentView
+          || state.sessionSetupVersion !== setupVersion || state.parentAthleteId !== childId) return;
+      notify(messageFrom(error));
+      document.querySelector("#view").innerHTML = '<p class="subcopy" role="alert">Could not load this rider. Check your connection and reopen the tab to try again.</p>';
+    }
   });
   document.querySelectorAll("[data-dismiss-coach-message]").forEach((button) => button.addEventListener("click", dismissCoachMessage));
   document.querySelectorAll("[data-parent-open-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.parentOpenView)));
@@ -7779,11 +7799,58 @@ function parentEngagementAlertHtml({ athlete = {}, assignmentAttempts = [], awar
   </section>`;
 }
 
+function parentRoadToLa28CardHtml(athlete, snapshot = null, { loading = false, error = false } = {}) {
+  const match = athlete?.uci_id ? window.JKCUciRankings?.findRider(snapshot, athlete.uci_id) : null;
+  const category = match?.categoryKey === "women" ? "Women" : "Men";
+  const points = match ? new Intl.NumberFormat("en-AU", { maximumFractionDigits: 2 }).format(match.row.points) : "";
+  return `<section class="home-uci-card parent-road-card" aria-label="${escapeHtml(athlete.display_name)} · Road to LA28" aria-busy="${loading}">
+    <div class="home-uci-heading"><span class="eyebrow">Road to LA28</span><span class="parent-readonly-chip">Read only</span></div>
+    <h2>${escapeHtml(athlete.display_name)}’s competition journey</h2>
+    <div class="home-uci-body">${match ? `<strong class="home-uci-rank">#${escapeHtml(match.row.rank)}</strong><div class="home-uci-detail"><strong>${category}’s Elite · ${points} UCI points</strong><span>UCI world ranking</span><small>Official ranking · <time datetime="${escapeHtml(match.category.rankingDate)}">${boardUciDate(match.category.rankingDate)}</time></small></div>` : `<div class="home-uci-detail"><strong>${loading ? "Loading world ranking…" : error ? "World ranking unavailable" : "No current UCI ranking linked"}</strong><span>Follow event plans, results and the points ledger.</span></div>`}</div>
+    ${snapshot?.stale ? '<p class="home-uci-status" role="status">Last available rankings · latest update not confirmed.</p>' : ""}
+    <div class="home-uci-actions"><button class="home-uci-board" type="button" data-parent-open-view="uciTracker">Open Road to LA28 <span aria-hidden="true">→</span></button>${match ? `<a class="parent-uci-source" href="${escapeHtml(boardUciSourceUrl(match.category.sourceUrl))}" target="_blank" rel="noopener noreferrer">Official UCI source ↗</a>` : ""}${error || snapshot?.stale ? '<button class="secondary-btn compact-btn" type="button" data-parent-uci-retry>Try again</button>' : ""}</div>
+  </section>`;
+}
+
+async function loadParentRoadToLa28Card(athlete, isCurrent, { force = false } = {}) {
+  const host = document.querySelector("#parent-road-la28-card");
+  if (!host || !isCurrent() || host.uciLoading) return;
+  const current = () => isCurrent() && host.isConnected && document.querySelector("#parent-road-la28-card") === host;
+  const bind = () => {
+    host.querySelector('[data-parent-open-view="uciTracker"]')?.addEventListener("click", () => { if (current()) navigate("uciTracker"); });
+    host.querySelector("[data-parent-uci-retry]")?.addEventListener("click", () => { if (current()) void loadParentRoadToLa28Card(athlete, isCurrent, { force: true }); });
+  };
+  if (!/^\d{11}$/.test(String(athlete.uci_id || ""))) {
+    host.innerHTML = parentRoadToLa28CardHtml(athlete);
+    bind();
+    return;
+  }
+  host.uciLoading = true;
+  host.innerHTML = parentRoadToLa28CardHtml(athlete, window.JKCUciRankings?.peek?.(), { loading: true });
+  bind();
+  try {
+    const snapshot = await window.JKCUciRankings.load({ force });
+    if (!current()) return;
+    host.innerHTML = parentRoadToLa28CardHtml(athlete, snapshot);
+  } catch (_) {
+    if (!current()) return;
+    host.innerHTML = parentRoadToLa28CardHtml(athlete, null, { error: true });
+  } finally { host.uciLoading = false; }
+  if (current()) bind();
+}
+
 async function renderParentHome() {
+  const view = document.querySelector("#view"), userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const renderVersion = state.parentHomeRenderVersion = (state.parentHomeRenderVersion || 0) + 1;
+  const navigationToken = state.loadingOverlayToken;
+  const isCurrent = () => state.profile?.role === "parent" && state.user?.id === userId && state.sessionSetupVersion === setupVersion
+    && state.view === "home" && state.parentHomeRenderVersion === renderVersion && state.loadingOverlayToken === navigationToken
+    && view.isConnected && document.querySelector("#view") === view;
   const [context, coachMessages] = await Promise.all([
     getParentRiderContext(),
     getMyCoachMessages(5).catch((error) => { console.warn("Coach messages unavailable", error); return []; }),
   ]);
+  if (!isCurrent()) return;
   if (!context.selected) {
     document.querySelector("#view").innerHTML = `${coachMessagesHtml(coachMessages)}${parentWaitingHtml()}`;
     bindParentPageActions();
@@ -7801,6 +7868,7 @@ async function renderParentHome() {
     getLeaderboard(),
     getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
   ]);
+  if (!isCurrent() || state.parentAthleteId !== athlete.id) return;
   const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
   const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
   const weeklyItems = completionAssignments(assignments);
@@ -7820,6 +7888,7 @@ async function renderParentHome() {
       <div class="parent-progress-track" aria-label="${percent}% of weekly items complete"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
     </section>
     ${parentEngagementAlertHtml({ athlete, assignmentAttempts, awards, sessions, completed: completedWeekly, total: weeklyItems.length, percent })}
+    <div id="parent-road-la28-card"></div>
     <button class="parent-events-home-cta" type="button" data-parent-open-view="contests">
       <span class="parent-events-home-icon" aria-hidden="true">🏆</span>
       <span><small>JKCREW CALENDAR</small><strong>UPCOMING EVENTS</strong><b>See events, who's going and shared course photos</b></span>
@@ -7832,6 +7901,7 @@ async function renderParentHome() {
       <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Recent</span><h2>Activity</h2></div><button type="button" data-parent-open-view="parentWeek">Open week</button></div>${parentRecentActivityHtml(assignments, assignmentAttempts, awards, sessions)}</section>
     </div>`;
   bindParentPageActions();
+  void loadParentRoadToLa28Card(athlete, () => isCurrent() && state.parentAthleteId === athlete.id);
 }
 
 function parentCategorySummaryHtml(assignments = []) {
@@ -11745,7 +11815,7 @@ async function renderPastEvents() {
 }
 
 async function renderUciSchedule() {
-  if (!isCoachRole(state.profile?.role) && state.profile?.role !== "athlete") return navigate("home");
+  if (!isCoachRole(state.profile?.role) && !["athlete", "parent"].includes(state.profile?.role)) return navigate("home");
   const root = document.querySelector("#view");
   const userId = state.user.id;
   const setupVersion = state.sessionSetupVersion;
@@ -11754,6 +11824,7 @@ async function renderUciSchedule() {
   if (!window.UCI2027Schedule) throw new Error("The UCI schedule could not load. Update the app and try again.");
   state.uciScheduleMount = window.UCI2027Schedule.mount(root, {
     client,
+    parentView: state.profile?.role === "parent",
     canManage: isCoachRole(state.profile?.role),
     isCurrent,
     onBack: () => navigate(isCoachRole(state.profile?.role) ? "coachTools" : "uciTracker"),
@@ -11770,16 +11841,30 @@ async function renderUciSchedule() {
 }
 
 async function renderUciTracker() {
-  if (!isCoachRole(state.profile?.role) && state.profile?.role !== "athlete") return navigate("home");
+  if (!isCoachRole(state.profile?.role) && !["athlete", "parent"].includes(state.profile?.role)) return navigate("home");
   const root = document.querySelector("#view");
   const userId = state.user.id;
   const setupVersion = state.sessionSetupVersion;
+  const renderVersion = state.uciTrackerRenderVersion = (state.uciTrackerRenderVersion || 0) + 1;
+  let riderId, trackerRoot = root;
   const isActive = () => state.view === "uciTracker" && state.user?.id === userId
-    && state.sessionSetupVersion === setupVersion && root.isConnected;
+    && state.sessionSetupVersion === setupVersion && state.uciTrackerRenderVersion === renderVersion && root.isConnected
+    && (!riderId || state.parentAthleteId === riderId);
   state.uciTrackerMount?.destroy();
+  state.uciTrackerMount = null;
+  if (state.profile.role === "parent") {
+    root.innerHTML = '<p class="subcopy" role="status">Loading your rider’s Road to LA28…</p>';
+    const context = await getParentRiderContext();
+    if (!isActive()) return;
+    if (!context.selected) { root.innerHTML = parentWaitingHtml(); return; }
+    riderId = context.selected.id;
+    root.innerHTML = `${parentChildSwitcherHtml(context)}<div id="parent-uci-tracker"></div>`;
+    trackerRoot = root.querySelector("#parent-uci-tracker");
+    bindParentPageActions();
+  }
   if (!window.JKCUciTracker) throw new Error("The event tracker could not load. Update the app and try again.");
-  state.uciTrackerMount = window.JKCUciTracker.mount(root, {
-    client, userId, role: state.profile.role, isActive,
+  state.uciTrackerMount = window.JKCUciTracker.mount(trackerRoot, {
+    client, userId, riderId, role: state.profile.role, isActive,
     onBack: isCoachRole(state.profile?.role) ? () => navigate("coachTools") : undefined,
     onOpenSchedule: () => navigate("uciSchedule"),
     onOpenEvent: async eventId => {

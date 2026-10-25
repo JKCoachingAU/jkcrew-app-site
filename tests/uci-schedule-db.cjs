@@ -7,6 +7,7 @@ const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pgli
 const db = new PGlite();
 const root = path.resolve(__dirname, '..');
 const sql = fs.readFileSync(path.join(root, 'supabase/migrations/20261024123158_uci_2027_schedule.sql'), 'utf8');
+const parentSql = fs.readFileSync(path.join(root, 'supabase/migrations/20261025012339_parent_uci_rider_tracker_read_only.sql'), 'utf8');
 const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const q = async (text, args = []) => (await db.query(text, args)).rows;
 const value = async (text, args = []) => Object.values((await q(text, args))[0])[0];
@@ -14,9 +15,9 @@ let passed = 0, tick = 0;
 const base = Date.now() - 3600000;
 const stamp = () => new Date(base + (++tick * 1000)).toISOString();
 const today = new Date().toISOString().slice(0, 10);
-async function actor(n = null, role = 'authenticated') {
+async function actor(n = null, role = 'authenticated', anonymous = false) {
   await db.exec('reset role');
-  await q("select set_config('request.jwt.claim.sub',$1,false)", [n ? id(n) : '']);
+  await q("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claims',$2,false)", [n ? id(n) : '', JSON.stringify({is_anonymous:anonymous})]);
   await db.exec(`set role ${role}`);
 }
 async function test(name, fn) { await fn(); passed++; console.log('PASS ' + name); }
@@ -44,6 +45,7 @@ const snapshot = (events = [event()], announcements = []) => ({ schemaVersion: 1
   reviewCandidates: [{ id: 'private-review-marker', url: 'https://www.uci.org/news' }] });
 const apply = (s, r = rankings()) => value('select public.apply_uci_schedule_snapshot($1,$2)', [s, r]);
 const get = () => value('select public.get_uci_2027_schedule()');
+const parentGet = () => value('select public.get_parent_uci_2027_schedule()');
 const add = key => value('select public.add_uci_schedule_event($1)', [key]);
 (async () => {
  try {
@@ -52,8 +54,10 @@ const add = key => value('select public.add_uci_schedule_event($1)', [key]);
    create schema auth; create schema private; create schema cron; create schema net;
    grant usage on schema auth,public to anon,authenticated,service_role;
    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+   create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;
    create table profiles(id uuid primary key,role text,country_code text,uci_id text);
    create table coach_athletes(coach_id uuid,athlete_id uuid);
+   create table parent_athletes(parent_id uuid,athlete_id uuid,primary key(parent_id,athlete_id));
    create table dashboard_items(id uuid primary key default gen_random_uuid(),owner_id uuid,created_by uuid,item_type text,title text,details text,
      due_at timestamptz,end_at timestamptz,completed boolean default false,created_at timestamptz default now(),updated_at timestamptz default now());
    create table event_attendees(event_id uuid,athlete_id uuid);
@@ -87,6 +91,7 @@ const add = key => value('select public.add_uci_schedule_event($1)', [key]);
      ('${id(10)}','admin','AU',null),('${id(11)}','athlete','AU','10000000007');
    insert into coach_athletes select '${id(1)}',id from profiles where role='athlete' and id<>'${id(7)}';
    insert into coach_athletes values('${id(9)}','${id(7)}');
+   insert into parent_athletes values('${id(8)}','${id(2)}');
    insert into private.rider_recovery_states values('${id(5)}',true);
    insert into private.rider_feature_access values('${id(6)}',true);
    insert into push_subscriptions select id,true from profiles;
@@ -95,6 +100,7 @@ const add = key => value('select public.add_uci_schedule_event($1)', [key]);
   const notifications = fs.readFileSync(path.join(root, 'supabase/migrations/20260828090000_finish_notification_center_and_alerts.sql'), 'utf8');
   await db.exec(notifications.slice(notifications.indexOf('create or replace function private.emit_jkcrew_notification('), notifications.indexOf('-- Preserve every existing push type')));
   await db.exec(sql);
+  await db.exec(parentSql);
   let s = snapshot([event(), event('uci-bfr-2027-101', { name: 'German Open', startDate: '2027-07-01', endDate: '2027-07-02' })], [announcement('baseline', { notify: false })]);
   let r = rankings();
   await test('service ingestion installs a silent verified baseline and scheduled fixed-feed refresh', async () => {
@@ -245,6 +251,44 @@ const add = key => value('select public.add_uci_schedule_event($1)', [key]);
    await db.exec('reset role'); await q('delete from dashboard_items where id=$1',[id(100)]);
    s={...s,checkedAt:stamp()};await actor(null,'service_role');await apply(s);await actor(1);
    const card=(await get()).events.find(x=>x.id==='uci-bfr-2027-101');assert.equal(card.existingEventId,null);assert.equal(card.syncStatus,'removed');
+  });
+  await test('parent schedule reader exposes the same verified schedule and announcements with no management metadata', async () => {
+   await actor(1);const coach=await get();await actor(8);const data=await parentGet();
+   assert.equal(data.canManage,false);assert.equal(data.readOnly,true);assert.equal(data.notificationsEnabled,false);
+   assert.deepEqual(data.events.map(x=>x.id),coach.events.map(x=>x.id));assert.equal(data.checkedAt,coach.checkedAt);
+   assert.deepEqual(data.announcements,coach.announcements);assert.deepEqual(data.qualification,coach.qualification);
+   assert.equal(data.reviewCandidates,undefined);assert.equal(data.rankings,undefined);
+   for(const card of data.events){const source=coach.events.find(x=>x.id===card.id);assert.equal(card.alreadyAdded,source.alreadyAdded);assert.equal(card.existingEventId,source.existingEventId);assert.equal(card.syncConflicts,undefined);assert.equal(card.matchingEventId,undefined);}
+   await db.exec('begin read only');assert.equal((await parentGet()).readOnly,true);await db.exec('commit');
+  });
+  await test('parent schedule role, session, child-link and restriction gates are checked on every request', async () => {
+   for(const n of [null,1,2,9,10,99]){await actor(n);await assert.rejects(parentGet(),e=>e.code==='42501');}
+   await actor(8,'anon');await assert.rejects(parentGet(),/permission denied/);
+   await actor(8,'authenticated',true);await assert.rejects(parentGet(),e=>e.code==='42501');
+   await db.exec('reset role');await q('delete from parent_athletes where parent_id=$1',[id(8)]);
+   await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+   await db.exec('reset role');await q('insert into parent_athletes values($1,$2)',[id(8),id(5)]);
+   await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+   await db.exec('reset role');await q('update parent_athletes set athlete_id=$1 where parent_id=$2',[id(6),id(8)]);
+   await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+   await db.exec('reset role');await q('update parent_athletes set athlete_id=$1 where parent_id=$2',[id(3),id(8)]);
+   await actor(8);assert.equal((await parentGet()).readOnly,true,'Linked children without UCI points can plan their schedule');
+   await db.exec('reset role');await q('insert into private.rider_feature_access values($1,true)',[id(8)]);
+   await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+   await db.exec('reset role');await q('delete from private.rider_feature_access where athlete_id=$1',[id(8)]);
+   await q("update profiles set role='athlete' where id=$1",[id(8)]);await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+   await db.exec('reset role');await q("update profiles set role='parent' where id=$1",[id(8)]);
+  });
+  await test('read-only parent schedule permission cannot add events, subscribe, ingest, queue or read private tables', async () => {
+   await actor(8);await assert.rejects(get(),e=>e.code==='42501');
+   await assert.rejects(add('uci-bfr-2027-100'),e=>e.code==='42501');
+   await assert.rejects(value('select public.subscribe_uci_schedule_updates(true)'),e=>e.code==='42501');
+   await assert.rejects(apply(s,r),/permission denied/);
+   for(const text of ['select private.request_uci_schedule_refresh()','select * from private.uci_schedule_state','select * from private.uci_schedule_calendar_links','select * from private.uci_schedule_subscribers','select private.uci_parent_tracker_riders(null)'])await assert.rejects(q(text),/permission denied/);
+   await db.exec('reset role');assert.equal(await value("select has_function_privilege('anon','public.get_parent_uci_2027_schedule()','EXECUTE')"),false);
+   assert.equal(await value("select has_function_privilege('anon','private.get_parent_uci_2027_schedule()','EXECUTE')"),false);
+   assert.equal(await value("select prosecdef from pg_proc where oid='public.get_parent_uci_2027_schedule()'::regprocedure"),false);
+   await actor(1);assert.equal((await get()).canManage,true);await actor(2);assert.equal((await get()).canManage,false);
   });
   await test('repository source-agent snapshot and current rankings satisfy the real ingestion contract', async () => {
    const realSnapshot=JSON.parse(fs.readFileSync(path.join(root,'data/uci-schedule.json'),'utf8'));

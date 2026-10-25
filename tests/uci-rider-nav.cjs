@@ -191,9 +191,9 @@ const count = page => page.locator('.bottom-nav [data-view="uciTracker"]').count
   await page.setViewportSize({ width: 390, height: 844 });
   for (const role of ['parent', 'coach']) {
     await page.evaluate(role => { state.profile.role = role; renderShell(); }, role);
-    eq(await count(page), 0, role + ' primary navigation has no rider-only tab');
-    eq(await page.locator('.bottom-nav .nav-btn').count(), 6, role + ' keeps existing six destinations');
-    await page.evaluate(() => qaRefresh()); eq(await count(page), 0, role + ' is unchanged after ranking update event');
+    eq(await count(page), role === 'parent' ? 1 : 0, role + ' primary navigation retains its own destinations');
+    eq(await page.locator('.bottom-nav .nav-btn').count(), role === 'parent' ? 7 : 6, role + ' has expected destinations');
+    await page.evaluate(() => qaRefresh()); eq(await count(page), role === 'parent' ? 1 : 0, role + ' is unchanged after ranking update event');
   }
   await page.evaluate(() => { state.profile.role = 'athlete'; state.profile.uci_id = '10000000001'; qa.recovery = true; renderShell(); });
   eq(await count(page), 0, 'Recovery mode does not show LA28 even with points');

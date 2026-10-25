@@ -7,6 +7,7 @@ const path = require('node:path');
 const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pglite');
 const db = new PGlite();
 const sql = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261024232140_uci_rider_tracker.sql'), 'utf8');
+const parentSql = fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261025012339_parent_uci_rider_tracker_read_only.sql'), 'utf8');
 const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const q = async (s,a=[]) => (await db.query(s,a)).rows;
 const value = async (s,a=[]) => { const rows=await q(s,a); return rows.length?Object.values(rows[0])[0]:undefined; };
@@ -19,6 +20,7 @@ async function actor(n=null, role='authenticated', anonymous=false) {
 async function admin(s,a=[]) { await db.exec('reset role'); return value(s,a); }
 async function test(name,fn) { await fn(); passed++; console.log('PASS '+name); }
 const get = (r=null) => value('select public.get_uci_rider_tracker($1)',[r===null?null:id(r)]);
+const parentGet = (r=null) => value('select public.get_parent_uci_rider_tracker($1)',[r===null?null:id(r)]);
 const entry = (r=2,e=100,data={},v=0,category='men_elite') => value('select public.save_uci_event_entry($1,$2,$3,$4,$5)',[id(r),id(e),category,data,v]);
 const result = (r=2,e=100,data={},v=0,category='men_elite') => value('select public.save_uci_rider_result($1,$2,$3,$4,$5)',[id(r),id(e),category,{event_date:'2026-06-15',...data},v]);
 const conflict = err => err.code==='40001' && err.hint==='reload_latest';
@@ -31,6 +33,7 @@ const conflict = err => err.code==='40001' && err.hint==='reload_latest';
   create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
   create table profiles(id uuid primary key,role text,display_name text,uci_id text);
   create table coach_athletes(coach_id uuid,athlete_id uuid);
+  create table parent_athletes(parent_id uuid,athlete_id uuid,primary key(parent_id,athlete_id));
   create table dashboard_items(id uuid primary key,owner_id uuid,created_by uuid,item_type text,title text,details text,due_at timestamptz,end_at timestamptz,
    completed boolean default false,uci_schedule_date_only boolean default false,uci_schedule_status text);
   create table private.rider_feature_access(athlete_id uuid primary key,features_disabled boolean default false);
@@ -43,8 +46,10 @@ const conflict = err => err.code==='40001' && err.hint==='reload_latest';
   insert into profiles values
    ('${id(1)}','coach','Coach',null),('${id(2)}','athlete','German rider','10000000001'),('${id(3)}','athlete','Australian rider','10000000002'),
    ('${id(4)}','athlete','Other coach rider',null),('${id(5)}','athlete','Recovering rider',null),('${id(6)}','athlete','Disabled rider',null),
-   ('${id(7)}','coach','Other coach',null),('${id(8)}','parent','Parent',null),('${id(9)}','admin','Admin without link',null),('${id(10)}','athlete','Unknown UCI rider',null);
+   ('${id(7)}','coach','Other coach',null),('${id(8)}','parent','Parent',null),('${id(9)}','admin','Admin without link',null),('${id(10)}','athlete','Unknown UCI rider',null),
+   ('${id(11)}','parent','Other parent',null),('${id(12)}','parent','Parent without children',null);
   insert into coach_athletes values('${id(1)}','${id(2)}'),('${id(1)}','${id(3)}'),('${id(1)}','${id(5)}'),('${id(1)}','${id(6)}'),('${id(1)}','${id(10)}'),('${id(7)}','${id(4)}');
+  insert into parent_athletes values('${id(8)}','${id(2)}'),('${id(8)}','${id(3)}'),('${id(8)}','${id(5)}'),('${id(8)}','${id(6)}'),('${id(11)}','${id(4)}');
   insert into private.rider_recovery_states values('${id(5)}',true);
   insert into private.rider_feature_access values('${id(6)}',true);
   insert into private.uci_schedule_state values(1,jsonb_build_object('checkedAt',now(),'categories',jsonb_build_object(
@@ -61,6 +66,7 @@ const conflict = err => err.code==='40001' && err.hint==='reload_latest';
   insert into run_plans values('${id(200)}','${id(100)}','${id(2)}');
  `);
  await db.exec(sql);
+ await db.exec(parentSql);
  await test('authentication and account gates deny anonymous, parent, disabled and recovery actors',async()=>{
   for(const n of [null,8,5,6]) {await actor(n);await assert.rejects(get(),e=>e.code==='42501');await assert.rejects(entry(n||2),e=>e.code==='42501');}
   await actor(2,'anon');await assert.rejects(get(),/permission denied/);
@@ -175,6 +181,85 @@ const conflict = err => err.code==='40001' && err.hint==='reload_latest';
   assert.equal(await admin('select sum(points) from scoring_records'),123);
   assert.equal(await admin('select count(*) from dashboard_items'),4);assert.equal(await admin('select count(*) from event_attendees'),1);
   assert.equal(await admin('select count(*) from private.uci_rider_records where version<1'),0);
+ });
+ await test('parent reader requires a current parent profile and nonanonymous authenticated session',async()=>{
+  for(const n of [null,1,2,7,9,99]) {await actor(n);await assert.rejects(parentGet(),e=>e.code==='42501');}
+  await actor(8,'anon');await assert.rejects(parentGet(),/permission denied/);
+  await assert.rejects(value('select private.get_parent_uci_rider_tracker(null)'),/permission denied/);
+  await actor(8,'authenticated',true);await assert.rejects(parentGet(),e=>e.code==='42501');
+  await actor(8);assert.equal((await parentGet()).readOnly,true);
+  await admin("update profiles set role='athlete' where id=$1",[id(8)]);
+  await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+  await admin("update profiles set role='parent' where id=$1",[id(8)]);
+ });
+ await test('parent can read both linked children but not unrelated children, coach records or restricted riders',async()=>{
+  await actor(7);await entry(4,100,{note:'Other family private entry'});
+  await actor(1);await entry(6,100,{note:'Disabled rider private entry'});
+  await actor(8);const d=await parentGet();assert.equal(d.canManage,false);assert.equal(d.readOnly,true);
+  assert.deepEqual(d.riders.map(r=>r.id).sort(),[id(2),id(3)]);
+  assert(d.entries.length>0&&d.results.length>0);
+  assert(d.entries.concat(d.results).every(r=>[id(2),id(3)].includes(r.rider_id)));
+  for(const n of [1,4,5,6,10,99])await assert.rejects(parentGet(n),e=>e.code==='42501');
+  const child=await parentGet(3);assert.deepEqual(child.riders.map(r=>r.id),[id(3)]);
+  assert(child.entries.every(r=>r.rider_id===id(3)));assert(child.results.every(r=>r.rider_id===id(3)));
+  await actor(11);const other=await parentGet();assert.deepEqual(other.riders.map(r=>r.id),[id(4)]);
+  assert.equal(other.entries[0].note,'Other family private entry');await assert.rejects(parentGet(2),e=>e.code==='42501');
+ });
+ await test('parent sees shared upcoming events and only child-specific saved history without media or owner data',async()=>{
+  await admin("insert into dashboard_items(id,owner_id,created_by,item_type,title,details,due_at,end_at) values($1,$2,$2,'event','Next shared event','Event location',now()+interval '20 days',now()+interval '21 days')",[id(105),id(7)]);
+  await actor(8);const d=await parentGet();assert.deepEqual(d.events.map(e=>e.id).sort(),[id(100),id(101),id(103),id(105)]);
+  assert.equal(d.events.find(e=>e.id===id(101)).unavailable,true);assert.equal(d.events.find(e=>e.id===id(101)).title,'Past Open');
+  assert(d.events.every(e=>!('image_data_url'in e)&&!('owner_id'in e)&&!('created_by'in e)));
+  assert.equal(d.events.filter(e=>e.id===id(100)).length,1,'Shared event metadata is not duplicated across children');
+  assert.deepEqual((await parentGet(3)).events.map(e=>e.id).sort(),[id(100),id(105)],'Selecting one child retains shared upcoming events but excludes sibling-specific historic events');
+  await db.exec('begin read only');assert.equal((await parentGet()).readOnly,true);await db.exec('commit');
+ });
+ await test('parents without eligible linked children receive an empty read-only tracker',async()=>{
+  await actor(12);assert.deepEqual(await parentGet(),{canManage:false,readOnly:true,riders:[],events:[],entries:[],results:[]});
+  await assert.rejects(parentGet(2),e=>e.code==='42501');
+ });
+ await test('unlinking and child account restrictions revoke parent reads immediately',async()=>{
+  await admin('delete from parent_athletes where parent_id=$1 and athlete_id=$2',[id(8),id(2)]);
+  await actor(8);assert.deepEqual((await parentGet()).riders.map(r=>r.id),[id(3)]);await assert.rejects(parentGet(2),e=>e.code==='42501');
+  await admin('insert into parent_athletes values($1,$2)',[id(8),id(2)]);
+  await admin('insert into private.rider_recovery_states values($1,true)',[id(2)]);
+  await actor(8);assert(!(await parentGet()).riders.some(r=>r.id===id(2)));await assert.rejects(parentGet(2),e=>e.code==='42501');
+  await admin('delete from private.rider_recovery_states where athlete_id=$1',[id(2)]);
+  await admin('insert into private.rider_feature_access values($1,true)',[id(3)]);
+  await actor(8);assert.deepEqual((await parentGet()).riders.map(r=>r.id),[id(2)]);await assert.rejects(parentGet(3),e=>e.code==='42501');
+  await admin('delete from private.rider_feature_access where athlete_id=$1',[id(3)]);
+  await admin("update profiles set role='coach' where id=$1",[id(3)]);
+  await actor(8);assert.deepEqual((await parentGet()).riders.map(r=>r.id),[id(2)]);await assert.rejects(parentGet(3),e=>e.code==='42501');
+  await admin("update profiles set role='athlete' where id=$1",[id(3)]);
+  await actor(8);assert.equal((await parentGet()).riders.length,2);
+ });
+ await test('parent own disabled or recovery account restrictions are also enforced',async()=>{
+  await admin('insert into private.rider_feature_access values($1,true)',[id(8)]);
+  await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+  await admin('delete from private.rider_feature_access where athlete_id=$1',[id(8)]);
+  await admin('insert into private.rider_recovery_states values($1,true)',[id(8)]);
+  await actor(8);await assert.rejects(parentGet(),e=>e.code==='42501');
+  await admin('delete from private.rider_recovery_states where athlete_id=$1',[id(8)]);
+ });
+ await test('parent read permission never grants writes, verification, audit access or original rider RPC access',async()=>{
+  const beforeRecords=await admin('select count(*) from private.uci_rider_records');const beforeAudit=await admin('select count(*) from private.uci_rider_record_audit');
+  await actor(8);await assert.rejects(get(2),e=>e.code==='42501');
+  await assert.rejects(entry(2,100,{note:'Forged parent edit'}),e=>e.code==='42501');
+  await assert.rejects(result(2,100,{points:999,status:'verified',evidence_url:'https://www.uci.org/results'}),e=>e.code==='42501');
+  await assert.rejects(value('select private.save_uci_event_entry($1,$2,$3,$4,$5)',[id(2),id(100),'men_elite',{},0]),e=>e.code==='42501');
+  for(const sql of ['select * from private.uci_rider_records','select * from private.uci_rider_record_audit',"update private.uci_rider_records set payload='{}'",'delete from private.uci_rider_records','select private.uci_parent_tracker_riders(null)'])await assert.rejects(q(sql),/permission denied/);
+  assert.equal(await admin('select count(*) from private.uci_rider_records'),beforeRecords);assert.equal(await admin('select count(*) from private.uci_rider_record_audit'),beforeAudit);
+ });
+ await test('new public RPC is invoker-only, private reader has pinned search path, and tables stay protected',async()=>{
+  const f=await admin("select jsonb_agg(jsonb_build_object('schema',n.nspname,'definer',p.prosecdef,'config',p.proconfig)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.proname='get_parent_uci_rider_tracker'");
+  assert.equal(f.find(v=>v.schema==='public').definer,false);assert.equal(f.find(v=>v.schema==='private').definer,true);
+  assert(f.every(v=>v.config.some(c=>c.startsWith('search_path='))));
+  assert.equal(await admin("select has_function_privilege('anon','public.get_parent_uci_rider_tracker(uuid)','EXECUTE')"),false);
+  assert.equal(await admin("select has_function_privilege('anon','private.get_parent_uci_rider_tracker(uuid)','EXECUTE')"),false);
+  assert.equal(await admin("select has_table_privilege('authenticated','private.uci_rider_records','SELECT')"),false);
+  assert.equal(await admin("select relrowsecurity from pg_class where oid='private.uci_rider_records'::regclass"),true);
+  await actor(2);assert.equal((await get()).canManage,false);await actor(1);assert.equal((await get()).canManage,true);
+  assert.equal(await admin('select sum(points) from scoring_records'),123);
  });
  console.log(`\n${passed} tracker database checks passed.`);
  } finally {await db.close();}

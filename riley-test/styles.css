@@ -10180,9 +10180,9 @@ html[data-theme="light"] .parent-shell textarea {
 .parent-notification-body > button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parent-notification-body > button small { color: var(--muted); }
 
-.parent-shell .bottom-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.parent-shell .bottom-nav { grid-template-columns: repeat(var(--rider-nav-count, 7), minmax(0, 1fr)); }
 .parent-shell .bottom-nav .nav-btn { min-width: 0; }
-.parent-shell .bottom-nav .nav-btn > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.parent-shell .bottom-nav .nav-btn .primary-nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 html[data-theme="light"] .parent-child-switcher { background: rgba(250, 248, 241, 0.94); }
 html[data-theme="light"] .parent-notification-drawer { background: #f8f5ed; }
@@ -10218,7 +10218,7 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   .parent-shell .bottom-nav { gap: 2px; padding-inline: 5px; }
   .parent-shell .bottom-nav .nav-btn { min-height: 62px; padding-inline: 2px; border-radius: 14px; }
   .parent-shell .bottom-nav .nav-icon { width: 31px; height: 31px; }
-  .parent-shell .bottom-nav .nav-btn > span:last-child { font-size: 0.48rem; letter-spacing: 0.02em; }
+  .parent-shell .bottom-nav .nav-btn .primary-nav-label { font-size: 0.48rem; letter-spacing: 0.02em; }
 }
 
 @media (max-width: 390px) {
@@ -12662,3 +12662,15 @@ html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
 .rider-saved-runs-dropdown .saved-runs-chevron { color: var(--aqua); font-size: 24px; line-height: 1; flex-shrink: 0; }
 .rider-saved-runs-dropdown[open] .saved-runs-chevron { transform: rotate(180deg); }
 .rider-saved-runs-dropdown > .panel-accordion-body > .actions { margin-bottom: 14px; }
+
+/* Family competition view: seven useful tabs and the selected child's ranking. */
+.parent-road-card { margin: 18px 0; }
+.parent-road-card h2 { margin: 0 0 16px; font-size: 1.4rem; }
+.parent-road-card .home-uci-body { margin-bottom: 12px; }
+.parent-shell #parent-uci-tracker { min-width: 0; }
+@media (max-width: 390px) {
+  .parent-shell .bottom-nav { gap: 0; padding-inline: 4px; }
+  .parent-shell .bottom-nav .nav-btn { padding-inline: 0; }
+}
+
+.parent-road-card .parent-uci-source { color: var(--muted); font-size: 0.8rem; padding: 12px 0; }

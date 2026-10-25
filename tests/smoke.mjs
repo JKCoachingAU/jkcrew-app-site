@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.173";
+const version = "2.14.174";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -490,13 +490,13 @@ for (const label of ["Command", "Session", "Riders", "Challenges", "Coach Tools"
 }
 
 const parentNavBody = app.match(/const parentNav = \[([\s\S]*?)\];/)?.[1] || "";
-assert.equal((parentNavBody.match(/\["/g) || []).length, 6, "Parent navigation must expose the six family views");
-for (const label of ["Home", "Week", "Coaching", "Contests", "Calendar", "More"]) {
+assert.equal((parentNavBody.match(/\["/g) || []).length, 7, "Parent navigation must expose the seven family views");
+for (const label of ["Home", "Week", "Coaching", "Contests", "LA28", "Calendar", "More"]) {
   assert(parentNavBody.includes(`"${label}"`), `Parent navigation is missing ${label}`);
 }
 assert(
-  css.includes(".parent-shell .bottom-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }"),
-  "Parent bottom navigation must use a six-column family layout",
+  css.includes(".parent-shell .bottom-nav { grid-template-columns: repeat(var(--rider-nav-count, 7), minmax(0, 1fr)); }"),
+  "Parent bottom navigation must use the current family tab count",
 );
 for (const tone of ["aqua", "blue", "violet", "gold", "coral"]) {
   assert(css.includes(`--parent-${tone}:`), `Parent palette is missing ${tone}`);
