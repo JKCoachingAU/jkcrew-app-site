@@ -75,6 +75,7 @@ async function setup() {
     window.withTimeout = async promise => promise;
     window.riderFeaturesDisabled = () => !qaAccess;
     window.riderFeatureAccessUnknown = () => false;
+    window.riderRecoveryActive = () => false;
     window.getLeaderboard = async () => { qaOtherReads.leaderboard++; return Array.from({ length: 8 }, (_, index) => ({ id: 'r' + index, athlete_id: 'r' + index, display_name: 'Personal Rider ' + index, weekly_points: index })); };
     window.getWeeklyRiderBattles = async () => { qaOtherReads.battles++; if (qaPersonalHold) { qaPersonalHold = false; await new Promise(resolve => { qaPersonalRelease = resolve; }); } return []; };
     window.getMyWeeklyChallenge = async () => { qaOtherReads.challenge++; return null; };

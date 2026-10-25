@@ -62,3 +62,20 @@
 [data-theme="light"] .crew-live-team { --team-colour: #7135b7; }
 [data-theme="light"] .crew-live-team.team-2 { --team-colour: #00796e; }
 [data-theme="light"] .crew-live-team.team-3 { --team-colour: #826100; }
+
+/* Parents follow their linked child's battle without participant controls. */
+.parent-live-battles { scroll-margin-top: 160px; }
+.parent-live-battles .crew-live-head p { overflow-wrap: anywhere; }
+.parent-live-battles .crew-live-team li.is-linked-child .crew-live-initial {
+  border-color: var(--team-colour);
+  background: color-mix(in srgb, var(--team-colour) 16%, transparent);
+}
+.parent-live-battles .crew-live-team li.is-linked-child small { color: var(--team-colour); }
+.parent-live-battles.is-empty .crew-live-empty { justify-items: start; padding: 0; gap: 4px; text-align: left; }
+.parent-live-battles.is-empty .crew-live-empty > span { display: none; }
+.parent-live-battles.is-empty .crew-live-empty strong { font-size: 14px; }
+.parent-live-battles.is-empty .crew-live-empty p { max-width: none; }
+@media (max-width: 500px) {
+  .parent-live-battles .crew-live-head { flex-wrap: wrap; }
+  .parent-live-battles .crew-live-head > div { flex: 1 1 180px; }
+}

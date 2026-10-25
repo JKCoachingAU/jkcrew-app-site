@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.176";
+const RELEASE_VERSION = "2.14.177";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -677,7 +677,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.176" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.177" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7699,6 +7699,8 @@ function bindParentPageActions() {
   document.querySelector("#parent-athlete-select")?.addEventListener("change", async (event) => {
     const childId = event.currentTarget.value, parentId = state.user?.id, currentView = state.view, setupVersion = state.sessionSetupVersion;
     rememberParentAthleteId(childId);
+    state.activeBattles?.destroy();
+    state.activeBattles = null;
     cacheClear("schedule:");
     state.uciTrackerMount?.destroy();
     state.uciTrackerMount = null;
@@ -7844,15 +7846,18 @@ async function renderParentHome() {
   const view = document.querySelector("#view"), userId = state.user?.id, setupVersion = state.sessionSetupVersion;
   const renderVersion = state.parentHomeRenderVersion = (state.parentHomeRenderVersion || 0) + 1;
   const navigationToken = state.loadingOverlayToken;
-  const isCurrent = () => state.profile?.role === "parent" && state.user?.id === userId && state.sessionSetupVersion === setupVersion
-    && state.view === "home" && state.parentHomeRenderVersion === renderVersion && state.loadingOverlayToken === navigationToken
+  const sameHome = () => state.profile?.role === "parent" && state.user?.id === userId && state.sessionSetupVersion === setupVersion
+    && state.view === "home" && state.loadingOverlayToken === navigationToken
     && view.isConnected && document.querySelector("#view") === view;
+  const isCurrent = () => sameHome() && state.parentHomeRenderVersion === renderVersion;
   const [context, coachMessages] = await Promise.all([
     getParentRiderContext(),
     getMyCoachMessages(5).catch((error) => { console.warn("Coach messages unavailable", error); return []; }),
   ]);
   if (!isCurrent()) return;
   if (!context.selected) {
+    state.activeBattles?.destroy();
+    state.activeBattles = null;
     document.querySelector("#view").innerHTML = `${coachMessagesHtml(coachMessages)}${parentWaitingHtml()}`;
     bindParentPageActions();
     return;
@@ -7877,6 +7882,9 @@ async function renderParentHome() {
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
   const percent = weeklyCompletionPercent(assignments, awards);
   const xp = normalizeXpSummary(xpSummary, athlete);
+  state.parentHomeMountedVersion = renderVersion;
+  state.activeBattles?.destroy();
+  state.activeBattles = null;
   document.querySelector("#view").innerHTML = `
     ${parentChildSwitcherHtml(context)}
     ${parentPageHeadHtml("JKCREW family", "Family", "dashboard", `A calm, read-only view of ${firstName(athlete)}'s week and private coaching updates.`)}
@@ -7890,6 +7898,7 @@ async function renderParentHome() {
       <div class="parent-progress-track" aria-label="${percent}% of weekly items complete"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
     </section>
     ${parentEngagementAlertHtml({ athlete, assignmentAttempts, awards, sessions, completed: completedWeekly, total: weeklyItems.length, percent })}
+    ${typeof JKCrewActiveBattles !== "undefined" ? JKCrewActiveBattles.sectionHtml({ rider: athlete }) : ""}
     <div id="parent-road-la28-card"></div>
     <button class="parent-events-home-cta" type="button" data-parent-open-view="contests">
       <span class="parent-events-home-icon" aria-hidden="true">🏆</span>
@@ -7904,7 +7913,10 @@ async function renderParentHome() {
       <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Recent</span><h2>Activity</h2></div><button type="button" data-parent-open-view="parentWeek">Open week</button></div>${parentRecentActivityHtml(assignments, assignmentAttempts, awards, sessions)}</section>
     </div>`;
   bindParentPageActions();
-  const childIsCurrent = () => isCurrent() && state.parentAthleteId === athlete.id;
+  const childIsCurrent = () => sameHome() && state.parentHomeMountedVersion === renderVersion && state.parentAthleteId === athlete.id;
+  if (typeof JKCrewActiveBattles !== "undefined") state.activeBattles = JKCrewActiveBattles.mount(view.querySelector("#active-rider-battles"), {
+    client, userId, currentUser: () => state.user?.id, withTimeout, rider: athlete, canAccess: childIsCurrent,
+  });
   bindBoardRankings(leaderboard, { parentHome: true, isCurrent: childIsCurrent, childId: athlete.id, jkcUnavailable: leaderboardUnavailable, retryJkc: () => renderParentHome() });
   void loadParentRoadToLa28Card(athlete, childIsCurrent);
 }
