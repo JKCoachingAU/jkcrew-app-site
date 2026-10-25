@@ -8876,9 +8876,9 @@ html[data-theme="light"] .home-uci-heading .eyebrow { color: #6742b5; }
   color: var(--rider-coral);
 }
 
-/* Rider navigation: exactly six destinations, with a compact native-app feel. */
+/* Rider navigation: seven destinations, including a dedicated Road to LA28 tab. */
 .rider-shell .bottom-nav {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-auto-flow: initial;
   gap: 3px;
   padding-inline: max(8px, env(safe-area-inset-left));
@@ -9038,7 +9038,7 @@ html[data-theme="light"] .rider-shell textarea {
     padding: 5px 2px;
   }
   .rider-shell .bottom-nav .nav-icon { width: 36px; height: 36px; }
-  .rider-shell .bottom-nav .nav-btn > span:last-child {
+  .rider-shell .bottom-nav .nav-btn > .primary-nav-label {
     font-size: 0.5rem;
     line-height: 1.05;
     letter-spacing: 0.06em;
@@ -9152,7 +9152,7 @@ html[data-theme="light"] .rider-shell textarea {
   .rider-shell .score-ranking-card.with-battle-record .stat-label,
   .rider-shell .score-ranking-card.with-battle-record .stat-foot { font-size: 0.56rem; }
   .rider-shell .bottom-nav .nav-icon { width: 33px; height: 33px; }
-  .rider-shell .bottom-nav .nav-btn > span:last-child { font-size: 0.44rem; letter-spacing: 0.035em; }
+  .rider-shell .bottom-nav .nav-btn > .primary-nav-label { font-size: 0.44rem; letter-spacing: 0.035em; }
 }
 
 /* Parent experience: the rider visual system with a private, read-only hierarchy. */

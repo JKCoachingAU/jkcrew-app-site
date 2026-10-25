@@ -25,6 +25,8 @@ const accessConstant = app.match(/^const RIDER_ACCESS_MESSAGE = .*;$/m)?.[0];
 assert(accessConstant, 'Existing access notice remains defined');
 const captureListener = app.match(/^\["click", "submit", "pointerdown", "keydown", "input", "change"\].*guardRiderFeatureInteraction.*;$/m)?.[0];
 assert(captureListener, 'Actual feature capture guard is installed');
+const athleteNavDefinition = app.match(/^const athleteNav = \[[\s\S]*?^\];/m)?.[0].replace('const athleteNav =', 'window.athleteNav =');
+assert(athleteNavDefinition, 'Production rider navigation exists');
 const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
@@ -62,7 +64,6 @@ const ok = (value, message) => { assert(value, message); checks++; };
       window.notify = (message, tone) => qa.notices.push({ message, tone });
       window.isCoachRole = role => ['coach', 'admin'].includes(role);
       window.avatarHtml = () => '<span class="avatar">QA</span>';
-      window.athleteNav = [['home', 'Home'], ['session', 'Session'], ['challenges', 'Challenges'], ['contests', 'Contests'], ['board', 'Board'], ['profile', 'Profile']];
       window.parentNav = [['home', 'Home'], ['parentWeek', 'This week'], ['profile', 'Profile']];
       window.coachNav = [['command', 'Command'], ['crew', 'Riders']];
       window.coachNavGroups = [{ id: 'crew', label: 'Riders', icon: '●', links: [['crew', 'Students']] }];
@@ -138,12 +139,12 @@ const ok = (value, message) => { assert(value, message); checks++; };
       (0, eval)(code);
       // renderAthleteHome's production recovery entry is separately asserted below.
       window.renderAthleteHome = async () => riderRecoveryActive() ? renderRiderRecoveryHome() : qaNormalSurface('renderAthleteHome');
-    }, { code: [accessConstant, ...names.map(extract), captureListener].join('\n'), renderers });
+    }, { code: [athleteNavDefinition, accessConstant, ...names.map(extract), captureListener].join('\n'), renderers });
 
     ok(extract('renderAthleteHome').includes('renderRiderRecoveryHome'), 'Actual athlete home delegates to the recovery renderer');
     await page.evaluate(async () => { renderShell(); await navigate('home'); });
     ok(await page.locator('#rider-recovery-home').isVisible(), 'Recovery opens as the athlete home');
-    eq(await page.locator('[data-view="session"], [data-view="challenges"], [data-view="contests"], [data-view="board"], #notification-centre-bell').count(), 0, 'Recovery shell hides training navigation and ordinary notifications');
+    eq(await page.locator('[data-view="session"], [data-view="challenges"], [data-view="contests"], [data-view="uciTracker"], [data-view="board"], #notification-centre-bell').count(), 0, 'Recovery shell hides training navigation and ordinary notifications');
     eq(await page.evaluate(() => qa.actions.filter(value => ['notification-query', 'chat-query', 'tricktionary-suggestions'].includes(value))), [], 'Recovery shell starts no normal feed queries or suggestions');
     eq(await page.evaluate(() => qa.mounts.at(-1)), { kind: 'athlete', userId: 'rider-a', athleteId: 'rider-a' }, 'Check-in module receives only the signed-in rider identity');
     await page.locator('#qa-save').click();
@@ -158,7 +159,7 @@ const ok = (value, message) => { assert(value, message); checks++; };
     });
     ok(await page.evaluate(() => qa.actions.includes('app-update') && qa.actions.includes('app-install')), 'Recovery permits installed-app update and install actions');
 
-    for (const view of ['session', 'contests', 'challenges', 'profile', 'board', 'bikeGarage', 'shredZone', 'jkcYard', 'tricktionary', 'coaching', 'recovery']) {
+    for (const view of ['session', 'contests', 'uciTracker', 'uciSchedule', 'challenges', 'profile', 'board', 'bikeGarage', 'shredZone', 'jkcYard', 'tricktionary', 'coaching', 'recovery']) {
       await page.evaluate(view => navigate(view), view);
       eq(await page.evaluate(() => state.view), 'home', `Recovery blocks the ${view} deep link`);
       ok(await page.locator('#rider-recovery-home').isVisible(), `${view} returns to recovery home`);
@@ -192,6 +193,7 @@ const ok = (value, message) => { assert(value, message); checks++; };
 
     await page.evaluate(async () => { qa.disabled = false; qa.recovery = false; await refreshRiderFeatureAccess({ force: true }); });
     ok(await page.locator('[data-view="session"]').count() > 0, 'Turning recovery off restores normal navigation');
+    eq(await page.locator('.bottom-nav [data-view="uciTracker"]').count(), 1, 'Turning recovery off restores the dedicated LA28 tab');
     ok(await page.locator('#qa-training').isVisible(), 'Turning recovery off restores the normal home');
     await page.locator('#qa-training').click();
     ok(await page.evaluate(() => qa.actions.includes('training')), 'Normal training actions are usable after recovery ends');

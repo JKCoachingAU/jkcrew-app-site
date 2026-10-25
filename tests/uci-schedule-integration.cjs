@@ -17,7 +17,7 @@ const ok = (actual, label) => { assert(actual, label); checks++; };
   const errors = [];
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', e => errors.push(e.message));
-  await page.route('**/*', route => route.request().url() === 'http://localhost:54321/' ? route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div id="app"><nav><button data-view="coachTools">Coach Tools</button><button data-view="contests">Contests</button></nav><main id="view"></main></div>' }) : route.abort());
+  await page.route('**/*', route => route.request().url() === 'http://localhost:54321/' ? route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div id="app"><nav><button data-view="coachTools">Coach Tools</button><button data-view="contests">Contests</button><button data-view="uciTracker">LA28</button></nav><main id="view"></main></div>' }) : route.abort());
   await page.goto('http://localhost:54321/');
   await page.addScriptTag({ path: path.join(root, 'uci-schedule.js') });
   await page.evaluate(snapshot => {
@@ -88,7 +88,8 @@ const ok = (actual, label) => { assert(actual, label); checks++; };
   await page.evaluate(() => { state.profile.role = 'athlete'; state.user.id = 'rider'; state.sessionSetupVersion++; return navigate('uciSchedule'); });
   await page.locator('[data-schedule-event]').first().waitFor();
   eq(await page.locator('[data-schedule-add],[data-schedule-alerts]').count(), 0, 'Athlete schedule route is read-only');
-  ok(await page.locator('nav [data-view="contests"]').evaluate(el => el.classList.contains('active')), 'Athlete schedule belongs under Contests');
+  ok(await page.locator('nav [data-view="uciTracker"]').evaluate(el => el.classList.contains('active')), 'Athlete schedule belongs under LA28');
+  eq(await page.locator('nav [data-view="contests"]').evaluate(el => el.classList.contains('active')), false, 'Schedule no longer selects Contests');
   await page.addScriptTag({ content: pushHandler });
   await page.evaluate(() => navigate('home'));
   await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'JKCREW_PUSH_NAVIGATE', view: 'uciSchedule' } })));
