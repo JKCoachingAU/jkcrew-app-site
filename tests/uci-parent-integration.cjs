@@ -101,6 +101,9 @@ const ok = (value, label) => { assert(value, label); checks++; };
     window.isAssignmentComplete = () => false;
     window.weeklyCompletionPercent = () => 0;
     window.pointsReceiptAttributes = () => '';
+    // Full leaderboard behavior is exercised in parent-home-leaderboards.cjs.
+    window.boardRankingsShellHtml = () => '<section data-parent-leaderboards></section>';
+    window.bindBoardRankings = () => {};
     window.coachMessagesHtml = window.parentEngagementAlertHtml = window.parentLatestCoachMessageHtml = window.parentNextItemHtml = window.parentLatestFeedbackHtml = window.parentRecentActivityHtml = () => '';
     window.notify = value => qa.messages.push(value);
     window.messageFrom = error => error.message;

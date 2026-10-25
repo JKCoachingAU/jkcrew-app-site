@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.175";
+const RELEASE_VERSION = "2.14.176";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -677,7 +677,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.175" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.176" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2990,8 +2990,8 @@ function scheduleRealtimeRefresh(reason = "sync") {
   }, 1200);
 }
 
-async function getLeaderboard() {
-  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}`;
+async function getLeaderboard({ allowFallback = true } = {}) {
+  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}${allowFallback ? "" : ":verified"}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
   const existingRequest = state.inFlight.get(cacheKey);
@@ -3005,6 +3005,7 @@ async function getLeaderboard() {
     );
     if (error) {
       console.error("Leaderboard RPC failed", error);
+      if (!allowFallback) throw error;
       return getLeaderboardFallback(error);
     }
     state.leaderboardFallbackNotified = false;
@@ -7857,6 +7858,7 @@ async function renderParentHome() {
     return;
   }
   const athlete = context.selected;
+  let leaderboardUnavailable = false;
   const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, leaderboard, xpSummary] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     getHelpRequests(athlete.id),
@@ -7865,7 +7867,7 @@ async function renderParentHome() {
       if (result.error) throw result.error;
       return result.data || [];
     }),
-    getLeaderboard(),
+    getLeaderboard({ allowFallback: false }).catch(() => { leaderboardUnavailable = true; return []; }),
     getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
   ]);
   if (!isCurrent() || state.parentAthleteId !== athlete.id) return;
@@ -7881,7 +7883,7 @@ async function renderParentHome() {
     <section class="panel parent-home-hero">
       <div class="parent-home-identity">${avatarHtml(athlete, "score-avatar")}<div><span>This week</span><h2>${escapeHtml(firstName(athlete))}</h2><p>${percent}% of tracked weekly items complete.</p></div></div>
       <div class="parent-home-metrics">
-        <div><small>Weekly score</small><strong ${pointsReceiptAttributes(athlete.id)}>${Number(weeklyRow?.weekly_points || 0)}<b> pts</b></strong><span>${rank ? `Crew rank #${rank}` : "Week in progress"}</span></div>
+        <div><small>Weekly score</small><strong ${pointsReceiptAttributes(athlete.id)}>${leaderboardUnavailable ? "—" : Number(weeklyRow?.weekly_points || 0)}<b> pts</b></strong><span>${leaderboardUnavailable ? "Scores unavailable" : rank ? `Crew rank #${rank}` : "Week in progress"}</span></div>
         <div><small>Current level</small><strong>${xp.level}<b> L</b></strong><span>${xp.xp_needed} XP to Level ${xp.next_level}</span></div>
         <div><small>Current sheet</small><strong>${completedWeekly}/${weeklyItems.length}</strong><span>${percent}% complete</span></div>
       </div>
@@ -7894,6 +7896,7 @@ async function renderParentHome() {
       <span><small>JKCREW CALENDAR</small><strong>UPCOMING EVENTS</strong><b>See events, who's going and shared course photos</b></span>
       <i aria-hidden="true">→</i>
     </button>
+    ${boardRankingsShellHtml({ parentHome: true })}
     <div class="parent-home-grid">
       <section class="panel parent-summary-card parent-coach-card"><div class="parent-section-head"><div><span>Coach update</span><h2>Latest message</h2></div><button type="button" data-parent-open-view="parentCoaching">View all</button></div>${parentLatestCoachMessageHtml(coachMessages)}</section>
       <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Coming up</span><h2>Next item</h2></div><button type="button" data-parent-open-view="parentCalendar">Calendar</button></div>${parentNextItemHtml(dashboardItems)}</section>
@@ -7901,7 +7904,9 @@ async function renderParentHome() {
       <section class="panel parent-summary-card"><div class="parent-section-head"><div><span>Recent</span><h2>Activity</h2></div><button type="button" data-parent-open-view="parentWeek">Open week</button></div>${parentRecentActivityHtml(assignments, assignmentAttempts, awards, sessions)}</section>
     </div>`;
   bindParentPageActions();
-  void loadParentRoadToLa28Card(athlete, () => isCurrent() && state.parentAthleteId === athlete.id);
+  const childIsCurrent = () => isCurrent() && state.parentAthleteId === athlete.id;
+  bindBoardRankings(leaderboard, { parentHome: true, isCurrent: childIsCurrent, childId: athlete.id, jkcUnavailable: leaderboardUnavailable, retryJkc: () => renderParentHome() });
+  void loadParentRoadToLa28Card(athlete, childIsCurrent);
 }
 
 function parentCategorySummaryHtml(assignments = []) {
@@ -8081,7 +8086,7 @@ function goalsReadonlyHtml(profile = {}) {
   return `<section class="parent-readonly-section"><div class="panel-title">Goals</div><div class="goal-list">${rows}</div></section>`;
 }
 
-function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
+function leaderRow(row, index, rows = [], pointsKey = "weekly_points", { readOnly = false, childId = "" } = {}) {
   const realRows = rows;
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
   const badge = medalForRank(row, realIndex, realRows, pointsKey);
@@ -8099,17 +8104,18 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points") {
   const content = `
     <div class="rank">#${rank}</div>
     <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><span data-leader-uci="${escapeHtml(row.athlete_id)}"></span>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
-    <div class="points ${hasStarted ? "" : "dns-points"}" ${row.isBenchmarkBot ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
+    <div class="points ${hasStarted ? "" : "dns-points"}" ${row.isBenchmarkBot || readOnly ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
+  if (readOnly) return `<div class="list-row leader-row ${row.athlete_id === childId ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" data-leader-athlete="${escapeHtml(row.athlete_id)}">${content}</div>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
 }
 
-function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points") {
+function compactLeaderboardHtml(rows = [], pointsKey = "weekly_points", options = {}) {
   if (!rows.length) return `<div class="empty">No athlete scores yet.</div>`;
   const topRows = rows.slice(0, 7);
   const extraRows = rows.slice(7);
   return `
-    ${topRows.map((row, index) => leaderRow(row, index, rows, pointsKey)).join("")}
-    ${extraRows.length ? `<details class="leaderboard-more"><summary><span class="leaderboard-toggle-closed">View Full Leaderboard</span><span class="leaderboard-toggle-open">Hide Full Leaderboard</span><span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey)).join("")}</div></details>` : ""}`;
+    ${topRows.map((row, index) => leaderRow(row, index, rows, pointsKey, options)).join("")}
+    ${extraRows.length ? `<details class="leaderboard-more"><summary><span class="leaderboard-toggle-closed">View Full Leaderboard</span><span class="leaderboard-toggle-open">Hide Full Leaderboard</span><span>${extraRows.length} more</span></summary><div class="leaderboard-more-list">${extraRows.map((row, index) => leaderRow(row, index + 7, rows, pointsKey, options)).join("")}</div></details>` : ""}`;
 }
 
 function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
@@ -8705,9 +8711,10 @@ function boardLeaderboardViews() {
   return [["weekly", "JKC Weekly"], ["allTime", "JKC All-Time"], ["uciMen", "UCI Men"], ["uciWomen", "UCI Women"]];
 }
 
-function boardRankingsShellHtml() {
+function boardRankingsShellHtml({ parentHome = false } = {}) {
   const selected = boardLeaderboardViews().some(([id]) => id === state.boardLeaderboardView) ? state.boardLeaderboardView : "weekly";
-  return `<section class="panel board-rankings-panel" data-board-rankings>
+  return `<section class="panel board-rankings-panel${parentHome ? " parent-home-leaderboards" : ""}" ${parentHome ? "data-parent-leaderboards" : "data-board-rankings"}>
+    ${parentHome ? `<div class="parent-section-head"><div><span>JKCREW & world rankings</span><h2>Leaderboards</h2></div></div>` : ""}
     <div class="board-view-toggle" role="tablist" aria-label="Leaderboard view">${boardLeaderboardViews().map(([id, label]) => `<button type="button" id="board-tab-${id}" role="tab" aria-controls="board-ranking-content" aria-selected="${id === selected}" tabindex="${id === selected ? 0 : -1}" class="${id === selected ? "active" : ""}" data-board-view="${id}">${label}</button>`).join("")}</div>
     <div id="board-ranking-content" role="tabpanel" aria-labelledby="board-tab-${selected}" tabindex="0" data-board-ranking-content></div>
   </section>`;
@@ -8847,15 +8854,17 @@ function updateBoardUciRows(panel, category, members = new Map()) {
   more.textContent = `Show ${Math.min(50, Math.max(0, filtered.length - visible.length))} more riders`;
 }
 
-async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
-  const panel = document.querySelector("[data-board-rankings]");
-  if (!panel || state.view !== "board") return;
+async function renderBoardRankings(rawLeaderboard, options = {}) {
+  const { force = false, parentHome = false, isCurrent = () => true, childId = "" } = options;
+  const panel = document.querySelector(parentHome ? "[data-parent-leaderboards]" : "[data-board-rankings]");
+  const inView = () => parentHome ? state.view === "home" && state.profile?.role === "parent" && isCurrent() : state.view === "board";
+  if (!panel || !inView()) return;
   const version = state.boardRankingsRenderVersion = (state.boardRankingsRenderVersion || 0) + 1;
   const viewerId = state.user?.id;
   const setupVersion = state.sessionSetupVersion;
   const selected = boardLeaderboardViews().some(([id]) => id === state.boardLeaderboardView) ? state.boardLeaderboardView : "weekly";
   state.boardLeaderboardView = selected;
-  const current = () => panel.isConnected && state.view === "board" && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.boardRankingsRenderVersion === version;
+  const current = () => panel.isConnected && inView() && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.boardRankingsRenderVersion === version;
   const content = panel.querySelector("[data-board-ranking-content]");
   content.setAttribute("aria-labelledby", `board-tab-${selected}`);
   panel.querySelectorAll("[data-board-view]").forEach(button => {
@@ -8865,11 +8874,24 @@ async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
     button.tabIndex = active ? 0 : -1;
   });
   if (selected === "weekly" || selected === "allTime") {
+    if (parentHome && options.jkcUnavailable) {
+      content.removeAttribute("aria-busy");
+      content.innerHTML = `<div class="uci-ranking-error" role="status"><strong>JKC scores couldn’t load</strong><p>Try again when your connection is ready. UCI rankings are still available.</p><button type="button" class="secondary-btn" data-jkc-retry>Retry JKC scores</button></div>`;
+      content.querySelector("[data-jkc-retry]").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        if (!current() || button.disabled) return;
+        button.disabled = true; button.textContent = "Loading scores…";
+        try { await options.retryJkc(); }
+        catch (_) { /* Keep the error and retry available if another Home section fails. */ }
+        finally { if (button.isConnected) { button.disabled = false; button.textContent = "Retry JKC scores"; } }
+      });
+      return;
+    }
     const allTime = selected === "allTime";
     const pointsKey = allTime ? "all_time_points" : "weekly_points";
     const rows = leaderboardWithBenchmark(allTime ? [...rawLeaderboard].sort((a, b) => Number(b.all_time_points || 0) - Number(a.all_time_points || 0) || String(a.display_name || "").localeCompare(String(b.display_name || ""))) : rawLeaderboard, pointsKey);
     content.removeAttribute("aria-busy");
-    content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${allTime ? "JKC all-time rankings" : "JKC weekly rankings"}</div><div class="panel-meta">${allTime ? "Total points since joining" : "Resets Sunday evening in each rider's country"}</div></div><div class="panel-meta">${rows.length} riders</div></div><div class="board-uci-status" data-board-uci-status role="status"></div><div class="leaderboard">${compactLeaderboardHtml(rows, pointsKey)}</div>`;
+    content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${allTime ? "JKC all-time rankings" : "JKC weekly rankings"}</div><div class="panel-meta">${allTime ? "Total points since joining" : "Resets Sunday evening in each rider's country"}</div></div><div class="panel-meta">${rows.length} riders</div></div><div class="board-uci-status" data-board-uci-status role="status"></div><div class="leaderboard">${compactLeaderboardHtml(rows, pointsKey, { readOnly: parentHome, childId })}</div>`;
     content.querySelectorAll("[data-public-athlete]").forEach(button => button.addEventListener("click", openPublicAthleteProfile));
     void loadJkcBoardUciRanks(panel, rows, current, { force });
     return;
@@ -8899,7 +8921,7 @@ async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
       const status = panel.querySelector("[data-uci-members-status]");
       if (result.failed) {
         status.innerHTML = '<span>JKC rider highlights couldn’t load.</span><button type="button" class="uci-refresh-btn" data-board-uci-retry>Retry JKC highlights</button>';
-        status.querySelector("[data-board-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
+        status.querySelector("[data-board-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { ...options, force: true }); });
         return;
       }
       members = boardUciMembers(rawLeaderboard, result.links, snapshot);
@@ -8916,23 +8938,24 @@ async function renderBoardRankings(rawLeaderboard, { force = false } = {}) {
       state.boardUciLimit = (state.boardUciLimit || 50) + 50;
       updateBoardUciRows(panel, category, members);
     });
-    panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
+    panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { ...options, force: true }); });
   } catch (error) {
     if (!current()) return;
     content.removeAttribute("aria-busy");
     content.innerHTML = `<div class="panel-head board-rankings-head"><div><div class="panel-title">${title}</div><div class="panel-meta">BMX Freestyle Park · Elite</div></div></div><div class="uci-ranking-error" role="status"><strong>Rankings couldn’t load</strong><p>Check your connection and try again. JKC rankings are still available.</p><div class="actions"><button type="button" class="secondary-btn" data-uci-retry>Try again</button><a class="uci-source-link" href="${escapeHtml(boardUciSourceUrl())}" target="_blank" rel="noopener noreferrer">Open official UCI rankings ↗</a></div></div>`;
-    panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { force: true }); });
+    panel.querySelector("[data-uci-retry]").addEventListener("click", () => { void renderBoardRankings(rawLeaderboard, { ...options, force: true }); });
   }
 }
 
-function bindBoardRankings(rawLeaderboard) {
-  const panel = document.querySelector("[data-board-rankings]");
+function bindBoardRankings(rawLeaderboard, options = {}) {
+  const panel = document.querySelector(options.parentHome ? "[data-parent-leaderboards]" : "[data-board-rankings]");
+  if (!panel) return;
   const select = button => {
     if (!button || button.dataset.boardView === state.boardLeaderboardView) return;
     state.boardLeaderboardView = button.dataset.boardView;
     state.boardUciSearch = "";
     state.boardUciLimit = 50;
-    void renderBoardRankings(rawLeaderboard);
+    void renderBoardRankings(rawLeaderboard, options);
   };
   const tabs = [...panel.querySelectorAll("[data-board-view]")];
   tabs.forEach((button, index) => {
@@ -8945,7 +8968,7 @@ function bindBoardRankings(rawLeaderboard) {
       select(tabs[next]);
     });
   });
-  void renderBoardRankings(rawLeaderboard);
+  void renderBoardRankings(rawLeaderboard, options);
 }
 
 async function renderBoard() {

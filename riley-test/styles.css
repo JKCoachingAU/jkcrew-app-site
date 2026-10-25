@@ -9897,6 +9897,21 @@ html[data-theme="light"] .parent-shell textarea {
 .parent-events-home-cta b { overflow: hidden; color: var(--muted); font: 500 0.76rem/1.3 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
 .parent-events-home-cta > i { color: var(--yellow); font: 900 1.4rem var(--display); font-style: normal; }
 
+.parent-home-leaderboards { margin-bottom: 20px; scroll-margin-top: 160px; }
+.parent-home-leaderboards .board-view-toggle button { scroll-margin-top: 160px; }
+.parent-home-leaderboards .leader-row { cursor: default; }
+.parent-shell .parent-home-leaderboards .leader-row.me {
+  border-color: var(--parent-blue);
+  background: color-mix(in srgb, var(--parent-blue) 9%, var(--surface-2));
+}
+.parent-home-leaderboards [data-uci-rows] {
+  display: block;
+  max-height: min(60vh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
 .parent-home-grid,
 .parent-coaching-grid,
 .parent-more-grid {
