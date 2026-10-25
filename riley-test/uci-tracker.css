@@ -1,6 +1,6 @@
 /* Scoped competition tracker colours remain readable inside either app shell. */
-.uci-tracker{--ut-text:#eef5f6;--ut-muted:#a9bdc5;--ut-bg:#0c171c;--ut-panel:#122128;--ut-line:#31474f;--ut-accent:#44e4cf;--ut-purple:#bf9bff;--ut-warning:#f8d468;--ut-danger:#ff9ca7;max-width:1320px;margin:0 auto;min-width:0;padding-bottom:36px;color:var(--ut-text);font-family:var(--body,Arial,sans-serif)}
-html[data-theme=light] .uci-tracker{--ut-text:#142126;--ut-muted:#4c616b;--ut-bg:#fffdf8;--ut-panel:#f0f5f4;--ut-line:#b9cbd0;--ut-accent:#006e64;--ut-purple:#6741a8;--ut-warning:#765807;--ut-danger:#a63144}
+.uci-tracker{--ut-text:#f0f3f8;--ut-muted:#adb6c5;--ut-bg:#10141b;--ut-panel:#181e29;--ut-line:#343e4f;--ut-accent:#44e4cf;--ut-blue:#9dbdff;--ut-purple:#bf9bff;--ut-warning:#f8d468;--ut-danger:#ff9ca7;max-width:1320px;margin:0 auto;min-width:0;padding-bottom:36px;color:var(--ut-text);font-family:var(--body,Arial,sans-serif)}
+html[data-theme=light] .uci-tracker{--ut-text:#18212e;--ut-muted:#505f73;--ut-bg:#fffdf8;--ut-panel:#f0f2f7;--ut-line:#bcc5d2;--ut-accent:#006e64;--ut-blue:#2c5599;--ut-purple:#6741a8;--ut-warning:#765807;--ut-danger:#a63144}
 .uci-tracker *{box-sizing:border-box}
 .uci-tracker h1,.uci-tracker h2,.uci-tracker h3,.uci-tracker p{color:inherit}
 .uci-tracker h2{font:800 29px/1.15 var(--display,Arial,sans-serif);margin:0}
@@ -9,27 +9,27 @@ html[data-theme=light] .uci-tracker{--ut-text:#142126;--ut-muted:#4c616b;--ut-bg
 .uci-tracker summary,.uci-tracker button,.uci-tracker a,.uci-tracker select,.uci-tracker input,.uci-tracker textarea{touch-action:manipulation}
 .uci-tracker button,.uci-tracker input,.uci-tracker select,.uci-tracker textarea{font-family:var(--body,Arial,sans-serif)}
 .uci-tracker summary:focus-visible,.uci-tracker button:focus-visible,.uci-tracker a:focus-visible,.uci-tracker input:focus-visible,.uci-tracker textarea:focus-visible,.uci-tracker select:focus-visible{outline:2px solid var(--ut-accent);outline-offset:3px}
-.uci-tracker a{color:var(--ut-accent);text-underline-offset:4px;overflow-wrap:anywhere;font-size:13px;min-height:44px;display:inline-flex;align-items:center;gap:6px}
+.uci-tracker a{color:var(--ut-blue);text-underline-offset:4px;overflow-wrap:anywhere;font-size:13px;min-height:44px;display:inline-flex;align-items:center;gap:6px}
 .uci-tracker button:disabled{cursor:default;opacity:.55}
 .uci-tracker-heading{padding:0 0 24px}
 .uci-tracker-heading>.uci-tracker-link{margin:0 0 15px;padding-left:0}
-.uci-tracker-eyebrow{color:var(--ut-accent);font:600 11px/1.45 var(--mono,monospace);letter-spacing:.14em;text-transform:uppercase}
+.uci-tracker-eyebrow{color:var(--ut-muted);font:600 11px/1.45 var(--mono,monospace);letter-spacing:.14em;text-transform:uppercase}
 .uci-tracker-heading h1{font:900 italic clamp(44px,6vw,78px)/1 var(--display,Arial,sans-serif);text-transform:uppercase;letter-spacing:-.03em;margin:10px 0 14px}
 .uci-tracker-heading h1 span{color:var(--ut-accent)}
 .uci-tracker-heading p{color:var(--ut-muted);margin:0;font-size:16px}
-.uci-tracker-qualification{padding:0;border:1px solid var(--ut-line);border-top:3px solid var(--ut-accent);background:linear-gradient(115deg,color-mix(in srgb,var(--ut-accent) 7%,var(--ut-bg)),color-mix(in srgb,var(--ut-purple) 7%,var(--ut-bg)));border-radius:16px;margin-bottom:24px}
+.uci-tracker-qualification{padding:0;border:1px solid var(--ut-line);border-top:3px solid var(--ut-purple);background:linear-gradient(115deg,var(--ut-bg),color-mix(in srgb,var(--ut-purple) 5%,var(--ut-bg)));border-radius:16px;margin-bottom:24px}
 .uci-tracker-qualification>summary{display:flex;align-items:center;gap:14px;min-height:64px;padding:12px 18px;cursor:pointer;list-style:none;border-radius:14px;color:var(--ut-text)}
 .uci-tracker-qualification>summary::-webkit-details-marker{display:none}
-.uci-tracker-chevron{margin-left:auto;font-size:24px;line-height:1;color:var(--ut-accent);flex-shrink:0}
+.uci-tracker-chevron{margin-left:auto;font-size:24px;line-height:1;color:var(--ut-muted);flex-shrink:0}
 .uci-tracker-qualification[open] .uci-tracker-chevron{transform:rotate(180deg)}
 .uci-tracker-qualification-body{padding:0 20px 18px}
 .uci-tracker-qualification strong{font-size:16px;line-height:1.4}
 .uci-tracker-qualification p{margin:6px 0 3px;font-size:14px;color:var(--ut-muted);max-width:960px}
-.uci-tracker-la-mark{font:900 italic 29px/1 var(--display,Arial,sans-serif);width:49px;height:49px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--ut-accent) 35%,var(--ut-line));border-radius:11px;color:var(--ut-accent);flex-shrink:0}
+.uci-tracker-la-mark{font:900 italic 29px/1 var(--display,Arial,sans-serif);width:49px;height:49px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--ut-purple) 35%,var(--ut-line));border-radius:11px;color:var(--ut-purple);flex-shrink:0}
 .uci-tracker-button,.uci-tracker-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;max-width:100%;border:1px solid var(--ut-line);border-radius:9px;padding:11px 15px;font-size:14px;line-height:1.4;font-weight:700;color:var(--ut-text);background:var(--ut-panel);cursor:pointer;white-space:normal;text-align:center}
 .uci-tracker-button.is-primary{color:#07271f;background:linear-gradient(110deg,#45e6ce,#23c5ce);border-color:#45d4c6}
 .uci-tracker-button:hover:not(:disabled){border-color:var(--ut-accent)}
-.uci-tracker-link{color:var(--ut-accent);background:transparent;border-color:transparent;padding:9px 6px;font-size:13px}
+.uci-tracker-link{color:var(--ut-blue);background:transparent;border-color:transparent;padding:9px 6px;font-size:13px}
 .uci-tracker-toolbar{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin:0 0 18px}
 .uci-tracker-toolbar>label{max-width:460px;flex:1}
 .uci-tracker label{font:600 11px/1.5 var(--mono,monospace);letter-spacing:.04em;display:flex;flex-direction:column;gap:8px;color:var(--ut-muted);min-width:0}
@@ -40,7 +40,7 @@ html[data-theme=light] .uci-tracker select,html[data-theme=light] .uci-tracker i
 .uci-tracker small{display:block;color:var(--ut-muted);font:400 12px/1.55 var(--body,Arial,sans-serif);letter-spacing:normal}
 .uci-tracker-tabs{display:flex;gap:5px;padding:5px;background:var(--ut-bg);border:1px solid var(--ut-line);border-radius:12px;overflow-x:auto;scrollbar-width:thin}
 .uci-tracker-tabs button{flex:1;min-height:46px;background:transparent;color:var(--ut-muted);border:1px solid transparent;border-radius:8px;padding:10px 15px;font-size:14px;line-height:1.4;font-weight:700;white-space:nowrap;cursor:pointer}
-.uci-tracker-tabs button[aria-current=page]{background:color-mix(in srgb,var(--ut-accent) 10%,var(--ut-panel));border-color:color-mix(in srgb,var(--ut-accent) 45%,var(--ut-line));color:var(--ut-accent)}
+.uci-tracker-tabs button[aria-current=page]{background:color-mix(in srgb,var(--ut-blue) 10%,var(--ut-panel));border-color:color-mix(in srgb,var(--ut-blue) 45%,var(--ut-line));color:var(--ut-blue)}
 .uci-tracker-list-head{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:28px 0 20px}
 .uci-tracker-list-head h2{margin-top:6px}
 .uci-tracker-list-head p{font-size:14px;color:var(--ut-muted);margin:8px 0 0;max-width:670px}
@@ -48,14 +48,14 @@ html[data-theme=light] .uci-tracker select,html[data-theme=light] .uci-tracker i
 .uci-tracker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}
 .uci-tracker-card{border:1px solid var(--ut-line);border-radius:16px;background:var(--ut-bg);padding:22px;min-width:0;overflow-wrap:anywhere}
 .uci-tracker-badge{border:1px solid var(--ut-line);border-radius:5px;padding:5px 8px;background:var(--ut-panel);color:var(--ut-muted);font:600 10px/1.4 var(--mono,monospace);text-transform:uppercase;letter-spacing:.03em}
-.uci-tracker-badge.is-confirmed{color:var(--ut-accent);background:color-mix(in srgb,var(--ut-accent) 8%,var(--ut-bg));border-color:color-mix(in srgb,var(--ut-accent) 40%,var(--ut-line))}
+.uci-tracker-badge.is-confirmed{color:var(--ut-blue);background:color-mix(in srgb,var(--ut-blue) 6%,var(--ut-bg));border-color:color-mix(in srgb,var(--ut-blue) 25%,var(--ut-line))}
 .uci-tracker-badge.is-purple{color:var(--ut-purple);background:color-mix(in srgb,var(--ut-purple) 8%,var(--ut-bg))}
 .uci-tracker-badge.is-warning{color:var(--ut-warning);background:color-mix(in srgb,var(--ut-warning) 8%,var(--ut-bg))}
 .uci-tracker-badge.is-danger{color:var(--ut-danger);background:color-mix(in srgb,var(--ut-danger) 8%,var(--ut-bg))}
 .uci-tracker .uci-tracker-meta{margin:4px 0;font-size:13px;color:var(--ut-muted)}
 .uci-tracker-checks{display:flex;gap:8px;flex-wrap:wrap;margin:21px 0 12px}
 .uci-tracker-checks>span{font-size:12px;color:var(--ut-muted);border:1px solid var(--ut-line);border-radius:6px;padding:6px 8px}
-.uci-tracker-checks>span.is-done{color:var(--ut-accent);background:color-mix(in srgb,var(--ut-accent) 7%,var(--ut-bg))}
+.uci-tracker-checks>span.is-done{color:var(--ut-blue);background:color-mix(in srgb,var(--ut-blue) 7%,var(--ut-bg))}
 .uci-tracker .uci-tracker-deadline{font-size:13px;font-weight:600;margin:12px 0}
 .uci-tracker-result-numbers{display:flex;gap:32px;margin:20px 0 10px}
 .uci-tracker-result-numbers dt{font:600 10px/1.5 var(--mono,monospace);color:var(--ut-muted);letter-spacing:.05em;text-transform:uppercase}
@@ -95,7 +95,7 @@ html[data-theme=light] .uci-tracker select,html[data-theme=light] .uci-tracker i
 .uci-tracker-checklist{display:grid;gap:10px;padding:15px;background:var(--ut-panel);border:1px solid var(--ut-line);border-radius:10px}
 .uci-tracker-checklist legend{font-size:12px;color:var(--ut-muted);padding:0 0 3px}
 .uci-tracker-checklist label{display:flex;flex-direction:row;align-items:center;gap:12px;min-height:44px;font:500 14px/1.4 var(--body,Arial,sans-serif);letter-spacing:normal;color:var(--ut-text);cursor:pointer}
-.uci-tracker-checklist input[type=checkbox]{width:23px;height:23px;min-height:23px;flex-shrink:0;margin:0;accent-color:var(--ut-accent)}
+.uci-tracker-checklist input[type=checkbox]{width:23px;height:23px;min-height:23px;flex-shrink:0;margin:0;accent-color:var(--ut-blue)}
 .uci-tracker-offset{font-size:10px!important}
 .uci-tracker-offset input{max-width:180px}
 .uci-tracker-dialog footer{position:sticky;bottom:0;border-top:1px solid var(--ut-line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--ut-bg);z-index:2}
@@ -121,7 +121,7 @@ html[data-theme=light] .uci-tracker select,html[data-theme=light] .uci-tracker i
 .uci-tracker-official-events article>div:first-child>strong{font-size:15px;display:block;line-height:1.4}
 .uci-tracker-official-events article>div:first-child>span:not(.uci-tracker-badge){font-size:12px;color:var(--ut-muted);display:block;margin:6px 0 8px;line-height:1.45}
 .uci-tracker-official-points{display:flex;flex-direction:column;gap:4px;text-align:right;flex-shrink:0}
-.uci-tracker-official-points strong{font:800 25px/1 var(--display,Arial,sans-serif);color:var(--ut-accent)}
+.uci-tracker-official-points strong{font:800 25px/1 var(--display,Arial,sans-serif);color:var(--ut-text)}
 .uci-tracker-official-points span{font:400 10px/1.4 var(--mono,monospace);color:var(--ut-muted)}
 @media(max-width:430px){.uci-tracker-breakdown{padding:17px}.uci-tracker-official-events article{gap:12px}.uci-tracker-official-events article>div:first-child>strong{font-size:14px}}
 .uci-tracker-ledger-heading{margin:24px 0 18px}
@@ -129,5 +129,17 @@ html[data-theme=light] .uci-tracker select,html[data-theme=light] .uci-tracker i
 .uci-tracker-ledger-heading p{font-size:13px;color:var(--ut-muted);margin:0}
 .uci-tracker-tabs button{min-width:0;white-space:normal}
 /* The coach shell keeps a dark backdrop in some light-theme routes. Give the tracker its own readable canvas. */
-html[data-theme=light] .uci-tracker{background:#f4f7f5;border:1px solid var(--ut-line);border-radius:18px;padding:24px}
+html[data-theme=light] .uci-tracker{background:#f4f5f8;border:1px solid var(--ut-line);border-radius:18px;padding:24px}
 @media(max-width:430px){html[data-theme=light] .uci-tracker{padding:15px;border-radius:14px}}
+
+/* Keep the published total beside the action, separate from manually recorded results. */
+.uci-tracker-list-head.is-ledger{flex-direction:column;align-items:stretch;gap:20px}
+.uci-tracker-ledger-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.uci-tracker-ledger-actions>.uci-tracker-button{flex-shrink:0}
+.uci-tracker-total{display:grid;justify-items:end;gap:4px;min-width:0;text-align:right}
+.uci-tracker-total>span{font:600 10px/1.4 var(--mono,monospace);text-transform:uppercase;letter-spacing:.05em;color:var(--ut-muted)}
+.uci-tracker-total>strong{font:800 36px/1 var(--display,Arial,sans-serif);color:var(--ut-text);font-variant-numeric:tabular-nums}
+.uci-tracker-total>small{font-size:11px;max-width:200px;line-height:1.4}
+.uci-tracker-official-events article>div:first-child>.uci-tracker-inclusion{display:flex;align-items:center;gap:5px;margin:7px 0 0;font-size:11px;line-height:1.4;color:var(--ut-muted)}
+.uci-tracker-inclusion.is-counted>span{color:var(--ut-blue)}
+@media(max-width:430px){.uci-tracker-ledger-actions{gap:12px}.uci-tracker-ledger-actions>.uci-tracker-button{font-size:13px;padding:10px 12px}.uci-tracker-total>strong{font-size:32px}.uci-tracker-total>small{font-size:10px}}
