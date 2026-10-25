@@ -54,6 +54,7 @@ const extract = name => {
         return snapshot;
       } };
       window.qaRender = async (uciId = '10000000001', displayName = 'My nickname') => {
+        state.la28CountdownMount?.destroy(); state.la28CountdownMount = null;
         state.view = 'home'; qa.generation++;
         const generation = qa.generation, userId = state.user.id;
         state.profile = { id: userId, role: 'athlete', display_name: displayName, uci_id: uciId };
@@ -62,11 +63,12 @@ const extract = name => {
         return loadAthleteUciHome(view, state.profile, () => state.view === 'home' && state.user.id === userId && qa.generation === generation && document.querySelector('#view') === view);
       };
     });
-    await page.addScriptTag({ content: ['riderHasUciPoints', 'boardUciSourceUrl', 'boardUciDate', 'boardUciSearchText', 'athleteUciCardHtml', 'loadAthleteUciHome', 'uciProfileLinkHtml', 'bindUciProfileLink', 'invalidateLeaderboardUciLinks', 'saveUciProfileLink'].map(extract).join('\n') });
+    await page.addScriptTag({ content: ['riderHasUciPoints', 'boardUciSourceUrl', 'boardUciDate', 'boardUciSearchText', 'la28CountdownParts', 'la28CountdownHtml', 'mountLa28Countdown', 'athleteUciCardHtml', 'loadAthleteUciHome', 'uciProfileLinkHtml', 'bindUciProfileLink', 'invalidateLeaderboardUciLinks', 'saveUciProfileLink'].map(extract).join('\n') });
 
     eq(await page.evaluate(() => athleteUciCardHtml({ display_name: 'KINDERMANN Lars' }, qaSnapshot)), '', 'A familiar display name alone never fabricates a UCI identity');
     await page.evaluate(() => qaRender(''));
     eq(await page.locator('.home-uci-card').count(), 0, 'Unlinked riders keep their current homepage');
+    eq(await page.locator('[data-la28-countdown]').count(), 0, 'Unlinked riders have no LA28 countdown');
     eq(await page.evaluate(() => qa.calls.length), 0, 'Unlinked riders make no ranking download');
 
     await page.evaluate(() => qaRender());
@@ -76,17 +78,22 @@ const extract = name => {
     ok(/Men/.test(text), 'Home identifies the official Men category');
     ok(text.includes('20 Oct 2026'), 'Official ranking date is visible');
     ok(await page.locator('[data-home-uci-tracker]').isVisible(), 'Positive official points show Road to LA28 shortcut');
+    ok(await page.locator('[data-la28-countdown] [role="timer"]').isVisible(), 'Positive official Men points show the live LA28 countdown');
+    eq(await page.locator('[data-la28-value]').count(), 3, 'Home countdown displays days, hours and minutes');
+    eq(await page.evaluate(() => qa.calls.length), 1, 'Countdown reuses the Home ranking result without another download');
     await page.locator('[data-home-uci-board]').click();
     eq(await page.evaluate(() => [qa.navigations.at(-1), state.boardLeaderboardView, state.boardUciSearch]), ['board', 'uciMen', 'KINDERMANN Lars'], 'Ranking opens the matching leaderboard and rider');
 
     await page.evaluate(() => qaRender('10000000003', 'Ali'));
     text = await page.locator('.home-uci-card').innerText();
     ok(text.includes('#18') && /Women/.test(text), 'A linked nickname resolves to the exact Women UCI identity');
+    ok(await page.locator('[data-la28-countdown] [role="timer"]').isVisible(), 'Positive official Women points also show the countdown');
     await page.locator('[data-home-uci-board]').click();
     eq(await page.evaluate(() => [state.boardLeaderboardView, state.boardUciSearch]), ['uciWomen', 'NORRIS Alirah'], 'Women card links to the correct list');
 
     await page.evaluate(() => { qaSnapshot.categories.men.rows[1].points = 0; return qaRender('10000000002'); });
     eq(await page.locator('[data-home-uci-tracker]').count(), 0, 'Zero official points do not show the Home tracker shortcut');
+    eq(await page.locator('[data-la28-countdown]').count(), 0, 'Zero official points do not show a countdown');
     ok(await page.locator('[data-home-uci-board]').isVisible(), 'World rankings remain accessible for zero-point riders');
     await page.evaluate(() => { qaSnapshot.categories.men.rows[1].points = 217; });
 
@@ -95,10 +102,18 @@ const extract = name => {
     ok(!text.includes('#13') && !text.includes('#0'), 'An absent explicit ID never falls back to a matching name or rank zero');
     ok(/not|unavailable|rank/i.test(text), 'Absent ID has an understandable state');
     eq(await page.locator('[data-home-uci-tracker]').count(), 0, 'An unmatched ID does not show the Home tracker shortcut');
+    eq(await page.locator('[data-la28-countdown]').count(), 0, 'An unmatched UCI identity does not show a countdown');
+    for (const role of ['parent', 'coach']) eq(await page.evaluate(role => athleteUciCardHtml({ role, uci_id: '10000000001' }, qaSnapshot).includes('data-la28-countdown'), role), false, role + ' cannot gain the athlete countdown through a linked UCI identity');
+    eq(await page.evaluate(() => {
+      const snapshot = structuredClone(qaSnapshot);
+      snapshot.categories.women.rows.push({ ...snapshot.categories.men.rows[0] });
+      return athleteUciCardHtml({ role: 'athlete', uci_id: '10000000001' }, snapshot).includes('data-la28-countdown');
+    }), false, 'An ambiguous official UCI identity does not show a countdown');
 
     await page.evaluate(() => { qa.stale = true; return qaRender(); });
     text = await page.locator('.home-uci-card').innerText();
     ok(text.includes('#13') && /last available|could not|couldn.t|cached|confirm|older/i.test(text), 'Cached rank remains visible with an update warning');
+    ok(await page.locator('[data-la28-countdown] [role="timer"]').isVisible(), 'A verified stale positive ranking retains the countdown');
     await page.evaluate(() => { qa.stale = false; });
     await page.locator('[data-home-uci-retry]').click();
     await page.waitForFunction(() => qa.calls.at(-1)?.force === true);
@@ -107,6 +122,7 @@ const extract = name => {
     await page.evaluate(() => { qa.fail = true; return qaRender(); });
     ok(await page.locator('[data-home-uci-retry]').isVisible(), 'Feed failure offers an explicit retry');
     ok(!(await page.locator('#athlete-home-uci').innerText()).includes('#0'), 'Feed failure never claims zero world ranking');
+    eq(await page.locator('[data-la28-countdown]').count(), 0, 'Feed failure without a verified ranking cannot fabricate countdown eligibility');
     const beforeRetry = await page.evaluate(() => qa.calls.length);
     await page.evaluate(() => {
       qa.fail = false; qa.hold = true;
@@ -258,6 +274,6 @@ const extract = name => {
     eq(await page.locator('[data-uci-choice]').count(), 0, 'Late search cannot re-populate results after the rider clears the query');
 
     eq(errors, [], 'No browser exceptions');
-    console.log('PASS: ' + checks + ' UCI homepage/profile checks (ID identity, categories, points/date, no-ID loading, stale/error recovery, retry/save deduplication, responsive themes, scoped profile writes and account/view races).');
+    console.log('PASS: ' + checks + ' UCI homepage/profile checks (ID identity, categories, points/date, eligible LA28 countdown, no extra downloads, stale/error recovery, retry/save deduplication, responsive themes, scoped profile writes and account/view races).');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

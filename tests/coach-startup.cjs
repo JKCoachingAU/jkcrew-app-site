@@ -17,7 +17,7 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  const state={user:{id:'coach'},profile:{role:'coach'},view:'command'};window.events=[];
  window.queueOptions=null;window.queueMounts=0;window.queueDestroys=0;window.invalidated=[];const cacheClear=key=>invalidated.push(key);
  window.JKCrewOtherThingsLanded={mountCoachQueue(options){queueOptions=options;queueMounts++;options.element.innerHTML='<section><h2>Other Things Landed</h2></section>';return{destroy(){queueDestroys++;options.element.replaceChildren();}};}};
- const getCoachRoster=async options=>{events.push('roster');return [{id:'rider',display_name:'Rider'}]};
+ const getCoachRoster=async options=>{events.push('roster');if(window.holdRoster)await new Promise(resolve=>window.releaseRoster=resolve);return [{id:'rider',display_name:'Rider'}]};
  const getCoachCommandData=async (roster,options)=>{events.push('command');return {}};
  let resolveRanking,rejectRanking;const getLeaderboard=()=>new Promise((resolve,reject)=>{resolveRanking=resolve;rejectRanking=reject});
  const getAllParkKings=async()=>[],getSharedUpcomingEventData=async()=>({events:[],attendance:[]});
@@ -27,12 +27,17 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  const navigate=async view=>{state.view=view;document.querySelector('#view').innerHTML='<h1>'+view+'</h1>'};
  const commandAccordionSection=()=>'',coachRunReviewQueueHtml=()=>'',coachListRequestsHtml=()=>'',coachTrickRequestsHtml=()=>'',coachEventRunPlansHtml=()=>'',coachCalendarForm=()=>'',weeklyNotificationControlsHtml=()=>'',commandMetricCard=()=>'',highPriorityTodoHtml=()=>'',coachBroadcastComposerHtml=()=>'',coachSharedEventsSummaryHtml=()=>'',commandParkKingsAccordionHtml=()=>'',commandHubAccordion=()=>'';
  ${[...extract('renderCoachCommand').matchAll(/addEventListener\("[^"]+", (\w+)\)/g)].map(m=>m[1]).filter((n,i,a)=>a.indexOf(n)===i).map(n=>'const '+n+'=()=>{};').join('\n')}
+ ${['la28CountdownParts','la28CountdownHtml','mountLa28Countdown'].map(extract).join('\n')}
  ${extract('loadCommandUciLeaderboard')}
  ${extract('renderCoachCommand')}
  window.start=async()=>{await renderCoachCommand();window.ready=true;};start();
  `});
  await page.waitForFunction(()=>window.ready);assert(await page.getByRole('heading',{name:'Coach HQ'}).isVisible());assert(await page.getByRole('button',{name:/Start Coaching/}).isVisible());assert(await page.locator('[data-command-leaderboard]').isVisible());
  assert(await page.getByRole('heading',{name:'Other Things Landed'}).isVisible(),'Coach review queue is visible without waiting for rankings');
+ assert(await page.locator('[data-la28-countdown] [role="timer"]').isVisible(),'Coach countdown is visible while weekly rankings are stalled and the roster has no linked UCI IDs');
+ assert.equal(await page.locator('[data-la28-value]').count(),3,'Coach countdown shows days, hours and minutes');
+ assert.equal(await page.locator('[role="timer"]').getAttribute('aria-live'),'off','Coach countdown avoids repeated live announcements');
+ assert.deepEqual(await page.evaluate(()=>events),['roster','command'],'Countdown adds no roster or dashboard requests');
  assert.deepEqual(await page.evaluate(()=>queueOptions.roster.map(r=>r.id)),['rider'],'Queue receives the current coach roster');
  assert.equal(await page.evaluate(()=>queueOptions.isCurrent()),true);
  await page.evaluate(()=>queueOptions.onChanged({kind:'refresh',pendingCount:1}));assert.deepEqual(await page.evaluate(()=>invalidated),[],'Queue polls do not redraw rankings or clear caches');
@@ -44,6 +49,20 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  // Late rankings cannot overwrite another tab or another account.
  await page.evaluate(async()=>{state.view='command';await renderCoachCommand();await navigate('contests');resolveRanking([]);});assert.equal(await page.locator('#view').innerText(),'contests');assert.equal(await page.evaluate(()=>queueOptions.isCurrent()),false,'Queue rejects late updates after navigation');
  await page.evaluate(async()=>{state.view='command';await renderCoachCommand();state.user.id='other';document.querySelector('#view').textContent='Other account';resolveRanking([]);});assert.equal(await page.locator('#view').innerText(),'Other account');assert.equal(await page.evaluate(()=>queueOptions.isCurrent()),false,'Queue rejects updates after account switch');assert(await page.evaluate(()=>queueDestroys>=2),'Replacing HQ destroys its previous queue');
+ // A late coach callback must not destroy the current Home countdown, either on entry or after an await.
+ assert.deepEqual(await page.evaluate(async()=>{
+   state.la28CountdownMount?.destroy();state.view='home';document.querySelector('#view').textContent='Current Home';
+   let destroys=0;const activeCountdown={destroy(){destroys++}};state.la28CountdownMount=activeCountdown;
+   await renderCoachCommand();
+   return {destroys,retained:state.la28CountdownMount===activeCountdown,text:document.querySelector('#view').textContent};
+ }),{destroys:0,retained:true,text:'Current Home'},'Coach render invoked after navigation preserves the Home countdown');
+ assert.deepEqual(await page.evaluate(async()=>{
+   state.view='command';window.holdRoster=true;const pending=renderCoachCommand();
+   state.view='home';document.querySelector('#view').textContent='New Home';
+   let destroys=0;const activeCountdown={destroy(){destroys++}};state.la28CountdownMount=activeCountdown;
+   window.holdRoster=false;releaseRoster();await pending;
+   return {destroys,retained:state.la28CountdownMount===activeCountdown,text:document.querySelector('#view').textContent};
+ }),{destroys:0,retained:true,text:'New Home'},'Coach response arriving after navigation preserves the new Home countdown');
  assert.deepEqual(errors,[]);await browser.close();
- console.log('PASS: HQ skips roster photos and five training/history requests; full data caches remain separate; dashboard becomes usable with rankings stalled; deferred ranking controls, visible landing reviews, post-review score refresh and stale-account/tab protection work.');
+ console.log('PASS: HQ skips roster photos and five training/history requests; full data caches remain separate; dashboard and LA28 countdown become usable with rankings stalled; deferred ranking controls, visible landing reviews, post-review score refresh and stale-account/tab protection work.');
 })().catch(e=>{console.error(e);process.exit(1)});

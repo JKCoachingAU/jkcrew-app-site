@@ -16,7 +16,9 @@ const names = [
   'refreshRiderFeatureAccess', 'closeRestrictedRiderFeatures', 'startRiderFeatureAccessWatch',
   'guardRiderFeatureInteraction', 'renderRestrictedRiderHome', 'riderAccessToggleHtml',
   'toggleRiderFeatureAccess', 'renderCrew', 'renderShell', 'navigate', 'resetPageExpansions',
+  'riderHasUciPoints', 'primaryNavButtonHtml', 'updateRiderUciNavigation', 'loadRiderUciNavigation',
   'signOutCurrentDevice', 'athleteHomeSectionStatus', 'getAthleteHomeVerifiedLeaderboard', 'athleteUciCardHtml', 'loadAthleteUciHome', 'renderAthleteHome',
+  'la28CountdownParts', 'la28CountdownHtml', 'mountLa28Countdown',
   'shredZoneIcon', 'shredZoneTeaserHtml', 'closeJkcYard',
 ];
 const accessConstant = app.match(/^const RIDER_ACCESS_MESSAGE = .*;$/m)?.[0];

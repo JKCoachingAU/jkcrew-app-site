@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.179";
+const RELEASE_VERSION = "2.14.180";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -37,6 +37,7 @@ const state = {
   view: "home",
   activeTraining: null,
   activeBattles: null,
+  la28CountdownMount: null,
   riderChallengesRenderVersion: 0,
   challengesRefreshPending: false,
   attempts: [],
@@ -677,7 +678,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.179" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.180" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2615,6 +2616,8 @@ async function navigate(view, options = {}) {
   state.uciScheduleMount = null;
   state.uciTrackerMount?.destroy();
   state.uciTrackerMount = null;
+  state.la28CountdownMount?.destroy();
+  state.la28CountdownMount = null;
   state.riderChallengesRenderVersion = (state.riderChallengesRenderVersion || 0) + 1;
   clearInterval(state.timer);
   if (previousView === "bikeGarage" && view !== previousView && typeof JKCrewBikeGarage !== "undefined") JKCrewBikeGarage.destroy();
@@ -2740,6 +2743,8 @@ async function navigate(view, options = {}) {
 }
 
 function teardownRealtimeSync() {
+  state.la28CountdownMount?.destroy();
+  state.la28CountdownMount = null;
   state.uciScheduleMount?.destroy();
   state.uciScheduleMount = null;
   state.uciTrackerMount?.destroy();
@@ -7395,6 +7400,63 @@ async function getAthleteHomeVerifiedLeaderboard() {
   return data;
 }
 
+function la28CountdownParts(now = Date.now()) {
+  // Official LA28 opening: 14 July 2028 at 17:00 in Los Angeles (PDT, UTC−7).
+  // https://hospitality.la28.org/en/event-discipline/opening-ceremony
+  // Fixed venue-local instant: the rider's device timezone must not move the target.
+  const remaining = Math.max(0, Date.parse("2028-07-14T17:00:00-07:00") - now);
+  const totalMinutes = Math.floor(remaining / 60000);
+  return { days: Math.floor(totalMinutes / 1440), hours: Math.floor(totalMinutes / 60) % 24, minutes: totalMinutes % 60, started: remaining === 0 };
+}
+
+function la28CountdownHtml(now = Date.now()) {
+  const parts = la28CountdownParts(now);
+  return `<section class="la28-countdown" aria-label="Countdown to Los Angeles 2028">
+    <div class="la28-countdown-intro"><span class="la28-countdown-kicker">Road to LA28</span><strong data-la28-caption>${parts.started ? "LA28 countdown complete" : "Until the opening ceremony"}</strong><a class="la28-countdown-date" href="https://hospitality.la28.org/en/event-discipline/opening-ceremony" target="_blank" rel="noopener noreferrer" aria-label="Official LA28 opening ceremony schedule: 14 July 2028, 5 pm in Los Angeles">14 July 2028 · 5 pm Los Angeles <span aria-hidden="true">↗</span></a></div>
+    <div class="la28-countdown-clock" role="timer" aria-live="off" aria-label="${parts.days} days, ${parts.hours} hours, ${parts.minutes} minutes until the opening ceremony">${[["days", "Days"], ["hours", "Hours"], ["minutes", "Mins"]].map(([key, label]) => `<div class="la28-countdown-unit"><strong data-la28-value="${key}">${key === "days" ? parts[key] : String(parts[key]).padStart(2, "0")}</strong><span>${label}</span></div>`).join("")}</div>
+  </section>`;
+}
+
+function mountLa28Countdown(element, isCurrent = () => true) {
+  if (!element?.isConnected || !isCurrent()) return null;
+  let stopped = false;
+  let timer = null;
+  element.innerHTML = la28CountdownHtml();
+  const clock = element.querySelector('[role="timer"]');
+  const caption = element.querySelector("[data-la28-caption]");
+  const values = [...element.querySelectorAll("[data-la28-value]")];
+  const destroy = () => {
+    stopped = true;
+    clearTimeout(timer);
+    timer = null;
+    document.removeEventListener("visibilitychange", update);
+    window.removeEventListener("pageshow", update);
+  };
+  const update = () => {
+    clearTimeout(timer);
+    timer = null;
+    if (stopped) return;
+    if (!element.isConnected || !element.contains(clock) || !isCurrent()) { destroy(); return; }
+    if (document.hidden) return;
+    const now = Date.now();
+    const parts = la28CountdownParts(now);
+    values.forEach(value => {
+      const key = value.dataset.la28Value;
+      const text = key === "days" ? String(parts[key]) : String(parts[key]).padStart(2, "0");
+      if (value.textContent !== text) value.textContent = text;
+    });
+    caption.textContent = parts.started ? "LA28 countdown complete" : "Until the opening ceremony";
+    clock.setAttribute("aria-label", parts.started ? "LA28 countdown complete" : `${parts.days} days, ${parts.hours} hours, ${parts.minutes} minutes until the opening ceremony`);
+    if (parts.started) { destroy(); return; }
+    // One local update per minute; no polling, downloads, animation or training-timer reuse.
+    timer = setTimeout(update, 60000 - (now % 60000) + 20);
+  };
+  document.addEventListener("visibilitychange", update);
+  window.addEventListener("pageshow", update);
+  update();
+  return { destroy };
+}
+
 function athleteUciCardHtml(profile, snapshot = null, { loading = false, error = false } = {}) {
   if (!profile?.uci_id) return "";
   const match = window.JKCUciRankings?.findRider(snapshot, profile.uci_id);
@@ -7404,6 +7466,7 @@ function athleteUciCardHtml(profile, snapshot = null, { loading = false, error =
     <div class="home-uci-heading"><span class="eyebrow">UCI world ranking</span><span class="home-uci-discipline">BMX Freestyle Park</span></div>
     <div class="home-uci-body"><strong class="home-uci-rank">${match ? `#${escapeHtml(match.row.rank)}` : "—"}</strong><div class="home-uci-detail">${match ? `<strong>${category}’s Elite · ${points} UCI points</strong><span>${escapeHtml(match.row.name)}</span><small>Official ranking · <time datetime="${escapeHtml(match.category.rankingDate)}">${boardUciDate(match.category.rankingDate)}</time></small>` : `<strong>${loading ? "Loading your world ranking…" : error ? "World ranking unavailable" : "Not in the current rankings"}</strong><span>${loading ? "Your dashboard is ready to use." : error ? "Your saved rider link is safe. Try again." : "Your UCI rider link is saved. Check it in Profile if needed."}</span>`}</div></div>
     ${snapshot?.stale ? `<p class="home-uci-status" role="status">Last available rankings · latest update not confirmed.</p>` : ""}
+    ${riderHasUciPoints(profile, snapshot) ? '<div data-la28-countdown></div>' : ""}
     <div class="home-uci-actions">${match ? `<button class="home-uci-board" type="button" data-home-uci-board>View world rankings <span aria-hidden="true">↗</span></button>` : ""}${riderHasUciPoints(profile, snapshot) ? `<button class="home-uci-board" type="button" data-home-uci-tracker>Road to LA28 <span aria-hidden="true">→</span></button>` : ""}${error || snapshot?.stale ? `<button class="secondary-btn compact-btn" type="button" data-home-uci-retry>Try again</button>` : ""}</div>
   </section>`;
 }
@@ -7413,6 +7476,8 @@ async function loadAthleteUciHome(view, profile, isCurrent, { force = false } = 
   if (!host || !profile?.uci_id || !isCurrent()) return;
   const request = host.uciRequest = (host.uciRequest || 0) + 1;
   const current = () => isCurrent() && view.querySelector("#athlete-home-uci") === host && host.uciRequest === request;
+  state.la28CountdownMount?.destroy();
+  state.la28CountdownMount = null;
   host.innerHTML = athleteUciCardHtml(profile, null, { loading: true });
   const bindTracker = () => host.querySelector("[data-home-uci-tracker]")?.addEventListener("click", () => { if (current()) navigate("uciTracker"); });
   bindTracker();
@@ -7436,9 +7501,13 @@ async function loadAthleteUciHome(view, profile, isCurrent, { force = false } = 
     if (current()) void loadAthleteUciHome(view, profile, isCurrent, { force: true });
   });
   bindTracker();
+  state.la28CountdownMount = mountLa28Countdown(host.querySelector("[data-la28-countdown]"), current);
 }
 
 async function renderAthleteHome() {
+  if (state.view !== "home" || state.profile?.role !== "athlete") return;
+  state.la28CountdownMount?.destroy();
+  state.la28CountdownMount = null;
   if (riderRecoveryActive()) return renderRiderRecoveryHome();
   if (riderFeaturesDisabled() || riderFeatureAccessUnknown()) return renderRestrictedRiderHome();
   const renderVersion = ++state.athleteHomeRenderVersion;
@@ -12422,6 +12491,8 @@ async function renderCoachCommand() {
     getSharedUpcomingEventData(),
   ]), "Coach dashboard", 15000);
   if (!isCurrent()) return;
+  state.la28CountdownMount?.destroy();
+  state.la28CountdownMount = null;
   if (!roster.length) {
     state.coachOtherLandedQueue?.destroy();
     state.coachOtherLandedQueue = null;
@@ -12475,7 +12546,7 @@ async function renderCoachCommand() {
     <section class="panel command-uci-panel coach-tone-blue" data-command-uci aria-labelledby="command-uci-title">
       <div class="panel-head"><div><div class="eyebrow">BMX Freestyle Park · Your crew</div><h2 id="command-uci-title">UCI rider leaderboard</h2></div><span class="uci-jkc-mark" aria-label="JKC riders"><img src="icons/jkc-logo.png?v=2.11.77" width="22" height="22" alt="">JKC</span></div>
       <div data-command-uci-content></div>
-      <div class="uci-tracker-shortcut"><div><strong>Road to LA28</strong><span>Manage your riders’ entries, results and next actions.</span></div><button class="secondary-btn" type="button" data-view="uciTracker">Open tracker →</button></div>
+      <div class="command-la28-summary"><div data-la28-countdown></div><button class="secondary-btn compact-btn" type="button" data-view="uciTracker">Open Road to LA28 <span aria-hidden="true">→</span></button></div>
     </section>
     ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
     <section class="command-management-stack">
@@ -12497,6 +12568,7 @@ async function renderCoachCommand() {
     });
   };
   showRanking(leaderboardRequest);
+  state.la28CountdownMount = mountLa28Countdown(document.querySelector("[data-command-uci] [data-la28-countdown]"), isCurrent);
   void loadCommandUciLeaderboard(document.querySelector("[data-command-uci]"), roster, isCurrent);
   state.coachOtherLandedQueue?.destroy();
   const landedHost = document.querySelector("[data-command-other-landed]");

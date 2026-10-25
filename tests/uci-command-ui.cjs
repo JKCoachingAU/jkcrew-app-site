@@ -83,12 +83,15 @@ const ok = (actual, label) => { assert(actual, label); checks++; };
     window.qaRender = () => {
       state.view = 'command'; qa.generation++;
       const generation = qa.generation, userId = state.user.id, setupVersion = state.sessionSetupVersion;
+      state.la28CountdownMount?.destroy();
       document.querySelector('#view').innerHTML = panelHtml;
       const panel = document.querySelector('[data-command-uci]');
-      return loadCommandUciLeaderboard(panel, qaRoster, () => state.view === 'command' && state.user.id === userId && state.sessionSetupVersion === setupVersion && qa.generation === generation && panel.isConnected);
+      const isCurrent = () => state.view === 'command' && state.user.id === userId && state.sessionSetupVersion === setupVersion && qa.generation === generation && panel.isConnected;
+      state.la28CountdownMount = mountLa28Countdown(panel.querySelector('[data-la28-countdown]'), isCurrent);
+      return loadCommandUciLeaderboard(panel, qaRoster, isCurrent);
     };
   }, panelHtml);
-  await page.addScriptTag({ content: ['boardUciSourceUrl','boardUciDate','boardUciSearchText','boardUciMembers','commandUciRosterMembers','commandUciLeaderboardHtml','loadCommandUciLeaderboard'].map(extract).join('\n') });
+  await page.addScriptTag({ content: ['la28CountdownParts', 'la28CountdownHtml', 'mountLa28Countdown', 'boardUciSourceUrl','boardUciDate','boardUciSearchText','boardUciMembers','commandUciRosterMembers','commandUciLeaderboardHtml','loadCommandUciLeaderboard'].map(extract).join('\n') });
   await page.evaluate(() => qaRender());
   const riders = () => page.locator('[data-command-uci-rider]');
   eq(await riders().count(), 10, 'Every positively ranked crew member appears, without a top-five cutoff');
