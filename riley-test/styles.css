@@ -12655,3 +12655,10 @@ html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* Saved runs stay tucked away until the rider opens the bar. */
+.rider-shell .rider-saved-runs-dropdown { padding: 0; }
+.rider-saved-runs-dropdown > summary { min-height: 64px; }
+.rider-saved-runs-dropdown .saved-runs-chevron { color: var(--aqua); font-size: 24px; line-height: 1; flex-shrink: 0; }
+.rider-saved-runs-dropdown[open] .saved-runs-chevron { transform: rotate(180deg); }
+.rider-saved-runs-dropdown > .panel-accordion-body > .actions { margin-bottom: 14px; }

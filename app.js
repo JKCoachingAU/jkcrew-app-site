@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.168";
+const RELEASE_VERSION = "2.14.169";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -674,7 +674,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.168" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.169" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -7245,11 +7245,17 @@ async function updateRunReviewStatus(button) {
   } finally { restore(); }
 }
 
-function riderSavedRunsHtml(runs = []) {
+function riderSavedRunsHtml(runs = [], { collapsed = false } = {}) {
   const own = runs.filter(run => run.athlete_id === state.user?.id && !run.archived_at);
   const removed = runs.filter(run => run.athlete_id === state.user?.id && run.archived_at);
-  return `<section class="panel rider-saved-runs"><div class="panel-head"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">Runs made by you and your coach</div></div><button class="secondary-btn compact-btn" type="button" data-rider-saved-runs="all">Refresh / view all</button></div>
-    <div class="notification-list">${own.length ? own.map(run => `<div class="saved-run-list-entry" data-saved-run-id="${escapeHtml(run.id)}"><button class="notification-card" type="button" data-open-progress-run="${escapeHtml(run.id)}"><span>${run.created_by === state.user.id ? "Made by you" : "From your coach"}</span><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at)} · Open to watch or edit</small></button>${runRemovalButtonHtml(run)}</div>`).join("") : `<p>No saved runs yet. Refresh to check for a new run from your coach.</p>`}</div>${removed.length ? `<details class="run-removed-history"><summary>Removed runs · ${removed.length}</summary><div class="run-list">${removed.map(run => `<article class="run-card" data-saved-run-id="${escapeHtml(run.id)}"><strong>${escapeHtml(run.title || "Saved run")}</strong><div class="actions">${runRemovalButtonHtml(run)}</div></article>`).join("")}</div></details>` : ""}</section>`;
+  const refresh = '<button class="secondary-btn compact-btn" type="button" data-rider-saved-runs="all">Refresh / view all</button>';
+  const body = `
+    <div class="notification-list">${own.length ? own.map(run => `<div class="saved-run-list-entry" data-saved-run-id="${escapeHtml(run.id)}"><button class="notification-card" type="button" data-open-progress-run="${escapeHtml(run.id)}"><span>${run.created_by === state.user.id ? "Made by you" : "From your coach"}</span><strong>${escapeHtml(run.title || "Saved run")}</strong><small>${escapeHtml(run.venue || "Private run")} · ${dateLabel(run.updated_at)} · Open to watch or edit</small></button>${runRemovalButtonHtml(run)}</div>`).join("") : `<p>No saved runs yet. Refresh to check for a new run from your coach.</p>`}</div>${removed.length ? `<details class="run-removed-history"><summary>Removed runs · ${removed.length}</summary><div class="run-list">${removed.map(run => `<article class="run-card" data-saved-run-id="${escapeHtml(run.id)}"><strong>${escapeHtml(run.title || "Saved run")}</strong><div class="actions">${runRemovalButtonHtml(run)}</div></article>`).join("")}</div></details>` : ""}`;
+  if (collapsed) return `<details id="rider-saved-runs-dropdown" class="panel panel-accordion rider-saved-runs rider-saved-runs-dropdown">
+    <summary class="panel-accordion-summary"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">${own.length} saved · Runs by you and your coach</div></div><span class="saved-runs-chevron" aria-hidden="true">⌄</span></summary>
+    <div class="panel-accordion-body"><div class="actions">${refresh}</div>${body}</div>
+  </details>`;
+  return `<section class="panel rider-saved-runs"><div class="panel-head"><div><div class="panel-title">Your saved runs</div><div class="panel-meta">Runs made by you and your coach</div></div>${refresh}</div>${body}</section>`;
 }
 
 async function openRiderSavedRuns(event) {
@@ -11128,7 +11134,7 @@ async function renderContests() {
     ${parentView ? parentChildSwitcherHtml(parentContext) : ""}
     <div class="page-head contests-page-head"><div><div class="eyebrow">${coachView ? "Coach event control" : parentView ? "Family event view · Read only" : "Events & private planning"}</div><h1>${parentView ? "Upcoming" : "Events &"} <span>${parentView ? "events" : "runs"}</span></h1><p>${coachView ? "Manage the shared event list, confirm whether you are attending, edit the riders going and merge duplicates into one clean event." : parentView ? `The same event list ${escapeHtml(firstName(viewedAthlete))} sees. Open an event to view who is going and the shared course photo.` : "See which riders are going to upcoming events. Your route, tricks, notes and park photo stay private from other riders."}</p></div>${athleteView ? `<button id="open-run-builder" class="primary-btn contest-hero-button" type="button">+ NEW PRIVATE RUN</button>` : ""}</div>
     ${coachView || athleteView ? `<div class="uci-tracker-shortcut"><div><strong>Road to LA28</strong><span>Track event entries, result evidence and UCI points.</span></div><button class="secondary-btn" type="button" data-open-uci-tracker>Open tracker →</button></div>` : ""}
-    ${athleteView ? riderSavedRunsHtml(activeRuns) : ""}
+    ${athleteView ? riderSavedRunsHtml(activeRuns, { collapsed: true }) : ""}
     <section class="panel shared-events-panel athlete-event-palette">
       <div class="shared-events-head"><div><div class="eyebrow">JKCREW event list</div><div class="shared-events-title"><h2>Upcoming events</h2>${coachView ? `<button id="add-contest-event" class="contest-event-add" type="button" aria-label="Add new event" title="Add new event" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : ""}</div><p>${coachView ? "Open an event to edit attendance. Drag duplicates together, or tap Merge duplicate on two cards, then review the final event before saving." : parentView ? `Read-only event access for ${escapeHtml(firstName(viewedAthlete))}. Private rider run plans are not displayed.` : "Events are shared once for the whole crew. Tap one to see who's going."}</p></div><label class="contest-event-search"><span>Find event</span><input id="contest-event-search" type="search" placeholder="Search event or location"></label></div>
       ${contestEventCardsHtml(events, runs, attendance, roster, viewOptions)}
