@@ -12637,3 +12637,21 @@ html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
 .uci-tracker-shortcut span { color: var(--muted); font-size: .9rem; }
 .uci-tracker-shortcut button { flex-shrink: 0; min-height: 44px; }
 @media (max-width: 560px) { .uci-tracker-shortcut { align-items: stretch; flex-direction: column; padding: 14px; } }
+
+/* Rider event actions share one row, including on narrow phones. */
+.contest-event-actions.contest-event-rider-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+#app .app-shell.rider-shell .contest-event-rider-actions > button {
+  min-width: 0;
+  min-height: 44px;
+  width: 100%;
+  padding: 8px 5px;
+  font-size: 12px;
+  line-height: 1.25;
+  letter-spacing: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
