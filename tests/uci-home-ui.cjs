@@ -32,6 +32,7 @@ const extract = name => {
       window.state = { user: { id: 'rider-one' }, profile: null, view: 'home', boardLeaderboardView: 'weekly', boardUciSearch: '' };
       window.escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
       window.qa = { calls: [], navigations: [], fail: false, stale: false, hold: false, pending: [], generation: 0 };
+      window.updateRiderUciNavigation = () => { qa.navUpdates = (qa.navUpdates || 0) + 1; };
       window.navigate = view => { qa.navigations.push(view); state.view = view; };
       window.qaSnapshot = {
         schemaVersion: 1, checkedAt: '2026-10-23T04:56:38.276Z', categories: {
@@ -61,7 +62,7 @@ const extract = name => {
         return loadAthleteUciHome(view, state.profile, () => state.view === 'home' && state.user.id === userId && qa.generation === generation && document.querySelector('#view') === view);
       };
     });
-    await page.addScriptTag({ content: ['boardUciSourceUrl', 'boardUciDate', 'boardUciSearchText', 'athleteUciCardHtml', 'loadAthleteUciHome', 'uciProfileLinkHtml', 'bindUciProfileLink', 'invalidateLeaderboardUciLinks', 'saveUciProfileLink'].map(extract).join('\n') });
+    await page.addScriptTag({ content: ['riderHasUciPoints', 'boardUciSourceUrl', 'boardUciDate', 'boardUciSearchText', 'athleteUciCardHtml', 'loadAthleteUciHome', 'uciProfileLinkHtml', 'bindUciProfileLink', 'invalidateLeaderboardUciLinks', 'saveUciProfileLink'].map(extract).join('\n') });
 
     eq(await page.evaluate(() => athleteUciCardHtml({ display_name: 'KINDERMANN Lars' }, qaSnapshot)), '', 'A familiar display name alone never fabricates a UCI identity');
     await page.evaluate(() => qaRender(''));
@@ -74,6 +75,7 @@ const extract = name => {
     ok(/2[,.]?610/.test(text), 'Home shows UCI points');
     ok(/Men/.test(text), 'Home identifies the official Men category');
     ok(text.includes('20 Oct 2026'), 'Official ranking date is visible');
+    ok(await page.locator('[data-home-uci-tracker]').isVisible(), 'Positive official points show Road to LA28 shortcut');
     await page.locator('[data-home-uci-board]').click();
     eq(await page.evaluate(() => [qa.navigations.at(-1), state.boardLeaderboardView, state.boardUciSearch]), ['board', 'uciMen', 'KINDERMANN Lars'], 'Ranking opens the matching leaderboard and rider');
 
@@ -83,10 +85,16 @@ const extract = name => {
     await page.locator('[data-home-uci-board]').click();
     eq(await page.evaluate(() => [state.boardLeaderboardView, state.boardUciSearch]), ['uciWomen', 'NORRIS Alirah'], 'Women card links to the correct list');
 
+    await page.evaluate(() => { qaSnapshot.categories.men.rows[1].points = 0; return qaRender('10000000002'); });
+    eq(await page.locator('[data-home-uci-tracker]').count(), 0, 'Zero official points do not show the Home tracker shortcut');
+    ok(await page.locator('[data-home-uci-board]').isVisible(), 'World rankings remain accessible for zero-point riders');
+    await page.evaluate(() => { qaSnapshot.categories.men.rows[1].points = 217; });
+
     await page.evaluate(() => qaRender('19999999999', 'KINDERMANN Lars'));
     text = await page.locator('#athlete-home-uci').innerText();
     ok(!text.includes('#13') && !text.includes('#0'), 'An absent explicit ID never falls back to a matching name or rank zero');
     ok(/not|unavailable|rank/i.test(text), 'Absent ID has an understandable state');
+    eq(await page.locator('[data-home-uci-tracker]').count(), 0, 'An unmatched ID does not show the Home tracker shortcut');
 
     await page.evaluate(() => { qa.stale = true; return qaRender(); });
     text = await page.locator('.home-uci-card').innerText();
@@ -186,6 +194,7 @@ const extract = name => {
     eq(await page.evaluate(() => qaWrite.calls.at(-1)), { table: 'profiles', update: { uci_id: '10000000001' }, filters: [['id', 'rider-one']], select: 'id,uci_id' }, 'Own profile saves only UCI ID to the current rider');
     eq(await page.evaluate(() => state.profile.uci_id), '10000000001', 'Successful own save updates Home profile identity');
     ok((await feedback()).includes('KINDERMANN Lars'), 'Saved confirmation identifies the linked rider');
+    eq(await page.evaluate(() => qa.navUpdates), 1, 'Own UCI link refreshes navigation immediately');
 
     await page.evaluate(() => qaLink('coach', 'coach-one', 'rider-two'));
     await page.locator('[data-uci-rider-search]').fill('Alirah');

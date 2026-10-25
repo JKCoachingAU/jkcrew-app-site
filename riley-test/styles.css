@@ -8878,7 +8878,7 @@ html[data-theme="light"] .home-uci-heading .eyebrow { color: #6742b5; }
 
 /* Rider navigation: seven destinations, including a dedicated Road to LA28 tab. */
 .rider-shell .bottom-nav {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--rider-nav-count, 6), minmax(0, 1fr));
   grid-auto-flow: initial;
   gap: 3px;
   padding-inline: max(8px, env(safe-area-inset-left));

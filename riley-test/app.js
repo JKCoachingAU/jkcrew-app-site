@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.172";
+const RELEASE_VERSION = "2.14.173";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -675,7 +675,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.172" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.173" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2019,15 +2019,53 @@ function notificationPrimaryView(view = "home") {
   return athletePrimaryView(view);
 }
 
+function riderHasUciPoints(profile = state.profile, snapshot = window.JKCUciRankings?.peek?.()) {
+  if (profile?.role !== "athlete" || !/^\d{11}$/.test(String(profile.uci_id || ""))) return false;
+  const match = window.JKCUciRankings?.findRider(snapshot, profile.uci_id);
+  return Number.isFinite(match?.row.points) && match.row.points > 0;
+}
+
+function primaryNavButtonHtml([id, label], recovery = false) {
+  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", uciTracker: "◎", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
+  return `<button class="nav-btn" type="button" data-view="${id}"${id === "uciTracker" ? ' aria-label="Road to LA28" title="Road to LA28"' : ""}><span class="nav-icon">${navIcons[id] || "•"}</span><span class="primary-nav-label">${label}</span>${recovery ? "" : navNotificationBadge(id)}</button>`;
+}
+
+function updateRiderUciNavigation() {
+  if (!state.user?.id || state.profile?.role !== "athlete" || riderRecoveryActive()) return;
+  const eligible = riderHasUciPoints();
+  // Update only navigation: a ranking refresh must never replace a run, form or live call.
+  document.querySelectorAll(".rider-shell:not(.recovery-shell) .nav-list, .rider-shell:not(.recovery-shell) .bottom-nav").forEach(nav => {
+    let button = nav.querySelector('[data-view="uciTracker"]');
+    if (eligible && !button) {
+      nav.querySelector('[data-view="board"]')?.insertAdjacentHTML("beforebegin", primaryNavButtonHtml(["uciTracker", "LA28"]));
+      button = nav.querySelector('[data-view="uciTracker"]');
+      button?.addEventListener("click", () => navigate("uciTracker"));
+    } else if (!eligible && button) {
+      if (document.activeElement === button) nav.querySelector('[data-view="contests"]')?.focus();
+      button.remove();
+      button = null;
+    }
+    button?.classList.toggle("active", athletePrimaryView(state.view) === "uciTracker");
+    nav.style.setProperty("--rider-nav-count", eligible ? "7" : "6");
+  });
+}
+
+async function loadRiderUciNavigation() {
+  updateRiderUciNavigation();
+  if (state.profile?.role !== "athlete" || riderRecoveryActive() || !/^\d{11}$/.test(String(state.profile.uci_id || ""))) return;
+  try { await window.JKCUciRankings?.load(); } catch { /* Keep the last verified public snapshot, if available. */ }
+}
+
+window.addEventListener("jkcrew:uci-rankings-updated", updateRiderUciNavigation);
+
 function renderShell() {
   state.tricktionarySuggestionsCleanup?.();
   if (!riderRecoveryActive() && typeof JKCrewTricktionaryTools !== "undefined") state.tricktionarySuggestionsCleanup = JKCrewTricktionaryTools.installSuggestions({ client, currentUser: () => state.user?.id, withTimeout });
   const role = state.profile.role;
   const recovery = riderRecoveryActive();
   const shellClass = recovery ? "rider-shell recovery-shell" : isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
-  const nav = recovery ? [["home", "Recovery"]] : isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav;
-  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", uciTracker: "◎", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
-  const bottomNavHtml = nav.map(([id, label]) => `<button class="nav-btn" type="button" data-view="${id}"${id === "uciTracker" ? ' aria-label="Road to LA28" title="Road to LA28"' : ""}><span class="nav-icon">${navIcons[id] || "•"}</span><span class="primary-nav-label">${label}</span>${recovery ? "" : navNotificationBadge(id)}</button>`).join("");
+  const nav = recovery ? [["home", "Recovery"]] : isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav.filter(([id]) => id !== "uciTracker" || riderHasUciPoints());
+  const bottomNavHtml = nav.map(item => primaryNavButtonHtml(item, recovery)).join("");
   const sidebarNavHtml = isCoachRole(role)
     ? coachNavGroups.map((group) => `
         <details class="sidebar-nav-group" data-nav-group="${group.id}">
@@ -2056,7 +2094,7 @@ function renderShell() {
         </header>
         <main id="view" class="content"></main>
       </div>
-      <nav class="bottom-nav">${bottomNavHtml}</nav>
+      <nav class="bottom-nav" style="--rider-nav-count:${nav.length}">${bottomNavHtml}</nav>
   </div>`;
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", (event) => {
     if (button.matches("summary[data-view]")) {
@@ -2071,6 +2109,7 @@ function renderShell() {
   document.querySelector("#notification-centre-bell")?.addEventListener("click", showNotificationDrawer);
   if (recovery) document.querySelector("#sign-out")?.addEventListener("click", signOutCurrentDevice);
   setSyncStatus();
+  void loadRiderUciNavigation();
   if (!recovery && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()) {
     refreshNotificationCentre({ renderNav: false });
     refreshBoardChatUnread();
@@ -7362,7 +7401,7 @@ function athleteUciCardHtml(profile, snapshot = null, { loading = false, error =
     <div class="home-uci-heading"><span class="eyebrow">UCI world ranking</span><span class="home-uci-discipline">BMX Freestyle Park</span></div>
     <div class="home-uci-body"><strong class="home-uci-rank">${match ? `#${escapeHtml(match.row.rank)}` : "—"}</strong><div class="home-uci-detail">${match ? `<strong>${category}’s Elite · ${points} UCI points</strong><span>${escapeHtml(match.row.name)}</span><small>Official ranking · <time datetime="${escapeHtml(match.category.rankingDate)}">${boardUciDate(match.category.rankingDate)}</time></small>` : `<strong>${loading ? "Loading your world ranking…" : error ? "World ranking unavailable" : "Not in the current rankings"}</strong><span>${loading ? "Your dashboard is ready to use." : error ? "Your saved rider link is safe. Try again." : "Your UCI rider link is saved. Check it in Profile if needed."}</span>`}</div></div>
     ${snapshot?.stale ? `<p class="home-uci-status" role="status">Last available rankings · latest update not confirmed.</p>` : ""}
-    <div class="home-uci-actions">${match ? `<button class="home-uci-board" type="button" data-home-uci-board>View world rankings <span aria-hidden="true">↗</span></button>` : ""}<button class="home-uci-board" type="button" data-home-uci-tracker>Road to LA28 <span aria-hidden="true">→</span></button>${error || snapshot?.stale ? `<button class="secondary-btn compact-btn" type="button" data-home-uci-retry>Try again</button>` : ""}</div>
+    <div class="home-uci-actions">${match ? `<button class="home-uci-board" type="button" data-home-uci-board>View world rankings <span aria-hidden="true">↗</span></button>` : ""}${riderHasUciPoints(profile, snapshot) ? `<button class="home-uci-board" type="button" data-home-uci-tracker>Road to LA28 <span aria-hidden="true">→</span></button>` : ""}${error || snapshot?.stale ? `<button class="secondary-btn compact-btn" type="button" data-home-uci-retry>Try again</button>` : ""}</div>
   </section>`;
 }
 
@@ -15342,7 +15381,7 @@ async function saveUciProfileLink(event, athleteId) {
     if (error) throw error;
     if (data?.id !== athleteId || data.uci_id !== (uciId || null)) throw new Error("The link couldn’t be confirmed. Please try again.");
     if (!current()) return;
-    if (state.profile?.id === athleteId) state.profile.uci_id = data.uci_id;
+    if (state.profile?.id === athleteId) { state.profile.uci_id = data.uci_id; updateRiderUciNavigation(); }
     cacheClear("roster");
     cacheClear("session-viewer-roster:");
     invalidateLeaderboardUciLinks();

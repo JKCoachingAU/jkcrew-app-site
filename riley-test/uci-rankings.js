@@ -9,6 +9,7 @@
   let loadedAt = 0;
   let pending = null;
   let lastRefreshFailed = false;
+  let notificationPending = false;
 
   function validate(data) {
     if (data?.schemaVersion !== 1 || !Number.isFinite(Date.parse(data.checkedAt)) || Date.parse(data.checkedAt) > Date.now() + 86400000) throw Error("Invalid ranking snapshot");
@@ -60,10 +61,27 @@
     return { ...data, stale: offline || Date.now() - Date.parse(data.checkedAt) > 3 * 86400000 };
   }
 
+  function peek() {
+    if (!snapshot) restore();
+    return snapshot ? result(snapshot) : null;
+  }
+
+  function published(data, offline = lastRefreshFailed) {
+    // Navigation reads peek() after this signal; never dispatch during a load call.
+    if (!notificationPending) {
+      notificationPending = true;
+      queueMicrotask(() => {
+        notificationPending = false;
+        window.dispatchEvent(new Event("jkcrew:uci-rankings-updated"));
+      });
+    }
+    return result(data, offline);
+  }
+
   async function load({ force = false } = {}) {
     if (pending) return pending;
     if (!snapshot) restore();
-    if (!force && snapshot && Date.now() - loadedAt < refreshMs) return result(snapshot);
+    if (!force && snapshot && Date.now() - loadedAt < refreshMs) return published(snapshot);
     pending = (async () => {
       try {
         const remote = await fetchSnapshot(feedUrl, 12000);
@@ -73,13 +91,13 @@
         snapshot = next;
         loadedAt = Date.now();
         try { localStorage.setItem(storageKey, JSON.stringify({ data: snapshot, loadedAt })); } catch { /* In-memory cache still works. */ }
-        return result(snapshot, rolledBack);
+        return published(snapshot, rolledBack);
       } catch {
         lastRefreshFailed = true;
         if (!snapshot) {
           try { snapshot = await fetchSnapshot(seedUrl, 5000); } catch { /* Show retry UI if neither source is available. */ }
         }
-        if (snapshot) return result(snapshot, true);
+        if (snapshot) return published(snapshot, true);
         throw Error("World rankings couldn’t load. Check your connection and try again.");
       } finally { pending = null; }
     })();
@@ -135,5 +153,5 @@
     } catch { return null; }
   }
 
-  window.JKCUciRankings = Object.freeze({ load, findRider, findBreakdown });
+  window.JKCUciRankings = Object.freeze({ load, peek, findRider, findBreakdown });
 })();
