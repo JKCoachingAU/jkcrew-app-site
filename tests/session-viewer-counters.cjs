@@ -90,6 +90,9 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.qaPlan = () => ({ assignmentsByAthlete: new Map([['rider', qaRows], ['empty', []]]), runsByAthlete: new Map(), runProgressByPlan: new Map() });
       window.getSessionViewerRoster = window.getCoachRoster = async () => qaRoster;
       window.getActiveCoachGroupSession = async () => qaSession;
+      window.getCoachVenues = async () => [];
+      window.withTimeout = promise => promise;
+      window.showAddDailyLocation = () => {};
       window.getSessionViewerPlanData = async () => qaHoldPlan ? new Promise(resolve => qaPendingPlans.push({ resolve, data: qaPlan() })) : qaPlan();
       window.client = { rpc: async name => {
         if (name !== 'get_coach_rider_battles_v2') throw Error(`Unexpected RPC: ${name}`);

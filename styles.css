@@ -12112,6 +12112,21 @@ html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] {
 .coach-shell #view[data-view="sessionViewer"] .session-setup-caret { color: var(--session-progress); font: 500 24px var(--body); }
 .coach-shell #view[data-view="sessionViewer"] .session-viewer-controls[open] .session-setup-caret { transform: rotate(45deg); }
 .coach-shell #view[data-view="sessionViewer"] .session-setup-fields { display: grid; gap: 18px; padding: 0 20px 20px; }
+.daily-location-add { flex: 0 0 44px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid #599ae0; border-radius: 10px; color: #81b7f7; background: #3296ff14; }
+.daily-location-add svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.daily-location-add:hover { background: #3296ff2b; }
+.daily-location-add:focus-visible { outline: 3px solid #81b7f7; outline-offset: 2px; }
+.daily-location-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; overflow-y: auto; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 20px 70px #0008; }
+.daily-location-dialog::backdrop { background: #0009; }
+.daily-location-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.daily-location-dialog h2 { margin: 0; font-size: 1.6rem; }
+.daily-location-dialog .icon-btn { flex: 0 0 44px; }
+.daily-location-dialog input { min-height: 48px; font-size: 16px; }
+.daily-location-hint { margin: 12px 0 20px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.daily-location-error { color: var(--red); font-size: 14px; line-height: 1.5; }
+.daily-location-dialog footer { display: flex; justify-content: flex-end; gap: 10px; }
+.daily-location-dialog footer button { min-height: 44px; }
+html[data-theme="light"] .daily-location-add { color: #165da5; border-color: #4280bd; }
 .coach-shell #view[data-view="sessionViewer"] .session-setup-note { color: var(--session-muted); font: 500 12px/1.5 var(--body); }
 .coach-shell #view[data-view="sessionViewer"] .session-viewer-layout { margin-top: 28px; }
 .coach-shell #view[data-view="sessionViewer"] .viewer-roster-head { align-items: center; margin-bottom: 18px; gap: 18px; }

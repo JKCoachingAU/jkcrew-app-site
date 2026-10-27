@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.180";
+const RELEASE_VERSION = "2.14.181";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -678,7 +678,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.180" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.181" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -12700,10 +12700,13 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
-  const [roster, activeGroupSession, battleResult] = await Promise.all([
+  const [roster, activeGroupSession, battleResult, coachVenues] = await Promise.all([
     getSessionViewerRoster(),
     getActiveCoachGroupSession(),
     client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
+    // Saved locations can be empty while the coach builds their first daily list.
+    // A location read failure must not prevent access to existing rider lists.
+    withTimeout(getCoachVenues(), "Load daily locations", 12000).catch(() => []),
   ]);
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   if (!isCoachRole(state.profile?.role)) return navigate("home");
@@ -12782,7 +12785,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       <summary class="session-setup-summary"><span><strong>Group & location</strong><small>${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</small></span><span class="session-setup-caret" aria-hidden="true">+</span></summary>
       <div class="session-setup-fields">
         <div class="field viewer-group-filter"><label>Group filter</label><div class="viewer-filter-tabs viewer-group-tabs" role="group" aria-label="Group filter">${sessionViewerGroupTabs(started)}</div></div>
-        <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-filter-tabs viewer-venue-tabs" role="group" aria-label="Location filter">${sessionViewerVenueTabs(groupRoster, schedules, started)}</div></div>
+        <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-filter-tabs viewer-venue-tabs" role="group" aria-label="Location filter">${sessionViewerVenueTabs(groupRoster, schedules, started, coachVenues)}<button id="add-daily-location" class="daily-location-add" type="button" aria-label="Add daily location" title="Add daily location" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
         ${started ? `<small class="session-setup-note">Group and location stay fixed until this session ends.</small>` : ""}
       </div>
     </details>
@@ -12800,7 +12803,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   if (!contestPrepViewer && requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
 }
 
-function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
+function sessionViewerVenueOptions(groupRoster = [], schedules = [], coachVenues = []) {
   const venues = new Map();
   const addVenue = (venueValue) => {
     const venue = venueKey(venueValue);
@@ -12809,6 +12812,7 @@ function sessionViewerVenueOptions(groupRoster = [], schedules = []) {
   };
   if (state.sessionViewerVenue) addVenue(state.sessionViewerVenue);
   schedules.forEach((entry) => entry.allDaily.forEach((assignment) => addVenue(assignment.venue)));
+  coachVenues.forEach((venue) => { if (venue.name) addVenue(venue.name); });
   const values = [...venues.values()];
   const selectedIdentity = venueIdentityKey(state.sessionViewerVenue);
   return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venueIdentityKey(venue) === selectedIdentity ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
@@ -12821,14 +12825,104 @@ function sessionViewerGroupTabs(disabled = false) {
   }).join("");
 }
 
-function sessionViewerVenueTabs(groupRoster = [], schedules = [], disabled = false) {
-  const options = sessionViewerVenueOptions(groupRoster, schedules);
+function sessionViewerVenueTabs(groupRoster = [], schedules = [], disabled = false, coachVenues = []) {
+  const options = sessionViewerVenueOptions(groupRoster, schedules, coachVenues);
   const select = document.createElement("select");
   select.innerHTML = options;
   return [...select.options].map((option) => {
     const active = venueIdentityKey(option.value) === venueIdentityKey(state.sessionViewerVenue);
     return `<button class="viewer-filter-tab viewer-venue-tab ${active ? "active" : ""}" type="button" data-viewer-venue="${escapeHtml(option.value)}" aria-pressed="${active}" ${disabled ? "disabled" : ""}>${escapeHtml(option.textContent)}</button>`;
   }).join("");
+}
+
+function showAddDailyLocation() {
+  if (state.view !== "sessionViewer" || !isCoachRole(state.profile?.role) || document.querySelector(".daily-location-dialog")) return;
+  const userId = state.user?.id;
+  if (!userId) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "daily-location-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-labelledby", "daily-location-title");
+  dialog.innerHTML = `<form>
+    <header><h2 id="daily-location-title">Add daily location</h2><button class="icon-btn" type="button" data-close-location aria-label="Close">×</button></header>
+    <div class="field"><label for="new-daily-location">Park name</label><input id="new-daily-location" name="location" maxlength="80" placeholder="e.g. New skate park" autocomplete="off" required></div>
+    <p class="daily-location-hint">Save the park, then open a rider to add their daily tricks.</p>
+    <p class="daily-location-error" role="alert" hidden></p>
+    <footer><button class="secondary-btn" type="button" data-close-location>Cancel</button><button class="primary-btn" type="submit">Add location</button></footer>
+  </form>`;
+  const input = dialog.querySelector("input");
+  const button = dialog.querySelector('[type="submit"]');
+  const errorMessage = dialog.querySelector(".daily-location-error");
+  const isCurrent = () => dialog.isConnected && dialog.open && state.user?.id === userId && state.view === "sessionViewer" && isCoachRole(state.profile?.role);
+  let saving = false;
+  dialog.querySelectorAll("[data-close-location]").forEach(close => close.addEventListener("click", () => dialog.close()));
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    if (state.user?.id === userId && state.view === "sessionViewer") document.querySelector("#add-daily-location")?.focus({ preventScroll: true });
+  }, { once: true });
+  dialog.querySelector("form").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (saving || !isCurrent()) return;
+    const name = input.value.trim().replace(/\s+/g, " ");
+    if (!venueIdentityKey(name) || name.length > 80) {
+      errorMessage.textContent = "Enter a park name (up to 80 characters).";
+      errorMessage.hidden = false;
+      input.focus();
+      return;
+    }
+    saving = true; button.disabled = true; input.readOnly = true;
+    button.textContent = "Saving…"; errorMessage.hidden = true;
+    try {
+      const venues = await withTimeout(getCoachVenues(), "Load daily locations", 12000);
+      if (!isCurrent()) return;
+      let saved = venues.find(venue => venueIdentityKey(venue.name) === venueIdentityKey(name));
+      const alreadySaved = Boolean(saved);
+      if (!saved) {
+        const knownTab = [...document.querySelectorAll("[data-viewer-venue]")].find(tab => venueIdentityKey(tab.dataset.viewerVenue) === venueIdentityKey(name));
+        const row = { coach_id: userId, name: venueLabel(knownTab?.dataset.viewerVenue || name), sort_order: Math.max(-1, ...venues.map(venue => Number(venue.sort_order) || 0)) + 1 };
+        const { data, error } = await withTimeout(client.from("coach_venues").insert(row).select("id,name,sort_order").single(), "Save daily location", 15000);
+        if (!isCurrent()) return;
+        if (error?.code === "23505") {
+          // Another tab or a retried save may already have added this park.
+          const latest = await withTimeout(getCoachVenues(), "Check saved location", 12000);
+          if (!isCurrent()) return;
+          saved = latest.find(venue => venueIdentityKey(venue.name) === venueIdentityKey(row.name));
+          if (!saved) throw error;
+        } else if (error) throw error;
+        else saved = data;
+      }
+      if (!saved?.name) throw new Error("The location could not be confirmed. Please try again.");
+      const liveSession = Boolean(state.sessionViewerActiveSessionCache || document.querySelector("[data-viewer-venue]:disabled"));
+      if (!liveSession) {
+        state.sessionViewerVenue = saved.name;
+        state.sessionViewerOpenAthleteId = "";
+        state.sessionViewerActiveList = "daily";
+      }
+      state.sessionViewerSetupOpen = true;
+      dialog.close();
+      notify(`${saved.name} ${alreadySaved ? "is already in your locations" : "added"}.${liveSession ? " Available after this session ends." : " Open a rider to add their daily tricks."}`);
+      try {
+        await renderSessionViewer();
+        if (state.user?.id === userId && state.view === "sessionViewer") {
+          const addButton = document.querySelector("#add-daily-location");
+          addButton?.focus({ preventScroll: true });
+          addButton?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        }
+      } catch (error) {
+        if (state.user?.id === userId && state.view === "sessionViewer") notify("Location saved. Tap Refresh to reload your lists.", "error");
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        errorMessage.textContent = `Couldn’t save this location. ${messageFrom(error)} Your park name is kept here — try again.`;
+        errorMessage.hidden = false;
+      }
+    } finally {
+      saving = false; button.disabled = false; input.readOnly = false; button.textContent = "Add location";
+    }
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
 }
 
 function groupSessionElapsedSeconds(session) {
@@ -12982,6 +13076,7 @@ function mountViewerPreviousWeekLandings() {
 }
 
 function bindSessionViewerActions() {
+  document.querySelector("#add-daily-location")?.addEventListener("click", showAddDailyLocation);
   if (window.JKPreviousWeekLandings) mountViewerPreviousWeekLandings();
   mountDailyFeatures();
   bindTrainingProgressActions();
