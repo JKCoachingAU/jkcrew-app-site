@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.181";
+const RELEASE_VERSION = "2.14.182";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -678,7 +678,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.181" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.182" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -2842,8 +2842,8 @@ async function setupRealtimeSync() {
     cacheClear("park-king:");
     cacheClear("park-kings:");
     if (state.profile?.role === "athlete" && event.display_name && event.venue_name) {
-      if (event.athlete_id === state.user.id) showAchievementCelebration({ kind: "king", eyebrow: "New park champion", title: `King of ${event.venue_name}`, message: `You took the crown with ${Number(event.points || 0)} park points.`, actionLabel: "Wear the crown" });
-      else notify(`${event.display_name} is the new King of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
+      if (event.athlete_id === state.user.id) showAchievementCelebration({ kind: "king", eyebrow: "New park champion", title: `${parkCrownTitle(event)} of ${event.venue_name}`, message: `You took the crown with ${Number(event.points || 0)} park points.`, actionLabel: "Wear the crown" });
+      else notify(`${event.display_name} is the new ${parkCrownTitle(event)} of ${event.venue_name} with ${Number(event.points || 0)} park points.`);
     }
     if (state.view === "session" && !isContestPrepProfile(state.profile)) refreshParkKingCard("session-park-king", state.selectedVenue, true);
     if (state.view === "sessionViewer" && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true);
@@ -4218,7 +4218,7 @@ async function getAllParkKings({ force = false } = {}) {
   const request = (async () => {
     const { data, error } = await client
       .from("park_king_snapshots")
-      .select("venue_key, venue_name, athlete_id, display_name, points, updated_at")
+      .select("venue_key, venue_name, athlete_id, display_name, points, updated_at, crown_title")
       .order("venue_name", { ascending: true });
     if (error) {
       console.warn("Park Kings list could not load", error);
@@ -4259,7 +4259,7 @@ function commandParkKingsAccordionHtml(scheduleRows = [], parkKings = []) {
   const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === state.commandParkKingVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
   const king = parkKingForVenue(parkKings, state.commandParkKingVenue);
   return `<details id="command-park-kings" class="command-park-kings-accordion">
-    <summary><span><strong>Park Kings</strong><small>Filter Daily venues and see each permanent park record</small></span><span class="command-message-count">${parkKings.length} claimed</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
+    <summary><span><strong>Park Kings &amp; Queens</strong><small>Filter Daily venues and see each permanent park record</small></span><span class="command-message-count">${parkKings.length} claimed</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
     <div class="command-park-kings-body">
       ${venues.length ? `<label class="command-park-kings-filter"><span>Daily venue</span><select id="command-park-king-filter">${options}</select></label><div id="command-park-king-result">${parkKingCardHtml(king, state.commandParkKingVenue, { compact: true })}</div>` : `<div class="empty compact-empty">No Daily venues are assigned yet.</div>`}
     </div>
@@ -4294,15 +4294,20 @@ async function refreshCommandParkKings() {
   }
 }
 
+function parkCrownTitle(champion) {
+  return champion?.crown_title === "Queen" ? "Queen" : "King";
+}
+
 function parkKingCardHtml(king, venue = "", { id = "", compact = false, loading = false, requestId = "" } = {}) {
   const selectedVenue = venueLabel(venue);
+  const title = king && !loading ? `${parkCrownTitle(king)} of the Park` : "Park crown";
   const content = loading
     ? `<div class="park-king-empty"><strong>Loading park record...</strong><small>Checking ${escapeHtml(selectedVenue)}.</small></div>`
     : king
     ? `<div class="park-king-rider"><span class="park-king-crown" aria-hidden="true">♛</span>${avatarHtml(king, "park-king-avatar")}<div><span class="park-champion-tag">Current champion</span><strong>${escapeHtml(king.display_name)}</strong><small>${Number(king.points || 0)} park points</small></div></div>`
-    : `<div class="park-king-empty"><strong>No King of the Park yet</strong><small>Complete a scored session at this park to take the title.</small></div>`;
+    : `<div class="park-king-empty"><strong>No park champion yet</strong><small>Complete a scored session at this park to take the title.</small></div>`;
   return `<section ${id ? `id="${escapeHtml(id)}"` : ""} class="park-king-card ${compact ? "compact" : ""}" data-park-venue-key="${escapeHtml(venueIdentityKey(venue))}" ${requestId ? `data-park-request-id="${escapeHtml(requestId)}"` : ""}>
-    <div class="park-king-label"><span>King of the Park</span><small>${escapeHtml(selectedVenue)}</small></div>
+    <div class="park-king-label"><span>${title}</span><small>${escapeHtml(selectedVenue)}</small></div>
     ${content}
   </section>`;
 }
