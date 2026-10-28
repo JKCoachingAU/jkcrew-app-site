@@ -25,3 +25,7 @@ Live database verification confirmed all six Queen titles and authenticated
 King/Queen responses. Park-score hashes and crown event/push counts were
 unchanged by the migration. The 49 database, 268 browser, 33 chat and 50
 installed-app update checks passed.
+
+The separate Oasis scoring issue was subsequently fixed by the
+[28 October backend correction](park-crown-scoring-2026-10-28.md), which
+isolates park records by venue and riding day while preserving earned points.
