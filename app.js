@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.182";
+const RELEASE_VERSION = "2.14.183";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -137,6 +137,7 @@ const state = {
   riderAccessRequest: null,
   riderAccessTimer: null,
   recoveryMount: null,
+  recoveryOpenCheckin: false,
 };
 
 const RIDER_ACCESS_MESSAGE = "You don't have access to this feature, contact your coach";
@@ -279,9 +280,13 @@ async function renderRiderRecoveryHome() {
     element, client, userId, athleteId: userId, displayName: state.profile.display_name, isCurrent,
     onModeChanged: () => refreshRiderFeatureAccess({ force: true }),
     onAccount: signOutCurrentDevice,
+    initialPage: state.recoveryOpenCheckin ? "today" : undefined,
+    getNotificationState: () => getRecoveryDeviceNotificationState(),
+    onEnableNotifications: () => enableRecoveryDeviceNotifications(),
   });
   if (!isCurrent()) { mounted?.destroy(); return; }
   state.recoveryMount = mounted;
+  state.recoveryOpenCheckin = false;
 }
 
 async function renderRecoveryCoach() {
@@ -678,7 +683,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.182" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.183" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
@@ -1586,6 +1591,7 @@ async function handleSession(session) {
   state.recoveryMount?.destroy();
   state.recoveryMount = null;
   if ((state.user?.id || "") !== nextUserId) {
+    state.recoveryOpenCheckin = false;
     window.JKCRecovery?.cleanup({ clearDrafts: true });
     if (state.user) app.innerHTML = "";
     dismissDailyFinishForNavigation();
@@ -1644,12 +1650,14 @@ async function handleSession(session) {
     recordMyAppOpen();
     applyTheme(data.app_theme);
     const pushView = new URL(window.location.href).searchParams.get("push");
+    state.recoveryOpenCheckin = riderRecoveryActive() && new URL(window.location.href).searchParams.get("checkin") === "today";
     const allowedPushViews = new Set(["home", "coaching", "board", "challenges", "contests", "uciSchedule", "command", "videoReviews", "parentWeek", "parentCoaching", "parentCalendar", "parentMore"]);
     state.view = allowedPushViews.has(pushView) ? pushView : (isCoachRole(data.role) ? "command" : "home");
     if (riderRecoveryActive() || riderFeaturesDisabled() || riderFeatureAccessUnknown()) state.view = "home";
     if (pushView) {
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete("push");
+      cleanUrl.searchParams.delete("checkin");
       window.history.replaceState({}, "", cleanUrl.href);
     }
   } catch (error) {
@@ -18735,26 +18743,49 @@ async function sendTestNotification(event) {
   await refreshNotificationCentre();
 }
 
-async function enablePushNotifications(button) {
+async function getRecoveryDeviceNotificationState() {
+  if (!supportsPushNotifications()) return { supported: false, enabled: false, permission: "unsupported" };
+  const userId = state.user?.id;
+  const permission = Notification.permission;
+  if (!userId || permission !== "granted") return { supported: true, enabled: false, permission };
+  const registration = await withTimeout(navigator.serviceWorker.getRegistration(), "Notification status", 12000);
+  const subscription = registration ? await withTimeout(registration.pushManager.getSubscription(), "Notification status", 12000) : null;
+  if (!subscription || state.user?.id !== userId) return { supported: true, enabled: false, permission };
+  const { data, error } = await withTimeout(client.from("push_subscriptions")
+    .select("enabled").eq("user_id", userId).eq("endpoint", subscription.endpoint).maybeSingle(), "Notification status", 12000);
+  if (error) throw error;
+  return { supported: true, enabled: state.user?.id === userId && data?.enabled === true, permission };
+}
+
+async function enableRecoveryDeviceNotifications() {
+  // Request permission directly from the tap, before any network work (iOS).
+  await enablePushNotifications(null, { preservePreferences: true, quiet: true });
+  return getRecoveryDeviceNotificationState();
+}
+
+async function enablePushNotifications(button, { preservePreferences = false, quiet = false } = {}) {
   if (!supportsPushNotifications()) throw new Error("Push notifications are not supported in this browser.");
+  const userId = state.user?.id;
+  if (!userId) throw new Error("Please sign in before enabling notifications.");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     throw new Error("Notifications are blocked. Allow them in your browser or phone settings, then try again.");
   }
   const registration = await withTimeout(navigator.serviceWorker.ready, "Notification setup", 12000);
-  let subscription = await registration.pushManager.getSubscription();
+  let subscription = await withTimeout(registration.pushManager.getSubscription(), "Notification setup", 12000);
   if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
+    subscription = await withTimeout(registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(PUSH_VAPID_PUBLIC_KEY),
-    });
+    }), "Notification setup", 12000);
   }
+  if (state.user?.id !== userId) throw new Error("Your account changed. Please enable notifications again after signing in.");
   const json = subscription.toJSON();
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
     throw new Error("This device did not provide a complete push subscription.");
   }
-  const { error } = await client.from("push_subscriptions").upsert({
-    user_id: state.user.id,
+  const { error } = await withTimeout(client.from("push_subscriptions").upsert({
+    user_id: userId,
     endpoint: json.endpoint,
     p256dh: json.keys.p256dh,
     auth: json.keys.auth,
@@ -18764,10 +18795,11 @@ async function enablePushNotifications(button) {
     last_error: "",
     failure_count: 0,
     updated_at: new Date().toISOString(),
-  }, { onConflict: "endpoint" });
+  }, { onConflict: "endpoint" }), "Notification setup", 12000);
   if (error) throw error;
-  await savePushPreferences({ quiet: true });
-  notify("Push notifications are on for this device.");
+  if (state.user?.id !== userId) throw new Error("Your account changed. Please check notifications after signing in.");
+  if (!preservePreferences) await savePushPreferences({ quiet: true });
+  if (!quiet) notify("Push notifications are on for this device.");
   if (button) button.textContent = "Enabled";
 }
 
@@ -19214,6 +19246,13 @@ if ("serviceWorker" in navigator) {
     if (event.data?.type !== "JKCREW_PUSH_NAVIGATE" || !state.profile) return;
     const allowedViews = isCoachRole(state.profile.role) ? ["home", "board", "command", "videoReviews", "uciSchedule"] : ["home", "coaching", "board", "challenges", "uciSchedule"];
     const view = allowedViews.includes(event.data.view) ? event.data.view : (isCoachRole(state.profile.role) ? "command" : "home");
+    if (riderRecoveryActive() && event.data.recoveryPage === "today") {
+      if (state.recoveryMount?.showToday && state.view === "home") {
+        state.recoveryMount.showToday();
+        return;
+      }
+      state.recoveryOpenCheckin = true;
+    }
     navigate(view);
   });
 }

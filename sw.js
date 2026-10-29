@@ -1,60 +1,60 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.182";
+const RELEASE_VERSION = "2.14.183";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.182",
-  "./shred-zone.css?v=2.14.182",
-  "./app.js?v=2.14.182",
-  "./recovery-mode.js?v=2.14.182",
-  "./recovery-mode.css?v=2.14.182",
-  "./uci-rankings.js?v=2.14.182",
-  "./uci-schedule.js?v=2.14.182",
-  "./uci-schedule.css?v=2.14.182",
-  "./uci-tracker.js?v=2.14.182",
-  "./uci-tracker.css?v=2.14.182",
-  "./previous-week-landings.js?v=2.14.182",
-  "./daily-completion.js?v=2.14.182",
-  "./other-things-landed.js?v=2.14.182",
-  "./other-things-landed.css?v=2.14.182",
-  "./live-run-sync.js?v=2.14.182",
-  "./live-run-call.js?v=2.14.182",
-  "./live-run-companion.js?v=2.14.182",
-  "./live-run-call.css?v=2.14.182",
-  "./daily-completion.css?v=2.14.182",
-  "./progress-sharing.js?v=2.14.182",
-  "./progress-sharing.css?v=2.14.182",
-  "./battle-rematches.js?v=2.14.182",
-  "./battle-rematches.css?v=2.14.182",
-  "./active-battles.js?v=2.14.182",
-  "./active-battles.css?v=2.14.182",
-  "./tricktionary-auto.js?v=2.14.182",
-  "./tricktionary-tools.js?v=2.14.182",
-  "./tricktionary-tools.css?v=2.14.182",
-  "./manifest.webmanifest?v=2.14.182",
+  "./styles.css?v=2.14.183",
+  "./shred-zone.css?v=2.14.183",
+  "./app.js?v=2.14.183",
+  "./recovery-mode.js?v=2.14.183",
+  "./recovery-mode.css?v=2.14.183",
+  "./uci-rankings.js?v=2.14.183",
+  "./uci-schedule.js?v=2.14.183",
+  "./uci-schedule.css?v=2.14.183",
+  "./uci-tracker.js?v=2.14.183",
+  "./uci-tracker.css?v=2.14.183",
+  "./previous-week-landings.js?v=2.14.183",
+  "./daily-completion.js?v=2.14.183",
+  "./other-things-landed.js?v=2.14.183",
+  "./other-things-landed.css?v=2.14.183",
+  "./live-run-sync.js?v=2.14.183",
+  "./live-run-call.js?v=2.14.183",
+  "./live-run-companion.js?v=2.14.183",
+  "./live-run-call.css?v=2.14.183",
+  "./daily-completion.css?v=2.14.183",
+  "./progress-sharing.js?v=2.14.183",
+  "./progress-sharing.css?v=2.14.183",
+  "./battle-rematches.js?v=2.14.183",
+  "./battle-rematches.css?v=2.14.183",
+  "./active-battles.js?v=2.14.183",
+  "./active-battles.css?v=2.14.183",
+  "./tricktionary-auto.js?v=2.14.183",
+  "./tricktionary-tools.js?v=2.14.183",
+  "./tricktionary-tools.css?v=2.14.183",
+  "./manifest.webmanifest?v=2.14.183",
   "./icons/jkc-logo.png?v=2.11.77",
   "./icons/jkcoaching-wordmark.png?v=2.11.77",
   "./icons/app-icon-192.png?v=2.11.77",
   "./icons/app-icon-512.png?v=2.11.77",
   "./icons/app-icon-maskable-512.png?v=2.11.77",
   "./icons/apple-touch-icon.png?v=2.11.77",
-  "./icons/badges/prestige-01.png?v=2.14.182",
+  "./icons/badges/prestige-01.png?v=2.14.183",
 ];
 
 // Optional Garage code and styles load only when opened, then remain available offline.
 const BIKE_GARAGE_ASSETS = [
-  "./bike-parts-catalog.js?v=2.14.182",
-  "./bike-config.js?v=2.14.182",
-  "./bike-seat-designs.js?v=2.14.182",
-  "./bike-photo-masks.js?v=2.14.182",
-  "./bike-renderer.js?v=2.14.182",
-  "./bike-preview.js?v=2.14.182",
-  "./bike-preview.css?v=2.14.182",
-  "./bike-three.js?v=2.14.182",
-  "./bike-garage.js?v=2.14.182",
-  "./bike-garage.css?v=2.14.182",
+  "./bike-parts-catalog.js?v=2.14.183",
+  "./bike-config.js?v=2.14.183",
+  "./bike-seat-designs.js?v=2.14.183",
+  "./bike-photo-masks.js?v=2.14.183",
+  "./bike-renderer.js?v=2.14.183",
+  "./bike-preview.js?v=2.14.183",
+  "./bike-preview.css?v=2.14.183",
+  "./bike-three.js?v=2.14.183",
+  "./bike-garage.js?v=2.14.183",
+  "./bike-garage.css?v=2.14.183",
 ];
 
 // Public bike photos are fetched only when the garage needs them, then cached.
@@ -89,7 +89,7 @@ const BIKE_PHOTO_ASSETS = [
 
 // 3D code is optional public content, cached after opening Bike Garage.
 const BIKE_3D_ASSETS = [
-  "./bike-three-model.js?v=2.14.182",
+  "./bike-three-model.js?v=2.14.183",
   "./vendor/three.module.min.js",
   "./vendor/three.core.min.js",
   "./vendor/OrbitControls.js",
@@ -227,6 +227,7 @@ self.addEventListener("push", (event) => {
     data: {
       url: payload.url || "./",
       view: payload.view || (payload.type === "parent_weekly_summary" ? "home" : "board"),
+      recoveryPage: payload.type === "recovery_checkin_reminder" ? "today" : undefined,
     },
   }));
 });
@@ -240,7 +241,7 @@ self.addEventListener("notificationclick", (event) => {
     const existing = clients.find((client) => new URL(client.url).origin === self.location.origin);
     if (existing) {
       await existing.focus();
-      existing.postMessage({ type: "JKCREW_PUSH_NAVIGATE", view });
+      existing.postMessage({ type: "JKCREW_PUSH_NAVIGATE", view, recoveryPage: event.notification.data?.recoveryPage });
       return;
     }
     await self.clients.openWindow(targetUrl);

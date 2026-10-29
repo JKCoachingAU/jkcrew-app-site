@@ -65,6 +65,7 @@ Deno.serve(async (request) => {
     let failedTotal = 0;
 
     for (const item of queue) {
+      const isCheckinReminder = item.notification_type === "recovery_checkin_reminder";
       const { data: subscriptionRows, error: subscriptionError } = await supabase
         .from("push_subscriptions")
         .select("id, endpoint, p256dh, auth")
@@ -81,6 +82,25 @@ Deno.serve(async (request) => {
         errors.push(subscriptionError.message);
       } else {
         for (const subscription of (subscriptionRows || []) as SubscriptionRow[]) {
+          let reminderTtl = 0;
+          if (isCheckinReminder) {
+            try {
+              // The rider may finish a check-in or have recovery switched off
+              // after the queue was claimed. Fail closed before each device.
+              const { data: validation, error: validationError } = await supabase.rpc("validate_jkcrew_recovery_push", {
+                p_worker_secret: workerSecret,
+                p_notification_id: item.id,
+              });
+              if (validationError) throw validationError;
+              reminderTtl = Math.min(2 * 60 * 60, Math.floor((Date.parse(validation?.expires_at || "") - Date.now()) / 1000));
+              if (validation?.eligible !== true || !Number.isFinite(reminderTtl) || reminderTtl <= 0) break;
+            } catch (error) {
+              // A database outage says nothing about this device subscription.
+              failed += 1;
+              errors.push(error instanceof Error ? error.message : String(error));
+              break;
+            }
+          }
           try {
             await webpush.sendNotification(
               {
@@ -93,10 +113,10 @@ Deno.serve(async (request) => {
                 url: item.url || "./",
                 type: item.notification_type,
                 notificationId: item.id,
-                ...(item.payload || {}),
+                ...(isCheckinReminder ? { view: "home", recovery_page: "today" } : (item.payload || {})),
               }),
               {
-                TTL: item.notification_type === "crew_chat" ? 60 * 60 * 6 : 60 * 60 * 24 * 3,
+                TTL: isCheckinReminder ? reminderTtl : item.notification_type === "crew_chat" ? 60 * 60 * 6 : 60 * 60 * 24 * 3,
                 urgency: item.notification_type === "crew_chat" ? "high" : "normal",
               },
             );

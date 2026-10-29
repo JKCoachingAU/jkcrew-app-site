@@ -1,0 +1,124 @@
+// Daily reminder UI checks use synthetic recovery records and mocked device permission only.
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
+const root = path.resolve(__dirname, '..');
+let browser;
+(async () => {
+  browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/*', route => route.request().url() === 'http://localhost:54321/' ? route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div class="rider-shell recovery-shell"><div id="test" class="content"></div></div>' }) : route.abort());
+  await page.goto('http://localhost:54321/');
+  await page.addStyleTag({ path: path.join(root, 'styles.css') });
+  await page.addStyleTag({ path: path.join(root, 'recovery-mode.css') });
+  await page.addScriptTag({ path: path.join(root, 'recovery-mode.js') });
+  await page.evaluate(() => {
+    window.calls = []; window.outcomes = []; window.permissionCalls = 0; window.permissionOutcome = 'slow';
+    window.device = { supported: true, enabled: false, permission: 'default' };
+    window.data = { athlete_id: 'rider', recovery_mode: true, mode_version: 1, can_manage: false, today_date: '2026-10-29', timezone: 'Australia/Brisbane', episode: { id: 'episode', title: 'Return to riding', plan_version: 0 }, episodes: [], checkins: [], has_more: false,
+      reminder: { configured: true, enabled: true, local_time: '18:00:00', timezone: 'Australia/Brisbane', version: 1, has_enabled_device: false, today_status: 'no_device' } };
+    window.client = { rpc: async (name, args) => {
+      calls.push({ name, args: structuredClone(args) });
+      if (name === 'set_recovery_reminder') {
+        const outcome = outcomes.shift();
+        if (outcome === 'slow') await new Promise(resolve => setTimeout(resolve, 100));
+        if (outcome === 'network') throw new Error('network');
+        if (outcome === 'conflict') return { error: { code: '40001' } };
+        Object.assign(data.reminder, { enabled: args.p_enabled, local_time: args.p_local_time, timezone: args.p_timezone, version: args.p_expected_version + 1 });
+        data.timezone = args.p_timezone;
+      }
+      return { data: structuredClone(data) };
+    } };
+    window.options = { element: document.getElementById('test'), client, userId: 'rider', athleteId: 'rider', displayName: 'Test rider', getNotificationState: async () => structuredClone(device),
+      onEnableNotifications: async () => {
+        permissionCalls++; window.gesturePreserved = window.insideClick;
+        if (permissionOutcome === 'slow') await new Promise(resolve => setTimeout(resolve, 100));
+        if (permissionOutcome === 'deny') throw new Error('Notifications are blocked. Allow them in phone settings, then try again.');
+        device = { supported: true, enabled: true, permission: 'granted' }; return structuredClone(device);
+      } };
+    window.mount = JKCRecovery.mountAthlete(options);
+  });
+  await page.waitForSelector('[data-recovery-enable-notifications]');
+  assert.match(await page.locator('.recovery-reminder').textContent(), /6:00 pm · Brisbane time/);
+  assert.match(await page.locator('[data-recovery-device-status]').textContent(), /Enable notifications on this device/);
+  await page.locator('[data-recovery-number=headache]').fill('4');
+  await page.locator('#recovery-notes').fill('Unsaved private answer');
+  await page.evaluate(() => { insideClick = true; const b = document.querySelector('[data-recovery-enable-notifications]'); b.click(); b.click(); insideClick = false; });
+  await page.waitForFunction(() => document.querySelector('[data-recovery-device-status]')?.textContent.includes('Notifications are on'));
+  assert.equal(await page.evaluate(() => permissionCalls), 1, 'Repeated taps request permission once');
+  assert.equal(await page.evaluate(() => gesturePreserved), true, 'Permission callback runs directly within the click');
+  assert.equal(await page.locator('[data-recovery-number=headache]').inputValue(), '4');
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer');
+  await page.locator('[data-recovery-page=history]').click();
+  await page.evaluate(() => mount.showToday());
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer', 'Notification navigation keeps the check-in draft');
+  await page.locator('[data-recovery-page=plan]').click();
+  await page.evaluate(() => { mount.destroy(); mount = JKCRecovery.mountAthlete({ ...options, initialPage: 'today' }); });
+  await page.waitForSelector('#recovery-notes');
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer', 'Cold mount override opens Check-in without clearing draft');
+  await page.locator('[data-recovery-reminder-settings] summary').click();
+  await page.locator('[data-recovery-reminder-time]').fill('19:00');
+  await page.evaluate(() => outcomes.push('slow'));
+  await page.locator('[data-recovery-reminder-form]').evaluate(form => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  await page.waitForFunction(() => document.querySelector('.recovery-reminder').textContent.includes('Reminder saved.'));
+  assert.equal(await page.evaluate(() => calls.filter(c => c.name === 'set_recovery_reminder').length), 1);
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer', 'Changing reminder time preserves answers');
+  await page.locator('[data-recovery-reminder-settings] summary').click();
+  await page.locator('[data-recovery-reminder-timezone]').selectOption('Europe/Berlin');
+  await page.locator('[data-recovery-reminder-form] button[type=submit]').click();
+  assert.match(await page.locator('.recovery-reminder').textContent(), /Save your check-in before changing its time zone/);
+  assert.equal(await page.evaluate(() => calls.filter(c => c.name === 'set_recovery_reminder').length), 1, 'No calendar-day change while draft pending');
+  await page.locator('[data-recovery-reminder-timezone]').selectOption('Australia/Brisbane');
+  await page.evaluate(() => outcomes.push('network'));
+  await page.locator('[data-recovery-reminder-form] button[type=submit]').click();
+  await page.waitForSelector('[data-recovery-reload-reminder]');
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer');
+  await page.locator('[data-recovery-reload-reminder]').click();
+  await page.waitForFunction(() => document.querySelector('.recovery-reminder').textContent.includes('Showing the saved reminder settings.'));
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer');
+  await page.locator('[data-recovery-reminder-settings] summary').click();
+  await page.locator('[data-recovery-reminder-time]').fill('20:00');
+  await page.evaluate(() => { data.reminder.local_time = '17:30:00'; data.reminder.version = 8; outcomes.push('conflict'); });
+  await page.locator('[data-recovery-reminder-form] button[type=submit]').click();
+  await page.waitForSelector('[data-recovery-reload-reminder]');
+  assert.match(await page.locator('.recovery-reminder').textContent(), /changed on another device/);
+  assert.equal(await page.locator('[data-recovery-reminder-time]').inputValue(), '20:00', 'Conflicts keep the attempted settings until the user reloads');
+  await page.locator('[data-recovery-reload-reminder]').click();
+  await page.waitForFunction(() => document.querySelector('.recovery-reminder').textContent.includes('5:30 pm'));
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer');
+  await page.evaluate(() => { mount.destroy(); device = { supported: true, enabled: false, permission: 'denied' }; mount = JKCRecovery.mountAthlete(options); });
+  await page.waitForSelector('[data-recovery-check-notifications]');
+  assert.match(await page.locator('[data-recovery-device-status]').textContent(), /blocked on this device/);
+  assert.equal(await page.locator('[data-recovery-enable-notifications]').count(), 0, 'Denied permission gives settings instructions, not endless requests');
+  await page.evaluate(() => { device = { supported: false, enabled: false, permission: 'unsupported' }; });
+  await page.locator('[data-recovery-check-notifications]').click();
+  await page.waitForFunction(() => document.querySelector('[data-recovery-device-status]').textContent.includes('Home Screen'));
+  assert.equal(await page.locator('[data-recovery-enable-notifications]').count(), 0);
+  await page.evaluate(() => { mount.destroy(); device = { supported: true, enabled: false, permission: 'default' }; permissionOutcome = 'deny'; mount = JKCRecovery.mountAthlete(options); });
+  await page.waitForSelector('[data-recovery-enable-notifications]');
+  await page.locator('[data-recovery-enable-notifications]').click();
+  await page.waitForSelector('.recovery-reminder [role=alert]');
+  assert.equal(await page.locator('[data-recovery-enable-notifications]').isDisabled(), false, 'Failed setup releases loading state');
+  assert.equal(await page.locator('#recovery-notes').inputValue(), 'Unsaved private answer');
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `No reminder overflow at ${width}`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: '/tmp/jkcrew-recovery-reminder-mobile.png', fullPage: true });
+  await page.evaluate(() => { JKCRecovery.cleanup(); data.can_manage = true; mount = JKCRecovery.mountCoach({ ...options, userId: 'coach' }); });
+  await page.waitForSelector('.recovery-reminder');
+  assert.match(await page.locator('[data-recovery-device-status]').textContent(), /No device is registered/);
+  assert.equal(await page.locator('[data-recovery-enable-notifications]').count(), 0, 'Coach cannot enable a rider phone remotely');
+  await page.locator('[data-recovery-reminder-settings] summary').click();
+  await page.locator('[data-recovery-reminder-enabled]').uncheck();
+  await page.locator('[data-recovery-reminder-form] button[type=submit]').click();
+  await page.waitForFunction(() => data.reminder.enabled === false);
+  assert.equal(await page.evaluate(() => calls.filter(c => c.name === 'set_recovery_reminder').at(-1).args.p_enabled), false);
+  await page.evaluate(() => { data.recovery_mode = false; });
+  await page.locator('[data-recovery-refresh]').click();
+  await page.waitForFunction(() => !document.querySelector('.recovery-reminder'));
+  assert.deepEqual(errors, []);
+  console.log('PASS: immediate permission gesture, duplicate tap guard, enabled/denied/unsupported/error feedback, preserved check-in drafts, reminder save/reload, timezone draft protection, deep-link Check-in navigation, coach controls, inactive mode, 320–768px layouts.');
+  await browser.close();
+})().catch(async error => { console.error(error); if (browser) await browser.close(); process.exitCode = 1; });

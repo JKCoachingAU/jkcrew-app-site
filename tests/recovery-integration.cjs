@@ -17,6 +17,7 @@ const names = [
   'riderFeaturesDisabled', 'riderFeatureAccessUnknown', 'riderRecoveryActive',
   'showRiderAccessMessage', 'refreshRiderFeatureAccess', 'closeRestrictedRiderFeatures',
   'guardRiderFeatureInteraction', 'renderRiderRecoveryHome', 'renderRecoveryCoach',
+  'riderHasUciPoints', 'primaryNavButtonHtml', 'updateRiderUciNavigation', 'loadRiderUciNavigation',
   'renderShell', 'navigate', 'resetPageExpansions', 'closeJkcYard',
   'setupRealtimeSync', 'scheduleRealtimeRefresh', 'mountStartupPrompts',
   'refreshLiveRunInvites',
@@ -45,7 +46,7 @@ const ok = (value, message) => { assert(value, message); checks++; };
       window.app = document.querySelector('#app');
       window.state = {
         view: 'home', user: { id: 'rider-a', email: 'qa@example.test' },
-        profile: { id: 'rider-a', role: 'athlete', display_name: 'QA Rider' },
+        profile: { id: 'rider-a', role: 'athlete', display_name: 'QA Rider', uci_id: '10000000001' },
         session: { access_token: 'local-fixture-only' }, sessionSetupVersion: 1,
         riderAccess: { athlete_id: 'rider-a', features_disabled: false, recovery_mode: true },
         riderAccessCheckedAt: 0, riderAccessRequest: null, riderAccessTimer: null,
@@ -64,6 +65,9 @@ const ok = (value, message) => { assert(value, message); checks++; };
       window.notify = (message, tone) => qa.notices.push({ message, tone });
       window.isCoachRole = role => ['coach', 'admin'].includes(role);
       window.avatarHtml = () => '<span class="avatar">QA</span>';
+      // The recovery rider qualifies for LA28 navigation in the normal app.
+      // Keep the real nav eligibility helpers in this integration harness.
+      window.JKCUciRankings = { peek: () => ({}), findRider: (_snapshot, id) => id === '10000000001' ? { row: { points: 100 } } : null, load: async () => ({}) };
       window.parentNav = [['home', 'Home'], ['parentWeek', 'This week'], ['profile', 'Profile']];
       window.coachNav = [['command', 'Command'], ['crew', 'Riders']];
       window.coachNavGroups = [{ id: 'crew', label: 'Riders', icon: '●', links: [['crew', 'Students']] }];
