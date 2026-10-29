@@ -1,7 +1,7 @@
 # Optional WHOOP health summary
 
 This backend is implemented and tested with synthetic WHOOP responses and a
-disposable local PostgreSQL database. Real WHOOP OAuth, account approval and
+disposable local PostgreSQL database. Real WHOOP OAuth and
 device synchronisation have **not** been verified. Applying the migration does
 not connect any rider, import health data or create a paid subscription.
 
@@ -27,7 +27,10 @@ not connect any rider, import health data or create a paid subscription.
    Supabase's injected `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
    `SUPABASE_SERVICE_ROLE_KEY` are also required.
 5. Verify one consenting test rider, including revoke/disconnect and an expired
-   access token, before rollout. WHOOP starts apps at Sandbox/10 members. The
+   access token, before rollout. WHOOP starts registered apps at Sandbox/10
+   members without manual approval. A WHOOP account, registered app credentials
+   and each rider's consent are still required; choosing fewer summary metrics
+   does not remove these requirements. The
    next tier is Build/100 members, manually reviewed; request it if required.
    Do not accept paid services or commercial commitments without owner approval.
 
@@ -57,13 +60,11 @@ Status and refresh responses:
     "metric_observed_at": {
       "sleep": "2026-10-29T07:00:00.000Z",
       "recovery": "2026-10-29T07:00:00.000Z",
-      "strain": "2026-10-29T07:00:00.000Z"
+      "calories": "2026-10-29T07:00:00.000Z"
     },
     "sleep_minutes": 420,
-    "resting_heart_rate_bpm": 50,
-    "hrv_rmssd_ms": 64,
     "recovery_percent": 0,
-    "strain": 0
+    "calories_kcal": 1000
   },
   "synced_at": "2026-10-29T08:00:00.000Z",
   "retry_after": "2026-10-29T08:15:00.000Z",
@@ -78,8 +79,16 @@ Connect must not appear functional in that state. `connection` can be
 `disconnected`, `connected`, or `reconnect_required`. `summary` is null until a
 successful sync; individual missing/unscored values are null. Zero is a value.
 The per-metric times refer to the underlying sleep/recovery/cycle, separately
-from `synced_at`. Day strain is WHOOP's cycle score, not a JKCREW score or medical
-assessment. Only recent data (seven days, up to 25 records per resource) is read.
+from `synced_at`. The summary stores only sleep duration, recovery percentage
+and calories burned. Heart rate, HRV and strain are not retained in the summary.
+`calories_kcal` converts the latest scored cycle's `score.kilojoule` by dividing
+by 4.184 and rounding to the nearest whole kcal. This is WHOOP's estimate of
+energy expended during its physiological cycle, including resting and activity
+energy, not active-only calories or a calendar-day total. Label it with
+**WHOOP cycle** context; it is not a food intake target. Calories use the cycle
+end timestamp, or the start for the current unfinished cycle. An update to an
+older cycle does not relabel it as today's data. Only recent data (seven days,
+up to 25 records per resource) is read.
 Naps are excluded from the main sleep card, and sleep minutes sum the actual
 sleep stages, not time in bed. No earlier scored result substitutes for the
 latest unscored record.
@@ -141,11 +150,15 @@ node tests/health-whoop-edge.cjs
 These run the actual migration and function against isolated PostgreSQL with
 mock WHOOP/Auth transport. They cover access denial, encrypted token privacy,
 one-use/expired/superseded state, concurrency, cooldowns, source dates,
-zero/missing scores, sleep duration, failures/timeouts and disconnect cleanup.
+zero/missing scores, sleep duration, calorie conversion and invalid values,
+failures/timeouts and disconnect cleanup.
 No test contacts a real rider or provider account.
 
 Official references:
 [WHOOP API v2](https://developer.whoop.com/api/),
+[Cycle field schema](https://api.prod.whoop.com/developer/doc/openapi.json),
+[Physiological cycles](https://developer.whoop.com/docs/developing/user-data/cycle/),
+[Calorie estimates](https://support.whoop.com/s/article/How-does-WHOOP-calculate-calories-burned),
 [OAuth](https://developer.whoop.com/docs/developing/oauth/),
 [App approval](https://developer.whoop.com/docs/developing/app-approval/),
 [Supabase function authentication](https://supabase.com/docs/guides/functions/auth),

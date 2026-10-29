@@ -14,15 +14,15 @@
 .rider-health-status.is-error { color:#edacb5; }
 .rider-health-source { display:flex; justify-content:space-between; gap:6px 16px; flex-wrap:wrap; color:#afb9ca; font-size:.75rem; margin:22px 0 14px; }
 .rider-health-source span { color:#8596b0; }
-.rider-health-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:0; }
+.rider-health-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:0; }
 .rider-health-metric { padding:14px 10px; background:#ffffff04; border:1px solid #ffffff0e; border-radius:12px; }
 .rider-health-metric dt { color:#adb8c7; font-size:.72rem; line-height:1.4; min-height:2.8em; }
 .rider-health-metric dd { margin:8px 0 4px; font:800 2rem/1.1 var(--display,sans-serif); }
 .rider-health-metric dd small { font:500 .7rem/1 var(--mono,monospace); color:#9caaba; margin-left:5px; }
 .rider-health-metric > span { color:#8898ae; font-size:.65rem; line-height:1.4; }
-.rider-health-metric.sleep dd { color:#b7b1ee; }.rider-health-metric.heart dd { color:#ed9ca6; }.rider-health-metric.hrv dd { color:#92bceb; }.rider-health-metric.recovery dd { color:#e6cb90; }
-.rider-health-strain { font-size:.8rem; color:#a7b3c2; display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; align-items:baseline; }
-.rider-health-strain strong { color:#edf1f6; }.rider-health-strain span { color:#91a0b3; font-size:.7rem; }
+.rider-health-metric.sleep dd { color:#b7b1ee; }.rider-health-metric.calories dd { color:#ed9ca6; }.rider-health-metric.recovery dd { color:#e6cb90; }
+.rider-health-note { font-size:.72rem; color:#91a0b3; line-height:1.5; margin:12px 0; }
+.rider-health-metric.calories dd small { display:block; margin:5px 0 0; }
 .rider-health-devices { border-top:1px solid #34435488; margin-top:16px; }
 .rider-health-devices summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; font-size:.85rem; color:#b9c9e6; padding:10px 0; }
 .rider-health-devices summary::-webkit-details-marker { display:none; }.rider-health-devices[open] summary > span { transform:rotate(180deg); }
@@ -37,10 +37,9 @@
 [data-theme=light] .rider-health-card { background:linear-gradient(125deg,#f1f1fb,#f8fafc); border-color:#bbc7d6; color:#172130; }
 [data-theme=light] .rider-health-card :is(p,dt,summary),[data-theme=light] .rider-health-metric>span { color:#53647c; }
 [data-theme=light] .rider-health-metric { background:#ffffffa6; border-color:#d6deea; }
-[data-theme=light] .rider-health-metric.sleep dd { color:#67529e; }[data-theme=light] .rider-health-metric.heart dd { color:#a04559; }[data-theme=light] .rider-health-metric.hrv dd { color:#28649d; }[data-theme=light] .rider-health-metric.recovery dd { color:#846414; }
+[data-theme=light] .rider-health-metric.sleep dd { color:#67529e; }[data-theme=light] .rider-health-metric.calories dd { color:#a04559; }[data-theme=light] .rider-health-metric.recovery dd { color:#846414; }
 [data-theme=light] .rider-health-text { color:#365d91; }[data-theme=light] .rider-health-providers button { background:#edf2fa; color:#273b5a; border-color:#a9b9d1; }
 [data-theme=light] .rider-health-providers button[aria-pressed=true] { background:#dbe5f7; color:#172a4c; }
-[data-theme=light] .rider-health-strain strong { color:#172130; }
-[data-theme=light] .rider-health-source span, [data-theme=light] .rider-health-strain span, [data-theme=light] .rider-health-metric dd small, [data-theme=light] .rider-health-connection, [data-theme=light] .rider-health-eyebrow { color:#53647c; }
-@media(max-width:600px) { .rider-health-card { padding:18px; border-radius:18px; }.rider-health-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }.rider-health-metric dt { min-height:0; }.rider-health-metric dd { font-size:1.9rem; }.rider-health-heading { gap:10px; }.rider-health-providers button { padding:10px 5px; font-size:.76rem; } }
+[data-theme=light] .rider-health-source span, [data-theme=light] .rider-health-metric dd small, [data-theme=light] .rider-health-connection, [data-theme=light] .rider-health-eyebrow { color:#53647c; }
+@media(max-width:600px) { .rider-health-card { padding:18px; border-radius:18px; }.rider-health-metric { padding:12px 8px; }.rider-health-metric dd { font-size:clamp(1.25rem,5.5vw,1.7rem); }.rider-health-heading { gap:10px; }.rider-health-providers button { padding:10px 5px; font-size:.76rem; } }
 @media(prefers-reduced-motion:reduce) { .rider-health-card * { transition:none!important; animation:none!important; } }

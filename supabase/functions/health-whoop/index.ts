@@ -116,17 +116,20 @@ function makeSummary(sleeps: Json[], recoveries: Json[], cycles: Json[], now: st
   const durations = stages ? ['total_light_sleep_time_milli','total_slow_wave_sleep_time_milli','total_rem_sleep_time_milli'].map(k=>finite(stages[k],172800000)) : [];
   const sleepMinutes = durations.length===3 && durations.every(v=>v!==null) ? Math.round(durations.reduce<number>((a,b)=>a+(b??0),0)/60000) : null;
   const r = recovery?.score_state==='SCORED' ? recovery.score : null;
-  const strain = cycle?.score_state==='SCORED' ? finite(cycle.score?.strain,21) : null;
-  const resting = finite(r?.resting_heart_rate,300), hrv = finite(r?.hrv_rmssd_milli,1000), score = finite(r?.recovery_score,100);
+  // WHOOP reports energy expended over a physiological cycle, which need not
+  // match a calendar day. Convert its reported kJ to Calories (kcal).
+  const kilojoules = cycle?.score_state==='SCORED' ? finite(cycle.score?.kilojoule,Number.MAX_SAFE_INTEGER) : null;
+  const calories = kilojoules!==null ? Math.round(kilojoules/4.184) : null;
+  const score = finite(r?.recovery_score,100);
   const recoverySleep = sleeps.find(s=>s.id===recovery?.sleep_id);
   const times = {
     sleep: sleepMinutes!==null ? iso(sleep?.end) : null,
-    recovery: [resting,hrv,score].some(v=>v!==null) ? (iso(recoverySleep?.end)||iso(recovery?.created_at)) : null,
+    recovery: score!==null ? (iso(recoverySleep?.end)||iso(recovery?.created_at)) : null,
     // A recalculation today must not relabel an older completed cycle as today.
-    strain: strain!==null ? (iso(cycle?.end)||iso(cycle?.start)) : null
+    calories: calories!==null ? (iso(cycle?.end)||iso(cycle?.start)) : null
   };
   return {source:'WHOOP',synced_at:now,observed_at:Object.values(times).filter(Boolean).sort().at(-1)||null,
-    metric_observed_at:times,sleep_minutes:sleepMinutes,resting_heart_rate_bpm:resting,hrv_rmssd_ms:hrv,recovery_percent:score,strain};
+    metric_observed_at:times,sleep_minutes:sleepMinutes,recovery_percent:score,calories_kcal:calories};
 }
 async function providerData(path: string, token: string) {
   const result = await requestJson(`${API_URL}/${path}`,{headers:{Authorization:`Bearer ${token}`}});

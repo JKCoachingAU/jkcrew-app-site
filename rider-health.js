@@ -18,7 +18,7 @@
   } catch (_) { /* No provider credentials are read from a URL. */ }
 
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const finite = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+  const finite = value => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
   const date = value => { const d = new Date(value || ''); return Number.isFinite(d.getTime()) ? d : null; };
   const time = value => date(value)?.toLocaleString(undefined, {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}) || 'Time unavailable';
   const valueLabel = value => finite(value) === null ? '—' : Number(value).toLocaleString(undefined, {maximumFractionDigits:1});
@@ -36,10 +36,10 @@
     }
     function readings() {
       const s = info?.summary;
-      if (!s) return `<div class="rider-health-empty"><strong>${info?.connection === 'connected' ? 'Waiting for your first readings' : 'Your health, in one place'}</strong><p>${info?.connection === 'connected' ? 'Sync your WHOOP in its app, then refresh here.' : 'Connect a supported device to see sleep, heart rate and recovery.'}</p></div>`;
+      if (!s) return `<div class="rider-health-empty"><strong>${info?.connection === 'connected' ? 'Waiting for your first readings' : 'Your health, in one place'}</strong><p>${info?.connection === 'connected' ? 'Sync your WHOOP in its app, then refresh here.' : 'Connect a supported device to see sleep, recovery and calories burned.'}</p></div>`;
       const observed = s.metric_observed_at || {};
       const stale = !date(s.synced_at) || Date.now() - date(s.synced_at).getTime() > 24 * 60 * 60 * 1000;
-      return `<p class="rider-health-source">WHOOP · ${stale ? 'Last saved readings' : 'Latest readings'}<span>Synced ${escape(time(s.synced_at))}</span></p><dl class="rider-health-metrics">${metric('Sleep', duration(s.sleep_minutes), '', 'sleep', observed.sleep)}${metric('Resting heart rate', valueLabel(s.resting_heart_rate_bpm), 'bpm', 'heart', observed.recovery)}${metric('HRV · RMSSD', valueLabel(s.hrv_rmssd_ms), 'ms', 'hrv', observed.recovery)}${metric('WHOOP recovery', valueLabel(s.recovery_percent), '%', 'recovery', observed.recovery)}</dl>${finite(s.strain) !== null ? `<p class="rider-health-strain">WHOOP day strain <strong>${escape(valueLabel(s.strain))}<span> / 21</span></strong>${observed.strain ? `<span>${escape(time(observed.strain))}</span>` : ''}</p>` : ''}`;
+      return `<p class="rider-health-source">WHOOP · ${stale ? 'Last saved readings' : 'Latest readings'}<span>Synced ${escape(time(s.synced_at))}</span></p><dl class="rider-health-metrics">${metric('Sleep', duration(s.sleep_minutes), '', 'sleep', observed.sleep)}${metric('Recovery', valueLabel(s.recovery_percent), '%', 'recovery', observed.recovery)}${metric('Calories burned', finite(s.calories_kcal) === null ? '—' : Math.round(Number(s.calories_kcal)).toLocaleString(), 'kcal', 'calories', observed.calories)}</dl><p class="rider-health-note">Calories are WHOOP’s estimate for your latest cycle.</p>`;
     }
     function devicePanel() {
       let body;
@@ -48,7 +48,7 @@
       else if (!info) body = '<p>Check your connection and retry to see WHOOP availability.</p>';
       else if (info.connection === 'connected' || info.connection === 'reconnect_required') body = `<p>${info.connection === 'reconnect_required' ? 'WHOOP needs your permission again before new readings can sync.' : 'Your WHOOP is connected. Readings update when you open Home or tap Refresh, after your device has synced with WHOOP.'}</p>${info.connection === 'reconnect_required' && info.availability === 'ready' ? '<button type="button" class="rider-health-button primary" data-health-action="connect">Reconnect WHOOP</button>' : ''}${confirmDisconnect ? '<p>Disconnect WHOOP and remove its saved health summary from JKCREW?</p><div class="rider-health-actions"><button type="button" class="rider-health-button" data-health-action="cancel-disconnect">Keep connected</button><button type="button" class="rider-health-button danger" data-health-action="disconnect">Disconnect & remove</button></div>' : '<button type="button" class="rider-health-text" data-health-action="confirm-disconnect">Disconnect WHOOP</button>'}`;
       else if (info.availability !== 'ready') body = '<p>WHOOP isn’t available yet. Your coach needs to finish the connection setup before you can link your device.</p>';
-      else body = '<p>Share sleep, resting heart rate, HRV, recovery and strain with JKCREW. You can disconnect and remove these readings here anytime.</p><button type="button" class="rider-health-button primary" data-health-action="connect">Connect WHOOP <span aria-hidden="true">↗</span></button>';
+      else body = '<p>Share sleep, recovery and estimated calories burned with JKCREW. You can disconnect and remove these readings here anytime.</p><button type="button" class="rider-health-button primary" data-health-action="connect">Connect WHOOP <span aria-hidden="true">↗</span></button>';
       return `<details class="rider-health-devices" ${devicesOpen ? 'open' : ''}><summary>${info?.connection === 'connected' ? 'Manage device' : 'Choose a device'}<span aria-hidden="true">⌄</span></summary><div class="rider-health-providers" role="group" aria-label="Health device"><button type="button" data-health-provider="apple" aria-pressed="${selected === 'apple'}">Apple Health</button><button type="button" data-health-provider="whoop" aria-pressed="${selected === 'whoop'}">WHOOP</button><button type="button" data-health-provider="garmin" aria-pressed="${selected === 'garmin'}">Garmin</button></div><div class="rider-health-provider-detail">${body}</div><p class="rider-health-private">Only you can see your health summary.</p></details>`;
     }
     function render() {

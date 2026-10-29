@@ -16,7 +16,7 @@ let data={
  sleep:[{id:'nap',nap:true,start:stamp(-3600000),end:stamp(-1800000),score_state:'SCORED',score:{stage_summary:{total_light_sleep_time_milli:1800000,total_slow_wave_sleep_time_milli:0,total_rem_sleep_time_milli:0}}},
  {id:'main',nap:false,start:stamp(-10*3600000),end:stamp(-2*3600000),score_state:'SCORED',score:{stage_summary:{total_in_bed_time_milli:9*3600000,total_awake_time_milli:2*3600000,total_light_sleep_time_milli:4*3600000,total_slow_wave_sleep_time_milli:2*3600000,total_rem_sleep_time_milli:3600000}}}],
  recovery:[{sleep_id:'main',created_at:stamp(-90*60000),score_state:'SCORED',score:{recovery_score:0,resting_heart_rate:50,hrv_rmssd_milli:64}}],
- cycle:[{start:stamp(-24*3600000),updated_at:stamp(-60000),score_state:'SCORED',score:{strain:0}}]
+ cycle:[{start:stamp(-24*3600000),updated_at:stamp(-60000),score_state:'SCORED',score:{strain:0,kilojoule:4184}}]
 };
 async function fakeFetch(url,options={}){
  calls.push({url,method:options.method||'GET',headers:options.headers,body:options.body});
@@ -113,10 +113,30 @@ async function test(name,fn){await fn();checks++;console.log(`PASS ${name}`);}
  });
  await test('real WHOOP summary calculation skips naps and awake time and preserves zeros',async()=>{
   const result=await (await request('refresh')).json();assert.equal(result.connection,'connected');
-  assert.equal(result.summary.sleep_minutes,420);assert.equal(result.summary.recovery_percent,0);assert.equal(result.summary.strain,0);
-  assert.equal(result.summary.resting_heart_rate_bpm,50);assert.equal(result.summary.hrv_rmssd_ms,64);
+  assert.equal(result.summary.sleep_minutes,420);assert.equal(result.summary.recovery_percent,0);assert.equal(result.summary.calories_kcal,1000);
   assert.equal(result.summary.metric_observed_at.sleep,data.sleep[1].end);assert.equal(result.summary.metric_observed_at.recovery,data.sleep[1].end);
-  assert.equal(result.summary.metric_observed_at.strain,data.cycle[0].start);assert.equal(result.sync_due,false);
+  assert.equal(result.summary.metric_observed_at.calories,data.cycle[0].start);assert.equal(result.sync_due,false);
+  const persisted=(await q('select summary from private.health_whoop_connections where athlete_id=$1',[id(1)]))[0].summary;
+  assert.deepEqual(persisted,result.summary);
+  assert.deepEqual(Object.keys(persisted).sort(),['source','synced_at','observed_at','metric_observed_at','sleep_minutes','recovery_percent','calories_kcal'].sort());
+  assert.deepEqual(Object.keys(persisted.metric_observed_at).sort(),['sleep','recovery','calories'].sort());
+ });
+ await test('cycle energy converts kilojoules to rounded kcal and preserves real zero',async()=>{
+  for(const [kilojoule,expected] of [[4184,1000],[8288.297,1981],[0,0]]){
+   const summary=helpers.makeSummary([],[],[{...data.cycle[0],score:{kilojoule}}],stamp(0));
+   assert.equal(summary.calories_kcal,expected);assert.equal(summary.metric_observed_at.calories,data.cycle[0].start);
+  }
+  const completed={...data.cycle[0],end:stamp(-2*3600000),updated_at:stamp(0)};
+  const summary=helpers.makeSummary([],[],[completed],stamp(0));
+  assert.equal(summary.metric_observed_at.calories,completed.end);assert.notEqual(summary.metric_observed_at.calories,completed.updated_at);
+ });
+ await test('invalid or missing energy cannot become calories or a misleading observation date',async()=>{
+  for(const kilojoule of [undefined,null,'4184','','   ','unknown',-1,NaN,Infinity,-Infinity,Number.MAX_VALUE,{},[],true,false]){
+   const summary=helpers.makeSummary([],[],[{...data.cycle[0],score:{kilojoule,strain:12}}],stamp(0));
+   assert.equal(summary.calories_kcal,null);assert.equal(summary.metric_observed_at.calories,null);assert.equal(summary.observed_at,null);
+  }
+  const missingRecovery=helpers.makeSummary([], [{...data.recovery[0],score:{resting_heart_rate:50,hrv_rmssd_milli:64}}], [], stamp(0));
+  assert.equal(missingRecovery.recovery_percent,null);assert.equal(missingRecovery.metric_observed_at.recovery,null);assert.equal(missingRecovery.observed_at,null);
  });
  await test('15-minute DB cooldown stops provider calls from repeated refresh or home loads',async()=>{
   const before=calls.filter(c=>c.url.startsWith('https://api.prod.whoop.com/')).length;
@@ -140,10 +160,13 @@ async function test(name,fn){await fn();checks++;console.log(`PASS ${name}`);}
  });
  await test('new unscored records show null metrics rather than older scores or fabricated zeros',async()=>{
   const summary=helpers.makeSummary([{...data.sleep[1],id:'new',start:stamp(0),score_state:'PENDING_SCORE'},data.sleep[1]],
-   [{...data.recovery[0],score_state:'PENDING_SCORE'},data.recovery[0]],[{...data.cycle[0],score_state:'PENDING_SCORE'}],stamp(0));
-  for(const key of ['sleep_minutes','recovery_percent','resting_heart_rate_bpm','hrv_rmssd_ms','strain'])assert.equal(summary[key],null);
+   [{...data.recovery[0],score_state:'PENDING_SCORE'},data.recovery[0]],[data.cycle[0],{...data.cycle[0],start:stamp(0),score_state:'PENDING_SCORE'}],stamp(0));
+  for(const key of ['sleep_minutes','recovery_percent','calories_kcal'])assert.equal(summary[key],null);
   assert.equal(summary.observed_at,null);assert.equal(summary.metric_observed_at.recovery,null);
-  const missing=helpers.makeSummary([],[],[],stamp(0));assert.equal(missing.sleep_minutes,null);
+  assert.equal(summary.metric_observed_at.calories,null);
+  const missing=helpers.makeSummary([],[],[],stamp(0));
+  for(const key of ['sleep_minutes','recovery_percent','calories_kcal'])assert.equal(missing[key],null);
+  const unscorable=helpers.makeSummary([],[],[{...data.cycle[0],score_state:'UNSCORABLE'}],stamp(0));assert.equal(unscorable.calories_kcal,null);
  });
  await test('provider failure preserves last summary and adds a retry cooldown',async()=>{
   await expireSync();providerMode='down';const result=await (await request('refresh')).json();assert.equal(result.summary.sleep_minutes,420);assert.equal(result.sync_due,false);assert.match(result.message,/last summary/);
