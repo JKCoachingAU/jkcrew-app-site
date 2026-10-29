@@ -27,9 +27,9 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.183";
+const RELEASE_VERSION = "2.14.184";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
-const PROFILE_SELECT = "id,display_name,role,level,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,badges,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,xp_total,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
+const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
   session: null,
   user: null,
@@ -187,6 +187,7 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
   if (enforce && document.querySelector("#view") && riderRecoveryActive()) {
     const recoveryHost = document.querySelector("#rider-recovery-home");
     if (!recoveryHost || !document.querySelector(".recovery-shell") || (recoveryHost.dataset.recoveryEpisode || "") !== (state.riderAccess.recovery_episode_id || "")) {
+      window.JKCRiderHealth?.cleanup();
       state.recoveryMount?.destroy();
       state.recoveryMount = null;
       closeRestrictedRiderFeatures();
@@ -196,6 +197,7 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
     return true;
   }
   if (enforce && document.querySelector(".recovery-shell") && !riderRecoveryActive()) {
+    window.JKCRiderHealth?.cleanup();
     state.recoveryMount?.destroy();
     state.recoveryMount = null;
     window.JKCRecovery?.cleanup({ clearDrafts: true });
@@ -215,6 +217,7 @@ async function refreshRiderFeatureAccess({ force = false, enforce = true } = {})
 }
 
 function closeRestrictedRiderFeatures() {
+  window.JKCRiderHealth?.cleanup();
   clearDailyFeatureMounts();
   clearInterval(state.timer);
   teardownRealtimeSync();
@@ -268,6 +271,7 @@ document.addEventListener("visibilitychange", () => {
 async function renderRiderRecoveryHome() {
   if (!riderRecoveryActive()) return renderAthleteHome();
   const userId = state.user.id, setupVersion = state.sessionSetupVersion;
+  window.JKCRiderHealth?.cleanup();
   state.recoveryMount?.destroy();
   state.recoveryMount = null;
   const host = document.querySelector("#view");
@@ -311,12 +315,12 @@ async function renderRecoveryCoach() {
 }
 
 async function renderRestrictedRiderHome() {
+  window.JKCRiderHealth?.cleanup();
   const renderVersion = ++state.athleteHomeRenderVersion;
   const message = riderFeaturesDisabled() ? RIDER_ACCESS_MESSAGE : "Unable to check feature access. Reconnect and try again.";
   document.querySelector("#view").innerHTML = `<section class="athlete-scoreboard panel" id="rider-access-dashboard">
     <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your profile and progress are safe.</p></div></div>
     <div id="rider-access-week" class="rider-access-week"></div>
-    ${xpProgressHtml(riderXpSummary(state.profile))}
   </section><section class="panel rider-access-notice" aria-labelledby="rider-access-title">
     <div class="eyebrow">Feature access</div><h2 id="rider-access-title">${riderFeaturesDisabled() ? "Dashboard access only" : "Check your connection"}</h2>
     <p role="status">${escapeHtml(message)}</p>
@@ -587,16 +591,21 @@ const medalForRank = (row, index, rows = [], pointsKey = "weekly_points") => {
 };
 const earnedBadges = (value) => Array.isArray(value) ? value : [];
 const badgeChipHtml = (badge, className = "") => {
+  if (!XP_PROGRESSION_ENABLED) return "";
   if (!badge) return "";
   const icon = badge.icon || "★";
   const label = badge.label || badge;
   return `<span class="public-badge ${className}" title="${escapeHtml(badge.description || label)}"><span>${escapeHtml(icon)}</span>${escapeHtml(label)}</span>`;
 };
 const badgeStripHtml = (badges, emptyText = "No earned badges yet") => {
+  if (!XP_PROGRESSION_ENABLED) return "";
   const items = earnedBadges(badges);
   if (items.length) return items.map((badge) => badgeChipHtml(badge)).join("");
   return emptyText ? `<span class="public-badge muted-badge">${escapeHtml(emptyText)}</span>` : "";
 };
+// Legacy XP records are retained for a possible future return. No XP UI, reads or writes while paused.
+const XP_PROGRESSION_ENABLED = false;
+const PAUSED_XP_NOTIFICATION_TYPES = ["xp_earned", "xp_awarded", "xp_bonus", "level_up", "level_unlocked", "badge_earned", "badge_unlocked", "prestige", "prestige_earned", "prestige_unlocked"];
 const XP_LEVEL_CAP = 50;
 const PRESTIGE_LEVEL = XP_LEVEL_CAP + 1;
 function rawXpRequiredForLevel(level = 1) {
@@ -675,6 +684,7 @@ function normalizeXpSummary(summary = {}, profile = {}) {
   };
 }
 function levelBadgeHtml(badge = {}, compact = false) {
+  if (!XP_PROGRESSION_ENABLED) return "";
   const safe = badge || {};
   const level = Math.min(XP_LEVEL_CAP, Math.max(1, Number(safe.level || 1)));
   const tone = escapeHtml(safe.tone || "bronze");
@@ -683,14 +693,16 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.183" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.184" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
+  if (!XP_PROGRESSION_ENABLED) return "";
   const safeLevel = Math.min(XP_LEVEL_CAP, Math.max(1, Number(level || 1)));
   if (safeLevel > 45) return "";
   return `icons/badges/level-${String(safeLevel).padStart(2, "0")}.png?v=2.11.77`;
 }
 function xpProgressHtml(summary, compact = false) {
+  if (!XP_PROGRESSION_ENABLED) return "";
   const xp = normalizeXpSummary(summary);
   const unit = xp.unit_label || "XP";
   return `<div class="xp-panel ${compact ? "compact" : ""}">
@@ -703,6 +715,7 @@ function xpProgressHtml(summary, compact = false) {
     </div>`;
 }
 function levelBadgesGridHtml(summary) {
+  if (!XP_PROGRESSION_ENABLED) return "";
   const xp = normalizeXpSummary(summary);
   const badges = xp.badges.length ? xp.badges : Array.from({ length: XP_LEVEL_CAP }, (_item, index) => {
     const level = index + 1;
@@ -714,6 +727,7 @@ function levelBadgesGridHtml(summary) {
   </div>`).join("")}</div>`;
 }
 function levelBadgesAccordionHtml(summary, options = {}) {
+  if (!XP_PROGRESSION_ENABLED) return "";
   const xp = normalizeXpSummary(summary);
   const unlocked = Math.min(XP_LEVEL_CAP, Math.max(0, xp.level || 0));
   const title = options.title || "Badges";
@@ -730,6 +744,7 @@ function levelBadgesAccordionHtml(summary, options = {}) {
   </details>`;
 }
 function xpHistoryHtml(rows = []) {
+  if (!XP_PROGRESSION_ENABLED) return "";
   return rows.length ? `<div class="history-list xp-history-list">${rows.map((row) => `<div class="list-row">
     <div><strong>${escapeHtml(row.item || row.reason || row.source_type)}</strong><small>${escapeHtml(row.reason || row.source_type)} · ${dateLabel(row.event_at)}${row.level_after > row.level_before ? ` · Level ${row.level_after}` : ""}</small></div>
     <span class="points xp-points">${row.xp > 0 ? "+" : ""}${row.xp}<small> XP</small></span>
@@ -1153,6 +1168,7 @@ function celebrate(message) {
 }
 
 function showProgressPopup({ kind = "xp", title = "Progress updated", message = "", badge = null } = {}) {
+  if (!XP_PROGRESSION_ENABLED && ["xp", "badge", "level", "prestige"].includes(kind)) return;
   let stack = document.querySelector(".progress-popup-stack");
   if (!stack) {
     stack = document.createElement("div");
@@ -1181,6 +1197,7 @@ function showProgressPopup({ kind = "xp", title = "Progress updated", message = 
 }
 
 function showLevelUpModal(summary) {
+  if (!XP_PROGRESSION_ENABLED) return;
   const xp = normalizeXpSummary(summary);
   const unit = xp.unit_label || "XP";
   showProgressPopup({
@@ -1192,6 +1209,7 @@ function showLevelUpModal(summary) {
 }
 
 function showAchievementCelebration({ kind = "achievement", eyebrow = "Achievement unlocked", title = "Massive work!", message = "", actionLabel = "Keep riding" } = {}) {
+  if (!XP_PROGRESSION_ENABLED && ["xp", "badge", "level", "prestige"].includes(kind)) return;
   document.querySelector("#achievement-celebration")?.remove();
   const backdrop = document.createElement("div");
   backdrop.id = "achievement-celebration";
@@ -1207,6 +1225,7 @@ function showAchievementCelebration({ kind = "achievement", eyebrow = "Achieveme
 }
 
 function showPrestigeCelebration(summary) {
+  if (!XP_PROGRESSION_ENABLED) return;
   const xp = normalizeXpSummary(summary);
   showAchievementCelebration({
     kind: "prestige",
@@ -1218,6 +1237,7 @@ function showPrestigeCelebration(summary) {
 }
 
 async function refreshOwnXpAfterAction({ announceXp = false, trickName = "" } = {}) {
+  if (!XP_PROGRESSION_ENABLED) return null;
   if (state.profile?.role !== "athlete" || !state.user?.id) return null;
   const beforeLevel = Number(state.profile.level || 1);
   const beforeXp = Number(state.profile.xp_total || 0);
@@ -1294,7 +1314,7 @@ function loadingScreenCopy(view = state.view) {
     videoReviews: ["Loading video reviews", "Preparing the private coaching queue."],
     board: ["Loading leaderboard", "Updating weekly scores, rankings and rider records."],
     student: ["Loading rider profile", "Bringing the rider’s current progress together."],
-    profile: ["Loading your profile", "Getting your badges, settings and saved progress."],
+    profile: ["Loading your profile", "Getting your settings and saved progress."],
   };
   const [title, detail] = screens[view] || ["Loading JKCREW", "Syncing the latest information for this screen."];
   return { title, detail };
@@ -1588,6 +1608,7 @@ async function handleSession(session) {
   clearInterval(state.riderAccessTimer);
   teardownRealtimeSync();
   document.querySelector("#live-run-invitation")?.remove();
+  window.JKCRiderHealth?.cleanup();
   state.recoveryMount?.destroy();
   state.recoveryMount = null;
   if ((state.user?.id || "") !== nextUserId) {
@@ -2184,16 +2205,27 @@ async function saveProgressRpc(name, args) {
   }
 }
 
+function isVisibleAppNotification(item = {}) {
+  if (XP_PROGRESSION_ENABLED) return true;
+  const type = String(item.notification_type || "").toLowerCase();
+  if (PAUSED_XP_NOTIFICATION_TYPES.includes(type)) return false;
+  const genericAchievement = ["achievement", "achievement_earned", "achievement_unlocked"].includes(type);
+  return !genericAchievement || ![item.payload?.kind, item.payload?.celebration]
+    .some((kind) => ["xp", "level", "badge", "prestige"].includes(String(kind || "").toLowerCase()));
+}
+
 async function getAppNotifications(limit = 50) {
   if (!state.user?.id) return [];
-  const { data, error } = await client.from("app_notifications")
+  let query = client.from("app_notifications")
     .select("id,notification_type,title,body,view,payload,created_at,read_at")
     .eq("recipient_id", state.user.id)
-    .is("archived_at", null)
+    .is("archived_at", null);
+  if (!XP_PROGRESSION_ENABLED) query = query.not("notification_type", "in", `(${PAUSED_XP_NOTIFICATION_TYPES.join(",")})`);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return data || [];
+  return (data || []).filter(isVisibleAppNotification);
 }
 
 async function refreshNotificationCentre({ renderNav = true } = {}) {
@@ -2254,7 +2286,7 @@ async function showNotificationDrawer() {
     const items = await getAppNotifications();
     if (!backdrop.isConnected || riderRecoveryActive()) return;
     const unread = items.filter((item) => !item.read_at).length;
-    backdrop.querySelector(".parent-notification-loading").outerHTML = `<div class="notification-centre-actions"><span>${unread ? `${unread} unread` : "You're up to date"}</span>${unread ? `<button class="secondary-btn compact-btn" type="button" data-read-all>Mark all read</button>` : ""}</div><div class="parent-notification-body notification-centre-list">${items.length ? items.map((item) => `<button type="button" class="${item.read_at ? "" : "unread"}" data-app-notification="${item.id}" data-notification-view="${escapeHtml(item.view || "home")}"><span>${escapeHtml(String(item.notification_type || "update").replaceAll("_", " "))}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || "")}</small><time>${dateLabel(item.created_at)}</time></button>`).join("") : `<div class="parent-empty-note"><strong>No notifications yet</strong><span>Battle, coaching, sheet, event and achievement updates will appear here.</span></div>`}</div>`;
+    backdrop.querySelector(".parent-notification-loading").outerHTML = `<div class="notification-centre-actions"><span>${unread ? `${unread} unread` : "You're up to date"}</span>${unread ? `<button class="secondary-btn compact-btn" type="button" data-read-all>Mark all read</button>` : ""}</div><div class="parent-notification-body notification-centre-list">${items.length ? items.map((item) => `<button type="button" class="${item.read_at ? "" : "unread"}" data-app-notification="${item.id}" data-notification-view="${escapeHtml(item.view || "home")}"><span>${escapeHtml(String(item.notification_type || "update").replaceAll("_", " "))}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || "")}</small><time>${dateLabel(item.created_at)}</time></button>`).join("") : `<div class="parent-empty-note"><strong>No notifications yet</strong><span>Battle, coaching, sheet and event updates will appear here.</span></div>`}</div>`;
     backdrop.querySelector("[data-read-all]")?.addEventListener("click", async () => { close(); await markAllNotificationsRead(); });
     backdrop.querySelectorAll("[data-app-notification]").forEach((button) => button.addEventListener("click", async () => {
       const view = button.dataset.notificationView || "home";
@@ -2298,7 +2330,7 @@ function whatsNewItems(role = "athlete") {
     ["02", "Faster Sessions", "Choose the group and location, then manage several riders together."],
     ["03", "Battles + Challenges", "Create two- or three-team battles with up to six riders per side, plus weekly crew targets."],
     ["04", "Run + List Planning", "Review run plans, list requests and next-week sheets in one flow."],
-    ["05", "Clearer Rider Profiles", "Current lists, XP, history and key actions are easier to find."],
+    ["05", "Clearer Rider Profiles", "Current lists, points, history and key actions are easier to find."],
     ["06", "Live Status", "Unread tab badges and Saved/Syncing status make every action clearer."],
   ];
   return [
@@ -2306,7 +2338,7 @@ function whatsNewItems(role = "athlete") {
     ["02", "Private Trick Reviews", "Tap GET HELP on Home to send a short clip and receive Coach JK's video feedback."],
     ["03", "Battles + Challenges", "Battle in two or three teams, with up to six riders per side, and complete weekly targets for points."],
     ["04", "Smarter Sheets", "Cleaner sections, Lines and saved Daily lists for every location."],
-    ["05", "Bigger Earned Moments", "Weekly challenge wins, park crowns and Prestige now get a proper celebration."],
+    ["05", "Bigger Earned Moments", "Weekly challenge wins and park crowns now get a proper celebration."],
     ["06", "Alerts + Sound", "Unread tab badges, quiet hours and a test button make alerts easy to control."],
   ];
 }
@@ -2588,6 +2620,7 @@ async function navigate(view, options = {}) {
     if (liveRun || !document.querySelector(".recovery-shell")) closeRestrictedRiderFeatures();
     if (!document.querySelector(".recovery-shell")) renderShell();
   } else if (document.querySelector(".recovery-shell")) {
+    window.JKCRiderHealth?.cleanup();
     state.recoveryMount?.destroy();
     state.recoveryMount = null;
     window.JKCRecovery?.cleanup({ clearDrafts: true });
@@ -2614,6 +2647,7 @@ async function navigate(view, options = {}) {
     }
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   }
+  window.JKCRiderHealth?.cleanup();
   state.recoveryMount?.destroy();
   state.recoveryMount = null;
   if (typeof JKCrewTricktionaryTools !== "undefined") JKCrewTricktionaryTools.close();
@@ -2833,7 +2867,6 @@ async function setupRealtimeSync() {
     "training_sessions",
     "coach_group_session_participants",
     "run_checklist_progress",
-    "xp_ledger",
     "trick_requests",
     "rider_sheet_proposals",
     "trick_help_requests",
@@ -2866,6 +2899,7 @@ async function setupRealtimeSync() {
   channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "app_notifications", filter: `recipient_id=eq.${state.user.id}` }, (payload) => {
     if (riderRecoveryActive() || state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) return;
     const item = payload.new || {};
+    if (!isVisibleAppNotification(item)) return;
     refreshNotificationCentre();
     if (item.notification_type === "live_run_invite") { void refreshLiveRunInvites(); return; }
     if (item.title) {
@@ -2940,7 +2974,7 @@ function invalidateCachesForRealtime(table) {
   if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "weekly_trick_assignments", "coach_group_session_participants"].includes(table)) {
     invalidateSessionViewerData();
   }
-  if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "leaderboard_point_adjustments", "training_sessions", "xp_ledger"].includes(table)) {
+  if (["assignment_progress", "assignment_point_awards", "percentage_attempts", "assignment_attempts", "leaderboard_point_adjustments", "training_sessions"].includes(table)) {
     cacheClear("leaderboard");
     cacheClear("schedule:");
     cacheClear("coach-command:");
@@ -3025,13 +3059,12 @@ async function getLeaderboard({ allowFallback = true } = {}) {
     const rows = data || [];
     const ids = rows.map((row) => row.athlete_id).filter(Boolean);
     if (!ids.length) return cacheSet(cacheKey, rows);
-    const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, manual_tricktionary, xp_total, level, ghost_mode").in("id", ids);
+    const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, ghost_mode").in("id", ids);
     if (profileError) console.warn("Leaderboard profile extras failed", profileError);
     const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
     return cacheSet(cacheKey, rows.map((row) => {
       const profile = byId.get(row.athlete_id) || {};
-      const xpSummary = riderXpSummary(profile);
-      return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null, xp_total: Number(profile.xp_total || 0), xp_level: xpSummary.level, level: xpSummary.level, level_badge: xpSummary.current_badge };
+      return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null };
     }));
   })().finally(() => state.inFlight.delete(cacheKey));
 
@@ -3067,7 +3100,7 @@ async function getAthleteHomeLeaderboard() {
 async function getLeaderboardFallback(cause) {
   const { data: profiles, error } = await client
     .from("profiles")
-    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, xp_total, level, ghost_mode")
+    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, ghost_mode")
     .eq("role", "athlete")
     .order("display_name", { ascending: true });
   if (error) {
@@ -3082,10 +3115,6 @@ async function getLeaderboardFallback(cause) {
     .map((profile, index) => ({
     athlete_id: profile.id,
     display_name: profile.display_name || "Athlete",
-    level: riderXpSummary(profile).level,
-    xp_level: riderXpSummary(profile).level,
-    xp_total: Number(profile.xp_total || 0),
-    level_badge: riderXpSummary(profile).current_badge,
     avatar_url: profile.avatar_url || "",
     avatar: profile.avatar || {},
     country_code: profile.country_code || "",
@@ -3093,7 +3122,6 @@ async function getLeaderboardFallback(cause) {
     weekly_points: 0,
     all_time_points: 0,
     session_count: 0,
-    earned_badges: [],
     daily_pb_seconds: profile.daily_pb_seconds ?? null,
     ghost_mode: Boolean(profile.ghost_mode),
     rank_number: index + 1,
@@ -3177,6 +3205,7 @@ async function getPointHistory(athleteId) {
 }
 
 async function getXpSummary(athleteId) {
+  if (!XP_PROGRESSION_ENABLED) return null;
   const [summaryResult, earnedResult] = await Promise.all([
     client.rpc("get_xp_summary", { p_athlete_id: athleteId }),
     client.from("athlete_badges").select("badge_key,badge_type,level,label,icon,tone,description,earned_at").eq("athlete_id", athleteId),
@@ -3200,6 +3229,7 @@ async function getXpSummary(athleteId) {
 }
 
 async function getXpHistory(athleteId) {
+  if (!XP_PROGRESSION_ENABLED) return [];
   const { data, error } = await client.rpc("get_xp_history", { p_athlete_id: athleteId });
   if (error) throw error;
   return data || [];
@@ -6368,7 +6398,7 @@ function bindTricktionaryBoard({ athleteId, refresh, data, roster = [] }) {
       event.stopPropagation();
       if (dropInFlight) return;
       const entry = tricktionaryDragEntry(button.closest("[data-tricktionary-card]"));
-      if (!entry?.key || !window.confirm(`Delete ${entry.title} from the Tricktionary? Landed totals, points, XP and training history will all be kept.`)) return;
+      if (!entry?.key || !window.confirm(`Delete ${entry.title} from the Tricktionary? Landed totals, points and training history will all be kept.`)) return;
       const viewState = captureTricktionaryViewState(board);
       dropInFlight = true;
       button.disabled = true;
@@ -7518,6 +7548,7 @@ async function loadAthleteUciHome(view, profile, isCurrent, { force = false } = 
 }
 
 async function renderAthleteHome() {
+  window.JKCRiderHealth?.cleanup();
   if (state.view !== "home" || state.profile?.role !== "athlete") return;
   state.la28CountdownMount?.destroy();
   state.la28CountdownMount = null;
@@ -7566,7 +7597,7 @@ async function renderAthleteHome() {
       <div class="scoreboard-person">${avatarHtml(state.profile, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(state.profile.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats home-scoreboard-summary">${rankingsHtml()}</div>
       <div id="athlete-home-uci">${athleteUciCardHtml(state.profile, null, { loading: true })}</div>
-      ${xpProgressHtml(riderXpSummary(state.profile))}
+      <div data-rider-health-home></div>
     </section>
     <div id="athlete-home-milestones"></div>
     ${athleteRunBuilderCtaHtml()}
@@ -7579,6 +7610,7 @@ async function renderAthleteHome() {
   view.querySelector("#open-home-run-builder")?.addEventListener("click", (event) => { if (isCurrent()) openRunBuilder(event); });
   bindCoaching();
   void loadAthleteUciHome(view, { ...state.profile }, isCurrent);
+  window.JKCRiderHealth?.mount({ element: view.querySelector("[data-rider-health-home]"), client, userId: viewerId, isCurrent: () => isCurrent() && !riderRecoveryActive() });
   const coachingStatus = view.querySelector("#athlete-home-coaching .coaching-cta-status");
   if (coachingStatus) coachingStatus.textContent = "Checking coaching replies…";
 
@@ -7741,7 +7773,7 @@ function parentWaitingHtml() {
   return `<div class="page-head parent-page-head"><div><div class="eyebrow">JKCREW family</div><h1>Waiting to be <span>linked</span></h1><p>Your parent account is ready. Coach JK needs to link it to a rider before progress appears here.</p></div></div>
     <section class="panel parent-waiting-card">
       ${avatarHtml(state.profile, "profile-avatar")}
-      <div><div class="panel-title">Your family dashboard is ready</div><p class="subcopy">Once linked, you will see the current week, private coaching feedback, events, XP and training history without being able to change the rider's sheet.</p></div>
+      <div><div class="panel-title">Your family dashboard is ready</div><p class="subcopy">Once linked, you will see the current week, private coaching feedback, events, points and training history without being able to change the rider's sheet.</p></div>
     </section>`;
 }
 
@@ -7946,7 +7978,7 @@ async function renderParentHome() {
   }
   const athlete = context.selected;
   let leaderboardUnavailable = false;
-  const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, leaderboard, xpSummary] = await Promise.all([
+  const [{ assignments, awards, assignmentAttempts }, helpRequests, dashboardItems, sessions, leaderboard] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     getHelpRequests(athlete.id),
     getDashboardItems(athlete.id),
@@ -7955,7 +7987,6 @@ async function renderParentHome() {
       return result.data || [];
     }),
     getLeaderboard({ allowFallback: false }).catch(() => { leaderboardUnavailable = true; return []; }),
-    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
   ]);
   if (!isCurrent() || state.parentAthleteId !== athlete.id) return;
   const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
@@ -7963,7 +7994,6 @@ async function renderParentHome() {
   const weeklyItems = completionAssignments(assignments);
   const completedWeekly = weeklyItems.filter(isAssignmentComplete).length;
   const percent = weeklyCompletionPercent(assignments, awards);
-  const xp = normalizeXpSummary(xpSummary, athlete);
   state.parentHomeMountedVersion = renderVersion;
   state.activeBattles?.destroy();
   state.activeBattles = null;
@@ -7974,7 +8004,7 @@ async function renderParentHome() {
       <div class="parent-home-identity">${avatarHtml(athlete, "score-avatar")}<div><span>This week</span><h2>${escapeHtml(firstName(athlete))}</h2><p>${percent}% of tracked weekly items complete.</p></div></div>
       <div class="parent-home-metrics">
         <div><small>Weekly score</small><strong ${pointsReceiptAttributes(athlete.id)}>${leaderboardUnavailable ? "—" : Number(weeklyRow?.weekly_points || 0)}<b> pts</b></strong><span>${leaderboardUnavailable ? "Scores unavailable" : rank ? `Crew rank #${rank}` : "Week in progress"}</span></div>
-        <div><small>Current level</small><strong>${xp.level}<b> L</b></strong><span>${xp.xp_needed} XP to Level ${xp.next_level}</span></div>
+        <div><small>All-time points</small><strong ${pointsReceiptAttributes(athlete.id, "all_time")}>${leaderboardUnavailable ? "—" : Number(weeklyRow?.all_time_points || 0)}<b> pts</b></strong><span>${leaderboardUnavailable ? "Scores unavailable" : "Trick points to date"}</span></div>
         <div><small>Current sheet</small><strong>${completedWeekly}/${weeklyItems.length}</strong><span>${percent}% complete</span></div>
       </div>
       <div class="parent-progress-track" aria-label="${percent}% of weekly items complete"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
@@ -8103,19 +8133,16 @@ async function renderParentMore() {
     return;
   }
   const athlete = context.selected;
-  const [tricktionary, runs, xpSummary, pushState] = await Promise.all([
+  const [tricktionary, runs, pushState] = await Promise.all([
     getTricktionaryData(athlete.id),
     getRunPlans(athlete.id),
-    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
     getPushNotificationState().catch(() => ({ supported: supportsPushNotifications(), enabled: false, permission: supportsPushNotifications() ? Notification.permission : "unsupported" })),
   ]);
   const entries = landedTricktionaryEntries(tricktionary);
-  const xp = normalizeXpSummary(xpSummary, athlete);
   document.querySelector("#view").innerHTML = `
     ${parentChildSwitcherHtml(context)}
     ${parentPageHeadHtml("Family account", "More", "tools", `Progress history, run plans, safety information and settings for ${firstName(athlete)}.`)}
     <div class="parent-more-grid">
-      <section class="panel parent-more-card parent-more-progress"><div class="parent-more-icon">XP</div><div><span>Progress</span><h2>Level ${xp.level} & badges</h2><p>${xp.xp_total} lifetime XP · ${xp.xp_needed} XP to Level ${xp.next_level}</p></div>${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
       <section class="panel parent-more-card"><div class="parent-more-icon">+</div><div><span>Rider library</span><h2>Tricktionary</h2><p>${entries.length} landed trick${entries.length === 1 ? "" : "s"} · Daily PB ${formatPbTime(athlete.daily_pb_seconds)}</p></div><button class="secondary-btn" type="button" data-parent-open-view="tricktionary">Open Tricktionary</button></section>
       <section class="panel parent-more-card"><div class="parent-more-icon">H</div><div><span>Read-only records</span><h2>Training history</h2><p>Previous weekly sheets, attempts and completed tricks.</p></div>${previousTrainingSheetsHtml(tricktionary)}</section>
       <section class="panel parent-more-card"><div class="parent-more-icon">R</div><div><span>Competition prep</span><h2>Run plans</h2><p>${runs.filter((run) => !run.archived_at).length} active plan${runs.filter((run) => !run.archived_at).length === 1 ? "" : "s"} saved for rider and coach review.</p></div><details class="parent-more-details"><summary>View run plans</summary><div class="run-list">${runPlansHtml(runs)}</div></details></section>
@@ -8184,11 +8211,6 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points", { readOnl
   const realRows = rows;
   const realIndex = realRows.findIndex((entry) => entry.athlete_id === row.athlete_id);
   const badge = medalForRank(row, realIndex, realRows, pointsKey);
-  const badges = earnedBadges(row.earned_badges)
-    .filter((earned) => earned?.icon !== "🔗" && !String(earned?.label || "").toLowerCase().includes("chain link"))
-    .slice(0, 4)
-    .map((earned) => `<span title="${escapeHtml(earned.label)}">${escapeHtml(earned.icon)}</span>`)
-    .join("");
   const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
   const country = countryBadge(row);
   const hasStarted = points > 0 || Boolean(row.daily_pb_seconds);
@@ -8197,7 +8219,7 @@ function leaderRow(row, index, rows = [], pointsKey = "weekly_points", { readOnl
   const ghostLabel = ghostModeLabelHtml(row);
   const content = `
     <div class="rank">#${rank}</div>
-    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><span data-leader-uci="${escapeHtml(row.athlete_id)}"></span>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}${badges ? `<div class="leader-badges">${badges}</div>` : ""}</div></div>
+    <div class="person leader-person">${country}${avatarHtml(row)}<div class="person-name"><strong>${escapeHtml(row.display_name)} ${badge}</strong><span data-leader-uci="${escapeHtml(row.athlete_id)}"></span>${ghostLabel}${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div></div>
     <div class="points ${hasStarted ? "" : "dns-points"}" ${row.isBenchmarkBot || readOnly ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${hasStarted ? `${points}<small> pts</small>` : "DNS"}</div>`;
   if (readOnly) return `<div class="list-row leader-row ${row.athlete_id === childId ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" data-leader-athlete="${escapeHtml(row.athlete_id)}">${content}</div>`;
   return `<button class="list-row leader-row ${row.athlete_id === state.user.id ? "me" : ""} ${hasStarted ? "" : "dns-rider"}" type="button" data-public-athlete="${row.athlete_id}">${content}</button>`;
@@ -8218,13 +8240,11 @@ function commandLeaderboardPreviewHtml(rows = [], pointsKey = "weekly_points") {
     ${previewRows.length ? `<div class="command-leaderboard-list">
       ${previewRows.map((row, index) => {
         const points = Number(row[pointsKey] ?? row.weekly_points ?? 0);
-        const xp = riderXpSummary(row);
         const rank = leaderboardRankForRow(row, index, pointsKey);
         return `<button class="command-leader-row" type="button" ${row.isBenchmarkBot ? "" : `data-public-athlete="${escapeHtml(row.athlete_id)}"`}>
           <span class="command-rank">#${rank}</span>
           ${avatarHtml(row)}
           <strong>${escapeHtml(row.display_name)}${row.ghost_mode ? ` <span class="ghost-mode-mini">Ghost</span>` : ""}</strong>
-          <span class="command-level">L${xp.level}</span>
           <span class="command-points" ${row.isBenchmarkBot ? "" : pointsReceiptAttributes(row.athlete_id, pointsKey)}>${points} pts</span>
         </button>`;
       }).join("")}
@@ -9468,35 +9488,29 @@ function openMentionedAthleteProfile(event) {
 
 async function renderPublicAthleteProfile() {
   if (!state.publicAthleteId) return navigate("board");
-  const [profile, battleRecord, leaderboard] = await Promise.all([
+  const [profile, battleRecord] = await Promise.all([
     getPublicAthleteProfile(state.publicAthleteId),
     getPublicRiderBattleRecord(state.publicAthleteId).catch(() => ({ wins: 0, losses: 0, win_percent: 0 })),
-    getLeaderboard(),
   ]);
   if (!profile) {
     document.querySelector("#view").innerHTML = `<div class="empty">Could not find that rider profile.</div>`;
     return;
   }
-  const xpRow = leaderboard.find((row) => row.athlete_id === state.publicAthleteId) || {};
-  const scoreXp = riderXpSummary({ ...xpRow, ...profile });
-  const badges = earnedBadges(profile.badges);
   const hasWeeklyPoints = Number(profile.weekly_points || 0) > 0;
   const badgeHtml = [
     profile.is_weekly_winner ? `<span class="public-badge"><span>🏅</span>Weekly leader</span>` : "",
     profile.is_last_place && hasWeeklyPoints ? `<span class="public-badge"><span>💩</span>Weekly last place</span>` : "",
-    badgeStripHtml(badges, ""),
   ].filter(Boolean).join("");
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, medals, badges, and weekly points history.</p></div><button class="secondary-btn" type="button" id="back-to-board">Back to board</button></div>
+    <div class="page-head"><div><div class="eyebrow">Public rider profile</div><h1>${escapeHtml(profile.display_name)} <span>#${profile.current_rank || "-"}</span></h1><p>Public rider info, results and weekly points history.</p></div><button class="secondary-btn" type="button" id="back-to-board">Back to board</button></div>
     <section class="panel public-profile-card">
       ${avatarHtml(profile, "public-profile-avatar")}
       <div>
         <div class="eyebrow">Rider profile</div>
-        <h2>${escapeHtml(profile.display_name)} ${levelBadgeHtml(scoreXp.current_badge, true)}</h2>
-        <div class="public-badges">${badgeHtml || `<span class="public-badge muted-badge">No earned badges yet</span>`}</div>
+        <h2>${escapeHtml(profile.display_name)}</h2>
+        ${badgeHtml ? `<div class="public-badges">${badgeHtml}</div>` : ""}
       </div>
     </section>
-    <section class="panel">${xpProgressHtml(scoreXp)}${levelBadgesAccordionHtml(scoreXp)}</section>
     ${socialLinksHtml(profile)}
     <section class="stats-grid public-profile-stats">
       ${statCard("Weekly points", profile.weekly_points || 0, "pts", `Current rank #${profile.current_rank || "-"}`, "", state.publicAthleteId)}
@@ -13656,7 +13670,6 @@ async function generateWeeklyNotificationPreviews(roster = [], commandData = {})
     const oneBangAwards = awards.filter((award) => award.award_key?.includes("one")).length;
     const dialledAwards = awards.filter((award) => award.award_key?.includes("dial")).length;
     const goalsCompleted = Array.isArray(athlete.goals) ? athlete.goals.filter((goal) => goal.completed).length : 0;
-    const badgesEarned = Array.isArray(athlete.badges) ? athlete.badges.length : 0;
     const pointsEarned = awards.reduce((sum, award) => sum + Number(award.points || 0), 0);
     const weeklyTasks = assignments.filter((assignment) => assignment.category !== "daily").length;
     const dailyTimes = sessions.map((session) => Number(session.daily_completed_seconds || 0)).filter(Boolean);
@@ -13684,7 +13697,6 @@ async function generateWeeklyNotificationPreviews(roster = [], commandData = {})
         one_bangs_completed: oneBangAwards,
         dialled_completed: dialledAwards,
         goals_completed: goalsCompleted,
-        badges_earned: badgesEarned,
         weekly_tasks_assigned: weeklyTasks,
         points_earned: pointsEarned,
         heat_status: status,
@@ -15109,7 +15121,7 @@ async function renderCrew() {
       : `${athletes.length} student${athletes.length === 1 ? "" : "s"}`;
     return `<section class="group-column group-${groupId}" data-group="${groupId}"><div class="group-head"><div><div class="panel-title">${label}</div><div class="panel-meta">${groupMeta}</div></div></div><div class="group-list">${students}</div></section>`;
   }).join("");
-  const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)} · L${athlete.level}</option>`).join("");
+  const options = available.map((athlete) => `<option value="${athlete.id}">${escapeHtml(athlete.display_name)}</option>`).join("");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach dashboard</div><h1>Training <span>groups</span></h1><p>Drag students between groups, or click a student to open their profile.</p></div></div>
     <section class="coach-dashboard-top">${statCard("Total students", roster.length, "", "Assigned to your crew", "compact-stat-card")}${coachLiveActivityHtml(liveActivity)}</section>
@@ -15200,17 +15212,16 @@ async function getCoachPreviewData() {
   if (!roster.length) return { roster, athlete: null };
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
-  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs, xpSummary] = await Promise.all([
+  const [schedule, leaderboard, dashboardItems, sessionsResult, helpRequests, runs] = await Promise.all([
     getWeeklyAssignments(athlete.id),
     getLeaderboard(),
     getDashboardItems(athlete.id),
     client.from("training_sessions").select("*").eq("athlete_id", athlete.id).order("started_at", { ascending: false }).limit(5),
     getHelpRequests(athlete.id),
     getRunPlans(athlete.id),
-    getXpSummary(athlete.id).catch(() => normalizeXpSummary({}, athlete)),
   ]);
   if (sessionsResult.error) throw sessionsResult.error;
-  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs, xpSummary };
+  return { roster, athlete, schedule, leaderboard, dashboardItems, sessions: sessionsResult.data || [], helpRequests, runs };
 }
 
 async function renderCoachPreview(mode = "student") {
@@ -15220,7 +15231,7 @@ async function renderCoachPreview(mode = "student") {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach preview</div><h1>No <span>students</span></h1><p>Add a student first, then you can preview their Student View and Parent View.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
-  const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs, xpSummary } = data;
+  const { athlete, schedule, leaderboard, dashboardItems, sessions, helpRequests, runs } = data;
   const { assignments, awards, assignmentAttempts = [] } = schedule;
   const rank = leaderboard.findIndex((row) => row.athlete_id === athlete.id) + 1;
   const weeklyRow = leaderboard.find((row) => row.athlete_id === athlete.id);
@@ -15251,7 +15262,6 @@ async function renderCoachPreview(mode = "student") {
     weeklyPercent,
     completedWeekly,
     weeklyItems,
-    xpSummary,
     tricktionaryData,
   });
   document.querySelector("#view").innerHTML = `
@@ -15294,14 +15304,12 @@ function coachPreviewPageHtml(context) {
 
 function coachStudentPreviewHtml({ athlete, assignments, awards, events, sessions, rank, weeklyRow, leaderboard }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? "Finished" : "Live"} · ${session.total_points || 0} pts</small></div></div>`).join("") : `<div class="empty compact-empty">No sessions yet.</div>`;
-  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="athlete-scoreboard panel">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Athlete dashboard</div><h1>${escapeHtml(athlete.display_name)}</h1><p>Your week at a glance. Trick lists live in the Session tab.</p></div></div>
       <div class="scoreboard-stats preview-stats home-scoreboard-summary">
         ${scoreRankingCard(weeklyRow?.weekly_points || 0, rank, leaderboard.length, null, athlete.id)}
       </div>
-      ${xpProgressHtml(xp, true)}
     </section>
     ${quoteSection()}
     ${weekSummaryHtml(assignments, awards)}
@@ -15353,29 +15361,24 @@ function coachPreviewBoardHtml({ leaderboard }) {
 }
 
 function coachStudentPreviewProfileHtml({ athlete, weeklyRow }) {
-  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
-    <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">athlete · Level ${xp.level}</div><p class="subcopy" style="margin-top:12px">${countryBadge(athlete)} ${escapeHtml(athlete.country_name || "Country not set")}</p></section>
-    <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
+    <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">athlete</div><p class="subcopy" style="margin-top:12px">${countryBadge(athlete)} ${escapeHtml(athlete.country_name || "Country not set")}</p></section>
     ${goalsReadonlyHtml(athlete)}
     <section class="panel profile-library-card"><div class="panel-title">My Tricktionary</div><p class="subcopy">The rider opens their landed trick library from Profile & Settings.</p></section>
   </div>`;
 }
 
-function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems, xpSummary }) {
+function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttempts = [], dashboardItems, sessions, runs, visibleFeedback, rank, weeklyRow, weeklyPercent, completedWeekly, weeklyItems }) {
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   const runRows = runs.filter((run) => !run.archived_at).length ? runs.filter((run) => !run.archived_at).map((run) => `<div class="list-row"><div><strong>${escapeHtml(run.title)}</strong><small>${escapeHtml(run.venue || "Venue not set")} · ${Array.isArray(run.points) ? run.points.length : 0} points</small></div></div>`).join("") : `<div class="empty compact-empty">No active run plans yet.</div>`;
-  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats preview-stats">
         ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week", "", athlete.id)}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
       </div>
-      ${xpProgressHtml(xp, true)}
       <div class="weekly-notification">Weekly notification: ${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</div>
       <div class="settings-divider"></div>
       <div class="panel-title">Attempted this week</div>
@@ -15401,17 +15404,14 @@ function coachParentPreviewHtml({ athlete, assignments, awards, assignmentAttemp
 }
 
 function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = [], weeklyRow, weeklyPercent, completedWeekly, weeklyItems, rank }) {
-  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   return `<div class="phone-preview-content">
     <section class="panel parent-child-card">
       <div class="scoreboard-person">${avatarHtml(athlete, "score-avatar")}<div><div class="eyebrow">Read-only parent view</div><h1>${escapeHtml(athlete.display_name)}</h1><p>${escapeHtml(firstName(athlete))} completed ${weeklyPercent}% of this week's BMX program.</p></div></div>
       <div class="scoreboard-stats preview-stats">
         ${statCard("Weekly score", weeklyRow?.weekly_points || 0, "pts", rank ? `Crew rank #${rank}` : "This week", "", athlete.id)}
-        ${statCardRaw("Level", `${levelBadgeHtml(xp.current_badge)}<span class="level-stat-text">Level ${xp.level}</span>`, `${xp.xp_needed} XP to Level ${xp.next_level}`, "level-stat-card")}
         ${statCard("Weekly completion", `${weeklyPercent}%`, "", "Dialled, One Bangs, Foam, Bonus, Percentage")}
         ${statCard("Weekly tasks", `${completedWeekly}/${weeklyItems.length || 0}`, "", "Tracked items")}
       </div>
-      ${xpProgressHtml(xp, true)}
       <div class="settings-divider"></div>
       <div class="panel-title">Training plan</div>
       <div class="parent-readonly">${assignmentGroups(assignments, false)}</div>
@@ -15423,11 +15423,9 @@ function coachParentPreviewTabHtml({ athlete, assignments, assignmentAttempts = 
 }
 
 function coachParentPreviewProfileHtml({ athlete, dashboardItems, sessions, runs, visibleFeedback, weeklyRow }) {
-  const xp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   const sessionRows = sessions.length ? sessions.map((session) => `<div class="list-row"><div><strong>${dateLabel(session.started_at)}</strong><small>${session.ended_at ? `Ended ${dateLabel(session.ended_at)}` : "Session still live"}</small></div><span class="points">${session.total_points || 0}<small> pts</small></span></div>`).join("") : `<div class="empty compact-empty">No sessions recorded yet.</div>`;
   return `<div class="phone-preview-content">
     <section class="panel profile-card">${avatarHtml(athlete, "profile-avatar")}<h2>${escapeHtml(athlete.display_name)}</h2><div class="status-chip">read-only linked rider</div></section>
-    <section class="panel">${xpProgressHtml(xp, true)}${levelBadgesAccordionHtml(xp)}</section>
     ${goalsReadonlyHtml(athlete)}
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Events & tasks</div></div></div>${dashboardItemsHtml(dashboardItems, false)}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Session progress</div></div></div>${sessionRows}</section>
@@ -15763,12 +15761,11 @@ async function renderStudentProfile() {
   const categoryEditor = scheduleEditorHtml(assignments, coachVenues, { profile: athlete });
   const dailyDone = dailyCompletionCount(awards);
   const weeklyRow = (leaderboard || []).find((row) => row.athlete_id === athlete.id);
-  const scoreXp = riderXpSummary({ ...(weeklyRow || {}), ...athlete });
   const completedWeekly = assignments.filter((assignment) => assignment.category !== "daily" && isAssignmentComplete(assignment)).length;
   const assignedWeekly = assignments.filter((assignment) => assignment.category !== "daily").length;
   view.innerHTML = `
     ${riderProfileSelectorHtml(roster, athlete.id)}
-    <div class="page-head student-profile-head"><div><div class="eyebrow">Rider overview</div><h1>${escapeHtml(athlete.display_name)} <span>L${scoreXp.level}</span></h1><p>The important progress first. Open a section below only when you need to manage it.</p></div><div class="actions"><button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
+    <div class="page-head student-profile-head"><div><div class="eyebrow">Rider overview</div><h1>${escapeHtml(athlete.display_name)}</h1><p>The important progress first. Open a section below only when you need to manage it.</p></div><div class="actions"><button class="secondary-btn" data-preview-view="studentPreview" type="button">Student View</button><button class="secondary-btn" data-preview-view="parentPreview" type="button">Parent View</button><button class="secondary-btn" type="button" id="back-to-students">All students</button></div></div>
     <section class="panel athlete-profile-hero">
       ${avatarHtml(athlete, "profile-avatar-large")}
       <div><div class="panel-title">${escapeHtml(athlete.display_name)}</div><div class="panel-meta">${escapeHtml(groupLabelList(athleteGroups))} · Daily Tricks completed this week: ${dailyDone}/7 · ${escapeHtml(spinDirectionLabels[athlete.spin_direction] || "Spin not set")}${athlete.favourite_trick ? ` · Favourite: ${escapeHtml(athlete.favourite_trick)}` : ""}</div></div>
@@ -15784,22 +15781,7 @@ async function renderStudentProfile() {
     <section class="student-profile-summary" aria-label="Rider progress summary">
       <article><span>Weekly points</span><strong ${pointsReceiptAttributes(athlete.id)}>${Number(weeklyRow?.weekly_points || 0)}</strong></article>
       <article><span>Daily days</span><strong>${dailyDone}/7</strong></article>
-      <article><span>XP level</span><strong>L${scoreXp.level}</strong></article>
       <article><span>Weekly sheet</span><strong>${completedWeekly}/${assignedWeekly}</strong></article>
-    </section>
-    <section class="panel xp-coach-panel">
-      <div class="panel-head"><div><div class="panel-title">XP Level & Badges</div><div class="panel-meta">Follows the original lifetime XP progression system</div></div></div>
-      ${xpProgressHtml(scoreXp)}
-      <div class="settings-divider"></div>
-      ${levelBadgesAccordionHtml(scoreXp, { title: "XP Badges", meta: "Unlocked by lifetime XP · coach view" })}
-      <div class="settings-divider"></div>
-      <div class="panel-head"><div><div class="panel-title">XP adjustment</div><div class="panel-meta">Admin-only control for the rider's visible level and badge progress</div></div></div>
-      <form id="xp-adjust-form" class="xp-adjust-form">
-        <div class="field"><label for="xp-action">Action</label><select id="xp-action" name="action"><option value="add">Add XP</option><option value="deduct">Deduct XP</option></select></div>
-        <div class="field"><label for="xp-amount">XP amount</label><input id="xp-amount" name="amount" type="number" min="1" step="1" placeholder="35"></div>
-        <div class="field"><label for="xp-reason">Reason</label><input id="xp-reason" name="reason" placeholder="Bonus effort, correction, PB repair..."></div>
-        <button class="secondary-btn" type="submit">Apply XP Change</button>
-      </form>
     </section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Rider profile details</div><div class="panel-meta">Visible on their public rider profile</div></div></div>
       <form id="coach-athlete-profile-form" class="two-col-form">
@@ -15862,7 +15844,6 @@ async function renderStudentProfile() {
     });
   });
   document.querySelector("#coach-athlete-profile-form").addEventListener("submit", saveCoachAthleteProfile);
-  document.querySelector("#xp-adjust-form")?.addEventListener("submit", saveCoachXpAdjustment);
   document.querySelector("#coach-manual-trick-form")?.addEventListener("submit", saveCoachManualTrick);
   document.querySelectorAll("[data-coach-remove-manual-trick]").forEach((button) => button.addEventListener("click", removeCoachManualTrick));
   document.querySelector("#link-parent-form")?.addEventListener("submit", linkParentAccount);
@@ -16207,6 +16188,7 @@ async function saveCoachAthleteProfile(event) {
 
 async function saveCoachXpAdjustment(event) {
   event.preventDefault();
+  if (!XP_PROGRESSION_ENABLED) return;
   if (!isCoachRole(state.profile?.role)) return notify("Only coaches can adjust XP.", "error");
   const form = new FormData(event.currentTarget);
   const amount = Number(form.get("amount") || 0);
@@ -18685,7 +18667,7 @@ function pushNotificationSettingsHtml(pushState) {
         <label><input type="checkbox" data-push-preference="event_updates" ${preference.event_updates ? "checked" : ""}> Event changes, runs and reminders</label>
         <label><input type="checkbox" data-push-preference="sheet_updates" ${preference.sheet_updates ? "checked" : ""}> Sheet and list updates</label>
         <label><input type="checkbox" data-push-preference="coaching_updates" ${preference.coaching_updates ? "checked" : ""}> Private video coaching updates</label>
-        <label><input type="checkbox" data-push-preference="achievement_updates" ${preference.achievement_updates ? "checked" : ""}> Badges, Prestige and achievements</label>
+        <label><input type="checkbox" data-push-preference="achievement_updates" ${preference.achievement_updates ? "checked" : ""}> Park crowns and milestones</label>
         ${role === "athlete" ? `
           <label><input type="checkbox" data-push-preference="leaderboard_overtaken" ${preference.leaderboard_overtaken ? "checked" : ""}> Tell me when another rider overtakes me</label>
           <label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my coach</label>
@@ -18873,7 +18855,6 @@ async function togglePushNotifications(event) {
 async function renderProfile() {
   let trainingHistorySection = "";
   let coachPbSection = "";
-  let xpProfileSection = "";
   const pushState = await getPushNotificationState().catch((error) => {
     console.warn("Push notification settings could not load", error);
     return {
@@ -18884,13 +18865,7 @@ async function renderProfile() {
     };
   });
   try {
-    if (state.profile.role === "athlete") {
-      const [xpSummary, xpHistory] = await Promise.all([
-        getXpSummary(state.user.id).catch(() => normalizeXpSummary({}, state.profile)),
-        getXpHistory(state.user.id).catch(() => []),
-      ]);
-      xpProfileSection = `<section class="panel"><div class="panel-head"><div><div class="panel-title">XP & Level Badges</div><div class="panel-meta">Long-term JKCREW progression</div></div></div>${xpProgressHtml(xpSummary)}${levelBadgesAccordionHtml(xpSummary)}</section>${riderAccordionSection("Recent XP Activity", `${xpHistory.length} recent update${xpHistory.length === 1 ? "" : "s"}`, xpHistoryHtml(xpHistory), "xp-activity-accordion")}`;
-    } else if (state.profile.role === "parent") {
+    if (state.profile.role === "parent") {
       const { data: links, error } = await client.from("parent_athletes").select("athlete_id, relationship").eq("parent_id", state.user.id);
       if (error) throw error;
       const sections = await Promise.all((links || []).map(async (link) => {
@@ -18918,7 +18893,7 @@ async function renderProfile() {
     ${state.profile.role === "athlete" ? goalsSection(state.profile) : ""}
     ${state.profile?.role !== "athlete" ? bikeGarageTeaserHtml() : ""}
     <div class="profile-grid">
-      <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)} · level ${state.profile.level}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
+      <section class="panel profile-card">${avatarHtml(state.profile, "profile-avatar")}<h2>${escapeHtml(state.profile.display_name)}</h2><div class="status-chip">${escapeHtml(state.profile.role)}</div><p class="subcopy" style="margin-top:16px">${escapeHtml(state.user.email)}</p></section>
       <section class="panel">
         <div class="panel-head"><div class="panel-title">Account settings</div></div>
         <form id="own-avatar-form" class="avatar-settings"><input id="own-avatar-file" name="avatar" type="file" accept="image/*" hidden><button class="secondary-btn" type="button" id="choose-own-avatar">Upload / change my picture</button><button class="danger-btn" type="button" id="remove-own-avatar">Remove picture</button></form>
@@ -18933,7 +18908,7 @@ async function renderProfile() {
             <div class="ghost-mode-card ${state.profile.ghost_mode ? "active" : ""}">
               <div>
                 <strong>Ghost Mode</strong>
-                <small>${state.profile.ghost_mode ? "Hidden from public leaderboards. You still earn points, XP and badges." : "Show me on the public leaderboard."}</small>
+                <small>${state.profile.ghost_mode ? "Hidden from public leaderboards. You still earn points." : "Show me on the public leaderboard."}</small>
                 <span>${state.profile.ghost_mode ? "Hidden From Public Leaderboard" : "Public Leaderboard Visible"}</span>
               </div>
               <label class="toggle-switch" aria-label="Toggle Ghost Mode">
@@ -18960,7 +18935,6 @@ async function renderProfile() {
               <div class="field"><label for="profile-youtube">YouTube</label><input id="profile-youtube" name="youtube" type="url" value="${escapeHtml(state.profile.social_links?.youtube || "")}" placeholder="https://youtube.com/..."></div>
               <div class="field"><label for="profile-other">Other link</label><input id="profile-other" name="other" type="url" value="${escapeHtml(state.profile.social_links?.other || "")}" placeholder="Website or sponsor profile"></div>
             </div>
-            <div class="badge-lock-note">Achievement badges are earned through training progress and cannot be edited by riders.</div>
           ` : ""}
           <button class="primary-btn wide" type="submit">Save profile</button>
         </form>
@@ -18976,7 +18950,6 @@ async function renderProfile() {
     </div>
     ${state.profile.role === "athlete" ? uciProfileLinkHtml(state.profile) : ""}
     ${coachPbSection}
-    ${xpProfileSection}
     ${trainingHistorySection}
     ${state.profile.role === "athlete" ? `<section class="panel profile-library-card"><div class="panel-head"><div><div class="panel-title">My Tricktionary</div><div class="panel-meta">Your landed trick library and weekly attempt history now live under Profile & Settings.</div></div></div><button class="secondary-btn" type="button" id="open-tricktionary-from-profile">Open My Tricktionary</button></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());

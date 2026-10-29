@@ -56,6 +56,11 @@ function session() {
       if (url.pathname === '/auth/v1/token') return json(session());
       if (url.pathname === '/auth/v1/user') return json(user);
       if (url.pathname === '/auth/v1/logout') return json({});
+      if (url.pathname === '/functions/v1/health-whoop') {
+        counts.health = (counts.health || 0) + 1;
+        eq(request.postDataJSON().action, 'status', 'Home reads health status without initiating OAuth');
+        return json({provider:'whoop',availability:'not_configured',connection:'disconnected',summary:null});
+      }
       if (!url.pathname.startsWith('/rest/v1/')) { unexpected.push(url.pathname); return route.abort(); }
       const name = url.pathname.slice('/rest/v1/'.length);
       if (name === 'profiles' && url.searchParams.get('select') === profileSelect) return json([scenarioProfile]);
@@ -99,7 +104,10 @@ function session() {
       eq(await page.locator('.athlete-scoreboard h1').textContent(), profile.display_name);
       eq(await page.locator('.score-ranking-stat .stat-value').nth(0).textContent(), '—', 'Pending points are unknown, not fabricated zero');
       await page.waitForFunction(() => document.querySelector('.battle-ranking-stat .stat-value')?.textContent.includes('1W'));
-      ok((await page.locator('.xp-title').textContent()).includes('45 XP'), 'Persisted XP renders immediately');
+      eq(await page.locator('.xp-title,.xp-panel,.level-badge').count(),0,'Retired XP and levels do not render');
+      await page.locator('.rider-health-card').waitFor();
+      eq(await page.locator('.rider-health-metric').count(),0,'Disconnected health does not fabricate readings');
+      eq(await page.locator('[data-health-action=connect]').count(),0,'Provider setup blocks connection until ready');
       eq(await page.locator('#goal-form').count(), 0, 'Goals no longer take space on Home');
       eq(await page.locator('#athlete-home-week, #athlete-home-trick-requests').count(), 0, 'Removed Home panels are absent');
       eq(await page.locator('[data-open-shred-zone]').count(), 1, 'Shred Zone replaces Garage on Home');
@@ -151,7 +159,7 @@ function session() {
       eq(await page.locator('#athlete-home-active-session').textContent(), '', 'Verified no active session omits timer');
       eq(await page.evaluate(() => state.activeTraining), null);
       eq(await page.locator('.score-ranking-stat .stat-value').nth(1).textContent(), '#1');
-      eq(await page.locator('.xp-title').textContent(), 'Level 145 XP');
+      eq(await page.locator('.xp-title').count(), 0, 'No XP card after successful Home load');
       eq(t.counts.uci || 0, 0, 'Unlinked riders make no UCI download during full app startup');
       eq(await page.locator('.home-uci-card').count(), 0, 'Unlinked Home does not show a guessed world ranking');
       await page.evaluate(() => window.scrollTo(0, 0));

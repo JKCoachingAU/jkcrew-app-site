@@ -76,7 +76,7 @@ const TRAINING_SHARE_CARDS_ENABLED = false;
     return {
       riderName: text(progress.rider_name, 90) || "Rider", localDate: text(progress.local_date, 10),
       timezone: text(progress.timezone, 90), dailyResults: (Array.isArray(progress.daily_results) ? progress.daily_results : []).map(dailyShareData),
-      categories, todayPoints: number(progress.today_points), todayXp: number(progress.today_xp), weeklyScore: number(progress.weekly_score),
+      categories, todayPoints: number(progress.today_points), weeklyScore: number(progress.weekly_score),
     };
   }
 
@@ -124,9 +124,8 @@ const TRAINING_SHARE_CARDS_ENABLED = false;
     const improvements = (Array.isArray(raw.improvements) ? raw.improvements : []).filter(item => item.type === "daily_pb" && number(item.seconds) !== null && (number(item.previous_pb_seconds) === null || Number(item.seconds) < Number(item.previous_pb_seconds)));
     const goal = raw.next_goal && typeof raw.next_goal === "object" ? raw.next_goal : null;
     return `<div class="training-progress-date">${html(dayLabel(data.localDate))}${data.timezone ? `<span>${html(data.timezone.replace(/_/g, " "))}</span>` : ""}</div>
-      <div class="training-progress-stats"><div><strong>${metricLabel(data.todayPoints)}</strong><span>Points earned today</span></div><div><strong>${metricLabel(data.todayXp)}</strong><span>XP earned today</span></div></div>
-      ${data.weeklyScore !== null ? `<p class="training-progress-weekly">Weekly score <strong>${metricLabel(data.weeklyScore)}</strong></p>` : ""}
-      ${raw.xp_attribution === "partial" ? `<p class="training-progress-note">Today’s full XP total is unavailable because earlier rewards were adjusted today.</p>` : (data.todayPoints === null || data.todayXp === null) ? `<p class="training-progress-note">Only rewards that can be attributed to today are shown.</p>` : ""}
+      <div class="training-progress-stats"><div><strong>${metricLabel(data.todayPoints)}</strong><span>Points earned today</span></div><div><strong>${metricLabel(data.weeklyScore)}</strong><span>Weekly points</span></div></div>
+      ${data.todayPoints === null ? `<p class="training-progress-note">Today’s points are unavailable. Refresh to try again.</p>` : ""}
       <section class="training-progress-daily"><div class="training-progress-section-title"><h3>Daily Tricks</h3><span>${results.length ? "Time locked in" : "No finish recorded today"}</span></div>
       ${results.length ? results.map(result => `<div class="training-progress-daily-result"><div><strong>${secondsLabel(result.seconds)}</strong><span>${html(result.venue || "Daily Tricks time")}</span></div><div><b>${result.completionPoints === null ? "—" : `+${metricLabel(result.completionPoints)}`}</b><span>Completion points</span></div>${result.partial ? `<p class="training-progress-note">Daily practice finished · ${metricLabel(result.completedCount)}/${metricLabel(result.totalCount)} landed. No Daily completion point or personal best.</p>` : ""}${result.newPb ? `<p class="training-progress-pb">${result.firstPb ? "FIRST PERSONAL BEST" : "NEW PERSONAL BEST"}</p>` : ""}${result.legacy ? `<p class="training-progress-note">Previously saved time. ${result.completionPoints === null ? "Completion points couldn't be attributed to this result. " : ""}A compatible PB comparison is unavailable.</p>` : ""}</div>`).join("") : `<p>Your saved Daily Tricks result will appear here when you confirm a finish.</p>`}</section>
       <section class="training-progress-completions"><div class="training-progress-section-title"><h3>Completed today</h3><span>${completed} ${completed === 1 ? "completion" : "completions"}</span></div>
@@ -293,7 +292,7 @@ const TRAINING_SHARE_CARDS_ENABLED = false;
       if (data.previousPb !== null && data.newPb && !data.firstPb) write(`Previous best  ${secondsLabel(data.previousPb)}`, 66, y + 54, 28, "#a4bcb0", 500);
       if (data.rank !== null && data.rank > 0) write(`Leaderboard #${metricLabel(data.rank)}`, 66, y + 110, 30, accent, 700);
     } else {
-      const metrics = [[metricLabel(data.todayPoints), "POINTS TODAY"], [metricLabel(data.todayXp), "XP TODAY"]];
+      const metrics = [[metricLabel(data.todayPoints), "POINTS TODAY"], [metricLabel(data.weeklyScore), "WEEKLY POINTS"]];
       metrics.forEach(([value, label], index) => {
         write(value, 60 + index * 486, y + 105, 128, "#f7fbf8", 900, display);
         write(label, 66 + index * 486, y + 150, 24, "#b7ccc3", 700);

@@ -1,0 +1,46 @@
+.rider-health-card { margin-top:24px; border:1px solid #344354; border-radius:22px; padding:24px; color:var(--text, #f4f7fa); background:linear-gradient(125deg, #151b28, #0d151b 70%); box-shadow:inset 0 2px 0 #7695cc; }
+.rider-health-card header, .rider-health-heading { display:flex; align-items:center; gap:14px; }
+.rider-health-card header { justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.rider-health-icon { color:#ed929d; background:#ed929d12; border:1px solid #ed929d35; padding:10px; border-radius:14px; width:48px; height:48px; flex-shrink:0; }
+.rider-health-icon svg { width:100%; height:100%; }
+.rider-health-eyebrow { color:#9eaed1; font:500 .66rem/1.4 var(--mono,monospace); letter-spacing:.12em; text-transform:uppercase; }
+.rider-health-card h2 { font:800 1.6rem/1.1 var(--display,sans-serif); margin:4px 0 0; }
+.rider-health-connection { font-size:.75rem; color:#a8b3c1; }
+.rider-health-empty { margin:22px 0 12px; }
+.rider-health-empty strong { font-size:1rem; }
+.rider-health-empty p, .rider-health-provider-detail p { color:#adb8c7; font-size:.9rem; line-height:1.5; margin:7px 0 12px; }
+.rider-health-status { font-size:.8rem; color:#a6b8d9; line-height:1.5; margin:8px 0; }
+.rider-health-status:empty { display:none; }
+.rider-health-status.is-error { color:#edacb5; }
+.rider-health-source { display:flex; justify-content:space-between; gap:6px 16px; flex-wrap:wrap; color:#afb9ca; font-size:.75rem; margin:22px 0 14px; }
+.rider-health-source span { color:#8596b0; }
+.rider-health-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:0; }
+.rider-health-metric { padding:14px 10px; background:#ffffff04; border:1px solid #ffffff0e; border-radius:12px; }
+.rider-health-metric dt { color:#adb8c7; font-size:.72rem; line-height:1.4; min-height:2.8em; }
+.rider-health-metric dd { margin:8px 0 4px; font:800 2rem/1.1 var(--display,sans-serif); }
+.rider-health-metric dd small { font:500 .7rem/1 var(--mono,monospace); color:#9caaba; margin-left:5px; }
+.rider-health-metric > span { color:#8898ae; font-size:.65rem; line-height:1.4; }
+.rider-health-metric.sleep dd { color:#b7b1ee; }.rider-health-metric.heart dd { color:#ed9ca6; }.rider-health-metric.hrv dd { color:#92bceb; }.rider-health-metric.recovery dd { color:#e6cb90; }
+.rider-health-strain { font-size:.8rem; color:#a7b3c2; display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; align-items:baseline; }
+.rider-health-strain strong { color:#edf1f6; }.rider-health-strain span { color:#91a0b3; font-size:.7rem; }
+.rider-health-devices { border-top:1px solid #34435488; margin-top:16px; }
+.rider-health-devices summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; font-size:.85rem; color:#b9c9e6; padding:10px 0; }
+.rider-health-devices summary::-webkit-details-marker { display:none; }.rider-health-devices[open] summary > span { transform:rotate(180deg); }
+.rider-health-providers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin:4px 0 14px; }
+.rider-health-providers button, .rider-health-button { min-width:0; min-height:44px; padding:10px 12px; border:1px solid #3d4b5e; border-radius:10px; background:#1c2634; color:#dbe3ee; font:600 .8rem/1.3 var(--body,sans-serif); cursor:pointer; }
+.rider-health-providers button[aria-pressed=true] { border-color:#9eafd5; background:#9eafd51c; color:#f2f5fb; }
+.rider-health-button.primary { background:#c7d6f1; color:#141e31; border-color:#c7d6f1; }.rider-health-button.danger { color:#ffb9bd; border-color:#b8687170; background:#3b2229; }
+.rider-health-actions { display:flex; gap:8px; flex-wrap:wrap; }.rider-health-actions > button { flex:1; }
+.rider-health-text { border:0; background:transparent; padding:8px 0; min-height:44px; font:600 .8rem/1.3 var(--body,sans-serif); color:#b7cbed; cursor:pointer; }
+.rider-health-card button:disabled { opacity:.55; cursor:wait; }.rider-health-card button:focus-visible,.rider-health-card summary:focus-visible { outline:2px solid #c7d6f1; outline-offset:3px; }
+.rider-health-private { color:#8a9aae; font-size:.72rem; margin:14px 0 0; }
+[data-theme=light] .rider-health-card { background:linear-gradient(125deg,#f1f1fb,#f8fafc); border-color:#bbc7d6; color:#172130; }
+[data-theme=light] .rider-health-card :is(p,dt,summary),[data-theme=light] .rider-health-metric>span { color:#53647c; }
+[data-theme=light] .rider-health-metric { background:#ffffffa6; border-color:#d6deea; }
+[data-theme=light] .rider-health-metric.sleep dd { color:#67529e; }[data-theme=light] .rider-health-metric.heart dd { color:#a04559; }[data-theme=light] .rider-health-metric.hrv dd { color:#28649d; }[data-theme=light] .rider-health-metric.recovery dd { color:#846414; }
+[data-theme=light] .rider-health-text { color:#365d91; }[data-theme=light] .rider-health-providers button { background:#edf2fa; color:#273b5a; border-color:#a9b9d1; }
+[data-theme=light] .rider-health-providers button[aria-pressed=true] { background:#dbe5f7; color:#172a4c; }
+[data-theme=light] .rider-health-strain strong { color:#172130; }
+[data-theme=light] .rider-health-source span, [data-theme=light] .rider-health-strain span, [data-theme=light] .rider-health-metric dd small, [data-theme=light] .rider-health-connection, [data-theme=light] .rider-health-eyebrow { color:#53647c; }
+@media(max-width:600px) { .rider-health-card { padding:18px; border-radius:18px; }.rider-health-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }.rider-health-metric dt { min-height:0; }.rider-health-metric dd { font-size:1.9rem; }.rider-health-heading { gap:10px; }.rider-health-providers button { padding:10px 5px; font-size:.76rem; } }
+@media(prefers-reduced-motion:reduce) { .rider-health-card * { transition:none!important; animation:none!important; } }

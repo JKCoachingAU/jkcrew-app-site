@@ -3,3 +3,8 @@
 # Keeping auth in the function supports both legacy and asymmetric JWT keys.
 [functions.live-run-ice]
 verify_jwt = false
+
+# OAuth redirect has one-use state; every app POST validates Auth /user and the
+# current athlete profile in the function. Private RPCs allow service_role only.
+[functions.health-whoop]
+verify_jwt = false

@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.183";
+const version = "2.14.184";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -97,7 +97,7 @@ for (const [name, contents] of Object.entries({ app, html, css, serviceWorker, m
   assert(!/2\.11\.(16|44|45|46)/.test(contents), `${name} contains a stale asset version`);
 }
 assert(html.includes(`app.js?v=${version}`), "HTML should load the current app bundle");
-for (const file of ["live-run-sync.js", "live-run-call.js", "live-run-companion.js", "previous-week-landings.js", "uci-rankings.js", "uci-tracker.js"]) {
+for (const file of ["live-run-sync.js", "live-run-call.js", "live-run-companion.js", "previous-week-landings.js", "uci-rankings.js", "uci-tracker.js", "rider-health.js"]) {
   const tag = `src="${file}?v=${version}"`;
   assert(html.includes(tag) && html.indexOf(tag) < html.indexOf(`src="app.js?v=${version}"`), `${file} loads before app integration`);
   assert(serviceWorker.includes(`./${file}?v=${version}`), `${file} belongs to the current offline shell`);
@@ -219,7 +219,7 @@ assert(functionBody("mountWhatsNewPrompt").includes("rememberBattleIntro()"), "T
 assert(functionBody("mountWhatsNewPrompt").includes("mountPushSetupPrompt()"), "Notification setup should follow the What's New popup");
 assert(app.includes('const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1"'), "In-app notification sound needs a per-device preference");
 assert(functionBody("notify").includes("playNotificationSound"), "General in-app notifications should request the JKCREW chime");
-assert(functionBody("showProgressPopup").includes("playNotificationSound"), "XP, badge and score popups should request the JKCREW chime");
+assert(functionBody("showProgressPopup").includes("playNotificationSound"), "Score and Daily popups should request the JKCREW chime");
 assert(functionBody("playNotificationSound").includes('document.visibilityState !== "visible"'), "In-app sound must stay silent while the app is hidden");
 assert(functionBody("pushNotificationSettingsHtml").includes("notification-sound-toggle"), "Every role needs an in-app notification sound control");
 assert(functionBody("renderShell").includes("notification-centre-bell"), "Every role needs the shared notification-centre bell");
@@ -242,7 +242,7 @@ assert(parkKingLiveScoreMigration.includes("jkcrew_country_timezone"), "Detached
 assert(parentEventCourseMigration.includes("parent_athletes"), "Parent course access must require a linked rider relationship");
 assert(!parentEventCourseMigration.includes("from public.run_plans"), "Parent course access must never query private run plans");
 assert(functionBody("setupRealtimeSync").includes('table: "app_notifications"'), "New notifications must update unread badges in realtime");
-assert(functionBody("refreshOwnXpAfterAction").includes("showPrestigeCelebration"), "Crossing the XP cycle must show the Prestige celebration");
+assert(functionBody("refreshOwnXpAfterAction").includes("if (!XP_PROGRESSION_ENABLED) return null;"), "Paused XP must not fetch progression or trigger Prestige celebrations");
 assert(functionBody("archiveRunPlan").includes("showUndoToast"), "Archiving a private run needs a recoverable Undo action");
 assert(!functionBody("pushNotificationSettingsHtml").includes("Crew Chat"), "Removed Crew Chat must not remain in notification settings");
 assert(notificationMigration.includes("create table if not exists public.app_notifications"), "The persistent notification inbox table must be migrated");
@@ -283,7 +283,8 @@ assert(functionBody("levelBadgeImageUrl").includes("safeLevel > 45"), "Levels wi
 assert(functionBody("getXpSummary").includes('.from("athlete_badges")'), "Badge loading must verify the permanent earned-badge ledger");
 assert(functionBody("getXpSummary").includes("highestPersistedLevel"), "A saved badge level must not be replaced by a lower calculated level");
 assert(lifetimeXpBadgeMigration.includes("public.level_for_xp(coalesce(profile.xp_total, 0))"), "Leaderboard badge levels must come from lifetime XP");
-assert(functionBody("renderAthleteHome").includes("riderXpSummary(state.profile)"), "Athlete Home must not let score rows override permanent XP profile levels");
+assert(functionBody("renderAthleteHome").includes("data-rider-health-home"), "Athlete Home must replace the retired XP card with the health-summary mount");
+assert(!functionBody("renderAthleteHome").includes("xpProgressHtml"), "Athlete Home must not render the retired XP card");
 const normalizeXpSummaryForTest = new Function(`
   const XP_LEVEL_CAP = 50;
   const PRESTIGE_LEVEL = 51;
@@ -841,9 +842,10 @@ const parentCalendarBody = functionBody("renderParentCalendar");
 assert(parentCalendarBody.includes("getDashboardItems(context.selected.id)"), "Parent Calendar must retain rider events and tasks");
 assert(parentCalendarBody.includes('.from("training_sessions")'), "Parent Calendar must retain session history");
 const parentMoreBody = functionBody("renderParentMore");
-for (const source of ["getTricktionaryData", "getRunPlans", "getXpSummary", "getPushNotificationState"]) {
+for (const source of ["getTricktionaryData", "getRunPlans", "getPushNotificationState"]) {
   assert(parentMoreBody.includes(source), `Parent More must retain ${source}`);
 }
+assert(!parentMoreBody.includes("getXpSummary"), "Parent More must not fetch retired XP data");
 assert(app.includes('id="notification-centre-bell"'), "Every shell, including Parent, must include the shared notification bell");
 assert(functionBody("showParentNotificationDrawer").includes("getMyCoachMessages(10)"), "Parent notification drawer must use existing coach-message data");
 assert(functionBody("showParentNotificationDrawer").includes("getHelpRequests(context.selected.id)"), "Parent notification drawer must include returned video feedback");
@@ -1725,3 +1727,6 @@ assert(css.includes("prefers-reduced-motion"), "Reduced-motion support should be
 assert.equal((css.match(/{/g) || []).length, (css.match(/}/g) || []).length, "CSS braces should balance");
 
 console.log("JKCREW smoke checks passed");
+
+assert.equal(read("riley-test/rider-health.css"), read("rider-health.css"), "Health styles stay mirrored");
+assert(!serviceWorker.includes("icons/badges/"), "Retired badge art is not precached");

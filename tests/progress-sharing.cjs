@@ -70,8 +70,8 @@ const progress = {
     await page.getByText('Updated just now', { exact: true }).waitFor();
     assert.equal((await page.evaluate(() => rpcCalls)).length, 1, 'Opening after idempotent binding must query once');
     assert.deepEqual(await page.evaluate(() => rpcCalls[0]), { name: 'get_today_training_progress', args: { p_athlete_id: 'rider' } });
-    assert.equal(await page.locator('.training-progress-stats strong').allTextContents().then(x=>x.join('/')), '13/155');
-    assert.equal(await page.locator('.training-progress-weekly strong').textContent(), '32');
+    assert.equal(await page.locator('.training-progress-stats strong').allTextContents().then(x=>x.join('/')), '13/32');
+    assert.equal(await page.locator('.training-progress-stats strong').last().textContent(), '32');
     for (const name of ['Tailwhip air', '360 no hander', 'Manual → Barspin → 180', 'Opposite 360']) assert(await page.locator('.training-progress-category li').filter({hasText:name}).isVisible());
     assert(await page.locator('.training-progress-category li').filter({hasText:'360 → Barspin → No hander'}).isVisible());
     assert(await page.getByText('12:32 · previous best 13:30', {exact:true}).isVisible());
@@ -141,8 +141,8 @@ const progress = {
     // Fresh queries reflect a new local date, empty day, no fabricated rewards/PB.
     await page.evaluate(()=>{fixture.local_date='2026-09-12';fixture.daily_results=[];fixture.completed_categories=[];fixture.improvements=[];fixture.next_goal=null;fixture.today_points=0;fixture.today_xp=null;fixture.xp_attribution='partial';fixture.attributable_today_xp=35;return openTodayTrainingProgress({athleteId:'rider'});});
     assert(await page.getByText('No finish recorded today',{exact:true}).isVisible());
-    assert.equal(await page.locator('.training-progress-stats strong').last().textContent(),'—');
-    assert(await page.getByText('Today’s full XP total is unavailable because earlier rewards were adjusted today.',{exact:true}).isVisible());
+    assert.equal(await page.locator('.training-progress-stats strong').first().textContent(),'0');
+    assert(!/\bXP\b/i.test(await page.locator('.training-today-dialog').innerText()),'Retired XP is absent even from partial legacy rewards');
     assert.equal(await page.evaluate(()=>buildTrainingShareData({todayProgress:fixture})),null,'Partial XP does not expose an export path');
     assert.equal(await page.locator('.training-progress-pb').count(),0);
     await page.evaluate(()=>{fixture.daily_results=[{...dailyFixture,legacy:true,pb_comparable:false,completion_points:null}];return refreshOpenTrainingProgress('rider')});

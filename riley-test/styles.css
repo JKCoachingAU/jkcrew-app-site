@@ -3317,7 +3317,7 @@ html[data-theme="light"] .coach-shell .command-uci-panel .eyebrow { color: var(-
 .command-leader-row {
   min-height: 48px;
   display: grid;
-  grid-template-columns: 38px auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 38px auto minmax(0, 1fr) auto;
   gap: 9px;
   align-items: center;
   padding: 7px 9px;
@@ -3338,7 +3338,6 @@ html[data-theme="light"] .coach-shell .command-uci-panel .eyebrow { color: var(-
   font: 900 0.98rem var(--display);
   text-transform: uppercase;
 }
-.command-level,
 .command-points {
   color: var(--muted);
   font: 900 0.68rem var(--mono);
@@ -7124,7 +7123,6 @@ html[data-theme="light"] .success-burst {
     gap: 7px;
   }
   .command-leader-row .avatar { width: 30px; height: 30px; }
-  .command-level { display: none; }
   .group-session-actions button { width: 100%; }
   .group-session-timer { font-size: clamp(3.3rem, 18vw, 5.6rem); }
   .viewer-roster-head { align-items: start; flex-direction: column; }
@@ -10515,7 +10513,7 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 .next-week-list-btn { border-color: rgba(91, 151, 255, .48); color: #8eb9ff; }
 .student-profile-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin: 0 0 14px;
 }
@@ -10536,7 +10534,7 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
 @media (max-width: 760px) {
   .rider-profile-selector { grid-template-columns: 1fr; gap: 14px; }
   .student-profile-primary-actions { grid-template-columns: 1fr; }
-  .student-profile-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .student-profile-summary article { padding: 12px 9px; }
   .student-profile-head .actions { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
 }
 .coach-battle-view-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
