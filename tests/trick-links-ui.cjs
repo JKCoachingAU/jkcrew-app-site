@@ -19,7 +19,7 @@ const constant = (name, close = '\n};') => {
 };
 const names = [
   'profileGroupNames', 'isContestPrepProfile', 'categoryDisplayInfo',
-  'splitLineTricks', 'assignmentPresentation', 'assignmentLinesForEditor', 'parseAssignmentLine',
+  'splitLineTricks', 'parseTrickLinkInput', 'assignmentPresentation', 'assignmentLinesForEditor', 'parseAssignmentLine',
   'pendingAssignmentState', 'setPendingAssignmentProgress', 'clearPendingAssignmentProgress',
   'percentageAttemptsByNumber', 'isAssignmentComplete', 'assignmentStatus', 'reconcileAwardedProgress',
   'weeklyCompletionPercent', 'assignmentList', 'assignmentGroups', 'percentageAssignmentList',
@@ -118,6 +118,18 @@ const code = [
       { coach_id: 'rider', athlete_id: 'rider', week_start: '2026-10-26', trick_name: 'X-UP → No-footer', category: 'trick_links', venue: '', target_reps: 1, notes: 'Keep speed - flow', sort_order: 3 },
       'A pair stays one assignment, normalized without splitting hyphenated names or notes');
     eq(await page.evaluate(() => parseAssignmentLine('', 0, 'trick_links')), null, 'Blank editor rows do not create links');
+    for (const [input, expectedName, expectedNotes] of [
+      ['Barspin - Tailwhip', 'Barspin → Tailwhip', ''],
+      ['X-UP - No-footer', 'X-UP → No-footer', ''],
+      ['Barspin | Tailwhip', 'Barspin → Tailwhip', ''],
+      ['Barspin\nTailwhip', 'Barspin → Tailwhip', ''],
+      ['  Barspin -> Tailwhip  ', 'Barspin → Tailwhip', ''],
+      ['Barspin → Tailwhip - Keep speed - stay low', 'Barspin → Tailwhip', 'Keep speed - stay low'],
+      ['Barspin | Tailwhip - Keep speed', 'Barspin → Tailwhip', 'Keep speed'],
+    ]) {
+      const parsed = await page.evaluate(input => parseAssignmentLine(input, 0, 'trick_links'), input);
+      eq([parsed.trick_name, parsed.notes, parsed.target_reps], [expectedName, expectedNotes, 1], `Coach pair syntax saves as one complete link: ${input}`);
+    }
     const oversized = `${'A'.repeat(116)} → Tailwhip`;
     eq(await page.evaluate(text => parseAssignmentLine(text, 0, 'trick_links').trick_name, oversized), oversized,
       'Oversized input reaches server validation intact instead of silently cutting off the second trick');
@@ -156,29 +168,44 @@ const code = [
     eq(await page.locator('[data-viewer-counter="trick_links"] strong').innerText(), '1/2', 'Coach counter counts pairs');
     eq(await page.locator('.viewer-line-number').allTextContents(), ['Link 1', 'Link 2']);
     await page.locator('.viewer-edit-panel > summary').click();
-    const editor = page.locator('[data-viewer-assignment-editor="trick_links"] textarea');
+    const editors = page.locator('[data-viewer-assignment-editor="trick_links"] textarea[name="numberedLink"]');
+    eq(await editors.count(), 3, 'Trick Links use three numbered boxes, like Lines');
+    eq(await page.locator('[data-viewer-assignment-editor="trick_links"] textarea[name="assignmentLines"]').count(), 0,
+      'The coach editor no longer presents pairs as one ambiguous bulk textarea');
+    eq(await editors.evaluateAll(fields => fields.map(field => field.value)), ['X-UP -> No-footer - Keep speed', 'Barspin → Tailwhip', ''],
+      'Opening numbered boxes preserves saved pair identities and notes');
+    const editor = editors.nth(0);
     const save = page.locator('[data-viewer-assignment-editor="trick_links"] button[type="submit"]');
-    const validInput = 'Barspin->Tailwhip - Keep speed\nX-UP → No-footer';
-    await editor.fill(validInput);
+    await editor.fill('Barspin - Tailwhip');
+    await editors.nth(1).fill('X-UP\nNo-footer');
     await save.click(); await page.evaluate(() => pending);
     eq(await page.evaluate(() => calls[0].name), 'save_weekly_assignment_list');
     eq(await page.evaluate(() => calls[0].args.p_category), 'trick_links');
     eq(await page.evaluate(() => calls[0].args.p_assignments.map(row => [row.trick_name, row.target_reps, row.notes])),
-      [['Barspin → Tailwhip', 1, 'Keep speed'], ['X-UP → No-footer', 1, '']], 'Saving two pairs creates two one-completion rows');
+      [['Barspin → Tailwhip', 1, ''], ['X-UP → No-footer', 1, '']], 'A spaced-dash pair and two-line pair save as two complete assignments, skipping the spare box');
     eq(await page.evaluate(() => refreshes), 1, 'Successful save refreshes the viewer');
-    const invalidInput = 'Barspin → Tailwhip → 180\nManual';
+    const firstSaved = await page.evaluate(() => calls[0].args.p_assignments);
+    await page.evaluate(saved => { entry.assignments = saved; mountCoach(); }, firstSaved);
+    await page.locator('.viewer-edit-panel > summary').click();
+    eq(await editors.evaluateAll(fields => fields.map(field => field.value)), ['Barspin → Tailwhip', 'X-UP → No-footer', ''],
+      'Reopening a saved numbered editor restores both full pairs');
+    const invalidInput = 'Barspin → Tailwhip → 180';
     await editor.fill(invalidInput);
+    await editors.nth(1).fill('Manual');
     await page.evaluate(() => { mode.error = { message: 'Trick Links must contain exactly two tricks separated by →.' }; });
     await save.click(); await page.evaluate(() => pending);
     eq(await editor.inputValue(), invalidInput, 'Backend pair-validation errors preserve every typed row');
+    eq(await editors.nth(1).inputValue(), 'Manual', 'A single-trick box remains available to correct after validation failure');
     eq(await page.evaluate(() => refreshes), 1, 'Failed edit does not replace the typed editor with old data');
     eq(await page.evaluate(() => messages.at(-1).tone), 'error');
     ok(await save.isEnabled(), 'Validation errors restore Save');
     eq(await save.getAttribute('aria-busy'), null, 'Validation failure clears loading feedback');
-    await editor.fill('Manual → 180');
+    await editor.fill('Manual | 180 - Keep speed');
+    await editors.nth(1).fill('');
     await page.evaluate(() => { mode.error = null; });
     await save.click(); await page.evaluate(() => pending);
     eq(await page.evaluate(() => calls.at(-1).args.p_assignments[0].trick_name), 'Manual → 180', 'Corrected pair can be retried successfully');
+    eq(await page.evaluate(() => calls.at(-1).args.p_assignments[0].notes), 'Keep speed', 'Retry keeps coaching notes separate from the two tricks');
 
     // Real coach proposal fields and payload must preserve optional links while
     // leaving all six existing required list sizes unchanged.
@@ -280,15 +307,19 @@ const code = [
         eq(await page.locator('[data-assignment-section="trick_links"] .assignment-row').count(), 2, 'Linked parent sees both full pairs');
         eq(await page.locator('[data-assignment-action], [data-viewer-assignment-action], form').count(), 0, 'Parent progress contains no editing or scoring controls');
       }
+      if (role === 'coach') await page.locator('.viewer-edit-panel > summary').click();
       for (const theme of ['dark', 'light']) for (const width of [320, 390]) {
         await page.setViewportSize({ width, height: 844 });
         await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
         const layout = await page.evaluate(() => {
           const target = document.querySelector('[data-viewer-counter="trick_links"], [data-assignment-section="trick_links"]');
           const rect = target.getBoundingClientRect();
-          return { overflow: document.documentElement.scrollWidth > innerWidth + 1, left: rect.left, right: rect.right, width: innerWidth };
+          const clippedEditor = [...document.querySelectorAll('textarea[name="numberedLink"]')].some(field => {
+            const box = field.getBoundingClientRect(); return box.width <= 0 || box.left < -1 || box.right > innerWidth + 1;
+          });
+          return { overflow: document.documentElement.scrollWidth > innerWidth + 1, clippedEditor, left: rect.left, right: rect.right, width: innerWidth };
         });
-        ok(!layout.overflow && layout.left >= -1 && layout.right <= layout.width + 1, `${role} ${theme} at ${width}px keeps Trick Links within the viewport`);
+        ok(!layout.overflow && !layout.clippedEditor && layout.left >= -1 && layout.right <= layout.width + 1, `${role} ${theme} at ${width}px keeps Trick Links and its numbered editor within the viewport`);
       }
     }
     eq(errors, [], 'All tested role/layout/action journeys have no browser errors');

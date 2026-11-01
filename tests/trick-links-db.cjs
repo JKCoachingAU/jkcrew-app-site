@@ -1,6 +1,6 @@
 // Execute real production SQL with synthetic data in an isolated PostgreSQL-compatible DB.
 // No network access or live rider mutations. Run with JKCREW_PGLITE_PATH set when needed.
-const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm');
 const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
 const {initialize,id,partialMigration}=require('./daily-partial-db.cjs');
 const root=path.resolve(__dirname,'..');
@@ -165,6 +165,24 @@ async function run(){
   eq(await get('select count(*)::int from weekly_challenge_completions where challenge_id=$1',[challengeId]),1,'Retry cannot duplicate challenge bonus');
   await actor(3);await denied(()=>rpc('save_weekly_assignment_list',[id(2),week,'trick_links','',[link]]),/Only coaches/);
   await actor(5);await denied(()=>rpc('save_weekly_assignment_list',[id(2),week,'trick_links','',[link]]),/not linked/);
+  // Real browser parser -> real saving RPC contract. Lines-style text used to
+  // become a one-trick title with the second trick wrongly stored as a note.
+  await actor(1);
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  const frontend=name=>{const start=app.indexOf('function '+name+'(');assert(start>=0,name);const rest=app.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
+  const contractWeek=await offset(35);
+  const parser={state:{user:{id:id(1)},selectedAthleteId:id(2)},weekStartDate:()=>contractWeek};
+  vm.createContext(parser);vm.runInContext(['parseTrickLinkInput','parseAssignmentLine'].map(frontend).join('\n'),parser);
+  const parse=input=>JSON.parse(JSON.stringify(parser.parseAssignmentLine(input,0,'trick_links')));
+  const browserInputs=['Barspin - Tailwhip','X-UP\nNo-footer','Manual | 180 - Keep speed'];
+  const browserPayload=browserInputs.map((input,index)=>({...parse(input),sort_order:index}));
+  eq(await rpc('save_weekly_assignment_list',[id(2),contractWeek,'trick_links','',browserPayload]),3,'Numbered editor payload saves complete dash, newline and pipe pairs');
+  const canonical=await rows('select trick_name,notes,target_reps from weekly_trick_assignments where athlete_id=$1 and week_start=$2 order by sort_order',[id(2),contractWeek]);
+  eq(canonical,[{trick_name:'Barspin → Tailwhip',notes:'',target_reps:1},{trick_name:'X-UP → No-footer',notes:'',target_reps:1},{trick_name:'Manual → 180',notes:'Keep speed',target_reps:1}],'Backend retains both tricks and separate coaching notes from actual frontend parser');
+  for(const invalid of ['Manual','A - B - C','A → → B','A ->','A'.repeat(119)+' - B']){
+   await denied(()=>rpc('save_weekly_assignment_list',[id(2),contractWeek,'trick_links','',[parse(invalid)]]),/Enter two tricks/);
+   eq(await rows('select trick_name,notes,target_reps from weekly_trick_assignments where athlete_id=$1 and week_start=$2 order by sort_order',[id(2),contractWeek]),canonical,'Invalid numbered pair cannot replace the saved list');
+  }
   console.log(`PASS: ${checks} Trick Links validation, optional proposals, 2-point scoring, retries, undo, session receipts, permissions, paused XP, scheduling, rollover, history and park-score checks.`);
  }finally{await db.close();}
 }

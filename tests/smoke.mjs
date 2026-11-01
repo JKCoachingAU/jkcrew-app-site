@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.186";
+const version = "2.14.187";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -391,7 +391,7 @@ assert(functionBody("editedCoachProposalPayload").includes("focusRiderProposalPr
 assert(functionBody("reviewRiderSheetProposal").includes('rpc("review_edited_rider_sheet_proposal"'), "Edited List Requests must use the atomic coach-only approval RPC");
 assert(functionBody("renderCoachCommand").includes("[data-proposal-edit-cancel]"), "Coach List Request edit controls must be interactive");
 assert(functionBody("setCoachProposalEditMode").includes("input.defaultValue"), "Cancelling a coach List Request edit must discard unsaved field changes");
-const proposalItemFromLineForTest = new Function(`${functionBody("riderProposalItemFromLine")}; return riderProposalItemFromLine;`)();
+const proposalItemFromLineForTest = new Function(`${functionBody("parseTrickLinkInput")}; ${functionBody("riderProposalItemFromLine")}; return riderProposalItemFromLine;`)();
 const proposalItemInputValueForTest = new Function(`${functionBody("riderProposalItemInputValue")}; return riderProposalItemInputValue;`)();
 const editableLineForTest = proposalItemFromLineForTest("lines", "Manual - Barspin - 180");
 assert.deepEqual(editableLineForTest, { category: "lines", trick_name: "Manual", notes: "Barspin - 180" }, "Coach edits must preserve a complete Line in the existing data shape");

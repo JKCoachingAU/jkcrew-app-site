@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.186";
+const RELEASE_VERSION = "2.14.187";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -693,7 +693,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.186" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.187" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   if (!XP_PROGRESSION_ENABLED) return "";
@@ -4138,6 +4138,22 @@ function splitLineTricks(value = "") {
     .map((step) => step.trim()).filter(Boolean);
 }
 
+function parseTrickLinkInput(value = "") {
+  const text = String(value).trim();
+  let sequence = text, notes = "";
+  // An explicit pair can carry existing coaching notes after " - ". A plain
+  // dash-separated entry is the pair itself, just like the Lines editor.
+  const noteStart = text.indexOf(" - ");
+  if (noteStart >= 0 && /→|->|\|/.test(text.slice(0, noteStart))) {
+    sequence = text.slice(0, noteStart);
+    notes = text.slice(noteStart + 3).trim();
+  }
+  const parts = sequence.split(/\s*(?:→|->|\|)\s*|\s+-\s*|\s*-\s+|\r?\n+/).map(part => part.trim());
+  // Keep empty/extra components so server validation rejects malformed pairs
+  // instead of silently dropping a trick or deleting the existing assignment.
+  return { title: parts.join(" → "), notes };
+}
+
 function assignmentPresentation(assignment = {}) {
   const title = String(assignment.trick_name || "").trim();
   const notes = String(assignment.notes || "").trim();
@@ -7165,7 +7181,7 @@ async function renderCoachTricktionary() {
 function trickLinksProposalEditorHtml(items = [], coachId = "") {
   const id = coachId ? `coach-proposal-links-${escapeHtml(coachId)}` : "proposal-links";
   const value = items.filter(item => item.category === "trick_links").map(riderProposalItemInputValue).join("\n");
-  return `<div class="field trick-links-proposal"><label for="${id}">Trick Links (optional)</label><small>Two tricks back to back · 2 points per link. One pair per row.</small><textarea id="${id}" name="proposalTrickLinks" rows="3" placeholder="Barspin → Tailwhip">${escapeHtml(value)}</textarea></div>`;
+  return `<div class="field trick-links-proposal"><label for="${id}">Trick Links (optional)</label><small>Two tricks back to back · 2 points per link. One pair per row, e.g. Barspin - Tailwhip.</small><textarea id="${id}" name="proposalTrickLinks" rows="3" placeholder="Barspin - Tailwhip">${escapeHtml(value)}</textarea></div>`;
 }
 
 function optionalTrickLinksFromForm(form) {
@@ -7173,10 +7189,14 @@ function optionalTrickLinksFromForm(form) {
 }
 
 function riderProposalItemFromLine(category, line = "") {
+  if (category === "trick_links") {
+    const link = parseTrickLinkInput(line);
+    return { category, trick_name: link.title, notes: link.notes.slice(0, 500) };
+  }
   const [name, ...notes] = String(line).split(" - ");
   return {
     category,
-    trick_name: category === "trick_links" ? name.trim().replace(/\s*(?:→|->)\s*/g, " → ") : name.trim().slice(0, 120),
+    trick_name: name.trim().slice(0, 120),
     notes: notes.join(" - ").trim().slice(0, 500),
   };
 }
@@ -13058,11 +13078,11 @@ function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
       ? "Maximum 3 percentage tricks. One trick per line."
       : listId === "lines"
         ? "Keep each complete run in its own numbered box. Example: Manual - Barspin - 180."
-        : listId === "trick_links" ? "One pair per line: Barspin → Tailwhip. Land both back to back for 2 points. Add notes after a dash." : "One trick per line. Add notes after a dash.";
+        : listId === "trick_links" ? "Keep each two-trick link in its own numbered box. Example: Barspin - Tailwhip. Land both back to back for 2 points." : "One trick per line. Add notes after a dash.";
   return `<details class="viewer-edit-panel">
     <summary>Edit ${escapeHtml(editLabel)}</summary>
     <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
-      ${listId === "lines" ? `<p class="panel-meta">${escapeHtml(helper)}</p><div class="viewer-numbered-lines">${Array.from({ length: Math.max(3, assignments.length) }, (_, index) => `<label class="field viewer-line-field"><span>Line ${index + 1}</span><textarea name="numberedLine" rows="3" placeholder="Enter the full run for Line ${index + 1}">${escapeHtml(assignments[index] ? assignmentLinesForEditor([assignments[index]]) : "")}</textarea></label>`).join("")}</div>` : `<div class="field">
+      ${["lines", "trick_links"].includes(listId) ? `<p class="panel-meta">${escapeHtml(helper)}</p><div class="viewer-numbered-lines">${Array.from({ length: Math.max(3, assignments.length) }, (_, index) => `<label class="field viewer-line-field"><span>${listId === "trick_links" ? "Link" : "Line"} ${index + 1}</span><textarea name="${listId === "trick_links" ? "numberedLink" : "numberedLine"}" rows="3" placeholder="${listId === "trick_links" ? "Barspin - Tailwhip" : `Enter the full run for Line ${index + 1}`}">${escapeHtml(assignments[index] ? assignmentLinesForEditor([assignments[index]]) : "")}</textarea></label>`).join("")}</div>` : `<div class="field">
         <label>${escapeHtml(helper)}</label>
         <textarea name="assignmentLines" rows="${listId === "daily" ? 7 : 5}" placeholder="${listId === "trick_links" ? "Barspin → Tailwhip" : "Add tricks here..."}">${escapeHtml(assignmentLinesForEditor(assignments))}</textarea>
       </div>`}
@@ -13430,14 +13450,15 @@ async function saveSessionViewerAssignments(event) {
   const button = formElement.querySelector("button");
   const restoreButton = setButtonBusy(button, "Saving...");
 
-  const formData = new FormData(formElement);
-  const rows = listId === "lines" ? formData.getAll("numberedLine").map(line => String(line).replace(/\s*\r?\n\s*/g, " ")) : String(formData.get("assignmentLines") || "").split("\n");
-  const editedLines = rows
-    .map((line, index) => parseAssignmentLine(line.trim(), index, listId, listId === "daily" ? venue : ""))
-    .filter(Boolean)
-    .slice(0, listId === "percentage" ? 3 : undefined);
-
   try {
+    const formData = new FormData(formElement);
+    const rows = listId === "lines" ? formData.getAll("numberedLine").map(line => String(line).replace(/\s*\r?\n\s*/g, " "))
+      : listId === "trick_links" ? formData.getAll("numberedLink").map(String)
+      : String(formData.get("assignmentLines") || "").split("\n");
+    const editedLines = rows
+      .map((line, index) => parseAssignmentLine(line.trim(), index, listId, listId === "daily" ? venue : ""))
+      .filter(Boolean)
+      .slice(0, listId === "percentage" ? 3 : undefined);
     if (!isCurrent()) return;
     const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
     const info = categoryDisplayInfo(listId, athlete);
@@ -15078,29 +15099,46 @@ async function renderPlanner() {
 
 async function savePlannedWeeklyAssignments(event) {
   event.preventDefault();
-  if (!state.plannerAthleteId) return notify("Choose a student first.", "error");
-  const form = new FormData(event.currentTarget);
-  const targetWeekStart = nextWeekStartDate();
-  const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, state.plannerAthleteId, targetWeekStart);
+  const formElement = event.currentTarget;
+  if (formElement.dataset.plannerSaving === "true") return;
+  const athleteId = state.plannerAthleteId, userId = state.user?.id, view = state.view;
+  if (!athleteId) return notify("Choose a student first.", "error");
+  const isCurrent = () => formElement.isConnected && state.user?.id === userId && state.view === view && state.plannerAthleteId === athleteId;
   const saveStatus = event.submitter?.dataset?.planSaveStatus || "scheduled_next_week";
   const isDraftSave = saveStatus === "draft_next_week";
-  const button = event.submitter || event.currentTarget.querySelector("button[type='submit']");
-  button.disabled = true;
-  button.textContent = isDraftSave ? "Saving Draft..." : "Scheduling...";
-  const rpcName = isDraftSave ? "save_weekly_assignment_draft" : "save_weekly_assignment_plan";
-  const { error } = await client.rpc(rpcName, {
-    p_athlete_id: state.plannerAthleteId,
-    p_target_week_start: targetWeekStart,
-    p_assignments: assignments,
-    p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+  const button = event.submitter || formElement.querySelector("button[type='submit']");
+  formElement.dataset.plannerSaving = "true";
+  const restoreButtons = [...formElement.querySelectorAll("button[type='submit']")].map(control => {
+    const wasDisabled = control.disabled;
+    const restore = setButtonBusy(control, control === button ? (isDraftSave ? "Saving Draft..." : "Scheduling...") : undefined);
+    return () => { restore(); control.disabled = wasDisabled; };
   });
-  if (error) {
-    notify(messageFrom(error), "error");
-    return renderPlanner();
+  let saved = false;
+  try {
+    const form = new FormData(formElement);
+    const targetWeekStart = nextWeekStartDate();
+    const { dailyVenueRows, assignments } = assignmentsFromScheduleForm(form, athleteId, targetWeekStart);
+    if (!isCurrent()) return;
+    const rpcName = isDraftSave ? "save_weekly_assignment_draft" : "save_weekly_assignment_plan";
+    const { error } = await withTimeout(client.rpc(rpcName, {
+      p_athlete_id: athleteId,
+      p_target_week_start: targetWeekStart,
+      p_assignments: assignments,
+      p_venues: dailyVenueRows.map((row) => ({ name: row.name })),
+    }), isDraftSave ? "Saving next-week draft" : "Scheduling next week", 20000);
+    if (!isCurrent()) return;
+    if (error) throw error;
+    saved = true;
+    cacheClear(`planner-template:${athleteId}:`);
+    notify(isDraftSave ? "Next-week draft saved privately." : "Next-week schedule saved.");
+    await renderPlanner();
+  } catch (error) {
+    if (!isCurrent()) return;
+    notify(saved ? "Your plan was saved, but the screen could not refresh. Reopen the planner to see it." : messageFrom(error) || "Unable to save your plan. Your changes are kept here; please retry.", "error");
+  } finally {
+    delete formElement.dataset.plannerSaving;
+    restoreButtons.forEach(restore => restore());
   }
-  cacheClear(`planner-template:${state.plannerAthleteId}:`);
-  notify(isDraftSave ? "Next-week draft saved privately." : "Next-week schedule saved.");
-  await renderPlanner();
 }
 
 async function renderCrew() {
@@ -15879,9 +15917,11 @@ async function renderStudentProfile() {
 }
 
 function parseAssignmentLine(line, index, category, venue = "", athleteId = state.selectedAthleteId, weekStart = weekStartDate()) {
+  if (!String(line).trim()) return null;
   const [left, ...noteParts] = line.split(" - ");
-  const note = noteParts.join(" - ").trim();
-  const trickName = category === "trick_links" ? left.trim().replace(/\s*(?:→|->)\s*/g, " → ") : left.trim();
+  const link = category === "trick_links" ? parseTrickLinkInput(line) : null;
+  const note = link ? link.notes : noteParts.join(" - ").trim();
+  const trickName = link ? link.title : left.trim();
   if (!trickName) return null;
   const targetReps = category === "dialled" ? 3 : category === "percentage" ? 10 : 1;
   return {
@@ -15985,7 +16025,7 @@ function scheduleEditorHtml(assignments = [], coachVenues = [], options = {}) {
     }).join("\n");
     return planAccordionSection(info.label, `${categoryAssignments.length} assigned · ${info.description}`, `<div class="schedule-editor compact-schedule-editor">
       <div class="schedule-editor-head"><div><div class="panel-title">${info.label}</div><div class="panel-meta">${info.description}</div></div><div class="venue-head-actions"><div class="category-count">${categoryAssignments.length}</div><button class="secondary-btn compact-btn" type="button" data-save-category-list="${escapeHtml(category)}">Save ${escapeHtml(info.label)}</button></div></div>
-      <div class="field"><label for="assignment-${category}">${category === "trick_links" ? "One pair per row · First trick → Second trick" : "One trick or line per row"}</label><textarea id="assignment-${category}" name="${category}" placeholder="${category === "trick_links" ? "Barspin → Tailwhip" : `Add ${info.label.toLowerCase()} here...`}">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
+      <div class="field"><label for="assignment-${category}">${category === "trick_links" ? "One pair per row · First trick - Second trick" : "One trick or line per row"}</label><textarea id="assignment-${category}" name="${category}" placeholder="${category === "trick_links" ? "Barspin - Tailwhip" : `Add ${info.label.toLowerCase()} here...`}">${escapeHtml(assignmentText)}</textarea>${plannerCompletedStrip(categoryAssignments, options.showCompletedHighlights)}</div>
     </div>`, options.openWeeklySections ?? false);
   }).join("");
   const dailySectionTitle = options.dailyTitle || (isContestPrepProfile(displayProfile) ? "Practice 1 Lists" : "Venue-Specific Daily Tricks");
@@ -17379,13 +17419,15 @@ async function submitTrickRequest(event) {
   let trickName = String(form.get("trickName") || "").trim();
   const category = String(form.get("category") || "daily");
   const venue = String(form.get("venue") || "").trim();
-  const notes = String(form.get("notes") || "").trim();
+  let notes = String(form.get("notes") || "").trim();
   if (!trickName) return notify("Add the trick you want to request.", "error");
   if (!trickRequestCategoryLabels[category]) return notify("Choose a valid trick list.", "error");
   if (category === "trick_links") {
-    const parts = trickName.split(/→|->/).map(part => part.trim());
+    const link = parseTrickLinkInput(trickName);
+    const parts = link.title.split("→").map(part => part.trim());
     if (parts.length !== 2 || parts.some(part => !part) || parts.join(" → ").length > 120) return notify("Enter two tricks as First trick → Second trick (maximum 120 characters).", "error");
     trickName = parts.join(" → ");
+    notes = [link.notes, notes].filter(Boolean).join(" - ").slice(0, 180);
   }
   const button = formElement.querySelector("button");
   button.disabled = true;
