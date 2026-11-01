@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.185";
+const version = "2.14.186";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -408,7 +408,7 @@ Object.entries(proposalRequirementsForTest).forEach(([category, count]) => {
 });
 const editedCoachProposalPayloadForTest = new Function(
   "FormData", "riderProposalRequirements", "categoryInfo", "riderProposalItemFromLine", "focusRiderProposalProblem", "notify",
-  `${functionBody("editedCoachProposalPayload")}; return editedCoachProposalPayload;`,
+  `${functionBody("optionalTrickLinksFromForm")}; ${functionBody("editedCoachProposalPayload")}; return editedCoachProposalPayload;`,
 )(FakeProposalFormData, proposalRequirementsForTest, {}, proposalItemFromLineForTest, () => {}, () => {});
 const editedPayloadForTest = editedCoachProposalPayloadForTest({
   values: proposalFormValuesForTest,

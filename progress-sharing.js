@@ -21,7 +21,7 @@ const TRAINING_SHARE_CARDS_ENABLED = false;
     const current = appState();
     return Boolean(current?.user?.id && athleteId && ((current.profile?.role === "athlete" && athleteId === current.user.id) || ["coach", "admin"].includes(current.profile?.role)));
   };
-  const categoryNames = { daily: "Daily Tricks", daily_tricks: "Daily Tricks", one_bangs: "One Bangs", one_bang: "One Bangs", dialled: "Dialled", lines: "Lines", bonus: "Bonus Tricks", percentage: "Percentage Tricks", foam: "Foam Pit", foam_pit: "Foam Pit", extra: "Extra tricks" };
+  const categoryNames = { daily: "Daily Tricks", daily_tricks: "Daily Tricks", one_bangs: "One Bangs", one_bang: "One Bangs", dialled: "Dialled", lines: "Lines", trick_links: "Trick Links", bonus: "Bonus Tricks", percentage: "Percentage Tricks", foam: "Foam Pit", foam_pit: "Foam Pit", extra: "Extra tricks" };
   const categoryLabel = category => categoryNames[category] || text(category).replace(/_/g, " ") || "Training";
   const secondsLabel = value => {
     if (number(value) === null || Number(value) < 0) return "—";

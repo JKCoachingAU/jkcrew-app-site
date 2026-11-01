@@ -21,6 +21,7 @@ const progress = {
     { category: 'one_bangs', items: [{ id: 'ob', trick_name: 'Tailwhip air' }] },
     { category: 'dialled', items: [{ id: 'di', trick_name: '360 no hander' }] },
     { category: 'lines', items: [{ id: 'li', trick_name: 'Manual → Barspin → 180', notes: 'SECRET_COACH_FEEDBACK - PRIVATE_INSTRUCTION - NEVER_EXPORT' }, {id:'legacy-line', trick_name:'360',notes:'Barspin - No hander'}, {id:'private-line', trick_name:'Truck box',notes:'Private coaching feedback - call PRIVATE_CONTACT - NEVER_EXPORT_NOTES'}] },
+    { category: 'trick_links', items: [{id:'link',trick_name:'360 air → Tailwhip box'}] },
     { category: 'bonus', items: [{ id: 'bo', trick_name: 'Opposite 360' }] }
   ],
   improvements: [{ type: 'daily_pb', seconds: 752, previous_pb_seconds: 810, venue: 'Test park' }],
@@ -72,8 +73,9 @@ const progress = {
     assert.deepEqual(await page.evaluate(() => rpcCalls[0]), { name: 'get_today_training_progress', args: { p_athlete_id: 'rider' } });
     assert.equal(await page.locator('.training-progress-stats strong').allTextContents().then(x=>x.join('/')), '13/32');
     assert.equal(await page.locator('.training-progress-stats strong').last().textContent(), '32');
-    for (const name of ['Tailwhip air', '360 no hander', 'Manual → Barspin → 180', 'Opposite 360']) assert(await page.locator('.training-progress-category li').filter({hasText:name}).isVisible());
+    for (const name of ['Tailwhip air', '360 no hander', 'Manual → Barspin → 180', '360 air → Tailwhip box', 'Opposite 360']) assert(await page.locator('.training-progress-category li').filter({hasText:name}).isVisible());
     assert(await page.locator('.training-progress-category li').filter({hasText:'360 → Barspin → No hander'}).isVisible());
+    assert(await page.locator('.training-progress-category').filter({hasText:'360 air → Tailwhip box'}).getByText('Trick Links',{exact:true}).isVisible(),'New category has its proper label in Today’s Progress');
     assert(await page.getByText('12:32 · previous best 13:30', {exact:true}).isVisible());
     assert.equal(await page.locator('dialog details[open]').count(), 0);
     assert(!(await page.locator('dialog').textContent()).includes('SECRET_'));

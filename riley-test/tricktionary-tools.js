@@ -176,13 +176,24 @@
     let list = null, picker = null, sequence = 0;
     const inputSelector = 'input[name="trickName"], input[name="trick_name"], #manual-trick-form input[name="title"], #coach-manual-trick-form input[name="title"], input[name^="proposalItems."]:not([name="proposalItems.lines"])';
     const textareaSelector = 'textarea[name="assignmentLines"], textarea[name^="dailyVenueTricks:"], textarea[name="customDaily"], textarea[name="one_bang"], textarea[name="dialled"], textarea[name="percentage"], textarea[name="bonus"], textarea[data-tier-two-template]';
+    // Library suggestions add one trick at a time; a link must remain one complete pair.
+    const isLinkField = input => Boolean(input.closest('[data-viewer-assignment-editor="trick_links"]'))
+      || input.matches('textarea[name="trick_links"], textarea[name="proposalTrickLinks"]')
+      || (input.matches('input[name="trickName"]') && input.closest('#trick-request-form')?.querySelector('[name="category"]')?.value === 'trick_links');
+    const categoryChanged = event => {
+      if (!event.target.matches?.('#trick-request-form [name="category"]') || event.target.value !== 'trick_links') return;
+      sequence++;
+      event.target.closest('form')?.querySelector('[name="trickName"]')?.removeAttribute('list');
+      list?.remove(); picker?.remove();
+    };
     const focus = async event => {
       const input = event.target;
       if ((!input.matches?.(inputSelector) && !input.matches?.(textareaSelector)) || !config.currentUser()) return;
       const userId = config.currentUser(), serial = ++sequence;
+      if (isLinkField(input)) { input.removeAttribute('list'); list?.remove(); picker?.remove(); return; }
       try {
         const catalog = await loadCatalog({...config,userId});
-        if (!input.isConnected || config.currentUser() !== userId || serial !== sequence) return;
+        if (!input.isConnected || config.currentUser() !== userId || serial !== sequence || isLinkField(input)) return;
         list?.remove(); picker?.remove(); list = document.createElement('datalist'); list.id = 'jkcrew-trick-suggestions';
         const titles = [...new Set(catalog.map(row => row.title).filter(Boolean))];
         list.innerHTML = titles.map(title=>`<option value="${esc(title)}"></option>`).join('');
@@ -204,7 +215,8 @@
       } catch (_) { /* Suggestions are optional; never interrupt a list being typed. */ }
     };
     document.addEventListener('focusin',focus);
-    return () => { sequence++; list?.remove(); picker?.remove(); document.removeEventListener('focusin',focus); };
+    document.addEventListener('change',categoryChanged);
+    return () => { sequence++; list?.remove(); picker?.remove(); document.removeEventListener('focusin',focus); document.removeEventListener('change',categoryChanged); };
   }
 
   function close() { activeDialog?.close(); }

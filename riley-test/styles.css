@@ -12746,3 +12746,20 @@ html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
 }
 
 .parent-road-card .parent-uci-source { color: var(--muted); font-size: 0.8rem; padding: 12px 0; }
+
+/* Trick Links: a distinct warm accent for two tricks landed back to back. */
+.viewer-list-tone-trick_links { --viewer-list-tone: #f3a6cb; }
+.rider-shell [data-assignment-section="trick_links"] { --rider-tone: #f3a6cb; }
+.parent-shell .parent-readonly [data-assignment-section="trick_links"] { --parent-category: #f3a6cb; }
+.parent-week-summary [data-parent-category="trick_links"] strong { color: #e694bb; }
+.parent-week-summary { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-counters { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.trick-links-proposal { margin: 18px 0; }
+.trick-links-proposal small { color: var(--muted); line-height: 1.5; }
+html[data-theme="light"] .viewer-list-tone-trick_links { --viewer-list-tone: #a33169; }
+html[data-theme="light"] .rider-shell [data-assignment-section="trick_links"] { --rider-tone: #a33169; }
+html[data-theme="light"] .parent-shell .parent-readonly [data-assignment-section="trick_links"] { --parent-category: #a33169; }
+html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links"] strong { color: #a33169; }
+@media (max-width: 760px) { .parent-week-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .coach-shell #view[data-view="sessionViewer"] .viewer-rider-counters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 380px) { .parent-week-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

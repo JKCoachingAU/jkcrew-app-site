@@ -17,10 +17,12 @@
   };
   function key(row, title = row.trick_name) {
     // Foam practice is not a landed park trick. Keep full Lines distinct from
-    // individual tricks, and preserve named surfaces/directions (no fuzzy match).
+    // individual tricks. Ordered Trick Links also need their own identity; two
+    // separately landed tricks never prove a back-to-back completion. Preserve
+    // named surfaces/directions (no fuzzy match).
     if (row.category === "foam_pit" || /\bfoam\b/i.test(`${row.trick_name || ""} ${row.notes || ""} ${row.venue || ""}`)) return "";
     const name = normalize(title);
-    return name ? `${row.category === "lines" ? "line" : "trick"}:${name}` : "";
+    return name ? `${row.category === "lines" ? "line" : row.category === "trick_links" ? "link" : "trick"}:${name}` : "";
   }
   function marker(row, title) {
     const identity = key(row, title);

@@ -318,6 +318,28 @@ async function layouts(page, name) {
       await suggestions.close();
     }
 
+    // A single-trick library picker must not turn a complete pair into separate rows.
+    const linkSuggestions=await setup();
+    await linkSuggestions.evaluate(()=>{
+      document.querySelector('#view').innerHTML='<form data-viewer-assignment-editor="one_bang"><textarea name="assignmentLines">Manual</textarea></form><form data-viewer-assignment-editor="trick_links"><textarea name="assignmentLines">Barspin → Tailwhip</textarea></form><form id="trick-request-form"><select name="category"><option value="daily">Daily</option><option value="trick_links">Trick Links</option></select><input name="trickName" value="X-UP → No-footer"></form>';
+      JKCrewTricktionaryTools.installSuggestions({client,withTimeout,currentUser:()=>state.user?.id});
+    });
+    await linkSuggestions.locator('[data-viewer-assignment-editor="one_bang"] textarea').focus();
+    await linkSuggestions.waitForFunction(()=>Boolean(document.querySelector('.trick-library-picker')));
+    await linkSuggestions.locator('[data-library-search]').fill('Tailwhip Box');
+    await linkSuggestions.locator('[data-library-add]').click();
+    assert.equal(await linkSuggestions.inputValue('[data-viewer-assignment-editor="one_bang"] textarea'),'Manual\nTailwhip Box','Ordinary lists still accept library tricks');
+    await linkSuggestions.locator('[data-viewer-assignment-editor="trick_links"] textarea').focus();
+    assert.equal(await linkSuggestions.locator('.trick-library-picker').count(),0,'Pair editor does not offer a picker that appends a lone trick');
+    assert.equal(await linkSuggestions.inputValue('[data-viewer-assignment-editor="trick_links"] textarea'),'Barspin → Tailwhip','Focusing a pair preserves its text');
+    await linkSuggestions.locator('#trick-request-form input').focus();
+    await linkSuggestions.waitForFunction(()=>document.querySelector('#trick-request-form input').hasAttribute('list'));
+    await linkSuggestions.selectOption('#trick-request-form select','trick_links');
+    await linkSuggestions.locator('#trick-request-form input').focus();
+    assert.equal(await linkSuggestions.locator('#trick-request-form input').getAttribute('list'),null,'A pair request does not retain single-trick autocomplete');
+    assert.equal(await linkSuggestions.inputValue('#trick-request-form input'),'X-UP → No-footer');
+    await linkSuggestions.close();
+
     // A dialog opened for an earlier rider/account cannot issue a later write.
     for(const changed of ['account','rider','view']){
       const stale=await setup();await stale.evaluate(()=>qaMount());

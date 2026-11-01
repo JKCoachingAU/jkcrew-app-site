@@ -107,6 +107,17 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     row('line-single', { trick_name: 'Manual' })];
   assert.deepEqual(sorted(await evidence.load()), ['line:manual → barspin → 180', 'line:manual → tailwhip → 180',
     'trick:landed-percentage', 'trick:manual', 'trick:oppo barspin']);
+  const links = fixture();
+  links.db.rows = [row('pair', {category:'trick_links',trick_name:'Manual → Barspin'}),
+    row('reversed', {category:'trick_links',trick_name:'Barspin → Manual'}),
+    row('separate-first', {trick_name:'Manual'}), row('separate-second', {trick_name:'Barspin'}),
+    row('other-category-pair', {category:'lines',trick_name:'Manual → Barspin'})];
+  assert.deepEqual(sorted(await links.load()), ['line:manual → barspin','link:barspin → manual','link:manual → barspin','trick:barspin','trick:manual'],
+    'Trick Links preserve the pair order and cannot borrow ticks from singles or Lines');
+  const singleOnly = fixture(); singleOnly.db.rows = [row('first',{trick_name:'Manual'}),row('second',{trick_name:'Barspin'})];
+  const singleEvidence = await singleOnly.load();
+  assert(!singleEvidence.has(singleOnly.context.window.testHistory.key({category:'trick_links',trick_name:'Manual → Barspin'})),
+    'Two individually landed tricks are not evidence of a completed link');
   const operations = evidence.db.queries[0];
   for (const expected of [['eq', 'athlete_id', 'rider-a'], ['gt', 'landed_count', 0], ['neq', 'evidence_type', 'revoked'], ['neq', 'category', 'foam_pit']]) {
     assert(operations.some(call => JSON.stringify(call) === JSON.stringify(expected)), 'Query filters ' + expected.join(' '));
