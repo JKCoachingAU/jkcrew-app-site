@@ -1,0 +1,392 @@
+// Production Session Tracker UI with synthetic callbacks only. No live rider changes.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
+const root = path.resolve(__dirname, '..');
+const screenshotDir = process.env.JKCREW_SCREENSHOT_DIR;
+if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
+let browser, checks = 0;
+const eq = (actual, expected, label) => { assert.deepEqual(actual, expected, label); checks++; };
+const ok = (value, label) => { assert(value, label); checks++; };
+
+async function setup() {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  page.setDefaultTimeout(7000);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('dialog', dialog => dialog.accept());
+  await page.route('**/*', route => route.request().url() === 'http://localhost:4173/'
+    ? route.fulfill({ contentType: 'text/html', body: '<!doctype html><html data-theme="dark"><meta name="viewport" content="width=device-width,initial-scale=1"><body><div id="app"><div class="app-shell coach-shell" style="display:block"><main id="view" class="content" data-view="sessionTracker"></main></div></div></body></html>' })
+    : route.abort());
+  await page.goto('http://localhost:4173/');
+  for (const file of ['styles.css', 'session-tracker.css']) await page.addStyleTag({ path: path.join(root, file) });
+  await page.addScriptTag({ path: path.join(root, 'session-tracker.js') });
+  await page.evaluate(() => {
+    window.qa = { active: true, calls: [], hold: {}, failure: {}, releases: {}, backs: 0, failAfterSave: false };
+    window.fixture = {
+      roster: [
+        { id: 'rider-a', display_name: 'Alex Example' },
+        { id: 'rider-b', display_name: 'Morgan <img src=x onerror="window.injected=true"> & O\'Brien' },
+        { id: 'rider-c', display_name: 'LongSurname'.repeat(12) },
+      ],
+      locations: [{ id: 'park-a', name: 'Pizzey Skate Park' }, { id: 'park-b', name: 'Beenleigh' }],
+      sessions: [
+        { id: 'saved-upcoming', source: 'tracker', session_date: '2026-11-05', start_time: '16:00', venue: 'Pizzey Skate Park', rider_ids: ['rider-a', 'rider-b'], updated_at: '2026-11-04T01:00:00Z', status: 'planned' },
+        { id: 'saved-past', source: 'tracker', session_date: '2026-11-02', start_time: null, venue: 'Beenleigh', rider_ids: ['rider-c'], updated_at: '2026-11-02T01:00:00Z', status: 'planned' },
+        { id: 'saved-today', source: 'tracker', session_date: '2026-11-04', start_time: '17:00', venue: 'Hotbox', rider_ids: ['rider-a'], updated_at: '2026-11-04T02:00:00Z' },
+      ],
+    };
+    window.waitForTransport = async name => {
+      if (qa.hold[name]) { qa.hold[name] = false; await new Promise(resolve => { qa.releases[name] = resolve; }); }
+      if (qa.failure[name]) throw Object.assign(Error(qa.failure[name].message || qa.failure[name]), { code: qa.failure[name].code });
+    };
+    window.options = {
+      userId: 'coach-a', role: 'coach', today: '2026-11-04', timeZone: 'Australia/Brisbane', isActive: () => qa.active,
+      onBack: () => { qa.backs++; },
+      load: async args => {
+        qa.calls.push({ action: 'load', args: structuredClone(args) });
+        const result = structuredClone(fixture);
+        await waitForTransport('load');
+        result.sessions = result.sessions.filter(row => (!args.from || row.session_date >= args.from) && (!args.to || row.session_date < args.to));
+        result.sessions = result.sessions.filter(row => !row.archived_at && (!args.venue || row.venue === args.venue) && (!args.riderId || row.rider_ids.includes(args.riderId)));
+        const offset = args.offset || 0, limit = 30;
+        result.hasMore = offset + limit < result.sessions.length;
+        result.sessions = result.sessions.slice(offset, offset + limit);
+        return result;
+      },
+      save: async record => {
+        qa.calls.push({ action: 'save', args: structuredClone(record) });
+        await waitForTransport('save');
+        const saved = { ...structuredClone(record), id: record.id || 'created-session', source: 'tracker', updated_at: '2026-11-04T03:00:00Z' };
+        const old = fixture.sessions.findIndex(row => row.id === saved.id);
+        if (old >= 0) fixture.sessions[old] = saved; else fixture.sessions.push(saved);
+        if (qa.failAfterSave) { qa.failAfterSave = false; throw Error('Synthetic response lost after the server saved'); }
+        return structuredClone(saved);
+      },
+      archive: async (record, archived) => {
+        qa.calls.push({ action: 'archive', args: { id: record.id, archived } });
+        await waitForTransport('archive');
+        const saved = { ...record, archived_at: archived ? '2026-11-04T04:00:00Z' : null, updated_at: '2026-11-04T04:00:00Z' };
+        const old = fixture.sessions.findIndex(row => row.id === record.id);
+        if (old >= 0) fixture.sessions[old] = saved;
+        return structuredClone(saved);
+      },
+      addLocation: async name => {
+        qa.calls.push({ action: 'addLocation', args: name });
+        await waitForTransport('addLocation');
+        const old = fixture.locations.find(row => row.name.toLowerCase() === name.trim().toLowerCase());
+        if (old) return structuredClone(old);
+        const row = { id: 'new-location', name: name.trim() }; fixture.locations.push(row); return structuredClone(row);
+      },
+    };
+    window.attach = async (overrides = {}) => {
+      window.sessionTrackerHandle?.destroy();
+      window.sessionTrackerHandle = JKCSessionTracker.mount(document.querySelector('#view'), { ...options, ...overrides });
+      await sessionTrackerHandle.ready;
+    };
+  });
+  return { page, errors };
+}
+
+const action = (page, name) => page.locator(`[data-action="${name}"]`);
+const field = (page, name) => page.locator(`[data-field="${name}"]`);
+const calls = (page, name) => page.evaluate(name => qa.calls.filter(call => call.action === name), name);
+const settle = page => page.waitForFunction(() => document.querySelector('.st-list')?.getAttribute('aria-busy') === 'false');
+const saveFinished = page => page.waitForFunction(() => !document.querySelector('dialog')?.open);
+async function edit(page, id) {
+  const row = page.locator(`[data-session-id="${id}"]`);
+  if (!(await row.evaluate(node => node.open))) await row.locator('summary').click();
+  await row.locator('[data-action="edit-session"]').click();
+}
+async function chooseRiders(page, selected) {
+  const summary = page.locator('.st-picker > summary');
+  if (!(await summary.evaluate(node => node.parentElement.open))) await summary.click();
+  await field(page, 'rider-search').fill('');
+  for (const id of selected) await page.locator(`input[name="rider"][value="${id}"]`).check();
+}
+async function validDraft(page) {
+  await action(page, 'new-session').click();
+  await field(page, 'venue').selectOption('Pizzey Skate Park');
+  await chooseRiders(page, ['rider-a', 'rider-b']);
+}
+async function release(page, name) {
+  await page.evaluate(name => { const fn = qa.releases[name]; delete qa.releases[name]; fn(); }, name);
+}
+async function doubleClickImmediately(locator) {
+  // Simulate two taps in one task: the second must not pass the operation lock.
+  await locator.evaluate(button => { button.click(); button.click(); });
+}
+async function dimensions(page, label) {
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label}: page fits the viewport`);
+  const overflow = await page.locator('#view *').evaluateAll(nodes => nodes.filter(node => {
+    const style = getComputedStyle(node);
+    return node.getClientRects().length && style.display !== 'inline' && node.clientWidth > 0 && node.scrollWidth > node.clientWidth + 1 && !['auto', 'scroll'].includes(style.overflowX) && !['SELECT', 'INPUT'].includes(node.tagName);
+  }).map(node => ({ tag: node.tagName, class: node.className, width: node.clientWidth, scroll: node.scrollWidth, text: node.textContent.slice(0, 60) })));
+  eq(overflow, [], `${label}: long names and controls stay inside their containers`);
+}
+
+async function run() {
+  browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+  try {
+    const { page, errors } = await setup();
+    await page.evaluate(() => attach());
+    eq((await calls(page, 'load')).length, 1, 'Initial load is one bounded request');
+    const initialLoad = (await calls(page, 'load'))[0].args;
+    eq([initialLoad.from, initialLoad.to, initialLoad.offset, initialLoad.venue, initialLoad.riderId], ['2026-11-01', '2026-12-01', 0, '', ''], 'Month boundaries are explicit and exclusive at the end');
+    eq(await page.locator('[data-session-id]').count(), 3, 'Past, today and future sessions are all available');
+    await page.locator('[data-session-id="saved-upcoming"] summary').click();
+    ok((await page.locator('[data-session-id="saved-upcoming"]').innerText()).includes('Morgan <img'), 'Names are rendered as text');
+    eq(await page.locator('#view img').count(), 0, 'Stored rider names cannot create markup');
+    eq(await page.evaluate(() => !!window.injected), false, 'Hostile rider names do not execute');
+    eq(await page.evaluate(() => sessionTrackerHandle.hasUnsavedChanges()), false, 'The list has no unsaved draft');
+
+    // Create, validate and retain a failed draft without selecting riders again.
+    await action(page, 'new-session').click();
+    eq(await field(page, 'session-date').inputValue(), '2026-11-04', 'New sessions default to the coach date');
+    eq(await field(page, 'start-time').inputValue(), '', 'Time is optional');
+    eq(await page.evaluate(() => sessionTrackerHandle.hasUnsavedChanges()), false, 'An untouched form is clean');
+    await action(page, 'save-session').click();
+    eq((await calls(page, 'save')).length, 0, 'A blank venue cannot be submitted');
+    await field(page, 'venue').selectOption('Beenleigh');
+    await action(page, 'save-session').click();
+    eq((await calls(page, 'save')).length, 0, 'At least one rider is required');
+    ok((await page.locator('.st-form-error').innerText()).includes('at least one rider'), 'Missing riders are explained');
+    const summary = page.locator('.st-picker > summary');
+    await summary.focus(); await page.keyboard.press('Enter');
+    eq(await summary.evaluate(node => node.parentElement.open), true, 'Rider dropdown opens using the keyboard');
+    await field(page, 'rider-search').fill('alex');
+    eq(await page.locator('.st-rider-option:visible').count(), 1, 'Rider search narrows the list');
+    await page.locator('input[name="rider"][value="rider-a"]').check();
+    await field(page, 'rider-search').fill('unmatched rider');
+    eq(await page.locator('[data-rider-empty]').isVisible(), true, 'Empty search has feedback');
+    await field(page, 'rider-search').fill('');
+    await page.locator('input[name="rider"][value="rider-b"]').check();
+    await field(page, 'session-date').fill('2026-11-12');
+    await field(page, 'start-time').fill('15:30');
+    eq(await page.evaluate(() => sessionTrackerHandle.hasUnsavedChanges()), true, 'Changed form is protected as unsaved');
+    await field(page, 'rider-search').press('Enter');
+    eq((await calls(page, 'save')).length, 0, 'Enter in rider search does not submit a valid session form');
+    await page.evaluate(() => { qa.failure.save = 'Synthetic unavailable network'; });
+    await action(page, 'save-session').click();
+    await page.waitForFunction(() => document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+    eq(await field(page, 'session-date').inputValue(), '2026-11-12', 'Failure retains date');
+    eq(await field(page, 'start-time').inputValue(), '15:30', 'Failure retains time');
+    eq(await field(page, 'venue').inputValue(), 'Beenleigh', 'Failure retains location');
+    eq(await page.locator('input[name="rider"]:checked').count(), 2, 'Failure retains the selected riders');
+    eq(await action(page, 'save-session').isEnabled(), true, 'Failure releases the save lock');
+    const firstId = (await calls(page, 'save'))[0].args.id;
+    ok(firstId, 'The client creates an id before attempting a save');
+    await page.evaluate(() => { delete qa.failure.save; qa.hold.save = true; });
+    await doubleClickImmediately(action(page, 'save-session'));
+    await page.waitForFunction(() => !!qa.releases.save);
+    eq((await calls(page, 'save')).length, 2, 'Repeated taps make only one retry request');
+    eq((await calls(page, 'save'))[1].args.id, firstId, 'Retry uses the same session id');
+    eq(await action(page, 'save-session').isDisabled(), true, 'Save displays an in-flight state');
+    await release(page, 'save'); await saveFinished(page); await settle(page);
+    eq(await page.locator(`[data-session-id="${firstId}"]`).count(), 1, 'Saved session appears once');
+    eq(await page.evaluate(() => sessionTrackerHandle.hasUnsavedChanges()), false, 'Successful save clears the draft');
+    await page.evaluate(() => attach());
+    eq(await page.locator(`[data-session-id="${firstId}"]`).count(), 1, 'Saved session survives reopening the tracker');
+    await edit(page, firstId);
+    eq(await field(page, 'start-time').inputValue(), '15:30', 'Edit reloads the saved time');
+    eq(await page.locator('input[name="rider"]:checked').count(), 2, 'Edit reloads the saved riders');
+    await field(page, 'venue').selectOption('Pizzey Skate Park');
+    await field(page, 'start-time').fill('');
+    await chooseRiders(page, ['rider-a']);
+    await page.locator('input[name="rider"][value="rider-b"]').uncheck();
+    await action(page, 'save-session').click(); await saveFinished(page); await settle(page);
+    const edited = (await calls(page, 'save')).at(-1).args;
+    eq(edited.id, firstId, 'Edit preserves the record id');
+    eq(edited.rider_ids, ['rider-a'], 'Edit saves the changed rider list');
+    eq(edited.start_time, '', 'An optional time can be cleared');
+    eq(await page.evaluate(id => fixture.sessions.filter(row => row.id === id).length, firstId), 1, 'Edit does not append a second record');
+
+    // Lost responses are safely retryable, including when the first write succeeded.
+    await validDraft(page);
+    await page.evaluate(() => { qa.failAfterSave = true; });
+    await action(page, 'save-session').click();
+    await page.waitForFunction(() => document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+    const lostId = (await calls(page, 'save')).at(-1).args.id;
+    eq(await page.evaluate(id => fixture.sessions.filter(row => row.id === id).length, lostId), 1, 'Synthetic server saved before the response was lost');
+    await action(page, 'save-session').click(); await saveFinished(page); await settle(page);
+    eq((await calls(page, 'save')).at(-1).args.id, lostId, 'Lost-response retry reuses its id');
+    eq(await page.evaluate(id => fixture.sessions.filter(row => row.id === id).length, lostId), 1, 'Lost-response retry creates no duplicate');
+
+    // Add a venue without losing the draft or accidentally submitting its parent form.
+    await validDraft(page);
+    await action(page, 'add-location').click();
+    await action(page, 'save-location').click();
+    eq((await calls(page, 'addLocation')).length, 0, 'Empty location is not sent');
+    await field(page, 'new-location').fill('  New   Park  ');
+    const savesBeforeUnaddedLocation = (await calls(page, 'save')).length;
+    await action(page, 'save-session').click();
+    eq((await calls(page, 'save')).length, savesBeforeUnaddedLocation, 'Pending new location cannot be silently replaced by the previously selected venue');
+    eq(await field(page, 'new-location').inputValue(), '  New   Park  ', 'Save keeps the location name until it has been added');
+    ok((await page.locator('.st-form-error').innerText()).length > 0, 'Pending location gets a clear save instruction');
+    await page.evaluate(() => { qa.failure.addLocation = 'Synthetic unavailable connection'; });
+    await field(page, 'new-location').press('Enter');
+    await page.waitForFunction(() => document.querySelector('.st-location-error').textContent.includes('couldn’t be saved'));
+    eq(await field(page, 'new-location').inputValue(), '  New   Park  ', 'Failed location save retains its input');
+    eq(await page.locator('input[name="rider"]:checked').count(), 2, 'Location failure retains the session riders');
+    const savesBeforeLocation = (await calls(page, 'save')).length;
+    await page.evaluate(() => { delete qa.failure.addLocation; qa.hold.addLocation = true; });
+    await field(page, 'new-location').press('Enter');
+    await page.waitForFunction(() => !!qa.releases.addLocation);
+    await action(page, 'save-location').evaluate(button => button.click());
+    eq((await calls(page, 'addLocation')).length, 2, 'Location save also prevents duplicate requests');
+    await release(page, 'addLocation');
+    await page.waitForFunction(() => document.querySelector('[data-field="venue"]').value === 'New Park');
+    eq((await calls(page, 'save')).length, savesBeforeLocation, 'Enter in add-location does not submit the session');
+    eq((await calls(page, 'addLocation')).at(-1).args, 'New Park', 'Location whitespace is normalized');
+    eq(await field(page, 'venue').inputValue(), 'New Park', 'New location is selected immediately');
+    await action(page, 'save-session').click(); await saveFinished(page); await settle(page);
+    eq((await calls(page, 'save')).at(-1).args.venue, 'New Park', 'Session uses its new saved venue');
+
+    // A concurrent editor must not erase local edits or silently overwrite the server.
+    await edit(page, firstId);
+    await field(page, 'start-time').fill('18:45');
+    await page.evaluate(() => { qa.failure.save = 'stale session changed elsewhere'; });
+    await action(page, 'save-session').click();
+    await page.waitForFunction(() => document.querySelector('.st-form-error').textContent.includes('changed elsewhere'));
+    eq(await field(page, 'start-time').inputValue(), '18:45', 'Conflict retains the coach’s unsaved time');
+    ok((await page.locator('.st-form-error').innerText()).includes('refresh'), 'Conflict explains how to reload the latest saved session');
+    await page.evaluate(() => { delete qa.failure.save; });
+    await action(page, 'cancel-session').first().click();
+
+    // Removal is reversible; both failure paths retain a usable retry.
+    await edit(page, firstId);
+    await page.evaluate(() => { qa.failure.archive = 'Synthetic unavailable network'; });
+    await action(page, 'archive-session').click();
+    await page.waitForFunction(() => document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+    eq(await page.locator('dialog').evaluate(node => node.open), true, 'Failed removal keeps the form available');
+    await page.evaluate(() => { delete qa.failure.archive; });
+    await action(page, 'archive-session').click(); await saveFinished(page); await settle(page);
+    eq(await page.locator(`[data-session-id="${firstId}"]`).count(), 0, 'Removed session leaves the list');
+    eq(await page.evaluate(id => fixture.sessions.some(row => row.id === id && row.archived_at), firstId), true, 'Remove archives instead of deleting data');
+    await page.evaluate(() => { qa.failure.archive = 'Synthetic unavailable network'; });
+    await action(page, 'undo-archive').click();
+    await page.waitForFunction(() => document.querySelector('.st-feedback').textContent.includes('Couldn’t restore'));
+    eq(await action(page, 'undo-archive').isEnabled(), true, 'Failed undo remains retryable');
+    await page.evaluate(() => { delete qa.failure.archive; });
+    await action(page, 'undo-archive').click(); await settle(page);
+    await page.waitForFunction(id => !!document.querySelector(`[data-session-id="${id}"]`), firstId);
+    eq(await page.locator(`[data-session-id="${firstId}"]`).count(), 1, 'Undo restores the same session');
+
+    // Server-side filters and calendar range avoid loading the complete history.
+    await page.locator('[data-filter="venue"]').selectOption('Beenleigh'); await settle(page);
+    eq((await calls(page, 'load')).at(-1).args.venue, 'Beenleigh', 'Location filter is sent to the server');
+    eq(await page.locator('[data-session-id]').count(), 1, 'Location filter shows only matching sessions');
+    await page.locator('[data-filter="rider"]').selectOption('rider-a'); await settle(page);
+    eq((await calls(page, 'load')).at(-1).args.riderId, 'rider-a', 'Rider filter is sent to the server');
+    eq(await page.locator('[data-session-id]').count(), 0, 'Both filters apply together');
+    await page.locator('[data-filter="venue"]').selectOption(''); await settle(page);
+    await action(page, 'previous-month').click(); await settle(page);
+    eq((await calls(page, 'load')).at(-1).args.from, '2026-10-01', 'Previous month changes the request range');
+    eq(await page.locator('[data-session-id]').count(), 0, 'A new month clears previous month rows');
+    await action(page, 'next-month').click(); await settle(page);
+    await page.locator('[data-filter="rider"]').selectOption(''); await settle(page);
+    const beforeFailure = await page.locator('[data-session-id]').count();
+    await page.evaluate(() => { qa.failure.load = 'Synthetic offline'; });
+    await action(page, 'refresh').first().click(); await settle(page);
+    eq(await page.locator('[data-session-id]').count(), beforeFailure, 'Refresh failure retains the last saved list');
+    eq(await page.locator('.st-error').isVisible(), true, 'Refresh failure is visible');
+    await page.evaluate(() => { delete qa.failure.load; });
+    await page.getByRole('button', { name: 'Try again', exact: true }).click(); await settle(page);
+    eq(await page.locator('.st-error').count(), 0, 'Retry clears the load error');
+
+    // Mobile/desktop layout includes unusually long stored names and all controls.
+    for (const theme of ['dark', 'light']) for (const width of [320, 390, 1024]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.querySelectorAll('.st-session').forEach(node => { node.open = true; }); }, theme);
+      await dimensions(page, `${theme} list at ${width}px`);
+      if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, `session-tracker-${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
+      await validDraft(page);
+      await dimensions(page, `${theme} rider dropdown at ${width}px`);
+      const targets = await page.locator('dialog button:visible, dialog .st-rider-option:visible, dialog summary:visible').evaluateAll(nodes => nodes.map(node => Math.round(node.getBoundingClientRect().height)));
+      ok(targets.every(height => height >= 44), `${theme} editor at ${width}px keeps tap targets at least 44px high`);
+      if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, `session-tracker-editor-${theme}-${width}.png`), animations: 'disabled' });
+      await action(page, 'cancel-session').first().click();
+    }
+    eq(errors, [], 'No unhandled browser errors');
+    await page.close();
+
+    await paginationAndIsolation();
+    console.log(`PASS: ${checks} Session Tracker browser checks.`);
+  } finally { await browser.close(); }
+}
+
+async function paginationAndIsolation() {
+  const { page, errors } = await setup();
+  await page.evaluate(() => {
+    fixture.sessions = Array.from({ length: 35 }, (_, index) => ({ id: `page-${index}`, source: 'tracker', session_date: '2026-11-08', start_time: null, venue: 'Pizzey Skate Park', rider_ids: ['rider-a'], updated_at: '2026-11-04T00:00:00Z' }));
+    fixture.sessions.push({ id: 'next-month', source: 'tracker', session_date: '2026-12-01', venue: 'Beenleigh', rider_ids: ['rider-a'] });
+  });
+  await page.evaluate(() => attach());
+  eq(await page.locator('[data-session-id]').count(), 30, 'The first page contains 30 records');
+  eq(await page.locator('[data-session-id="next-month"]').count(), 0, 'Exclusive month end excludes the next month');
+  await page.evaluate(() => { qa.failure.load = 'Synthetic page failure'; });
+  await action(page, 'load-more').click(); await settle(page);
+  eq(await page.locator('[data-session-id]').count(), 30, 'Failed pagination preserves the first page');
+  await page.evaluate(() => { delete qa.failure.load; qa.hold.load = true; });
+  await doubleClickImmediately(action(page, 'load-more'));
+  await page.waitForFunction(() => !!qa.releases.load);
+  eq((await calls(page, 'load')).length, 3, 'Two load-more taps produce one request');
+  await release(page, 'load'); await settle(page);
+  eq((await calls(page, 'load')).at(-1).args.offset, 30, 'Pagination retry uses the failed page offset');
+  eq(await page.locator('[data-session-id]').count(), 35, 'Explicit load more adds the next five records');
+  eq(await page.locator('[data-action="load-more"]').count(), 0, 'Load more ends when the server has no next page');
+  eq(await page.locator('[data-session-id]').evaluateAll(nodes => new Set(nodes.map(node => node.dataset.sessionId)).size), 35, 'Pagination does not duplicate rows');
+  await page.locator('[data-filter="rider"]').selectOption('rider-a'); await settle(page);
+  eq((await calls(page, 'load')).at(-1).args.offset, 0, 'Changing filters resets pagination');
+  eq(await page.locator('[data-session-id]').count(), 30, 'Changing filters starts a fresh list');
+
+  // Role checks are enforced before loading private coaching data.
+  for (const role of ['athlete', 'parent']) {
+    const before = (await calls(page, 'load')).length;
+    await page.evaluate(role => attach({ role }), role);
+    eq((await calls(page, 'load')).length, before, `${role} does not request private sessions`);
+    eq(await action(page, 'new-session').count(), 0, `${role} does not receive editing controls`);
+    ok((await page.locator('#view').innerText()).includes('Coach access required'), `${role} is given a clear access message`);
+  }
+  await page.evaluate(() => { qa.active = false; });
+  const inactiveBefore = (await calls(page, 'load')).length;
+  await page.evaluate(() => attach());
+  eq((await calls(page, 'load')).length, inactiveBefore, 'Inactive route does not load private data');
+  await page.evaluate(() => { qa.active = true; qa.hold.load = true; void attach(); });
+  await page.waitForFunction(() => !!qa.releases.load);
+  await page.evaluate(() => { sessionTrackerHandle.destroy(); document.querySelector('#view').textContent = 'A different account screen'; });
+  eq(await page.locator('#view').evaluate(node => node.classList.contains('session-tracker')), false, 'Destroy removes its scoped style class from the reused view');
+  await release(page, 'load');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  eq(await page.locator('#view').innerText(), 'A different account screen', 'A load finishing after destroy cannot overwrite the next account screen');
+  await page.evaluate(() => attach());
+  await validDraft(page);
+  await page.evaluate(() => { qa.hold.save = true; });
+  await action(page, 'save-session').click();
+  await page.waitForFunction(() => !!qa.releases.save);
+  const loadsBeforeSave = (await calls(page, 'load')).length;
+  await page.evaluate(() => { qa.active = false; sessionTrackerHandle.destroy(); document.querySelector('#view').textContent = 'Signed out'; });
+  await release(page, 'save');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  eq(await page.locator('#view').innerText(), 'Signed out', 'Late save results cannot render after navigation or sign-out');
+  eq((await calls(page, 'load')).length, loadsBeforeSave, 'Late save does not reload the previous account');
+  eq(errors, [], 'Role, pagination and navigation checks have no unhandled browser errors');
+  await page.close();
+
+  const recovery = await setup();
+  await recovery.page.evaluate(() => { qa.failure.load = 'Synthetic first-load failure'; });
+  await recovery.page.evaluate(() => attach());
+  eq(await action(recovery.page, 'new-session').isDisabled(), true, 'Failed initial load cannot open an empty roster editor');
+  await recovery.page.evaluate(() => { delete qa.failure.load; });
+  await recovery.page.getByRole('button', { name: 'Try again', exact: true }).click(); await settle(recovery.page);
+  eq(await action(recovery.page, 'new-session').isEnabled(), true, 'Initial-load retry restores session creation');
+  eq(await recovery.page.locator('[data-session-id]').count(), 3, 'Initial-load retry restores saved sessions');
+  eq(recovery.errors, [], 'First-load recovery has no unhandled browser errors');
+  await recovery.page.evaluate(() => { qa.failure.load = { message: 'Permission removed', code: '42501' }; });
+  await action(recovery.page, 'refresh').first().click(); await settle(recovery.page);
+  eq(await recovery.page.locator('[data-session-id]').count(), 0, 'Revoked access clears private session rows');
+  eq(await action(recovery.page, 'new-session').isDisabled(), true, 'Revoked access cannot edit cached private riders');
+  await recovery.page.close();
+}
+run().catch(error => { console.error(error); process.exitCode = 1; });

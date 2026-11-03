@@ -18,12 +18,12 @@ const release = worker.match(/const RELEASE_VERSION = "([^"]+)"/)[1];
 const nextRelease = release.replace(/\d+$/, value => String(Number(value) + 1));
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
-function pageVm({ controlled = false, stored = false, storageThrows = false, signedIn = false, entered = false, pendingAuth = false, activeCall = false } = {}) {
+function pageVm({ controlled = false, stored = false, storageThrows = false, signedIn = false, entered = false, pendingAuth = false, activeCall = false, trackerDraft = false } = {}) {
   const listeners = {}, redirects = [], storage = new Map(stored ? [[`jkcrew-controller-refresh:${nextRelease}`, '1']] : []);
   const navigator = { serviceWorker: { controller: controlled ? { scriptURL: `https://jkcrew.test/sw.js?v=${release}` } : null, addEventListener: (name, fn) => listeners[name] = fn } };
   const controls = {}, notices = [];
   const document = { querySelector: () => null, querySelectorAll: () => entered ? [{type:'password',value:'unsent'}] : [], body:{append:node=>notices.push(node)}, createElement:()=>({ setAttribute(){},querySelector:selector=>controls[selector] ||= {},remove(){} }) };
-  const state = {user:signedIn ? {id:'local-rider'} : null,authPendingForm:pendingAuth ? {isConnected:true} : null};
+  const state = {user:signedIn ? {id:'local-rider'} : null,authPendingForm:pendingAuth ? {isConnected:true} : null,sessionTrackerMount:trackerDraft ? {hasUnsavedChanges:()=>true} : null};
   const sandbox = { document, state, liveRun:activeCall ? {} : null, RELEASE_VERSION: release, navigator, MessageChannel, setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 30)), clearTimeout, sessionStorage: { getItem: key => { if (storageThrows) throw Error('Storage blocked'); return storage.get(key); }, setItem: (key, value) => { if (storageThrows) throw Error('Storage blocked'); storage.set(key, value); } }, window: { location: { href: 'https://jkcrew.test/?push=home#login', replace: url => redirects.push(url) } }, URL };
   vm.runInNewContext(handler, sandbox);
   const change = (version, scriptVersion = release, behavior = 'reply') => {
@@ -62,12 +62,12 @@ async function testVm() {
   }
   const lost = pageVm({ controlled: true }); await lost.change(null); await lost.change(release);
   eq(lost.redirects, [], 'Controller loss and fresh acquisition do not interrupt the form');
-  for (const options of [{signedIn:true},{entered:true},{pendingAuth:true},{activeCall:true,signedIn:true}]) {
+  for (const options of [{signedIn:true},{entered:true},{pendingAuth:true},{activeCall:true,signedIn:true},{trackerDraft:true}]) {
     const busy = pageVm({controlled:true,...options}); await busy.change(nextRelease);
     eq(busy.redirects, [], 'An update cannot silently discard active work or login input');
     eq(busy.notices.length, 1, 'A deferred update remains available to the user');
     busy.apply();
-    eq(busy.redirects.length, options.pendingAuth || options.activeCall ? 0 : 1, 'Explicit update waits for pending auth and live calls');
+    eq(busy.redirects.length, options.pendingAuth || options.activeCall || options.trackerDraft ? 0 : 1, 'Explicit update waits for pending auth and live calls');
   }
   const events = {}, deleted = [], visits = []; let claims = 0, lifetime;
   const priorRelease = release.replace(/\d+$/, value => String(Number(value) - 1));

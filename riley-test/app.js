@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.187";
+const RELEASE_VERSION = "2.14.188";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -382,7 +382,7 @@ async function toggleRiderFeatureAccess(event) {
 }
 
 window.addEventListener("beforeunload", (event) => {
-  if (!state.videoReviewRecording && !state.videoReviewRecordingStarting && !state.videoReviewRecordedReplies.size) return;
+  if (!state.videoReviewRecording && !state.videoReviewRecordingStarting && !state.videoReviewRecordedReplies.size && !state.sessionTrackerMount?.hasUnsavedChanges()) return;
   event.preventDefault();
   event.returnValue = "";
 });
@@ -433,7 +433,7 @@ const coachNavGroups = [
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Battles & Challenges"]] },
-  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["uciTracker", "Road to LA28"], ["uciSchedule", "UCI 2027 Schedule"], ["pastEvents", "Past Events"]] },
+  { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["sessionTracker", "Session Tracker"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["uciTracker", "Road to LA28"], ["uciSchedule", "UCI 2027 Schedule"], ["pastEvents", "Past Events"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["bikeGarage", "Bike Garage"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
 ];
 const parentNav = [
@@ -450,7 +450,7 @@ function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (view === "battleViewer") return "battleViewer";
   if (["crew", "student", "studentPreview", "parentPreview", "recovery"].includes(view)) return "crew";
-  if (["coachTools", "planner", "videoReviews", "tricktionary", "contests", "uciSchedule", "uciTracker", "pastEvents"].includes(view)) return "coachTools";
+  if (["coachTools", "sessionTracker", "planner", "videoReviews", "tricktionary", "contests", "uciSchedule", "uciTracker", "pastEvents"].includes(view)) return "coachTools";
   if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
   return "command";
 }
@@ -693,7 +693,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.187" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.188" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   if (!XP_PROGRESSION_ENABLED) return "";
@@ -2058,7 +2058,7 @@ function riderHasUciPoints(profile = state.profile, snapshot = window.JKCUciRank
 }
 
 function primaryNavButtonHtml([id, label], recovery = false) {
-  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", uciTracker: "◎", crew: "✦", command: "◇", sessionViewer: "●", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
+  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", uciTracker: "◎", crew: "✦", command: "◇", sessionViewer: "●", sessionTracker: "□", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
   return `<button class="nav-btn" type="button" data-view="${id}"${id === "uciTracker" ? ' aria-label="Road to LA28" title="Road to LA28"' : ""}><span class="nav-icon">${navIcons[id] || "•"}</span><span class="primary-nav-label">${label}</span>${recovery ? "" : navNotificationBadge(id)}</button>`;
 }
 
@@ -2630,6 +2630,8 @@ async function navigate(view, options = {}) {
   const previousView = state.view;
   if (state.uciTrackerMount?.hasUnsavedChanges() && !riderRecoveryActive()
       && !window.confirm("You have unsaved event or result changes. Leave this page and discard them?")) return;
+  if (state.sessionTrackerMount?.hasUnsavedChanges()
+      && !window.confirm("You have unsaved session changes. Leave this page and discard them?")) return;
   if (liveRun && view !== "contests" && !await leaveLiveRun()) return;
   if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
   if (view !== previousView) dismissDailyFinishForNavigation();
@@ -2658,6 +2660,8 @@ async function navigate(view, options = {}) {
   state.uciScheduleMount = null;
   state.uciTrackerMount?.destroy();
   state.uciTrackerMount = null;
+  state.sessionTrackerMount?.destroy();
+  state.sessionTrackerMount = null;
   state.la28CountdownMount?.destroy();
   state.la28CountdownMount = null;
   state.riderChallengesRenderVersion = (state.riderChallengesRenderVersion || 0) + 1;
@@ -2721,6 +2725,7 @@ async function navigate(view, options = {}) {
     sessionViewer: renderSessionViewer,
     battleViewer: renderCoachBattleViewer,
     coachTools: renderCoachTools,
+    sessionTracker: renderSessionTracker,
     uciSchedule: renderUciSchedule,
     uciTracker: () => renderUciTracker(),
     pastEvents: renderPastEvents,
@@ -2785,6 +2790,8 @@ async function navigate(view, options = {}) {
 }
 
 function teardownRealtimeSync() {
+  state.sessionTrackerMount?.destroy();
+  state.sessionTrackerMount = null;
   state.la28CountdownMount?.destroy();
   state.la28CountdownMount = null;
   state.uciScheduleMount?.destroy();
@@ -11879,6 +11886,7 @@ function showWeeklyChallengeBuilder(refresh = renderCoachBattleViewer) {
 
 function coachHubTone(view) {
   return ({
+    sessionTracker: "blue",
     planner: "purple",
     videoReviews: "coral",
     tricktionary: "blue",
@@ -12045,11 +12053,127 @@ async function renderUciTracker() {
   });
 }
 
+function createCoachSessionTrackerAdapter({ userId, isActive }) {
+  let context = null;
+  let contextRequest = null;
+  let contextVersion = 0;
+  const assertActive = () => {
+    if (!isActive() || state.user?.id !== userId || !isCoachRole(state.profile?.role)) {
+      throw new Error("This session page is no longer active. Reopen Session Tracker and try again.");
+    }
+  };
+  const checkedRequest = async (request, label) => {
+    const result = await withTimeout(request, label, 15000);
+    assertActive();
+    if (result.error) throw result.error;
+    return result.data;
+  };
+  const getContext = async () => {
+    assertActive();
+    if (context) return context;
+    if (!contextRequest) {
+      const requestVersion = contextVersion;
+      const request = (async () => {
+        const [links, locations] = await Promise.all([
+          checkedRequest(client.from("coach_athletes").select("athlete_id").eq("coach_id", userId), "Riders"),
+          checkedRequest(client.from("coach_venues").select("id,name,sort_order").eq("coach_id", userId)
+            .order("sort_order", { ascending: true }).order("name"), "Locations"),
+        ]);
+        assertActive();
+        const ids = [...new Set((links || []).map(link => link.athlete_id).filter(Boolean))];
+        const roster = ids.length ? await checkedRequest(client.from("profiles").select("id,display_name")
+          .in("id", ids).eq("role", "athlete").order("display_name"), "Rider names") : [];
+        assertActive();
+        const nextContext = { roster: roster || [], locations: locations || [] };
+        if (requestVersion === contextVersion) context = nextContext;
+        return nextContext;
+      })().finally(() => { if (contextRequest === request) contextRequest = null; });
+      contextRequest = request;
+    }
+    return contextRequest;
+  };
+  return {
+    async load({ from, to, offset = 0, venue = "", riderId = "", refreshContext = false } = {}) {
+      assertActive();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from || "") || !/^\d{4}-\d{2}-\d{2}$/.test(to || "") || from >= to) {
+        throw new Error("Choose a valid session date range.");
+      }
+      const pageSize = 30;
+      const pageOffset = Number(offset);
+      if (!Number.isSafeInteger(pageOffset) || pageOffset < 0) throw new Error("Refresh your session list and try again.");
+      if (refreshContext) { context = null; contextRequest = null; contextVersion += 1; }
+      let query = client.from("coach_tracked_sessions")
+        .select("id,coach_id,session_date,start_time,venue,rider_ids,archived_at,created_at,updated_at")
+        .eq("coach_id", userId).is("archived_at", null).gte("session_date", from).lt("session_date", to);
+      if (venue) query = query.eq("venue", venue);
+      if (riderId) query = query.contains("rider_ids", [riderId]);
+      query = query.order("session_date", { ascending: true })
+        .order("start_time", { ascending: true, nullsFirst: false }).order("id", { ascending: true })
+        .range(pageOffset, pageOffset + pageSize);
+      const [rows, options] = await Promise.all([checkedRequest(query, "Sessions"), getContext()]);
+      assertActive();
+      return { sessions: (rows || []).slice(0, pageSize), roster: [...options.roster], locations: [...options.locations], hasMore: (rows || []).length > pageSize };
+    },
+    async save(record) {
+      assertActive();
+      // The editor retains this UUID after a failed request, making retries safe.
+      if (!record?.id) throw new Error("Reopen the session editor and try again.");
+      return checkedRequest(client.rpc("save_coach_tracked_session", {
+        p_id: record.id,
+        p_session_date: record.session_date,
+        p_start_time: record.start_time || null,
+        p_venue: record.venue,
+        p_rider_ids: record.rider_ids,
+        p_expected_updated_at: record.updated_at || null,
+      }), "Save session");
+    },
+    async archive(record, archived) {
+      assertActive();
+      if (!record?.id || !record.updated_at) throw new Error("Refresh your session list before changing this session.");
+      return checkedRequest(client.rpc("archive_coach_tracked_session", {
+        p_id: record.id,
+        p_archived: Boolean(archived),
+        p_expected_updated_at: record.updated_at,
+      }), archived ? "Archive session" : "Restore session");
+    },
+    async addLocation(name) {
+      assertActive();
+      const location = await checkedRequest(client.rpc("add_coach_tracker_location", { p_name: name }), "Add location");
+      if (context && location) {
+        context.locations = [...context.locations.filter(item => item.id !== location.id), location]
+          .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0) || left.name.localeCompare(right.name));
+      }
+      return location;
+    },
+  };
+}
+
+async function renderSessionTracker() {
+  if (!isCoachRole(state.profile?.role)) return navigate("home");
+  const root = document.querySelector("#view");
+  const userId = state.user.id;
+  const setupVersion = state.sessionSetupVersion;
+  const renderVersion = state.sessionTrackerRenderVersion = (state.sessionTrackerRenderVersion || 0) + 1;
+  const isActive = () => state.view === "sessionTracker" && state.user?.id === userId
+    && state.sessionSetupVersion === setupVersion && state.sessionTrackerRenderVersion === renderVersion && root.isConnected;
+  state.sessionTrackerMount?.destroy();
+  state.sessionTrackerMount = null;
+  if (!window.JKCSessionTracker) throw new Error("Session Tracker could not load. Update the app and try again.");
+  state.sessionTrackerMount = window.JKCSessionTracker.mount(root, {
+    userId, role: state.profile.role, isActive, today: dateForCountryCode(state.profile.country_code),
+    timeZone: countryTimezones[String(state.profile.country_code || "AU").toUpperCase()] || "Australia/Brisbane",
+    onBack: () => navigate("coachTools"),
+    ...createCoachSessionTrackerAdapter({ userId, isActive }),
+  });
+  await state.sessionTrackerMount.ready;
+}
+
 async function renderCoachTools() {
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Training <span>toolbox</span></h1><p>Sheet scheduling, reviews, Tricktionary and run planning in one clean hub.</p></div></div>
     <section class="coach-hub-grid">
+      ${coachHubCard("sessionTracker", "Session Tracker", "Your session locations and riders in one place", "□")}
       ${coachHubCard("planner", "Sheet Scheduler", "Prepare next week's private trick lists", "▤")}
       ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
       ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
@@ -19171,12 +19295,17 @@ let serviceWorkerUpdatePromise = null;
 let pendingServiceWorkerRelease = "";
 function shouldDeferAppUpdate() {
   // Never discard an active account's work or a partly entered login/reset form.
+  if (typeof state !== "undefined" && state.sessionTrackerMount?.hasUnsavedChanges()) return true;
   if (typeof state !== "undefined" && (state.user?.id || state.authPendingForm?.isConnected)) return true;
   return [...document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]), textarea")]
     .some(input => input.type === "checkbox" || input.type === "radio" ? input.checked : Boolean(input.value));
 }
 function applyPendingAppUpdate() {
   if (serviceWorkerRefreshStarted) return;
+  if (typeof state !== "undefined" && state.sessionTrackerMount?.hasUnsavedChanges()) {
+    if (typeof notify === "function") notify("Save your session changes before updating the app.");
+    return;
+  }
   if (typeof state !== "undefined" && state.uciTrackerMount?.hasUnsavedChanges()) {
     if (typeof notify === "function") notify("Save your event or result changes before updating the app.");
     return;
