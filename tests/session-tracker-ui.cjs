@@ -30,6 +30,7 @@ async function setup() {
         { id: 'rider-b', display_name: 'Morgan <img src=x onerror="window.injected=true"> & O\'Brien' },
         { id: 'rider-c', display_name: 'LongSurname'.repeat(12) },
       ],
+      blocks: [],
       locations: [{ id: 'park-a', name: 'Pizzey Skate Park' }, { id: 'park-b', name: 'Beenleigh' }],
       sessions: [
         { id: 'saved-upcoming', source: 'tracker', session_date: '2026-11-05', start_time: '16:00', venue: 'Pizzey Skate Park', rider_ids: ['rider-a', 'rider-b'], updated_at: '2026-11-04T01:00:00Z', status: 'planned' },
@@ -49,8 +50,8 @@ async function setup() {
         const result = structuredClone(fixture);
         await waitForTransport('load');
         result.sessions = result.sessions.filter(row => (!args.from || row.session_date >= args.from) && (!args.to || row.session_date < args.to));
-        result.sessions = result.sessions.filter(row => !row.archived_at && (!args.venue || row.venue === args.venue) && (!args.riderId || row.rider_ids.includes(args.riderId)));
-        const offset = args.offset || 0, limit = 30;
+        result.sessions = result.sessions.filter(row => (!args.blockId || row.block_id === args.blockId) && !row.archived_at && (!args.venue || row.venue === args.venue) && (!args.riderId || row.rider_ids.includes(args.riderId)));
+        const offset = args.offset || 0, limit = args.blockId ? 500 : 30;
         result.hasMore = offset + limit < result.sessions.length;
         result.sessions = result.sessions.slice(offset, offset + limit);
         return result;
@@ -62,6 +63,15 @@ async function setup() {
         const old = fixture.sessions.findIndex(row => row.id === saved.id);
         if (old >= 0) fixture.sessions[old] = saved; else fixture.sessions.push(saved);
         if (qa.failAfterSave) { qa.failAfterSave = false; throw Error('Synthetic response lost after the server saved'); }
+        return structuredClone(saved);
+      },
+      saveBlock: async record => {
+        qa.calls.push({ action: 'saveBlock', args: structuredClone(record) });
+        await waitForTransport('saveBlock');
+        const saved={...structuredClone(record),updated_at:'2026-11-04T03:00:00Z'};
+        const old=fixture.blocks.findIndex(row=>row.id===saved.id);
+        if(old>=0)fixture.blocks[old]=saved;else fixture.blocks.push(saved);
+        if(qa.failAfterBlockSave){qa.failAfterBlockSave=false;throw Error('Synthetic lost block response');}
         return structuredClone(saved);
       },
       archive: async (record, archived) => {
@@ -311,9 +321,194 @@ async function run() {
     eq(errors, [], 'No unhandled browser errors');
     await page.close();
 
+    await blocksAndFees();
     await paginationAndIsolation();
     console.log(`PASS: ${checks} Session Tracker browser checks.`);
   } finally { await browser.close(); }
+}
+
+async function blocksAndFees() {
+  const {page,errors}=await setup();
+  await page.evaluate(()=>{
+    fixture.blocks=[{id:'current-block',name:'Term 4 · Monday crew',start_date:'2026-11-02',updated_at:'2026-11-01T00:00:00Z'},
+      {id:'future-block',name:'Next term',start_date:'2027-01-11',updated_at:'2026-11-01T00:00:00Z'}];
+    fixture.sessions.forEach((row,index)=>Object.assign(row,{block_id:'current-block',park_fee_cents:[1500,1000,2000][index],park_fee_basis:'per_rider'}));
+    fixture.sessions.push({id:'standalone',session_date:'2026-11-07',venue:'Beenleigh',rider_ids:['rider-a'],park_fee_cents:500,updated_at:'2026-11-01T00:00:00Z'});
+  });
+  await page.evaluate(()=>attach());
+  eq((await calls(page,'load')).length,2,'Context load automatically selects the current block');
+  eq(await page.locator('[data-filter="block"]').inputValue(),'current-block','Current block is preferred to a later block');
+  eq(await page.locator('[data-week]').count(),10,'Every week from 1 to 10 is shown');
+  eq(await page.locator('.st-week-group').count(),3,'Weeks are separated into three groups');
+  eq(await page.locator('.st-group-header h2').allTextContents(),['Weeks 1–4','Weeks 5–8','Weeks 9–10'],'Week groups match the requested ranges');
+  eq(await page.locator('.st-week:has(.st-invoice)').evaluateAll(nodes=>nodes.map(node=>Number(node.dataset.week))),[1,4,8],'Invoice reminders are on exactly weeks 1, 4 and 8');
+  eq(await page.locator('[data-block-total]').innerText(),'$60.00','Block park fees multiply fee by unique rider count');
+  eq(await page.locator('[data-session-id="standalone"]').count(),0,'Standalone sessions are not silently attached to a block');
+  eq(await page.locator('[data-session-id="saved-upcoming"] > summary .st-inline-riders').isVisible(),true,'Rider names appear beside the location without expanding a row');
+  eq(await page.locator('[data-session-id="saved-upcoming"] > summary .st-inline-riders').innerText(),`Alex Example, Morgan <img src=x onerror="window.injected=true"> & O'Brien`,'Compact rows keep names escaped and visible');
+  eq((await calls(page,'load')).at(-1).args.to,'2027-01-11','Ten-week range crosses year boundaries correctly');
+  const beforeFilter=(await calls(page,'load')).length;
+  await page.locator('[data-filter="venue"]').selectOption('Pizzey Skate Park');
+  eq((await calls(page,'load')).length,beforeFilter,'Block filters do not refetch or truncate the block');
+  eq(await page.locator('[data-session-id]').count(),1,'Block location filter narrows the rows');
+  eq(await page.locator('[data-block-total]').innerText(),'$60.00','Block total stays complete while filtering');
+  ok((await page.locator('.st-group-header').first().innerText()).includes('Matching sessions'),'Filtered subtotals explicitly describe matching sessions');
+  await page.locator('[data-filter="venue"]').selectOption('');
+
+  await page.locator('[data-action="add-day"][data-date="2026-11-03"]').click();
+  eq(await field(page,'session-date').inputValue(),'2026-11-03','Tuesday add action preselects the correct date');
+  eq(await field(page,'block-id').inputValue(),'current-block','A new slot is attached to the selected block');
+  eq(await field(page,'park-fee').inputValue(),'','Park entry fee is optional');
+  await field(page,'venue').selectOption('Pizzey Skate Park');
+  await chooseRiders(page,['rider-a','rider-b']);
+  await field(page,'park-fee').fill('15.50');
+  eq(await page.locator('[data-fee-total] strong').innerText(),'$31.00','Park fee total updates immediately for two riders');
+  await chooseRiders(page,['rider-c']);
+  eq(await page.locator('[data-fee-total] strong').innerText(),'$46.50','Adding a rider immediately recalculates park fees');
+  await page.locator('input[name="rider"][value="rider-c"]').uncheck();
+  await field(page,'session-date').fill('2027-01-11');
+  await action(page,'save-session').click();
+  eq((await calls(page,'save')).length,0,'A session outside the block cannot be saved');
+  ok((await page.locator('.st-form-error').innerText()).includes('within this 10-week block'),'Out-of-block date has a recovery instruction');
+  await field(page,'session-date').fill('2026-11-03');
+  await page.evaluate(()=>{qa.failure.save='Offline';});
+  await action(page,'save-session').click();
+  await page.waitForFunction(()=>document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+  eq(await field(page,'park-fee').inputValue(),'15.50','A failed save preserves the fee input');
+  eq(await field(page,'block-id').inputValue(),'current-block','A failed save preserves the selected block');
+  const feeId=(await calls(page,'save')).at(-1).args.id;
+  await page.evaluate(()=>{delete qa.failure.save;});
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq((await calls(page,'save')).at(-1).args.park_fee_cents,1550,'Fee saves as integer cents');
+  eq((await calls(page,'save')).at(-1).args.park_fee_basis,'per_rider','Fee saves as a per-rider amount');
+  eq((await calls(page,'save')).at(-1).args.id,feeId,'Failed fee save retries the same session');
+  eq(await page.locator('[data-block-total]').innerText(),'$91.00','Saved fee contributes once to the full block total');
+  await edit(page,feeId);
+  eq(await field(page,'park-fee').inputValue(),'15.50','Editing restores the exact saved fee');
+  await field(page,'park-fee').fill('');
+  eq(await page.locator('[data-fee-total] strong').innerText(),'$0.00','Clearing the fee shows zero without NaN');
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'$60.00','A park fee can be cleared');
+
+  await action(page,'new-block').click();
+  await field(page,'block-name').fill('Summer training');
+  await field(page,'block-start').fill('2026-11-10');
+  await action(page,'save-block').click();
+  eq((await calls(page,'saveBlock')).length,0,'Block start must be a Monday');
+  ok((await page.locator('.st-form-error').innerText()).includes('Monday'),'Monday requirement is explained');
+  await field(page,'block-start').fill('2026-11-09');
+  eq(await page.evaluate(()=>sessionTrackerHandle.hasUnsavedChanges()),true,'Unsaved block details protect navigation and updates');
+  await page.evaluate(()=>{qa.failAfterBlockSave=true;});
+  await action(page,'save-block').click();
+  await page.waitForFunction(()=>document.querySelector('.st-form-error').textContent.includes('block save'));
+  eq(await field(page,'block-name').inputValue(),'Summer training','A lost block response preserves the name');
+  const blockId=(await calls(page,'saveBlock')).at(-1).args.id;
+  await page.evaluate(()=>{qa.hold.saveBlock=true;});
+  await doubleClickImmediately(action(page,'save-block'));
+  await page.waitForFunction(()=>!!qa.releases.saveBlock);
+  eq((await calls(page,'saveBlock')).length,2,'Double block save taps are locked');
+  await release(page,'saveBlock');await saveFinished(page);await settle(page);
+  eq(await page.evaluate(id=>fixture.blocks.filter(row=>row.id===id).length,blockId),1,'Lost block response retry does not create another block');
+  eq(await page.locator('[data-filter="block"]').inputValue(),blockId,'Newly saved block becomes selected');
+  eq(await page.locator('[data-week]').count(),10,'An empty new block still shows ten weeks');
+  eq(await page.locator('.st-day-slot').count(),30,'Monday, Tuesday and Wednesday slots are available without storing fake sessions');
+  eq(await page.locator('[data-block-total]').innerText(),'$0.00','A confirmed empty block shows a true zero total');
+  eq(await page.evaluate(()=>fixture.sessions.filter(row=>row.block_id===fixture.blocks.at(-1).id).length),0,'Empty placeholders do not create database records');
+  await action(page,'edit-block').click();
+  await field(page,'block-name').fill('Summer training updated');
+  await page.evaluate(()=>{qa.failure.saveBlock='stale block changed elsewhere';});
+  await action(page,'save-block').click();
+  await page.waitForFunction(()=>document.querySelector('.st-form-error').textContent.includes('changed elsewhere'));
+  eq(await field(page,'block-name').inputValue(),'Summer training updated','Block conflict retains the name draft');
+  await page.evaluate(()=>{delete qa.failure.saveBlock;});
+  await action(page,'cancel-session').first().click();
+
+  await page.locator('[data-filter="block"]').selectOption('current-block');await settle(page);
+  await page.evaluate(()=>{qa.failure.load='Offline';});
+  await page.locator('[data-filter="block"]').selectOption('future-block');await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'—','A block which failed to load does not claim zero fees');
+  eq(await page.locator('[data-session-id]').count(),0,'Failed block switch never shows another block’s sessions');
+  eq(await page.locator('.st-week-total').allTextContents(),Array(10).fill('—'),'All week totals remain unknown after failed first load');
+  await page.evaluate(()=>{delete qa.failure.load;});
+  await page.getByRole('button',{name:'Try again',exact:true}).click();await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'$0.00','Successful retry confirms the empty total');
+  await page.locator('[data-filter="block"]').selectOption('current-block');await settle(page);
+  await page.evaluate(()=>{qa.failure.load='Offline';});
+  await action(page,'refresh').first().click();await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'$60.00','Failed same-block refresh keeps the last confirmed total');
+  ok((await page.locator('.st-error').innerText()).includes('last loaded'),'Stale totals after failed refresh are labelled');
+  await page.evaluate(()=>{delete qa.failure.load;});
+  await page.getByRole('button',{name:'Try again',exact:true}).click();await settle(page);
+
+  // A confirmed move followed by an offline reload cannot show the former block’s data.
+  await edit(page,feeId);
+  await field(page,'block-id').selectOption('future-block');
+  await field(page,'session-date').fill('2027-01-12');
+  await page.evaluate(()=>{qa.failure.load='Offline after confirmed save';});
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq(await page.locator('[data-filter="block"]').inputValue(),'future-block','Moving a session follows its saved block');
+  eq(await page.locator('[data-block-total]').innerText(),'—','A failed reload after moving does not show another block’s total');
+  eq(await page.locator('[data-session-id]').count(),0,'Moving followed by offline reload clears the old dataset');
+  await page.evaluate(()=>{delete qa.failure.load;});
+  await page.getByRole('button',{name:'Try again',exact:true}).click();await settle(page);
+  eq(await page.locator('[data-session-id]').count(),1,'Retry loads only the session now saved in the destination block');
+  await edit(page,feeId);await field(page,'block-id').selectOption('current-block');await field(page,'session-date').fill('2026-11-03');
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+
+  await action(page,'edit-block').click();await field(page,'block-name').fill('Term 4 renamed');
+  await page.evaluate(()=>{qa.failure.load='Offline after confirmed block save';});
+  await action(page,'save-block').click();await saveFinished(page);await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'—','Renaming then failed reload cannot report a false zero for a nonempty block');
+  await page.locator('[data-filter="block"]').selectOption('future-block');await settle(page);
+  await page.locator('[data-filter="block"]').selectOption('current-block');await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'—','Returning to a previously loaded block after failed switches does not reuse invalid readiness');
+  await page.evaluate(()=>{delete qa.failure.load;});
+  await page.getByRole('button',{name:'Try again',exact:true}).click();await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'$60.00','Reload restores the real total after a block rename');
+
+  // Extra days, beyond-30 records, archive/undo, and compact layouts.
+  await page.locator('[data-week="2"] .st-extra [data-action="add-day"]').click();
+  await field(page,'session-date').fill('2026-11-13');
+  await field(page,'venue').selectOption('Beenleigh');await chooseRiders(page,['rider-a']);
+  await field(page,'park-fee').fill('0.10');
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  const extraId=(await calls(page,'save')).at(-1).args.id;
+  eq(await page.locator(`[data-week="2"] [data-session-id="${extraId}"]`).count(),1,'A Friday extra session appears in the correct week');
+  eq(await page.locator('[data-block-total]').innerText(),'$60.10','Decimal park fee totals remain exact');
+  await edit(page,extraId);await action(page,'archive-session').click();await saveFinished(page);await settle(page);
+  eq(await page.locator('[data-block-total]').innerText(),'$60.00','Archived sessions are excluded from the fees');
+  await action(page,'undo-archive').click();await settle(page);
+  await page.waitForFunction(()=>document.querySelector('[data-block-total]').textContent==='$60.10');
+  eq(await page.locator('[data-block-total]').innerText(),'$60.10','Undo restores the saved fee exactly once');
+  for(const theme of ['dark','light'])for(const width of [320,390,1024]){
+    await page.setViewportSize({width,height:844});
+    await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+    await dimensions(page,`${theme} blocks at ${width}px`);
+    if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,`session-blocks-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+  }
+  await page.locator('[data-filter="block"]').selectOption('');await settle(page);
+  eq(await page.locator('[data-session-id="standalone"]').count(),1,'All sessions preserves earlier standalone records');
+  await page.evaluate(()=>{
+    fixture.sessions=Array.from({length:41},(_,index)=>({id:`many-${index}`,block_id:'current-block',session_date:index<20?'2026-11-02':'2026-12-28',venue:'Beenleigh',rider_ids:['rider-a'],park_fee_cents:100,park_fee_basis:'per_rider'}));
+  });
+  await page.locator('[data-filter="block"]').selectOption('current-block');await settle(page);
+  eq(await page.locator('[data-session-id]').count(),41,'Full block loads more than thirty sessions');
+  eq(await page.locator('[data-block-total]').innerText(),'$41.00','Block total includes every loaded session across months');
+  eq(await action(page,'load-more').count(),0,'Block total is not hidden behind month pagination');
+  eq(errors,[],'Block planning and fee flows have no browser errors');
+  await page.close();
+  const recovery=await setup();
+  await recovery.page.evaluate(async()=>{
+    fixture.blocks=[{id:'failed-initial-block',name:'Current block',start_date:'2026-11-02'}];
+    const original=options.load;
+    await attach({load:args=>args.blockId?Promise.reject(Error('Block unavailable')):original(args)});
+  });
+  eq(await recovery.page.locator('[data-filter="block"]').isEnabled(),true,'A failed initial block load still permits switching to All sessions');
+  eq(await recovery.page.locator('[data-block-total]').innerText(),'—','Failed automatic block load never claims zero');
+  await recovery.page.locator('[data-filter="block"]').selectOption('');await settle(recovery.page);
+  eq(await recovery.page.locator('[data-session-id]').count(),3,'All sessions recovers even when the default block cannot load');
+  eq(recovery.errors,[],'Initial block failure recovery has no unhandled errors');
+  await recovery.page.close();
 }
 
 async function paginationAndIsolation() {

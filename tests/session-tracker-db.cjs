@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pglite');
 const migrationName = '20261103212528_add_coach_session_tracker.sql';
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-async function run() {
+async function run(extraMigrationName) {
   const db = new PGlite();
   let checks = 0;
   const q = async (sql, args = []) => (await db.query(sql, args)).rows;
@@ -70,6 +70,7 @@ async function run() {
     const unaffectedTables = ['profiles','coach_group_sessions','training_sessions','attendance_sessions','assignment_point_awards','push_notification_queue'];
     const before = await Promise.all(unaffectedTables.map(table => q(`select * from public.${table} order by id`)));
     await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations',migrationName),'utf8'));
+    if (extraMigrationName) await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations',extraMigrationName),'utf8'));
     eq(await scalar("select relrowsecurity from pg_class where oid='public.coach_tracked_sessions'::regclass"), true, 'RLS enabled');
     eq(await scalar("select count(*)::int from pg_proc where proname in ('save_coach_tracked_session','archive_coach_tracked_session','add_coach_tracker_location','validate_coach_tracked_session') and prosecdef"), 0, 'All new functions use caller permissions');
     eq(await scalar("select count(*)::int from pg_proc where proname in ('save_coach_tracked_session','archive_coach_tracked_session','add_coach_tracker_location','validate_coach_tracked_session') and not coalesce(proconfig @> array['search_path=\"\"'],false)"), 0, 'Every function has fixed search_path');

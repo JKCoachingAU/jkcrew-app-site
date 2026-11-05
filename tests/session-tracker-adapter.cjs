@@ -23,6 +23,7 @@ function setup() {
     coach_athletes: [{ athlete_id: 'rider-1' }, { athlete_id: 'rider-1' }],
     profiles: [{ id: 'rider-1', display_name: 'Test Rider' }],
     coach_venues: [{ id: 'v1', name: 'Park', sort_order: 0 }],
+    coach_training_blocks: [{ id: 'block-1', name: 'Term 4', start_date: '2026-10-05', updated_at: '2026-11-04T01:00:00Z' }],
     coach_tracked_sessions: Array.from({ length: 31 }, (_, index) => ({ id: String(index), rider_ids: ['rider-1'] })),
   };
   const settle = (key, result) => {
@@ -44,6 +45,7 @@ function setup() {
       qa.writes.push({ name, params: clone(params) });
       return settle(name, name === 'add_coach_tracker_location'
         ? { id: 'v2', name: 'New Park', sort_order: 1 }
+        : name === 'save_coach_training_block' ? { id: params.p_id, name: params.p_name, start_date: params.p_start_date, updated_at: '2026-11-04T02:00:00.123456Z' }
         : { id: params.p_id, updated_at: '2026-11-04T02:00:00.123456Z', archived_at: params.p_archived ? '2026-11-04T02:00:00Z' : null });
     },
   };
@@ -61,6 +63,7 @@ function setup() {
   eq(first.sessions.length, 30, 'List returns one bounded page');
   eq(first.hasMore, true, 'Look-ahead row enables pagination');
   eq(first.roster, qa.rows.profiles, 'Rider dropdown uses minimal coach roster');
+  eq(first.blocks, qa.rows.coach_training_blocks, 'Training blocks accompany existing context');
   const sessionQuery = qa.queries.find(query => query.table === 'coach_tracked_sessions');
   for (const expected of [
     ['eq', 'coach_id', 'coach'], ['is', 'archived_at', null], ['gte', 'session_date', range.from], ['lt', 'session_date', range.to],
@@ -71,7 +74,7 @@ function setup() {
   ok(profileQuery.calls.some(call => call[0] === 'select' && call[1] === 'id,display_name'), 'Roster does not download avatars, media or progress');
   ok(profileQuery.calls.some(call => call[0] === 'in' && call[1] === 'id' && call[2].length === 1), 'Roster uses deduplicated linked IDs');
   ok(profileQuery.calls.some(call => call[0] === 'eq' && call[1] === 'role' && call[2] === 'athlete'), 'Roster excludes other account roles');
-  for (const table of ['coach_athletes', 'coach_venues']) {
+  for (const table of ['coach_athletes', 'coach_venues', 'coach_training_blocks']) {
     ok(qa.queries.find(query => query.table === table).calls.some(call => call[0] === 'eq' && call[1] === 'coach_id' && call[2] === 'coach'), `${table} owner filter`);
   }
   qa.rows.coach_tracked_sessions = [];
@@ -80,6 +83,7 @@ function setup() {
   eq(qa.count('coach_athletes'), 1, 'Paging reuses roster');
   eq(qa.count('profiles'), 1, 'Paging reuses rider names');
   eq(qa.count('coach_venues'), 1, 'Paging reuses locations');
+  eq(qa.count('coach_training_blocks'), 1, 'Paging reuses training blocks');
   ok(qa.queries.filter(query => query.table === 'coach_tracked_sessions').at(-1).calls.some(call => call[0] === 'range' && call[1] === 30 && call[2] === 60), 'Next page starts after shown rows');
   qa.rows.profiles.push({ id: 'rider-2', display_name: 'New Rider' });
   const refreshed = await qa.adapter.load({ ...range, refreshContext: true });
@@ -88,6 +92,7 @@ function setup() {
 
   const record = { id: 'stable-id', session_date: '2026-11-04', start_time: '16:00', venue: 'Park', rider_ids: ['rider-1'], updated_at: '2026-11-04T01:00:00.123456Z' };
   await qa.adapter.save(record); await qa.adapter.save(record);
+  eq(qa.writes[0].name, 'save_coach_tracked_session_v2', 'New saves use the extended API without replacing old-client API');
   eq(qa.writes[0], qa.writes[1], 'Retry keeps same stable ID, payload and expected version');
   eq(qa.writes[0].params.p_expected_updated_at, record.updated_at, 'Timestamp precision is preserved');
   await qa.adapter.save({ ...record, updated_at: null, start_time: '' });
@@ -123,9 +128,9 @@ function setup() {
   delete retry.failures.coach_venues;
   await retry.adapter.load(range);
   eq(retry.count('coach_venues'), 2, 'Retry does not cache failed context');
-  retry.holds.save_coach_tracked_session = true;
+  retry.holds.save_coach_tracked_session_v2 = true;
   const staleSave = retry.adapter.save(record);
-  retry.state.user.id = 'other'; retry.release('save_coach_tracked_session');
+  retry.state.user.id = 'other'; retry.release('save_coach_tracked_session_v2');
   await rejected(staleSave, /no longer active/, 'Late mutation response is not exposed to another account');
 
   const race = setup();
@@ -138,6 +143,41 @@ function setup() {
   race.pending.profiles.pop()(); await newLoad;
   race.pending.profiles.shift()(); await oldLoad;
   eq((await race.adapter.load(range)).roster[0].display_name, 'Updated roster', 'Older context response cannot overwrite explicit refresh');
+
+  const blocks = setup();
+  blocks.rows.coach_tracked_sessions = Array.from({ length: 42 }, (_, index) => ({ id: `s${index}`, block_id: 'block-1', rider_ids: ['rider-1'], park_fee_cents: 1500, park_fee_basis: 'per_rider' }));
+  const blockRows = await blocks.adapter.load({ ...range, blockId: 'block-1', venue: 'Ignored filter', riderId: 'rider-1' });
+  eq(blockRows.sessions.length, 42, 'Complete block includes sessions beyond a 30-row page');
+  eq(blockRows.hasMore, false, 'Complete block never displays a partial total');
+  const blockQuery = blocks.queries.find(query => query.table === 'coach_tracked_sessions');
+  ok(blockQuery.calls.some(call => call[0] === 'eq' && call[1] === 'block_id' && call[2] === 'block-1'), 'Block query is explicitly scoped');
+  ok(!blockQuery.calls.some(call => ['gte', 'lt', 'contains'].includes(call[0]) || (call[0] === 'eq' && call[1] === 'venue')), 'Block totals include every saved session regardless of UI filters or month');
+  ok(blockQuery.calls.some(call => call[0] === 'range' && call[1] === 0 && call[2] === 500), 'Block query is bounded with overflow detection');
+  ok(blockQuery.calls.some(call => call[0] === 'select' && call[1].includes('park_fee_cents') && call[1].includes('block_id')), 'Sessions include stored integer fees and block membership');
+  await blocks.adapter.save({ ...record, block_id: 'block-1', park_fee_cents: 1535, park_fee_basis: 'per_rider' });
+  eq(blocks.writes.at(-1).params.p_park_fee_cents, 1535, 'Cents reach the database without rounding');
+  eq(blocks.writes.at(-1).params.p_block_id, 'block-1', 'Session remains attached to selected block');
+  for (const fee of [-1, 1.5, NaN, Infinity, 1000001]) await rejected(blocks.adapter.save({ ...record, park_fee_cents: fee }), /park fee/, 'Invalid fees do not reach transport');
+  await rejected(blocks.adapter.save({ ...record, park_fee_basis: 'unknown' }), /fee basis/, 'Unknown fee basis is rejected');
+  const savedBlock = await blocks.adapter.saveBlock({ id: 'block-2', name: 'Summer block', start_date: '2026-12-14' });
+  eq(savedBlock.name, 'Summer block', 'New training block is persisted');
+  eq(blocks.writes.at(-1).params.p_expected_updated_at, null, 'New block has no expected prior version');
+  const withBlock = await blocks.adapter.load({ ...range, blockId: 'block-2' });
+  eq(withBlock.blocks.map(block => block.id), ['block-2', 'block-1'], 'New block is cached in date order');
+  eq(blocks.count('coach_training_blocks'), 1, 'Saving a block avoids unnecessary roster/context reloads');
+  await blocks.adapter.saveBlock({ ...savedBlock, name: 'Renamed' });
+  eq(blocks.writes.at(-1).params.p_expected_updated_at, savedBlock.updated_at, 'Block edit retains optimistic timestamp');
+  await rejected(blocks.adapter.saveBlock({}), /Reopen/, 'Block requires stable retry ID');
+  await rejected(blocks.adapter.load({ ...range, blockId: 'missing' }), /no longer available/, 'Unknown block cannot produce a misleading empty total');
+  blocks.rows.coach_tracked_sessions = Array.from({ length: 501 }, (_, index) => ({ id: `s${index}` }));
+  await rejected(blocks.adapter.load({ ...range, blockId: 'block-1' }), /complete total/, 'Oversized block fails explicitly instead of silently undercounting');
+  blocks.active = false;
+  const beforeBlockedWrite = blocks.writes.length;
+  await rejected(blocks.adapter.saveBlock(savedBlock), /no longer active/, 'Closed page cannot mutate blocks');
+  eq(blocks.writes.length, beforeBlockedWrite, 'Stale block saves never reach transport');
+  const tooManyBlocks = setup();
+  tooManyBlocks.rows.coach_training_blocks = Array.from({ length: 501 }, (_, index) => ({ id: `b${index}` }));
+  await rejected(tooManyBlocks.adapter.load(range), /too many training blocks/, 'Block selector never silently truncates history');
 
   let mounted, destroyed = 0, navigated = '', readyResolved = false;
   const renderState = { view: 'sessionTracker', user: { id: 'coach' }, profile: { role: 'coach', country_code: 'DE' }, sessionSetupVersion: 1, sessionTrackerMount: { destroy() { destroyed++; } } };

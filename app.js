@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.188";
+const RELEASE_VERSION = "2.14.189";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -693,7 +693,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.188" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.189" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   if (!XP_PROGRESSION_ENABLED) return "";
@@ -12074,17 +12074,20 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
     if (!contextRequest) {
       const requestVersion = contextVersion;
       const request = (async () => {
-        const [links, locations] = await Promise.all([
+        const [links, locations, blocks] = await Promise.all([
           checkedRequest(client.from("coach_athletes").select("athlete_id").eq("coach_id", userId), "Riders"),
           checkedRequest(client.from("coach_venues").select("id,name,sort_order").eq("coach_id", userId)
             .order("sort_order", { ascending: true }).order("name"), "Locations"),
+          checkedRequest(client.from("coach_training_blocks").select("id,name,start_date,updated_at").eq("coach_id", userId)
+            .order("start_date", { ascending: false }).order("id").range(0, 500), "Training blocks"),
         ]);
         assertActive();
+        if ((blocks || []).length > 500) throw new Error("There are too many training blocks to load safely. Contact your app support.");
         const ids = [...new Set((links || []).map(link => link.athlete_id).filter(Boolean))];
         const roster = ids.length ? await checkedRequest(client.from("profiles").select("id,display_name")
           .in("id", ids).eq("role", "athlete").order("display_name"), "Rider names") : [];
         assertActive();
-        const nextContext = { roster: roster || [], locations: locations || [] };
+        const nextContext = { roster: roster || [], locations: locations || [], blocks: blocks || [] };
         if (requestVersion === contextVersion) context = nextContext;
         return nextContext;
       })().finally(() => { if (contextRequest === request) contextRequest = null; });
@@ -12093,7 +12096,7 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
     return contextRequest;
   };
   return {
-    async load({ from, to, offset = 0, venue = "", riderId = "", refreshContext = false } = {}) {
+    async load({ from, to, offset = 0, venue = "", riderId = "", refreshContext = false, blockId = null } = {}) {
       assertActive();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(from || "") || !/^\d{4}-\d{2}-\d{2}$/.test(to || "") || from >= to) {
         throw new Error("Choose a valid session date range.");
@@ -12102,30 +12105,64 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
       const pageOffset = Number(offset);
       if (!Number.isSafeInteger(pageOffset) || pageOffset < 0) throw new Error("Refresh your session list and try again.");
       if (refreshContext) { context = null; contextRequest = null; contextVersion += 1; }
+      const fields = "id,coach_id,session_date,start_time,venue,rider_ids,archived_at,created_at,updated_at,block_id,park_fee_cents,park_fee_basis";
       let query = client.from("coach_tracked_sessions")
-        .select("id,coach_id,session_date,start_time,venue,rider_ids,archived_at,created_at,updated_at")
-        .eq("coach_id", userId).is("archived_at", null).gte("session_date", from).lt("session_date", to);
-      if (venue) query = query.eq("venue", venue);
-      if (riderId) query = query.contains("rider_ids", [riderId]);
+        .select(fields).eq("coach_id", userId).is("archived_at", null);
+      if (blockId) {
+        // A complete block is small (usually 30 sessions). Fetch it together so
+        // totals never depend on a page or a location/rider filter. The UI
+        // filters this complete in-memory set; no background polling is used.
+        query = query.eq("block_id", blockId);
+      } else {
+        query = query.gte("session_date", from).lt("session_date", to);
+        if (venue) query = query.eq("venue", venue);
+        if (riderId) query = query.contains("rider_ids", [riderId]);
+      }
       query = query.order("session_date", { ascending: true })
         .order("start_time", { ascending: true, nullsFirst: false }).order("id", { ascending: true })
-        .range(pageOffset, pageOffset + pageSize);
+        .range(blockId ? 0 : pageOffset, blockId ? 500 : pageOffset + pageSize);
       const [rows, options] = await Promise.all([checkedRequest(query, "Sessions"), getContext()]);
       assertActive();
-      return { sessions: (rows || []).slice(0, pageSize), roster: [...options.roster], locations: [...options.locations], hasMore: (rows || []).length > pageSize };
+      if (blockId && !options.blocks.some(block => block.id === blockId)) throw new Error("This training block is no longer available. Refresh your blocks.");
+      if (blockId && (rows || []).length > 500) throw new Error("This block has too many sessions to calculate a complete total. View All sessions instead.");
+      return {
+        sessions: blockId ? (rows || []) : (rows || []).slice(0, pageSize),
+        roster: [...options.roster], locations: [...options.locations], blocks: [...options.blocks],
+        hasMore: !blockId && (rows || []).length > pageSize,
+      };
     },
     async save(record) {
       assertActive();
       // The editor retains this UUID after a failed request, making retries safe.
       if (!record?.id) throw new Error("Reopen the session editor and try again.");
-      return checkedRequest(client.rpc("save_coach_tracked_session", {
+      const fee = record.park_fee_cents ?? 0;
+      if (!Number.isSafeInteger(fee) || fee < 0 || fee > 1000000) throw new Error("Enter a valid park fee with no more than two decimal places.");
+      if (record.park_fee_basis && !["per_rider", "session"].includes(record.park_fee_basis)) throw new Error("Choose a valid park fee basis.");
+      return checkedRequest(client.rpc("save_coach_tracked_session_v2", {
         p_id: record.id,
         p_session_date: record.session_date,
         p_start_time: record.start_time || null,
         p_venue: record.venue,
         p_rider_ids: record.rider_ids,
         p_expected_updated_at: record.updated_at || null,
+        p_block_id: record.block_id || null,
+        p_park_fee_cents: fee,
+        p_park_fee_basis: record.park_fee_basis || "per_rider",
       }), "Save session");
+    },
+    async saveBlock(record) {
+      assertActive();
+      if (!record?.id) throw new Error("Reopen the training block editor and try again.");
+      const block = await checkedRequest(client.rpc("save_coach_training_block", {
+        p_id: record.id, p_name: record.name, p_start_date: record.start_date,
+        p_expected_updated_at: record.updated_at || null,
+      }), "Save training block");
+      // Superseded reads must not remove a just-saved block from the selector.
+      contextVersion += 1;
+      contextRequest = null;
+      if (context && block?.id) context.blocks = [...context.blocks.filter(item => item.id !== block.id), block]
+        .sort((a, b) => b.start_date.localeCompare(a.start_date) || a.id.localeCompare(b.id));
+      return block;
     },
     async archive(record, archived) {
       assertActive();
@@ -12173,7 +12210,7 @@ async function renderCoachTools() {
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Coach tools</div><h1>Training <span>toolbox</span></h1><p>Sheet scheduling, reviews, Tricktionary and run planning in one clean hub.</p></div></div>
     <section class="coach-hub-grid">
-      ${coachHubCard("sessionTracker", "Session Tracker", "Your session locations and riders in one place", "□")}
+      ${coachHubCard("sessionTracker", "Session Tracker", "10-week blocks, session riders and park fees", "□")}
       ${coachHubCard("planner", "Sheet Scheduler", "Prepare next week's private trick lists", "▤")}
       ${coachHubCard("videoReviews", "Video Reviews", "Review rider uploads and send feedback", "▣")}
       ${coachHubCard("tricktionary", "Tricktionary", "Filter rider trick libraries", "+")}
