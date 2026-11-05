@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pglite');
 const migrationName = '20261105215527_add_parent_session_costs.sql';
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
-async function run() {
+async function run(options = {}) {
   const db = new PGlite(); let checks=0;
   const q = async(sql,args=[]) => (await db.query(sql,args)).rows;
   const scalar = async(sql,args=[]) => Object.values((await q(sql,args))[0])[0];
@@ -221,6 +221,7 @@ async function run() {
     const after=await inspect(()=>Promise.all(untouched.map(table=>q(`select * from ${table} order by id`))));
     eq(after,baseline,'Cost planning does not alter points, live sessions, notifications or accounts');
     console.log(`PASS: ${checks} parent session-cost SQL checks: private child projection, link revocation, shared cents, cached-client preservation and invoice notes.`);
+    if(options.afterChecks)await options.afterChecks({db,q,scalar,actor,inspect,save,v1,v2,costs,migrate});
   }finally{await db.close();}
 }
 if(require.main===module)run()

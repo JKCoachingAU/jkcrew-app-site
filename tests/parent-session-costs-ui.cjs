@@ -40,6 +40,7 @@ async function setup(browser) {
       { ...base, id: 'invoiced', session_kind: 'additional', session_completed: true, extra_fee_cents: 3000, park_fee_cents: 1000, park_fee_paid_by_coach: true, invoice_status: 'invoiced' },
       { ...base, id: 'regular-no-extra' },
       { ...base, id: 'regular-planned-entry', park_fee_cents: 2000, invoice_date: '2026-11-02' },
+      { ...base, id: 'reimbursed-entry', park_fee_cents: 2500, park_fee_paid_by_coach: true, invoice_status: 'paid', invoice_date: null },
     ];
     window.originalFixture = structuredClone(fixture);
     window.attach = async () => {
@@ -126,16 +127,20 @@ async function integration(page) {
     eq(await page.evaluate(() => qa.calls), [0, 2, 4, 6], 'All pages load before totals, using actual row offsets');
     eq(await page.locator('[data-cost-completed]').textContent(), '3', 'Completion is explicit, including invoiced history');
     eq(await page.locator('[data-cost-completed]').locator('..').locator('span').textContent(), '1 planned', 'Planned extra is separate from completed count');
-    eq(await page.locator('[data-cost-paid]').textContent(), '$25.33', 'Coach-paid entry sums only explicitly paid child shares');
-    eq(await page.locator('[data-cost-expected]').textContent(), '$140.33 + TBC', 'Expected includes planned costs, excludes invoiced, preserves unknown extra fee');
+    eq(await page.locator('[data-cost-paid]').textContent(), '$50.33', 'Gross coach-paid entry includes reimbursed child shares');
+    eq(await page.locator('[data-cost-expected]').textContent(), '$140.33 + TBC', 'Expected includes planned costs, excludes invoiced and paid, preserves unknown extra fee');
     eq(await page.locator('.psc-invoice:not(.psc-history)>summary>span>strong').allTextContents(), ['Invoice expected · 2 Nov 2026', 'Invoice expected · 23 Nov 2026', 'Invoice date to confirm'], 'Invoice groups sort by date and leave TBC last');
     eq(await page.locator('.psc-invoice:not(.psc-history)>summary>b').allTextContents(), ['$20.00', '$120.33', '$0.00 + TBC'], 'Each invoice estimate sums child shares once');
-    eq(await page.locator('.psc-session').count(), 6, 'Zero-cost regular session is omitted');
+    eq(await page.locator('.psc-session').count(), 7, 'Zero-cost regular session is omitted');
     await page.locator('.psc-invoice').evaluateAll(nodes => nodes.forEach(node => node.open = true));
     ok((await page.locator('.psc-card').innerText()).includes('Park entry share'), 'Legacy flat fee is labelled as a child share');
     ok((await page.locator('.psc-card').innerText()).includes('Planned · coach payment not recorded'), 'Unpaid entry is not represented as coach-paid');
     ok((await page.locator('.psc-note').innerText()).includes('Regular lesson fees are not included'), 'Total scope is explicit');
-    eq(await page.locator('.psc-history .psc-session').count(), 1, 'Already invoiced row remains visible separately');
+    eq(await page.locator('.psc-invoiced-history .psc-session').count(), 1, 'Already invoiced row remains visible separately');
+    eq(await page.locator('.psc-paid-history .psc-session').count(), 1, 'Paid row is separate from invoiced and expected records');
+    eq(await page.locator('.psc-paid-history .psc-tags b').last().textContent(), 'Paid', 'Reimbursed entry carries a Paid tag');
+    eq(await page.locator('.psc-paid-history dd').textContent(), '$25.00', 'Paid child entry remains visible at its exact amount');
+    eq(await page.locator('.psc-paid-history summary strong').textContent(), 'Paid', 'Paid history has a clear dropdown label');
 
     await page.evaluate(() => { qa.holdAt = qa.calls.length + 1; window.refreshing = handle.refresh(); });
     await page.waitForFunction(() => !!qa.release);
@@ -158,10 +163,12 @@ async function integration(page) {
       [{ sessions: [{ id: 'x', park_fee_cents: -1 }], hasMore: false, snapshot: 'v1' }],
       [{ sessions: [{ id: 'x', park_fee_cents: 2.5 }], hasMore: false, snapshot: 'v1' }],
       [{ sessions: [{ id: 'x', park_fee_cents: 0, extra_fee_cents: 1000001 }], hasMore: false, snapshot: 'v1' }],
-      [{ sessions: [{ id: 'x', park_fee_cents: 0 }], hasMore: true, snapshot: 'v1' }, { sessions: [{ id: 'x', park_fee_cents: 0 }], hasMore: false, snapshot: 'v1' }],
+      [{ sessions: [{ id: 'x', park_fee_cents: 0, invoice_status: 'expected' }], hasMore: true, snapshot: 'v1' }, { sessions: [{ id: 'x', park_fee_cents: 0, invoice_status: 'expected' }], hasMore: false, snapshot: 'v1' }],
       [{ sessions: [], hasMore: false }],
       [{ sessions: [], hasMore: false, snapshot: '' }],
-      [{ sessions: [{ id: 'x', park_fee_cents: 0 }], hasMore: true, snapshot: 'v1' }, { sessions: [{ id: 'y', park_fee_cents: 0 }], hasMore: false, snapshot: 'v2' }],
+      [{ sessions: [{ id: 'x', park_fee_cents: 0, invoice_status: 'expected' }], hasMore: true, snapshot: 'v1' }, { sessions: [{ id: 'y', park_fee_cents: 0, invoice_status: 'expected' }], hasMore: false, snapshot: 'v2' }],
+      [{ sessions: [{ id: 'x', park_fee_cents: 1000, invoice_status: 'unknown' }], hasMore: false, snapshot: 'v1' }],
+      [{ sessions: [{ id: 'x', park_fee_cents: 1000, invoice_status: 'paid', session_kind: 'additional', extra_fee_cents: null }], hasMore: false, snapshot: 'v1' }],
     ]) {
       await page.evaluate(responses => { qa.calls = []; qa.responses = responses; return handle.refresh(); }, invalid);
       eq(await page.locator('.psc-error').count(), 1, 'Invalid/repeated response fails closed');
@@ -173,6 +180,14 @@ async function integration(page) {
     await page.evaluate(() => { fixture = [{ ...originalFixture[0], extra_fee_cents: 0, park_fee_cents: 0 }]; return handle.refresh(); });
     eq(await page.locator('[data-cost-expected]').textContent(), '$0.00', 'Explicit free extra fee is not TBC');
     eq(await page.locator('.psc-session dd').textContent(), '$0.00', 'Free session is retained as a completed extra');
+    await page.evaluate(() => { fixture = [{ ...originalFixture[0], invoice_status: 'paid', invoice_date: null }]; return handle.refresh(); });
+    eq(await page.locator('[data-cost-expected]').textContent(), '$0.00', 'Marking a priced extra paid removes it from expected invoices');
+    eq(await page.locator('[data-cost-paid]').textContent(), '$12.00', 'Reimbursement does not erase coach-paid entry history');
+    eq(await page.locator('[data-cost-completed]').textContent(), '1', 'Paid extra still counts as completed');
+    eq(await page.locator('.psc-invoice:not(.psc-history)').count(), 0, 'Paid extra with no invoice date creates no date-TBC group');
+    eq(await page.locator('.psc-paid-history .psc-session').count(), 1, 'Paid status accepts a missing invoice date');
+    await page.evaluate(() => { fixture = [{ ...originalFixture[0], invoice_status: 'paid', extra_fee_cents: 0, park_fee_cents: 0 }]; return handle.refresh(); });
+    eq(await page.locator('.psc-paid-history .psc-session dd').textContent(), '$0.00', 'A confirmed zero fee is valid Paid data, unlike TBC');
 
     await page.evaluate(() => {
       fixture = structuredClone(originalFixture);

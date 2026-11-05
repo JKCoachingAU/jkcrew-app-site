@@ -562,12 +562,40 @@ async function parentCostsAndInvoices(){
   const status=await page.locator('[data-session-id="saved-past"] .st-session-details').innerText();
   ok(status.includes('Completed')&&status.includes('paid by coach')&&status.includes('Already invoiced'),'Expanded record exposes completion, coach payment and invoice status');
 
+  await edit(page,'saved-past');await page.locator('.st-parent-costs > summary').click();
+  await field(page,'invoice-status').selectOption('paid');
+  eq(await page.locator('[data-invoice-date-label]').innerText(),'Invoice date (optional)','Paid records do not require an invoice date');
+  await field(page,'invoice-date').fill('');
+  eq(await page.evaluate(()=>sessionTrackerHandle.hasUnsavedChanges()),true,'Paid changes are protected as an unsaved draft');
+  await page.evaluate(()=>{qa.failure.save='Offline';});
+  await action(page,'save-session').click();
+  await page.waitForFunction(()=>document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+  eq(await field(page,'invoice-status').inputValue(),'paid','Failed save retains the explicit Paid choice');
+  eq(await field(page,'invoice-date').inputValue(),'','Failed paid save retains the manually cleared date');
+  await page.evaluate(()=>{delete qa.failure.save;});
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq((await calls(page,'save')).at(-1).args.invoice_status,'paid','Paid billing status is saved explicitly');
+  eq((await calls(page,'save')).at(-1).args.invoice_date,null,'Paid does not invent an invoice date');
+  ok((await page.locator('[data-session-id="saved-past"] .st-session-details').innerText()).includes('Paid recorded'),'Paid records are labelled Paid recorded rather than expected invoice');
+  await edit(page,'saved-past');await page.locator('.st-parent-costs > summary').click();
+  eq(await field(page,'invoice-status').inputValue(),'paid','Paid status survives reopening the editor');
+  ok((await page.locator('.st-parent-costs').innerText()).includes('every rider selected'),'Shared billing status clearly applies to all selected riders');
+  await action(page,'cancel-session').first().click();
+
   await page.locator('[data-week="2"] .st-extra [data-action="add-day"]').click();
   eq(await field(page,'session-kind').inputValue(),'additional','Extra-session shortcut selects Additional');
   eq(await page.locator('.st-parent-costs').evaluate(node=>node.open),true,'Extra-session costs are opened for quick entry');
   eq(await field(page,'session-completed').isChecked(),false,'An extra session starts uncompleted');
   eq(await field(page,'extra-fee').inputValue(),'','Unknown extra coaching prices start blank');
   eq(await page.locator('[data-extra-fee-total]').innerText(),'Extra coaching total: price TBC','Blank extra fee is shown as unknown, not zero');
+  await field(page,'venue').selectOption('Beenleigh');await chooseRiders(page,['rider-a','rider-b']);
+  await field(page,'invoice-status').selectOption('paid');
+  const beforeUnknownPaid=(await calls(page,'save')).length;
+  await action(page,'save-session').click();
+  eq((await calls(page,'save')).length,beforeUnknownPaid,'An unknown additional coaching fee cannot be recorded as Paid');
+  ok((await page.locator('.st-form-error').innerText()).includes('Confirm the extra coaching price'),'Unknown paid fee explains how to recover');
+  eq(await field(page,'extra-fee').inputValue(),'','Unknown paid validation preserves the price input as TBC');
+  await field(page,'invoice-status').selectOption('expected');
   eq(await field(page,'invoice-date').inputValue(),'','New additional sessions leave the invoice date for the coach to choose');
   await field(page,'session-date').fill('2026-11-02');
   eq(await field(page,'invoice-date').inputValue(),'','Invoice-week Monday does not automatically set an invoice date');
@@ -617,9 +645,10 @@ async function parentCostsAndInvoices(){
   eq((await calls(page,'save')).at(-1).args.extra_fee_cents,null,'Converting to a regular session removes the extra coaching fee');
   await edit(page,extraId);await page.locator('.st-parent-costs > summary').click();
   await field(page,'session-kind').selectOption('additional');
-  await field(page,'extra-fee').fill('0');await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  await field(page,'extra-fee').fill('0');await field(page,'invoice-status').selectOption('paid');await action(page,'save-session').click();await saveFinished(page);await settle(page);
   eq((await calls(page,'save')).at(-1).args.extra_fee_cents,0,'An explicitly free additional session differs from price TBC');
-  await edit(page,extraId);await field(page,'extra-fee').fill('');
+  eq((await calls(page,'save')).at(-1).args.invoice_status,'paid','A known zero coaching fee may be recorded Paid');
+  await edit(page,extraId);await field(page,'extra-fee').fill('');await field(page,'invoice-status').selectOption('expected');
   await action(page,'save-session').click();await saveFinished(page);await settle(page);
   eq((await calls(page,'save')).at(-1).args.extra_fee_cents,null,'Clearing additional fee returns it to price TBC');
 

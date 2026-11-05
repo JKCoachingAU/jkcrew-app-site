@@ -1,0 +1,72 @@
+// Runs original schemas first, then verifies the narrow paid-status extension.
+// All identities and costs are synthetic; no production connections.
+const assert = require('node:assert/strict');
+const parent = require('./parent-session-costs-db.cjs');
+const migrationName = '20261105222434_allow_paid_coach_session_costs.sql';
+const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+async function paidChecks({q,scalar,actor,inspect,save,v1,v2,costs,migrate}) {
+  let checks=0;
+  const eq = (a,b,label) => {assert.deepEqual(a,b,label);checks++;};
+  const ok = (a,label) => {assert(a,label);checks++;};
+  const denied = async(fn,re,label) => {await assert.rejects(fn,re,label);checks++;};
+  const definitions = () => q("select proname,pg_get_functiondef(oid) def from pg_proc where pronamespace='public'::regnamespace and proname in ('save_coach_tracked_session','save_coach_tracked_session_v2','save_coach_tracked_session_v3','get_parent_session_costs') order by proname");
+  const rows = () => q('select * from public.coach_tracked_sessions order by id');
+  const columns = () => q("select column_name,column_default,is_nullable from information_schema.columns where table_schema='public' and table_name='coach_tracked_sessions' order by ordinal_position");
+  const before = await inspect(async()=>({rows:await rows(),functions:await definitions(),columns:await columns()}));
+  await inspect(()=>migrate(migrationName));
+  eq(await inspect(rows),before.rows,'Adding paid status never rewrites existing records or versions');
+  eq(await inspect(definitions),before.functions,'V1/V2/V3 and parent RPC definitions remain unchanged');
+  eq(await inspect(columns),before.columns,'No fields, defaults or nullability changed');
+  eq(await scalar("select prosecdef from pg_proc where oid='private.validate_coach_tracked_session_costs()'::regprocedure"),false,'Cost validator remains invoker');
+  await actor(1);
+  const paidArgs={date:'2027-01-01',park:2000,paid:true,status:'paid',completed:true};
+  let paid=await save(600,paidArgs);
+  eq(paid.invoice_status,'paid');eq(paid.invoice_date,null,'Paid entry can be confirmed with no invented invoice date');
+  eq(paid.session_kind,'regular','A paid makeup session can remain regular');eq(paid.extra_fee_cents,null);
+  eq(await save(600,paidArgs),paid,'A lost response retry does not duplicate paid costs');
+  const initial=paid;
+  paid=await save(600,{...paidArgs,time:'16:00'},initial.updated_at);
+  eq(await save(600,{...paidArgs,time:'16:00'},initial.updated_at),paid,'Successful paid-row edit can be safely retried');
+  await denied(()=>save(600,{...paidArgs,time:'15:00'},initial.updated_at),/has changed/i);
+  paid=await v2(600,{date:'2027-01-01',park:2000,time:'17:00'},paid.updated_at);
+  eq(paid.invoice_status,'paid','Cached V2 client retains paid status');
+  paid=await v1(600,{date:'2027-01-01',time:'18:00'},paid.updated_at);
+  eq(paid.invoice_status,'paid','Cached V1 client retains paid status');eq(paid.park_fee_paid_by_coach,true);
+  await denied(()=>save(601,{date:'2027-01-02',kind:'additional',status:'paid',extra:null}),/Confirm the additional session fee/i);
+  eq(await scalar('select count(*)::int from coach_tracked_sessions where id=$1',[id(601)]),0,'Unknown paid extra fee leaves no partial record');
+  const extra=await save(601,{date:'2027-01-02',kind:'additional',status:'paid',extra:3500,park:500,paid:true});
+  eq(extra.extra_fee_cents,3500);eq(extra.invoice_status,'paid');eq(extra.session_completed,false,'Paid never implies completed');
+  const zero=await save(602,{date:'2027-01-03',kind:'additional',status:'paid',extra:0,park:0});
+  eq(zero.extra_fee_cents,0,'Known zero extra fee is distinct from unknown');eq(zero.invoice_status,'paid');
+  const tbc=await save(603,{date:'2027-01-04',kind:'additional',extra:null,park:0});
+  eq(tbc.invoice_status,'expected','Existing expected/TBC defaults still work');
+  await denied(()=>q("update coach_tracked_sessions set invoice_status='paid' where id=$1",[id(603)]),/Confirm the additional session fee/i,'Direct writes cannot label an unknown fee paid');
+  eq(await scalar('select invoice_status from coach_tracked_sessions where id=$1',[id(603)]),'expected','Rejected paid change retains existing expected state');
+  await denied(()=>save(604,{status:'settled'}),/billing status/i);
+  await denied(()=>q("update coach_tracked_sessions set invoice_status='settled' where id=$1",[id(600)]),/billing status/i);
+  await actor(6);
+  const projected=await costs();
+  eq(projected.sessions.find(s=>s.id===id(600)).invoice_status,'paid','Linked parent sees paid park entry');
+  eq(projected.sessions.find(s=>s.id===id(600)).park_fee_cents,2000,'Parent receives per-rider entry amount');
+  eq(projected.sessions.find(s=>s.id===id(601)).invoice_status,'paid','Parent sees paid extra-session status');
+  eq(projected.sessions.find(s=>s.id===id(601)).extra_fee_cents,3500);
+  ok(projected.sessions.every(s=>!Object.hasOwn(s,'rider_ids')),'Paid status adds no roster exposure');
+  await denied(()=>save(600,{...paidArgs,time:'18:00'},paid.updated_at),/Only coaches/i);
+  eq(await q("update coach_tracked_sessions set invoice_status='expected' where id=$1 returning id",[id(600)]),[],'Parent cannot change billing confirmation');
+  await actor(9);await denied(()=>costs(2),/not available/i,'Other family cannot read paid child costs');
+  await actor(null,'anon');await denied(()=>costs(2),/permission denied/i);
+  await actor(2);await denied(()=>costs(2),/Sign in as a linked parent/i);
+  await actor(4);await denied(()=>save(600,{block:110,riders:[id(5)],status:'paid'}),/could not be saved/i,'Another coach cannot replace a paid record');
+  await actor(1);
+  eq(await scalar('select invoice_status from coach_tracked_sessions where id=$1',[id(600)]),'paid','Unauthorized actions leave paid state intact');
+  const direct=await q("update coach_tracked_sessions set invoice_status='invoiced' where id=$1 returning invoice_status",[id(600)]);
+  eq(direct[0].invoice_status,'invoiced','Coach can correct a mistaken paid confirmation');
+  console.log(`PASS: ${checks} paid session-cost SQL checks: known amounts, parent projection, cached-client preservation, authorization and no migration data changes.`);
+}
+async function run(){
+  await parent.run({afterChecks:paidChecks});
+  await require('./session-tracker-blocks-db.cjs').run(parent.migrationName);
+  await require('./session-tracker-db.cjs').run([require('./session-tracker-blocks-db.cjs').migrationName,parent.migrationName]);
+}
+if(require.main===module)run().catch(error=>{console.error(error.stack,error.where||'');process.exitCode=1;});
+module.exports={run,migrationName};

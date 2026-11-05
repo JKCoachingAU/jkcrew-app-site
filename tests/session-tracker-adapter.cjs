@@ -114,11 +114,14 @@ function setup() {
   eq(qa.writes.at(-1).params.p_extra_fee_cents, 0, 'Explicit free extra session remains zero');
   await qa.adapter.save({ ...costs, extra_fee_cents: null });
   eq(qa.writes.at(-1).params.p_extra_fee_cents, null, 'TBC extra session retains unknown price');
-  for (const bad of [{session_kind:'other'}, {extra_fee_cents:-1}, {extra_fee_cents:1.5}, {extra_fee_cents:1000001}, {extra_fee_cents:NaN}, {extra_fee_cents:Infinity}, {session_kind:'regular'}, {invoice_status:'paid'}, {invoice_date:'tomorrow'}, {park_fee_cents:0}]) {
+  for (const bad of [{session_kind:'other'}, {extra_fee_cents:-1}, {extra_fee_cents:1.5}, {extra_fee_cents:1000001}, {extra_fee_cents:NaN}, {extra_fee_cents:Infinity}, {session_kind:'regular'}, {invoice_status:'unknown'}, {invoice_date:'tomorrow'}, {park_fee_cents:0}]) {
     const before = qa.writes.length;
-    await rejected(qa.adapter.save({...costs,...bad}), /session type|extra-session price|additional sessions|invoice status|invoice date|entry fee/, 'Invalid cost record rejected');
+    await rejected(qa.adapter.save({...costs,...bad}), /session type|extra-session price|additional sessions|billing status|invoice date|entry fee/, 'Invalid cost record rejected');
     eq(qa.writes.length,before,'Invalid cost does not reach server');
   }
+  await qa.adapter.save({...costs,invoice_status:'paid'});
+  eq(qa.writes.at(-1).params.p_invoice_status,'paid','Confirmed payment is distinct from an invoice');
+  await rejected(qa.adapter.save({...costs,invoice_status:'paid',extra_fee_cents:null}),/price before marking it paid/,'Unknown extra price cannot be marked paid');
   const archived = await qa.adapter.archive(record, true);
   eq(qa.writes.at(-1).params.p_archived, true, 'Archive invokes archive RPC');
   await qa.adapter.archive(archived, false);
