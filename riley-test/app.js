@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.189";
+const RELEASE_VERSION = "2.14.190";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -693,7 +693,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.189" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.190" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   if (!XP_PROGRESSION_ENABLED) return "";
@@ -8052,6 +8052,7 @@ async function renderParentHome() {
       <div class="parent-progress-track" aria-label="${percent}% of weekly items complete"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>
     </section>
     ${parentEngagementAlertHtml({ athlete, assignmentAttempts, awards, sessions, completed: completedWeekly, total: weeklyItems.length, percent })}
+    <div id="parent-session-costs"><p class="subcopy">Session costs are loading…</p></div>
     ${typeof JKCrewActiveBattles !== "undefined" ? JKCrewActiveBattles.sectionHtml({ rider: athlete }) : ""}
     <div id="parent-road-la28-card"></div>
     <button class="parent-events-home-cta" type="button" data-parent-open-view="contests">
@@ -8068,6 +8069,19 @@ async function renderParentHome() {
     </div>`;
   bindParentPageActions();
   const childIsCurrent = () => sameHome() && state.parentHomeMountedVersion === renderVersion && state.parentAthleteId === athlete.id;
+  if (window.JKCParentSessionCosts) window.JKCParentSessionCosts.mount(view.querySelector("#parent-session-costs"), {
+    athlete, isActive: childIsCurrent,
+    loadPage: async offset => {
+      if (!childIsCurrent()) throw new Error("This rider is no longer selected.");
+      const result = await withTimeout(client.rpc("get_parent_session_costs", {
+        p_athlete_id: athlete.id, p_offset: offset, p_limit: 100,
+      }), "Session costs", 15000);
+      if (!childIsCurrent()) throw new Error("This rider is no longer selected.");
+      if (result.error) throw result.error;
+      return result.data;
+    },
+  });
+  else view.querySelector("#parent-session-costs").innerHTML = '<p class="subcopy">Session costs could not load. Update the app and try again.</p>';
   if (typeof JKCrewActiveBattles !== "undefined") state.activeBattles = JKCrewActiveBattles.mount(view.querySelector("#active-rider-battles"), {
     client, userId, currentUser: () => state.user?.id, withTimeout, rider: athlete, canAccess: childIsCurrent,
   });
@@ -12105,7 +12119,7 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
       const pageOffset = Number(offset);
       if (!Number.isSafeInteger(pageOffset) || pageOffset < 0) throw new Error("Refresh your session list and try again.");
       if (refreshContext) { context = null; contextRequest = null; contextVersion += 1; }
-      const fields = "id,coach_id,session_date,start_time,venue,rider_ids,archived_at,created_at,updated_at,block_id,park_fee_cents,park_fee_basis";
+      const fields = "id,coach_id,session_date,start_time,venue,rider_ids,archived_at,created_at,updated_at,block_id,park_fee_cents,park_fee_basis,session_kind,session_completed,extra_fee_cents,park_fee_paid_by_coach,invoice_date,invoice_status";
       let query = client.from("coach_tracked_sessions")
         .select(fields).eq("coach_id", userId).is("archived_at", null);
       if (blockId) {
@@ -12138,7 +12152,15 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
       const fee = record.park_fee_cents ?? 0;
       if (!Number.isSafeInteger(fee) || fee < 0 || fee > 1000000) throw new Error("Enter a valid park fee with no more than two decimal places.");
       if (record.park_fee_basis && !["per_rider", "session"].includes(record.park_fee_basis)) throw new Error("Choose a valid park fee basis.");
-      return checkedRequest(client.rpc("save_coach_tracked_session_v2", {
+      const kind = record.session_kind || "regular";
+      const extraFee = record.extra_fee_cents ?? null;
+      if (!["regular", "additional"].includes(kind)) throw new Error("Choose a valid session type.");
+      if (extraFee !== null && (!Number.isSafeInteger(extraFee) || extraFee < 0 || extraFee > 1000000)) throw new Error("Enter a valid extra-session price with no more than two decimal places.");
+      if (kind === "regular" && extraFee !== null) throw new Error("Extra-session prices apply to additional sessions only.");
+      if (record.invoice_status && !["expected", "invoiced"].includes(record.invoice_status)) throw new Error("Choose a valid invoice status.");
+      if (record.invoice_date && !/^\d{4}-\d{2}-\d{2}$/.test(record.invoice_date)) throw new Error("Choose a valid invoice date.");
+      if (record.park_fee_paid_by_coach && !fee) throw new Error("Enter the park entry fee you paid first.");
+      return checkedRequest(client.rpc("save_coach_tracked_session_v3", {
         p_id: record.id,
         p_session_date: record.session_date,
         p_start_time: record.start_time || null,
@@ -12148,6 +12170,12 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
         p_block_id: record.block_id || null,
         p_park_fee_cents: fee,
         p_park_fee_basis: record.park_fee_basis || "per_rider",
+        p_session_kind: kind,
+        p_session_completed: record.session_completed === true,
+        p_extra_fee_cents: extraFee,
+        p_park_fee_paid_by_coach: record.park_fee_paid_by_coach === true,
+        p_invoice_date: record.invoice_date || null,
+        p_invoice_status: record.invoice_status || "expected",
       }), "Save session");
     },
     async saveBlock(record) {

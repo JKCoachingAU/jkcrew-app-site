@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pglite');
 const migrationName = '20261105213136_add_coach_training_blocks_and_park_fees.sql';
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-async function run() {
+async function run(extraMigrationName) {
   const db = new PGlite();
   let checks = 0;
   const q = async (sql, args = []) => (await db.query(sql, args)).rows;
@@ -85,6 +85,7 @@ async function run() {
     await actor(1);
     const migrated = await scalar('select to_jsonb(s) from coach_tracked_sessions s where id=$1',[id(90)]);
     eq(migrated,{...old,block_id:null,park_fee_cents:0,park_fee_basis:'per_rider'},'Existing sessions, dates, riders and versions survive migration');
+    if (extraMigrationName) await inspect(()=>migrate(extraMigrationName));
     let term = await block(100,{name:'  Term   4  '});
     eq(term.name,'Term 4');eq(term.start_date,'2026-11-02');eq(term.coach_id,id(1));
     eq(await block(100),term,'A lost create response can be retried without duplicate blocks');

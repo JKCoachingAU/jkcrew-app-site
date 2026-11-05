@@ -92,12 +92,33 @@ function setup() {
 
   const record = { id: 'stable-id', session_date: '2026-11-04', start_time: '16:00', venue: 'Park', rider_ids: ['rider-1'], updated_at: '2026-11-04T01:00:00.123456Z' };
   await qa.adapter.save(record); await qa.adapter.save(record);
-  eq(qa.writes[0].name, 'save_coach_tracked_session_v2', 'New saves use the extended API without replacing old-client API');
+  eq(qa.writes[0].name, 'save_coach_tracked_session_v3', 'New saves use the extended API without replacing old-client API');
   eq(qa.writes[0], qa.writes[1], 'Retry keeps same stable ID, payload and expected version');
   eq(qa.writes[0].params.p_expected_updated_at, record.updated_at, 'Timestamp precision is preserved');
   await qa.adapter.save({ ...record, updated_at: null, start_time: '' });
   eq(qa.writes.at(-1).params.p_start_time, null, 'Optional time remains null');
   eq(qa.writes.at(-1).params.p_expected_updated_at, null, 'New record has no existing version');
+  eq(qa.writes.at(-1).params.p_session_kind, 'regular', 'Old records do not become additional sessions');
+  eq(qa.writes.at(-1).params.p_session_completed, false, 'Past dates are not proof of attendance');
+  eq(qa.writes.at(-1).params.p_park_fee_paid_by_coach, false, 'Planned entry is not a confirmed payment');
+  eq(qa.writes.at(-1).params.p_extra_fee_cents, null, 'Unknown extra fee is not silently zero');
+  eq(qa.writes.at(-1).params.p_invoice_date, null, 'No invented invoice date');
+  eq(qa.writes.at(-1).params.p_invoice_status, 'expected', 'New records are not already invoiced');
+  const costs = { ...record, session_kind: 'additional', session_completed: true, extra_fee_cents: 4500, park_fee_cents: 1250, park_fee_paid_by_coach: true, invoice_date: '2026-11-23', invoice_status: 'invoiced' };
+  await qa.adapter.save(costs);
+  for (const key of ['session_kind','session_completed','extra_fee_cents','park_fee_paid_by_coach','invoice_date','invoice_status']) {
+    eq(qa.writes.at(-1).params['p_'+key], costs[key], 'Saved parent cost field: '+key);
+    ok(sessionQuery.calls.some(call => call[0] === 'select' && call[1].split(',').includes(key)), 'Coach reads saved cost field: '+key);
+  }
+  await qa.adapter.save({ ...costs, extra_fee_cents: 0 });
+  eq(qa.writes.at(-1).params.p_extra_fee_cents, 0, 'Explicit free extra session remains zero');
+  await qa.adapter.save({ ...costs, extra_fee_cents: null });
+  eq(qa.writes.at(-1).params.p_extra_fee_cents, null, 'TBC extra session retains unknown price');
+  for (const bad of [{session_kind:'other'}, {extra_fee_cents:-1}, {extra_fee_cents:1.5}, {extra_fee_cents:1000001}, {extra_fee_cents:NaN}, {extra_fee_cents:Infinity}, {session_kind:'regular'}, {invoice_status:'paid'}, {invoice_date:'tomorrow'}, {park_fee_cents:0}]) {
+    const before = qa.writes.length;
+    await rejected(qa.adapter.save({...costs,...bad}), /session type|extra-session price|additional sessions|invoice status|invoice date|entry fee/, 'Invalid cost record rejected');
+    eq(qa.writes.length,before,'Invalid cost does not reach server');
+  }
   const archived = await qa.adapter.archive(record, true);
   eq(qa.writes.at(-1).params.p_archived, true, 'Archive invokes archive RPC');
   await qa.adapter.archive(archived, false);
@@ -128,9 +149,9 @@ function setup() {
   delete retry.failures.coach_venues;
   await retry.adapter.load(range);
   eq(retry.count('coach_venues'), 2, 'Retry does not cache failed context');
-  retry.holds.save_coach_tracked_session_v2 = true;
+  retry.holds.save_coach_tracked_session_v3 = true;
   const staleSave = retry.adapter.save(record);
-  retry.state.user.id = 'other'; retry.release('save_coach_tracked_session_v2');
+  retry.state.user.id = 'other'; retry.release('save_coach_tracked_session_v3');
   await rejected(staleSave, /no longer active/, 'Late mutation response is not exposed to another account');
 
   const race = setup();

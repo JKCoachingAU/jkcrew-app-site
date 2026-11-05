@@ -322,6 +322,7 @@ async function run() {
     await page.close();
 
     await blocksAndFees();
+    await parentCostsAndInvoices();
     await paginationAndIsolation();
     console.log(`PASS: ${checks} Session Tracker browser checks.`);
   } finally { await browser.close(); }
@@ -509,6 +510,135 @@ async function blocksAndFees() {
   eq(await recovery.page.locator('[data-session-id]').count(),3,'All sessions recovers even when the default block cannot load');
   eq(recovery.errors,[],'Initial block failure recovery has no unhandled errors');
   await recovery.page.close();
+}
+
+async function parentCostsAndInvoices(){
+  const {page,errors}=await setup();
+  await page.evaluate(()=>{
+    fixture.blocks=[{id:'current-block',name:'Term 4',start_date:'2026-11-02',updated_at:'2026-11-01T00:00:00Z'},
+      {id:'future-block',name:'Next term',start_date:'2027-01-11',updated_at:'2026-11-01T00:00:00Z'}];
+    fixture.sessions.forEach(row=>{row.block_id='current-block';});
+  });
+  await page.evaluate(()=>attach());
+  await edit(page,'saved-past');
+  await page.locator('.st-parent-costs > summary').click();
+  eq(await field(page,'session-kind').inputValue(),'regular','Existing sessions default to regular');
+  eq(await field(page,'session-completed').isChecked(),false,'Past dates are never automatically marked complete');
+  eq(await field(page,'park-fee-paid').isChecked(),false,'Existing sessions never assume the coach paid entry');
+  eq(await field(page,'park-fee-paid').isDisabled(),true,'No entry fee cannot be marked paid');
+  eq(await field(page,'invoice-status').inputValue(),'expected','Default invoice status is expected, not invoiced');
+  eq(await field(page,'invoice-date').inputValue(),'','Existing unknown invoice dates remain TBC');
+  eq(await page.locator('[data-extra-fee-fields]').isVisible(),false,'Regular sessions do not ask for an extra coaching fee');
+  eq(await page.evaluate(()=>sessionTrackerHandle.hasUnsavedChanges()),false,'Opening parent details alone does not dirty an existing record');
+  await field(page,'session-completed').check();
+  eq(await page.evaluate(()=>sessionTrackerHandle.hasUnsavedChanges()),true,'Completion changes protect the draft');
+  await field(page,'park-fee').fill('12.50');
+  eq(await field(page,'park-fee-paid').isEnabled(),true,'A positive park fee enables the coach-paid flag');
+  await field(page,'park-fee-paid').check();
+  await field(page,'park-fee').fill('0');
+  eq(await field(page,'park-fee-paid').isChecked(),false,'Removing the park fee clears the coach-paid flag');
+  eq(await field(page,'park-fee-paid').isDisabled(),true,'Zero entry fee disables the payment flag');
+  await field(page,'park-fee').fill('12.50');
+  eq(await field(page,'park-fee-paid').isChecked(),false,'Restoring a fee does not assume it was paid');
+  await field(page,'park-fee-paid').check();
+  await field(page,'invoice-date').fill('2026-11-03');
+  await field(page,'invoice-status').selectOption('invoiced');
+  eq(await page.locator('[data-invoice-date-label]').innerText(),'Invoice date','Already invoiced uses the invoice-date label');
+  await page.evaluate(()=>{qa.failure.save='Offline';});
+  await action(page,'save-session').click();
+  await page.waitForFunction(()=>document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+  eq(await field(page,'session-completed').isChecked(),true,'Failed save retains completion');
+  eq(await field(page,'park-fee-paid').isChecked(),true,'Failed save retains coach-paid choice');
+  eq(await field(page,'invoice-status').inputValue(),'invoiced','Failed save retains invoice status');
+  eq(await field(page,'invoice-date').inputValue(),'2026-11-03','Failed save retains invoice date');
+  await page.evaluate(()=>{delete qa.failure.save;});
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  let saved=(await calls(page,'save')).at(-1).args;
+  eq(saved.session_completed,true,'Explicit session completion is persisted');
+  eq(saved.park_fee_paid_by_coach,true,'Explicit coach-paid park entry is persisted');
+  eq(saved.invoice_status,'invoiced','Already invoiced state is persisted');
+  eq(saved.invoice_date,'2026-11-03','Invoice date is persisted exactly');
+  eq(saved.extra_fee_cents,null,'Regular sessions have no extra coaching charge');
+  const status=await page.locator('[data-session-id="saved-past"] .st-session-details').innerText();
+  ok(status.includes('Completed')&&status.includes('paid by coach')&&status.includes('Already invoiced'),'Expanded record exposes completion, coach payment and invoice status');
+
+  await page.locator('[data-week="2"] .st-extra [data-action="add-day"]').click();
+  eq(await field(page,'session-kind').inputValue(),'additional','Extra-session shortcut selects Additional');
+  eq(await page.locator('.st-parent-costs').evaluate(node=>node.open),true,'Extra-session costs are opened for quick entry');
+  eq(await field(page,'session-completed').isChecked(),false,'An extra session starts uncompleted');
+  eq(await field(page,'extra-fee').inputValue(),'','Unknown extra coaching prices start blank');
+  eq(await page.locator('[data-extra-fee-total]').innerText(),'Extra coaching total: price TBC','Blank extra fee is shown as unknown, not zero');
+  eq(await field(page,'invoice-date').inputValue(),'','New additional sessions leave the invoice date for the coach to choose');
+  await field(page,'session-date').fill('2026-11-02');
+  eq(await field(page,'invoice-date').inputValue(),'','Invoice-week Monday does not automatically set an invoice date');
+  await field(page,'session-date').fill('2026-11-03');
+  eq(await field(page,'invoice-date').inputValue(),'','Changing the session date never automatically selects week 4');
+  await field(page,'session-date').fill('2026-12-01');
+  eq(await field(page,'invoice-date').inputValue(),'','Changing the session date never automatically selects week 8');
+  await field(page,'session-date').fill('2026-12-28');
+  eq(await field(page,'invoice-date').inputValue(),'','Week 9 leaves the next invoice date TBC');
+  await field(page,'session-date').fill('2027-01-04');
+  eq(await field(page,'invoice-date').inputValue(),'','Week 10 leaves the next invoice date TBC');
+  await field(page,'session-date').fill('2026-11-09');
+  await field(page,'invoice-date').fill('2026-11-30');
+  await field(page,'session-date').fill('2026-12-02');
+  eq(await field(page,'invoice-date').inputValue(),'2026-11-30','A manually chosen invoice date survives a session-date edit');
+  await field(page,'block-id').selectOption('future-block');
+  eq(await field(page,'invoice-date').inputValue(),'2026-11-30','A manual invoice date survives block changes');
+  await field(page,'invoice-date').fill('');
+  await field(page,'block-id').selectOption('current-block');
+  await field(page,'session-date').fill('2026-11-10');
+  eq(await field(page,'invoice-date').inputValue(),'','Manually clearing invoice date preserves TBC through further edits');
+  await field(page,'venue').selectOption('Beenleigh');await chooseRiders(page,['rider-a','rider-b']);
+  await field(page,'extra-fee').fill('35.50');
+  eq(await page.locator('[data-extra-fee-total]').innerText(),'$35.50 × 2 riders = $71.00','Extra coaching fee total multiplies the per-rider price');
+  await field(page,'park-fee').fill('15');
+  await field(page,'park-fee-paid').check();
+  await field(page,'session-completed').check();
+  await page.evaluate(()=>{qa.failAfterSave=true;});
+  await action(page,'save-session').click();
+  await page.waitForFunction(()=>document.querySelector('.st-form-error').textContent.includes('couldn’t confirm'));
+  eq(await field(page,'extra-fee').inputValue(),'35.50','Lost save response retains additional-session price');
+  const extraId=(await calls(page,'save')).at(-1).args.id;
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  saved=(await calls(page,'save')).at(-1).args;
+  eq(saved.id,extraId,'Additional-session retry uses the same stable id');
+  eq(saved.extra_fee_cents,3550,'Additional price persists as integer cents');
+  eq(saved.invoice_date,null,'Manually chosen TBC saves as null');
+  eq(saved.invoice_status,'expected','Entering costs and completion never marks an invoice sent');
+  eq(await page.evaluate(id=>fixture.sessions.filter(row=>row.id===id).length,extraId),1,'Extra-session lost-response retry creates no duplicate');
+  await edit(page,extraId);
+  eq(await field(page,'extra-fee').inputValue(),'35.50','Extra coaching fee survives reopening');
+  eq(await field(page,'session-completed').isChecked(),true,'Explicit completion survives reopening');
+  eq(await field(page,'park-fee-paid').isChecked(),true,'Explicit coach payment survives reopening');
+  await field(page,'session-kind').selectOption('regular');
+  eq(await field(page,'extra-fee').isDisabled(),true,'Hidden additional fee cannot block or leak into regular-session save');
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq((await calls(page,'save')).at(-1).args.extra_fee_cents,null,'Converting to a regular session removes the extra coaching fee');
+  await edit(page,extraId);await page.locator('.st-parent-costs > summary').click();
+  await field(page,'session-kind').selectOption('additional');
+  await field(page,'extra-fee').fill('0');await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq((await calls(page,'save')).at(-1).args.extra_fee_cents,0,'An explicitly free additional session differs from price TBC');
+  await edit(page,extraId);await field(page,'extra-fee').fill('');
+  await action(page,'save-session').click();await saveFinished(page);await settle(page);
+  eq((await calls(page,'save')).at(-1).args.extra_fee_cents,null,'Clearing additional fee returns it to price TBC');
+
+  await page.locator('[data-filter="block"]').selectOption('');await settle(page);
+  await validDraft(page);await page.locator('.st-parent-costs > summary').click();
+  eq(await field(page,'invoice-date').inputValue(),'','Standalone sessions never invent an invoice date');
+  await field(page,'block-id').selectOption('current-block');
+  eq(await field(page,'invoice-date').inputValue(),'','Assigning a new regular session to a block does not choose its invoice date');
+  await field(page,'session-kind').selectOption('additional');await field(page,'extra-fee').fill('45');
+  await field(page,'park-fee').fill('15');await field(page,'park-fee-paid').check();
+  for(const theme of ['dark','light'])for(const width of [320,390,1024]){
+    await page.setViewportSize({width,height:844});await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await dimensions(page,`${theme} parent costs editor at ${width}px`);
+    const targets=await page.locator('dialog .st-check-label:visible, dialog .st-parent-costs>summary:visible').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().height));
+    ok(targets.every(height=>height>=44),`${theme} parent cost controls at ${width}px remain touch-sized`);
+    if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,`session-parent-costs-${theme}-${width}.png`),animations:'disabled'});
+  }
+  await action(page,'cancel-session').first().click();
+  eq(errors,[],'Parent cost editing has no browser errors');await page.close();
 }
 
 async function paginationAndIsolation() {

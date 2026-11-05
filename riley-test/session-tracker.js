@@ -12,7 +12,8 @@
   const feeTotal = row => (Number.isInteger(row.park_fee_cents)?row.park_fee_cents:0)*(row.park_fee_basis==="session"?1:new Set(row.rider_ids||[]).size);
   const sumFees = rows => rows.reduce((total,row)=>total+feeTotal(row),0);
   const parseFee = value => /^(?:\d{1,5})(?:\.\d{1,2})?$/.test(value.trim())&&Number(value)<=10000 ? Math.round(Number(value)*100) : value.trim()===""?0:null;
-  const fingerprint = draft => JSON.stringify([draft.session_date,draft.start_time||"",draft.venue,[...(draft.rider_ids||[])].sort(),draft.block_id||"",draft.park_fee_cents||0,draft.park_fee_basis||"per_rider",draft.name||"",draft.start_date||""]);
+  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value||"") && Number.isFinite(Date.parse(`${value}T12:00:00Z`)) && new Date(`${value}T12:00:00Z`).toISOString().slice(0,10)===value;
+  const fingerprint = draft => JSON.stringify([draft.session_date,draft.start_time||"",draft.venue,[...(draft.rider_ids||[])].sort(),draft.block_id||"",draft.park_fee_cents||0,draft.park_fee_basis||"per_rider",draft.name||"",draft.start_date||"",draft.session_kind||"regular",draft.session_completed===true,draft.extra_fee_cents??null,draft.park_fee_paid_by_coach===true,draft.invoice_date||"",draft.invoice_status||"expected"]);
   const message = error => error?.code === "55000" ? "This session was removed. Your edits are still here. Close this form and refresh your session list." : /stale|changed|conflict/i.test(error?.message||"") ? "This session changed elsewhere. Your edits are still here. Close this form and refresh to see the latest saved session before editing again." : ["42501","PGRST301","PGRST302"].includes(error?.code) ? "Your access could not be confirmed. Your edits are still here. Check that you’re signed in to your coach account and try again." : "We couldn’t confirm the save. Your edits are still here. Check your connection and try again; a retry won’t create another session.";
 
   function mount(root, config = {}) {
@@ -25,7 +26,7 @@
     const pending = new Set();
     const opened = new Set();
     const active = () => !stopped && root.isConnected && (!config.isActive || config.isActive());
-    const dirty = () => !!editor && (fingerprint(editor.draft)!==editor.initial || !!editor.locationDraft.trim() || (editor.kind==="session" && editor.feeText!==editor.initialFeeText));
+    const dirty = () => !!editor && (fingerprint(editor.draft)!==editor.initial || !!editor.locationDraft.trim() || (editor.kind==="session" && (editor.feeText!==editor.initialFeeText || editor.extraFeeText!==editor.initialExtraFeeText)));
     const hasUnsavedChanges = () => dirty() || !!editor?.saving || !!editor?.adding;
     const find = id => roster.find(r=>r.id===id);
     const riderName = id => find(id)?.display_name || "Previously linked rider";
@@ -52,8 +53,8 @@
     const dialog=root.querySelector("dialog");
 
     function rowHtml(row) {
-      const selected=ids(row), status=row.session_date===today?"Today":row.session_date>today?"Planned":"Saved", fee=feeTotal(row);
-      return `<details class="st-session" data-session-id="${esc(row.id)}"${opened.has(row.id)?" open":""}><summary><span class="st-date"><span>${esc(dateLabel(row.session_date,{weekday:"short",month:undefined,day:undefined}))}</span><strong>${esc(dateLabel(row.session_date,{day:"numeric",month:undefined}))}</strong></span><span class="st-session-main"><span class="st-session-title"><strong>${esc(row.venue)}</strong><span>${esc(dateLabel(row.session_date))}${row.start_time?` · ${esc(timeLabel(row.start_time))}`:""}${fee?`<b class="st-mobile-fee"> · ${money(fee)}</b>`:""}</span></span><span class="st-inline-riders">${esc(selected.map(riderName).join(", "))}</span></span><span class="st-row-meta"><span class="st-status${status==="Today"?" is-today":""}">${status}</span>${fee?`<strong class="st-row-fee">${money(fee)}</strong>`:""}</span><span class="st-chevron" aria-hidden="true">⌄</span></summary><div class="st-session-body"><span class="st-session-detail">${selected.length} ${selected.length===1?"rider":"riders"}${fee?` · ${money(row.park_fee_cents)} ${row.park_fee_basis==="session"?"session park fee":`park entry × ${selected.length} = ${money(fee)}`}`:" · No park fee"}</span>${button("edit-session","Edit session","",`data-id="${esc(row.id)}"`)}</div></details>`;
+      const selected=ids(row), status=row.session_completed?"Completed":row.session_date===today?"Today":row.session_date>today?"Planned":"Saved", fee=feeTotal(row);
+      return `<details class="st-session" data-session-id="${esc(row.id)}"${opened.has(row.id)?" open":""}><summary><span class="st-date"><span>${esc(dateLabel(row.session_date,{weekday:"short",month:undefined,day:undefined}))}</span><strong>${esc(dateLabel(row.session_date,{day:"numeric",month:undefined}))}</strong></span><span class="st-session-main"><span class="st-session-title"><strong>${esc(row.venue)}</strong><span>${esc(dateLabel(row.session_date))}${row.start_time?` · ${esc(timeLabel(row.start_time))}`:""}${fee?`<b class="st-mobile-fee"> · ${money(fee)}</b>`:""}</span></span><span class="st-inline-riders">${esc(selected.map(riderName).join(", "))}</span></span><span class="st-row-meta"><span class="st-status${status==="Today"?" is-today":""}">${status}</span>${fee?`<strong class="st-row-fee">${money(fee)}</strong>`:""}</span><span class="st-chevron" aria-hidden="true">⌄</span></summary><div class="st-session-body"><div class="st-session-details"><span class="st-session-detail">${selected.length} ${selected.length===1?"rider":"riders"}${fee?` · ${money(row.park_fee_cents)} ${row.park_fee_basis==="session"?"session park fee":`park entry × ${selected.length} = ${money(fee)}`}`:" · No park fee"}</span><span class="st-cost-status">${row.session_kind==="additional"?`Additional session · Extra coaching ${row.extra_fee_cents==null?"price TBC":`${money(row.extra_fee_cents)} per rider`}`:"Regular session"} · ${row.session_completed?"Completed":"Not marked complete"}</span>${fee?`<span class="st-cost-status">Park entry: ${row.park_fee_paid_by_coach?"paid by coach":"not marked paid by coach"}</span>`:""}<span class="st-cost-status">${row.invoice_status==="invoiced"?"Already invoiced":"Expected invoice"}${row.invoice_date?` · ${esc(dateLabel(row.invoice_date,{year:"numeric"}))}`:" · Date TBC"}</span></div>${button("edit-session","Edit session","",`data-id="${esc(row.id)}"`)}</div></details>`;
     }
     function blockHtml(block) {
       const shown=dataReady()?filteredSessions():[], filtered=!!(venue||riderId);
@@ -65,7 +66,7 @@
           return `<section class="st-week" data-week="${week}"><header class="st-week-heading"><div><h3>Week ${week}</h3><span>${esc(dateLabel(date))}–${esc(dateLabel(shiftDay(date,6)))}</span></div>${[1,4,8].includes(week)?'<span class="st-invoice">Invoice week</span>':""}<span class="st-week-total">${dataReady()?money(sumFees(rows)):"—"}</span></header><div class="st-week-sessions">${days.map(day=>{
             const matches=rows.filter(row=>row.session_date===day);
             return matches.length?matches.map(rowHtml).join(""):filtered?"":`<div class="st-day-slot"><span>${esc(dateLabel(day,{weekday:"long",day:undefined,month:undefined}))} <small>${esc(dateLabel(day))}</small></span>${button("add-day","＋ Add session","st-text",`data-date="${day}" aria-label="Add session on ${esc(dateLabel(day,{weekday:"long"}))}"${loading?" disabled":""}`)}</div>`;
-          }).join("")}${filtered&&!rows.length?'<p class="st-no-match">No matching sessions</p>':""}<div class="st-extra">${button("add-day","＋ Extra session","st-text",`data-date="${date}" aria-label="Add an extra session in week ${week}"${loading?" disabled":""}`)}</div></div></section>`;
+          }).join("")}${filtered&&!rows.length?'<p class="st-no-match">No matching sessions</p>':""}<div class="st-extra">${button("add-day","＋ Extra session","st-text",`data-date="${date}" data-kind="additional" aria-label="Add an extra session in week ${week}"${loading?" disabled":""}`)}</div></div></section>`;
         }).join("")}</section>`;
       }).join("");
     }
@@ -107,18 +108,34 @@
       return `<option value="">Choose a location</option>${[...new Set([...locations.map(l=>l.name),...(selected?[selected]:[])])].sort().map(name=>`<option value="${esc(name)}"${name===selected?" selected":""}>${esc(name)}</option>`).join("")}`;
     }
     function pickerLabel() { return editor?.draft.rider_ids.length ? `${editor.draft.rider_ids.length} ${editor.draft.rider_ids.length===1?"rider":"riders"} selected` : "Choose riders"; }
-    function openEditor(row, date) {
+    function openEditor(row, date, sessionKind="regular") {
       if(!active()||!allowed||!loaded||editor) return;
       focusBack=document.activeElement;
       const block=currentBlock(), defaultDate=block&&(today<block.start_date||today>=shiftDay(block.start_date,70))?block.start_date:today;
-      const draft={id:row?.id||crypto.randomUUID(),session_date:row?.session_date||date||defaultDate,start_time:row?.start_time?.slice(0,5)||"",venue:row?.venue||venue||"",rider_ids:row?ids(row):[],updated_at:row?.updated_at||null,block_id:row?row.block_id||null:blockId||null,park_fee_cents:row?.park_fee_cents||0,park_fee_basis:row?.park_fee_basis||"per_rider"};
+      const draft={id:row?.id||crypto.randomUUID(),session_date:row?.session_date||date||defaultDate,start_time:row?.start_time?.slice(0,5)||"",venue:row?.venue||venue||"",rider_ids:row?ids(row):[],updated_at:row?.updated_at||null,block_id:row?row.block_id||null:blockId||null,park_fee_cents:row?.park_fee_cents||0,park_fee_basis:row?.park_fee_basis||"per_rider",session_kind:row?.session_kind||sessionKind,session_completed:row?.session_completed===true,extra_fee_cents:row?.extra_fee_cents??null,park_fee_paid_by_coach:row?.park_fee_paid_by_coach===true,invoice_date:row?.invoice_date||null,invoice_status:row?.invoice_status||"expected"};
+      const extraFeeText=draft.extra_fee_cents==null?"":(draft.extra_fee_cents/100).toFixed(2);
       const feeText=draft.park_fee_cents?(draft.park_fee_cents/100).toFixed(2):"";
-      editor={kind:"session",draft,initial:fingerprint(draft),feeText,initialFeeText:feeText,saved:!!row,saving:false,adding:false,locationDraft:"",error:""};
+      editor={kind:"session",draft,initial:fingerprint(draft),feeText,initialFeeText:feeText,extraFeeText,initialExtraFeeText:extraFeeText,saved:!!row,saving:false,adding:false,locationDraft:"",error:""};
       const choices=[...orderedRiders(),...draft.rider_ids.filter(id=>!find(id)).map(id=>({id,display_name:"Previously linked rider"}))];
-      dialog.innerHTML=`<form class="st-form"><header class="st-dialog-header"><div><span class="st-eyebrow">Session Tracker</span><h2 id="st-editor-title">${row?"Edit session":"New session"}</h2></div>${button("cancel-session","×","st-square",'aria-label="Close session form"')}</header><fieldset class="st-fields">${blocks.length?`<label class="st-block-field">Training block<select data-field="block-id"><option value="">No block · standalone session</option>${sortedBlocks().map(b=>`<option value="${esc(b.id)}"${b.id===draft.block_id?" selected":""}>${esc(b.name)}</option>`).join("")}</select></label>`:""}<div class="st-date-time"><label>Date<input type="date" data-field="session-date" value="${esc(draft.session_date)}" required></label><label>Time <small>(optional)</small><input type="time" data-field="start-time" value="${esc(draft.start_time)}"></label></div><label for="st-venue">Location</label><div class="st-location-control"><select id="st-venue" data-field="venue" required>${locationOptions(draft.venue)}</select>${button("add-location","＋","st-square",'aria-label="Add a new location" aria-expanded="false" aria-controls="st-add-location"')}</div><div id="st-add-location" class="st-add-location" hidden><label>New location<input data-field="new-location" maxlength="80" placeholder="Park or venue name" autocomplete="off"></label>${button("save-location","Add location")}<p class="st-location-error" role="alert"></p></div><label>Riders</label><details class="st-picker"><summary><span data-picker-label>${pickerLabel()}</span><span class="st-chevron" aria-hidden="true">⌄</span></summary><div class="st-picker-body"><input type="search" data-field="rider-search" placeholder="Find a rider" aria-label="Find a rider" autocomplete="off"><div class="st-rider-options">${choices.length?choices.map(r=>`<label class="st-rider-option" data-rider-name="${esc((r.display_name||"Rider").toLowerCase())}"><input type="checkbox" name="rider" value="${esc(r.id)}"${draft.rider_ids.includes(r.id)?" checked":""}><span>${esc(r.display_name||"Rider")}</span></label>`).join(""):'<p>No linked riders yet. Add riders from the Riders page first.</p>'}</div><p data-rider-empty hidden>No riders match your search.</p></div></details><p class="st-selected" data-selected-riders>${esc(draft.rider_ids.map(riderName).join(", "))}</p><div class="st-fee-control"><label>Park fee ${draft.park_fee_basis==="session"?"for this session":"per rider"} (AUD)<input type="number" inputmode="decimal" data-field="park-fee" min="0" max="10000" step="0.01" value="${esc(feeText)}" placeholder="0.00"></label><div class="st-fee-preview" aria-live="polite" data-fee-total></div></div></fieldset><p class="st-form-error" role="alert"></p><footer class="st-dialog-footer">${row?button("archive-session","Remove session","st-danger"):button("cancel-session","Cancel")}<button type="submit" class="st-button is-primary" data-action="save-session">Save session</button></footer></form>`;
-      updateFeePreview();
+      dialog.innerHTML=`<form class="st-form"><header class="st-dialog-header"><div><span class="st-eyebrow">Session Tracker</span><h2 id="st-editor-title">${row?"Edit session":"New session"}</h2></div>${button("cancel-session","×","st-square",'aria-label="Close session form"')}</header><fieldset class="st-fields">${blocks.length?`<label class="st-block-field">Training block<select data-field="block-id"><option value="">No block · standalone session</option>${sortedBlocks().map(b=>`<option value="${esc(b.id)}"${b.id===draft.block_id?" selected":""}>${esc(b.name)}</option>`).join("")}</select></label>`:""}<div class="st-date-time"><label>Date<input type="date" data-field="session-date" value="${esc(draft.session_date)}" required></label><label>Time <small>(optional)</small><input type="time" data-field="start-time" value="${esc(draft.start_time)}"></label></div><label for="st-venue">Location</label><div class="st-location-control"><select id="st-venue" data-field="venue" required>${locationOptions(draft.venue)}</select>${button("add-location","＋","st-square",'aria-label="Add a new location" aria-expanded="false" aria-controls="st-add-location"')}</div><div id="st-add-location" class="st-add-location" hidden><label>New location<input data-field="new-location" maxlength="80" placeholder="Park or venue name" autocomplete="off"></label>${button("save-location","Add location")}<p class="st-location-error" role="alert"></p></div><label>Riders</label><details class="st-picker"><summary><span data-picker-label>${pickerLabel()}</span><span class="st-chevron" aria-hidden="true">⌄</span></summary><div class="st-picker-body"><input type="search" data-field="rider-search" placeholder="Find a rider" aria-label="Find a rider" autocomplete="off"><div class="st-rider-options">${choices.length?choices.map(r=>`<label class="st-rider-option" data-rider-name="${esc((r.display_name||"Rider").toLowerCase())}"><input type="checkbox" name="rider" value="${esc(r.id)}"${draft.rider_ids.includes(r.id)?" checked":""}><span>${esc(r.display_name||"Rider")}</span></label>`).join(""):'<p>No linked riders yet. Add riders from the Riders page first.</p>'}</div><p data-rider-empty hidden>No riders match your search.</p></div></details><p class="st-selected" data-selected-riders>${esc(draft.rider_ids.map(riderName).join(", "))}</p><div class="st-fee-control"><label>Park fee ${draft.park_fee_basis==="session"?"for this session":"per rider"} (AUD)<input type="number" inputmode="decimal" data-field="park-fee" min="0" max="10000" step="0.01" value="${esc(feeText)}" placeholder="0.00"></label><div class="st-fee-preview" aria-live="polite" data-fee-total></div></div>${parentCostsHtml(draft,extraFeeText)}</fieldset><p class="st-form-error" role="alert"></p><footer class="st-dialog-footer">${row?button("archive-session","Remove session","st-danger"):button("cancel-session","Cancel")}<button type="submit" class="st-button is-primary" data-action="save-session">Save session</button></footer></form>`;
+      updateFeePreview();updateParentCosts();
       dialog.showModal();
       dialog.querySelector('[data-field="session-date"]').focus();
+    }
+    function parentCostsHtml(draft,extraFeeText){
+      return `<details class="st-parent-costs"${draft.session_kind==="additional"?" open":""}><summary><span>Parent costs / Invoice details</span><span class="st-chevron" aria-hidden="true">⌄</span></summary><div class="st-cost-fields"><label>Session type<select data-field="session-kind"><option value="regular"${draft.session_kind==="regular"?" selected":""}>Regular session</option><option value="additional"${draft.session_kind==="additional"?" selected":""}>Additional session</option></select></label><label class="st-check-label"><input type="checkbox" data-field="session-completed"${draft.session_completed?" checked":""}><span>Session completed</span></label><div data-extra-fee-fields${draft.session_kind==="additional"?"":" hidden"}><label>Extra coaching fee per rider (AUD)<input type="number" inputmode="decimal" data-field="extra-fee" min="0" max="10000" step="0.01" value="${esc(extraFeeText)}" placeholder="Price TBC"></label><p class="st-cost-help">Leave blank if the price is still to be confirmed.</p><div class="st-extra-fee-preview" data-extra-fee-total aria-live="polite"></div></div><label class="st-check-label"><input type="checkbox" data-field="park-fee-paid"${draft.park_fee_paid_by_coach?" checked":""}><span>I paid the park entry</span></label><p class="st-cost-help" data-park-paid-help>For every rider selected in this session.</p><label><span data-invoice-date-label>${draft.invoice_status==="invoiced"?"Invoice date":"Expected invoice date"}</span><input type="date" data-field="invoice-date" value="${esc(draft.invoice_date||"")}"></label><p class="st-cost-help" data-invoice-help></p><label>Invoice status<select data-field="invoice-status"><option value="expected"${draft.invoice_status!=="invoiced"?" selected":""}>Expected</option><option value="invoiced"${draft.invoice_status==="invoiced"?" selected":""}>Already invoiced</option></select></label><p class="st-cost-help">These saved details are visible to linked parents. Saving does not send an invoice or mark a parent’s payment as received.</p></div></details>`;
+    }
+    function updateParentCosts(){
+      if(editor?.kind!=="session")return;
+      const draft=editor.draft,additional=draft.session_kind==="additional",cents=parseFee(editor.extraFeeText),count=draft.rider_ids.length;
+      dialog.querySelector("[data-extra-fee-fields]").hidden=!additional;
+      const extraInput=dialog.querySelector('[data-field="extra-fee"]');extraInput.disabled=!additional;
+      dialog.querySelector("[data-extra-fee-total]").textContent=editor.extraFeeText.trim()===""?"Extra coaching total: price TBC":cents===null?"Enter a valid extra coaching fee":`${money(cents)} × ${count} ${count===1?"rider":"riders"} = ${money(cents*count)}`;
+      const parkPaid=dialog.querySelector('[data-field="park-fee-paid"]'),hasParkFee=(parseFee(editor.feeText)||0)>0;
+      parkPaid.disabled=!hasParkFee;parkPaid.checked=draft.park_fee_paid_by_coach===true;
+      dialog.querySelector("[data-park-paid-help]").textContent=hasParkFee?"For every rider selected in this session.":"Enter a park fee above before recording a coach payment.";
+      dialog.querySelector("[data-invoice-date-label]").textContent=draft.invoice_status==="invoiced"?"Invoice date":"Expected invoice date";
+      dialog.querySelector("[data-invoice-help]").textContent="Choose the invoice date for this session. Leave blank if it is still to be confirmed.";
     }
     function updateFeePreview(){
       const el=dialog.querySelector("[data-fee-total]");
@@ -180,7 +197,12 @@
       const block=blocks.find(b=>b.id===current.draft.block_id), cents=parseFee(current.feeText);
       if(cents===null){current.error="Enter a park fee from $0 to $10,000, with up to two decimal places.";editorState();return;}
       if(current.draft.block_id&&(!block||current.draft.session_date<block.start_date||current.draft.session_date>=shiftDay(block.start_date,70))){current.error="Choose a session date within this 10-week block, or select No block.";editorState();return;}
+      const extraCents=current.extraFeeText.trim()===""?null:parseFee(current.extraFeeText);
+      if(current.draft.session_kind==="additional"&&current.extraFeeText.trim()!==""&&extraCents===null){current.error="Enter an extra coaching fee from $0 to $10,000, or leave it blank for price TBC.";editorState();return;}
+      if(current.draft.invoice_date&&!validDate(current.draft.invoice_date)){current.error="Choose a valid invoice date, or leave it blank for date TBC.";editorState();return;}
+      current.draft.extra_fee_cents=current.draft.session_kind==="additional"?extraCents:null;
       current.draft.park_fee_cents=cents;
+      if(!cents)current.draft.park_fee_paid_by_coach=false;
       current.saving=true;current.error="";editorState();
       try {
         const saved=await request(()=>config.save({...current.draft,rider_ids:[...current.draft.rider_ids]}));
@@ -239,15 +261,21 @@
       if(field==="block-name")editor.draft.name=el.value;
       if(field==="block-start")editor.draft.start_date=el.value;
       if(field==="block-id")editor.draft.block_id=el.value||null;
-      if(field==="park-fee"){editor.feeText=el.value;editor.draft.park_fee_cents=parseFee(el.value);updateFeePreview();}
+      if(field==="park-fee"){editor.feeText=el.value;editor.draft.park_fee_cents=parseFee(el.value);if(!editor.draft.park_fee_cents)editor.draft.park_fee_paid_by_coach=false;updateFeePreview();updateParentCosts();}
       if(field==="session-date")editor.draft.session_date=el.value;
+      if(field==="session-kind"){editor.draft.session_kind=el.value;if(el.value==="regular")editor.draft.extra_fee_cents=null;else editor.draft.extra_fee_cents=editor.extraFeeText.trim()===""?null:parseFee(editor.extraFeeText);updateParentCosts();}
+      if(field==="session-completed")editor.draft.session_completed=el.checked;
+      if(field==="park-fee-paid")editor.draft.park_fee_paid_by_coach=el.checked;
+      if(field==="extra-fee"){editor.extraFeeText=el.value;editor.draft.extra_fee_cents=el.value.trim()===""?null:parseFee(el.value);updateParentCosts();}
+      if(field==="invoice-date"){editor.draft.invoice_date=el.value||null;updateParentCosts();}
+      if(field==="invoice-status"){editor.draft.invoice_status=el.value;updateParentCosts();}
       if(field==="start-time")editor.draft.start_time=el.value;
       if(field==="venue")editor.draft.venue=el.value;
       if(field==="new-location")editor.locationDraft=el.value;
       if(el.name==="rider") {
         const next=new Set(editor.draft.rider_ids);next[el.checked?"add":"delete"](el.value);editor.draft.rider_ids=[...next];
         dialog.querySelector("[data-picker-label]").textContent=pickerLabel();
-        dialog.querySelector("[data-selected-riders]").textContent=editor.draft.rider_ids.map(riderName).join(", ");updateFeePreview();
+        dialog.querySelector("[data-selected-riders]").textContent=editor.draft.rider_ids.map(riderName).join(", ");updateFeePreview();updateParentCosts();
       }
       if(field==="rider-search") {
         let shown=0;
@@ -270,7 +298,7 @@
       const action=el.dataset.action;
       if(action==="new-block")openBlockEditor();
       if(action==="edit-block")openBlockEditor(currentBlock());
-      if(action==="add-day")openEditor(null,el.dataset.date);
+      if(action==="add-day")openEditor(null,el.dataset.date,el.dataset.kind||"regular");
       if(action==="new-session")openEditor();
       if(action==="edit-session")openEditor(sessions.find(s=>s.id===el.dataset.id));
       if(action==="cancel-session")closeEditor();

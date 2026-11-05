@@ -70,7 +70,7 @@ async function run(extraMigrationName) {
     const unaffectedTables = ['profiles','coach_group_sessions','training_sessions','attendance_sessions','assignment_point_awards','push_notification_queue'];
     const before = await Promise.all(unaffectedTables.map(table => q(`select * from public.${table} order by id`)));
     await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations',migrationName),'utf8'));
-    if (extraMigrationName) await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations',extraMigrationName),'utf8'));
+    for (const extra of [].concat(extraMigrationName || [])) await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations',extra),'utf8'));
     eq(await scalar("select relrowsecurity from pg_class where oid='public.coach_tracked_sessions'::regclass"), true, 'RLS enabled');
     eq(await scalar("select count(*)::int from pg_proc where proname in ('save_coach_tracked_session','archive_coach_tracked_session','add_coach_tracker_location','validate_coach_tracked_session') and prosecdef"), 0, 'All new functions use caller permissions');
     eq(await scalar("select count(*)::int from pg_proc where proname in ('save_coach_tracked_session','archive_coach_tracked_session','add_coach_tracker_location','validate_coach_tracked_session') and not coalesce(proconfig @> array['search_path=\"\"'],false)"), 0, 'Every function has fixed search_path');

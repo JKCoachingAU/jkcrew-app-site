@@ -141,3 +141,14 @@ html[data-theme="light"] .session-tracker .st-group-2,body[data-theme="light"] .
 
 .session-tracker .st-mobile-fee {display:none;}
 @media(max-width:540px){.session-tracker .st-mobile-fee{display:inline;color:var(--st-ink);font-weight:600;}}
+.session-tracker .st-session-details {display:grid;gap:7px;min-width:0;}
+.session-tracker .st-cost-status {font-size:12px;line-height:1.5;color:var(--st-muted);overflow-wrap:anywhere;}
+.session-tracker .st-parent-costs {margin-top:22px;border:1px solid var(--st-line);border-radius:12px;background:var(--st-panel);}
+.session-tracker .st-parent-costs>summary {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;min-height:48px;font-size:14px;font-weight:700;}
+.session-tracker .st-cost-fields {padding:4px 14px 16px;border-top:1px solid var(--st-line);}
+.session-tracker .st-cost-fields>label,.session-tracker .st-cost-fields>[data-extra-fee-fields] {margin-top:15px;}
+.session-tracker .st-check-label {display:flex;align-items:center;gap:11px;min-height:44px;font-size:14px;color:var(--st-ink);cursor:pointer;}
+.session-tracker .st-check-label input {accent-color:var(--st-blue);width:21px;height:21px;min-width:21px;margin:0;}
+.session-tracker .st-check-label:has(input:disabled) {opacity:.55;cursor:default;}
+.session-tracker .st-cost-help {font-size:12px;font-weight:400;line-height:1.5;color:var(--st-muted);margin:7px 0 0;}
+.session-tracker .st-extra-fee-preview {font-size:14px;font-weight:700;line-height:1.5;color:var(--st-ink);margin-top:9px;}

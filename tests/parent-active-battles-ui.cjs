@@ -121,7 +121,7 @@ async function setup() {
     for (const name of ['bindDailyVenueAccordions', 'bindSessionAssignmentAccordions', 'cacheClear', 'dismissCoachMessage', 'playRunPreview',
       'dismissDailyFinishForNavigation', 'stopRunPlayback', 'closeAthleteReviewViewer', 'resetPageExpansions', 'refreshLiveRunInvites', 'disconnectLiveRun',
       'renderRiderRecoveryHome', 'renderAthleteHome', 'renderRecoveryCoach', 'renderAthleteCoaching', 'renderSession', 'renderChallenges', 'renderTricktionary',
-      'renderCoachCommand', 'renderSessionViewer', 'renderCoachBattleViewer', 'renderCoachTools', 'renderPastEvents', 'renderCoachMore', 'renderBikeGarage',
+      'renderCoachCommand', 'renderSessionViewer', 'renderCoachBattleViewer', 'renderCoachTools', 'renderSessionTracker', 'renderPastEvents', 'renderCoachMore', 'renderBikeGarage',
       'renderShredZone', 'renderJkcYard', 'renderCoachAdminRecords', 'renderPlanner', 'renderParents', 'renderVideoReviews', 'renderBoard', 'renderCrew',
       'renderAthleteCrew', 'renderStudentProfile', 'renderCoachPreview', 'renderPublicAthleteProfile', 'renderNotes', 'renderParentWeek', 'renderParentCoaching',
       'renderContests', 'renderParentCalendar', 'renderUciTracker', 'renderUciSchedule', 'renderParentMore', 'renderParentTricktionary', 'renderProfile']) {
