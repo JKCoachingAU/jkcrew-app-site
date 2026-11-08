@@ -322,10 +322,61 @@ async function run() {
     await page.close();
 
     await blocksAndFees();
+    await currentTrainingWeek();
     await parentCostsAndInvoices();
     await paginationAndIsolation();
     console.log(`PASS: ${checks} Session Tracker browser checks.`);
   } finally { await browser.close(); }
+}
+
+async function currentTrainingWeek() {
+  const { page, errors } = await setup();
+  await page.evaluate(() => {
+    fixture.blocks = [{ id: 'term-4', name: 'Term 4', start_date: '2026-10-05' }];
+  });
+  const currentWeek = page.locator('.st-week[aria-current="date"]');
+  for (const [today, expectedWeek] of [
+    ['2026-10-04', null], ['2026-10-05', 1], ['2026-11-08', 5], ['2026-11-09', 6],
+    ['2026-11-15', 6], ['2026-11-16', 7], ['2026-12-13', 10], ['2026-12-14', null],
+  ]) {
+    await page.evaluate(today => attach({ today }), today);
+    eq(await currentWeek.evaluateAll(rows => rows.map(row => Number(row.dataset.week))),
+      expectedWeek ? [expectedWeek] : [], `Term 4 marks the correct week on ${today}`);
+  }
+
+  await page.evaluate(() => attach({ today: '2026-11-09' }));
+  await page.setViewportSize({ width: 320, height: 700 });
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+    const heading = currentWeek.getByRole('heading', { name: /Week 6\s*\(Current week\)/i });
+    await heading.scrollIntoViewIfNeeded();
+    eq(await heading.isVisible(), true, `Week 6 has a visible current-week label in ${theme} mode`);
+    await dimensions(page, `Current week in ${theme} mode at 320px`);
+    const highlighted = await currentWeek.evaluate(row => {
+      const paint = element => [element, element.querySelector('header'), element.querySelector('h3')]
+        .map(part => {
+          const style = getComputedStyle(part);
+          return [style.color, style.background, style.borderInlineStart, style.boxShadow].join(' ');
+        }).join('|');
+      return paint(row) !== paint(document.querySelector('[data-week="5"]'));
+    });
+    ok(highlighted, `Week 6 has a visual highlight distinct from week 5 in ${theme} mode`);
+  }
+  await page.locator('[data-filter="block"]').selectOption('');
+  await settle(page);
+  eq(await currentWeek.count(), 0, 'The month view has no block week marker');
+
+  // Brisbane reaches Monday while UTC is still on Sunday.
+  await page.clock.install({ time: new Date('2026-11-08T13:59:00Z') });
+  await page.clock.pauseAt(new Date('2026-11-08T13:59:30Z'));
+  await page.evaluate(() => attach({ today: undefined, timeZone: 'Australia/Brisbane' }));
+  eq(await currentWeek.getAttribute('data-week'), '5', 'Sunday night is still week 5 in Brisbane');
+  const loadsBeforeMidnight = (await calls(page, 'load')).length;
+  await page.clock.fastForward('02:00');
+  eq(await currentWeek.getAttribute('data-week'), '6', 'An open tracker advances to week 6 on Monday in Brisbane');
+  eq((await calls(page, 'load')).length, loadsBeforeMidnight, 'The date change does not refetch session data');
+  eq(errors, [], 'Current-week checks have no unhandled browser errors');
+  await page.close();
 }
 
 async function blocksAndFees() {

@@ -206,14 +206,16 @@ function setup() {
   let mounted, destroyed = 0, navigated = '', readyResolved = false;
   const renderState = { view: 'sessionTracker', user: { id: 'coach' }, profile: { role: 'coach', country_code: 'DE' }, sessionSetupVersion: 1, sessionTrackerMount: { destroy() { destroyed++; } } };
   const view = { isConnected: true };
-  let releaseReady;
+  let releaseReady, coachDate = '2026-11-03';
   const ready = new Promise(resolve => { releaseReady = resolve; });
   const render = new Function('state', 'document', 'window', 'navigate', 'isCoachRole', 'dateForCountryCode', 'countryTimezones', 'createCoachSessionTrackerAdapter', `${extract('renderSessionTracker')}; return renderSessionTracker;`)(
     renderState, { querySelector: () => view }, { JKCSessionTracker: { mount(root, options) { mounted = { root, options }; return { ready, destroy() {}, hasUnsavedChanges() { return false; } }; } } },
-    target => { navigated = target; }, role => ['coach', 'admin'].includes(role), code => code === 'DE' ? '2026-11-03' : '2026-11-04', { DE: 'Europe/Berlin' }, () => ({ load() {} }));
+    target => { navigated = target; }, role => ['coach', 'admin'].includes(role), code => code === 'DE' ? coachDate : '2026-11-04', { DE: 'Europe/Berlin' }, () => ({ load() {} }));
   const rendering = render().then(() => { readyResolved = true; });
   eq(destroyed, 1, 'Remount destroys previous tracker');
   eq(mounted.options.today, '2026-11-03', 'Initial date follows coach country');
+  coachDate = '2026-11-04';
+  eq(mounted.options.today, coachDate, 'An open tracker reads the new coach date after midnight');
   eq(mounted.options.timeZone, 'Europe/Berlin', 'Timezone follows coach country');
   eq(mounted.options.isActive(), true, 'Current mount is active');
   eq(readyResolved, false, 'Render awaits initial load');

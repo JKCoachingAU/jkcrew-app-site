@@ -19,7 +19,14 @@
   function mount(root, config = {}) {
     if (!(root instanceof Element)) throw new Error("A session tracker container is required");
     const allowed = !!config.userId && ["coach","admin"].includes(config.role);
-    const today = /^\d{4}-\d{2}-\d{2}$/.test(config.today||"") ? config.today : new Date().toISOString().slice(0,10);
+    const timeZone = config.timeZone || "Australia/Brisbane";
+    const dateClock = new Intl.DateTimeFormat("sv-SE", {timeZone, year:"numeric", month:"2-digit", day:"2-digit"});
+    const minuteClock = new Intl.DateTimeFormat("en-GB", {timeZone, minute:"numeric"});
+    const readToday = () => {
+      const supplied = config.today;
+      return validDate(supplied) ? supplied : dateClock.format(new Date());
+    };
+    let today = readToday(), dateTimer;
     let month=monthStart(today), stopped=false, loading=false, loaded=false, loadError="", sequence=0, offset=0, hasMore=false;
     let datasetKey="";
     let sessions=[], roster=[], locations=[], blocks=[], blockId="", initialSelection=true, venue="", riderId="", editor=null, notice="", undo=null, undoBusy=false, focusBack=null;
@@ -62,13 +69,27 @@
         const groupRows=shown.filter(row=>row.session_date>=shiftDay(block.start_date,(start-1)*7)&&row.session_date<shiftDay(block.start_date,end*7));
         return `<section class="st-week-group st-group-${index}" aria-label="Weeks ${start} to ${end}"><header class="st-group-header"><h2>Weeks ${start}–${end}</h2><span>${filtered?"Matching sessions · park fees":"Park fees"} <strong>${dataReady()?money(sumFees(groupRows)):"—"}</strong></span></header>${Array.from({length:end-start+1},(_,i)=>{
           const week=start+i, date=shiftDay(block.start_date,(week-1)*7), next=shiftDay(date,7), rows=shown.filter(row=>row.session_date>=date&&row.session_date<next);
+          const isCurrentWeek = date <= today && today < next;
           const days=[...new Set([date,shiftDay(date,1),shiftDay(date,2),...rows.map(row=>row.session_date)])].sort();
-          return `<section class="st-week" data-week="${week}"><header class="st-week-heading"><div><h3>Week ${week}</h3><span>${esc(dateLabel(date))}–${esc(dateLabel(shiftDay(date,6)))}</span></div>${[1,4,8].includes(week)?'<span class="st-invoice">Invoice week</span>':""}<span class="st-week-total">${dataReady()?money(sumFees(rows)):"—"}</span></header><div class="st-week-sessions">${days.map(day=>{
+          return `<section class="st-week" data-week="${week}"${isCurrentWeek ? ' aria-current="date"' : ""}><header class="st-week-heading"><div><h3>Week ${week}${isCurrentWeek ? ' <span class="st-current-label">(Current week)</span>' : ""}</h3><span>${esc(dateLabel(date))}–${esc(dateLabel(shiftDay(date,6)))}</span></div>${[1,4,8].includes(week)?'<span class="st-invoice">Invoice week</span>':""}<span class="st-week-total">${dataReady()?money(sumFees(rows)):"—"}</span></header><div class="st-week-sessions">${days.map(day=>{
             const matches=rows.filter(row=>row.session_date===day);
             return matches.length?matches.map(rowHtml).join(""):filtered?"":`<div class="st-day-slot"><span>${esc(dateLabel(day,{weekday:"long",day:undefined,month:undefined}))} <small>${esc(dateLabel(day))}</small></span>${button("add-day","＋ Add session","st-text",`data-date="${day}" aria-label="Add session on ${esc(dateLabel(day,{weekday:"long"}))}"${loading?" disabled":""}`)}</div>`;
           }).join("")}${filtered&&!rows.length?'<p class="st-no-match">No matching sessions</p>':""}<div class="st-extra">${button("add-day","＋ Extra session","st-text",`data-date="${date}" data-kind="additional" aria-label="Add an extra session in week ${week}"${loading?" disabled":""}`)}</div></div></section>`;
         }).join("")}</section>`;
       }).join("");
+    }
+    function syncCalendarDate() {
+      clearTimeout(dateTimer);
+      if (!allowed || !active() || document.hidden) return;
+      const current = readToday();
+      if (today !== current) {
+        today = current;
+        render();
+      }
+      // Check at the next local hour so midnight is covered in the coach's time zone.
+      const now = new Date();
+      const minutes = Number(minuteClock.format(now));
+      dateTimer = setTimeout(syncCalendarDate, ((60 - minutes) * 60 - now.getUTCSeconds()) * 1000 - now.getUTCMilliseconds());
     }
     function render() {
       if (!active()) return;
@@ -317,9 +338,11 @@
     root.addEventListener("click",click);root.addEventListener("input",input);root.addEventListener("change",change);
     dialog.addEventListener("submit",submit);dialog.addEventListener("keydown",keydown);dialog.addEventListener("cancel",cancel);
     window.addEventListener("beforeunload",beforeUnload);
+    document.addEventListener("visibilitychange", syncCalendarDate);
+    syncCalendarDate();
     render();
     const ready=allowed?load():Promise.resolve(false);
-    return {ready,hasUnsavedChanges,destroy(){if(stopped)return;stopped=true;sequence++;for(const cancel of [...pending])cancel();if(dialog.open)dialog.close();root.removeEventListener("click",click);root.removeEventListener("input",input);root.removeEventListener("change",change);dialog.removeEventListener("submit",submit);dialog.removeEventListener("keydown",keydown);dialog.removeEventListener("cancel",cancel);window.removeEventListener("beforeunload",beforeUnload);editor=null;sessions=[];datasetKey="";roster=[];locations=[];blocks=[];root.classList.remove("session-tracker");root.innerHTML="";}};
+    return {ready,hasUnsavedChanges,destroy(){if(stopped)return;stopped=true;sequence++;clearTimeout(dateTimer);document.removeEventListener("visibilitychange",syncCalendarDate);for(const cancel of [...pending])cancel();if(dialog.open)dialog.close();root.removeEventListener("click",click);root.removeEventListener("input",input);root.removeEventListener("change",change);dialog.removeEventListener("submit",submit);dialog.removeEventListener("keydown",keydown);dialog.removeEventListener("cancel",cancel);window.removeEventListener("beforeunload",beforeUnload);editor=null;sessions=[];datasetKey="";roster=[];locations=[];blocks=[];root.classList.remove("session-tracker");root.innerHTML="";}};
   }
   window.JKCSessionTracker={mount};
 })();

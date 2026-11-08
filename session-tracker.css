@@ -104,6 +104,11 @@ html[data-theme="light"] .session-tracker {background:linear-gradient(160deg,#f3
 .session-tracker .st-group-header>span {font-size:12px;color:var(--st-muted);text-align:right;}
 .session-tracker .st-group-header strong {display:inline-block;color:var(--st-ink);margin-left:6px;font-size:15px;}
 .session-tracker .st-week {border-top:1px solid var(--st-line);padding:14px 16px;}
+.session-tracker .st-week[aria-current="date"] {
+  background:color-mix(in srgb,var(--st-blue) 7%,var(--st-bg));
+  box-shadow:inset 3px 0 var(--st-blue);
+}
+.session-tracker .st-current-label {color:var(--st-blue);font-size:.85em;white-space:nowrap;}
 .session-tracker .st-week-heading {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
 .session-tracker .st-week-heading>div {display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 .session-tracker .st-week-heading h3 {font-size:16px;margin:0;}
