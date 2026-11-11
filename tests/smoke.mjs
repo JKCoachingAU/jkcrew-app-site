@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.192";
+const version = "2.14.193";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -879,8 +879,9 @@ assert(css.includes("place-items: center"), "Coach circular controls should cent
 const planLoader = functionBody("getSessionViewerPlanData");
 assert(!planLoader.includes('.from("run_plans")'), "Session Viewer should not fetch run plans");
 assert(!planLoader.includes('.from("run_checklist_progress")'), "Session Viewer should not fetch run progress");
-assert(planLoader.includes("cacheGet(cacheKey, 12000)"), "Session Viewer plan data should be short-term cached");
-assert(planLoader.includes('rpc("get_coach_session_viewer_plan_data"'), "Session Viewer should use the combined bounded plan read");
+assert(planLoader.includes("cacheGet(key, 12000)"), "Session Viewer plan data should be short-term cached");
+assert(planLoader.includes('"get_coach_session_viewer_plan_summary"'), "Session Viewer should use the lightweight summary read for the roster");
+assert(planLoader.includes('"get_coach_session_viewer_plan_data"'), "Session Viewer should load the full bounded plan only for an open rider");
 assert(!planLoader.includes('.from("assignment_progress")'), "Session Viewer progress should not need another database round trip");
 
 const sessionViewerRoster = functionBody("getSessionViewerRoster");

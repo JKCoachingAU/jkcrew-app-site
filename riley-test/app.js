@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.192";
+const RELEASE_VERSION = "2.14.193";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -693,7 +693,7 @@ function levelBadgeHtml(badge = {}, compact = false) {
   return `<span class="level-badge-stack ${prestigeRank ? "is-prestige" : ""}"><span class="level-badge image-level-badge tone-${tone} ${compact ? "compact" : ""} ${imageUrl ? "" : "missing-art"}" title="${escapeHtml(safe.label || `Level ${level} badge`)}">
     ${imageUrl ? `<img class="level-badge-art" src="${imageUrl}" alt="Level ${level} badge">` : `<span class="level-badge-fallback">L${level}</span>`}
     <strong>L${escapeHtml(level)}</strong>
-  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.192" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
+  </span>${prestigeRank ? `<span class="prestige-mark ${compact ? "compact" : ""}" title="Prestige ${prestigeRank}"><img src="icons/badges/prestige-01.png?v=2.14.193" alt="Prestige ${prestigeRank}"><b>P${prestigeRank}</b></span>` : ""}</span>`;
 }
 function levelBadgeImageUrl(level = 1) {
   if (!XP_PROGRESSION_ENABLED) return "";
@@ -3902,44 +3902,63 @@ async function getActiveCoachGroupSession() {
   }) };
 }
 
-async function getSessionViewerPlanData(athletes = [], { force = false } = {}) {
+async function getSessionViewerPlanData(athletes = [], { force = false, detailAthleteIds = [] } = {}) {
   if (!athletes.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
   const athleteRows = athletes.map((athlete) => typeof athlete === "string" ? { id: athlete, country_code: "AU" } : athlete).filter((athlete) => athlete?.id);
   const safeAthleteIds = [...new Set(athleteRows.map((athlete) => athlete.id))];
   if (!safeAthleteIds.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
   const weekStartByAthlete = new Map(athleteRows.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
   const weekStarts = [...new Set(weekStartByAthlete.values())];
-  const cacheKey = `coach-live:plans:${state.sessionViewerDataVersion}:${[...safeAthleteIds].sort().join(",")}:${[...weekStarts].sort().join(",")}`;
-  if (!force) {
-    const cached = cacheGet(cacheKey, 12000);
-    if (cached) return cached;
-    if (state.inFlight.has(cacheKey)) return state.inFlight.get(cacheKey);
-  }
-
-  const requestKey = force ? `${cacheKey}:force` : cacheKey;
-  const request = (async () => {
-    const { data: assignments, error } = await client.rpc("get_coach_session_viewer_plan_data", {
-      p_athlete_ids: safeAthleteIds,
-      p_week_starts: safeAthleteIds.map((athleteId) => weekStartByAthlete.get(athleteId)),
-    });
-    if (error) throw error;
-
-    const currentAssignments = (assignments || []).filter((assignment) => categoryInfo[assignment.category]);
+  const sortedIds = [...safeAthleteIds].sort();
+  const sortedWeeks = [...weekStarts].sort();
+  const summaryKey = `coach-live:plans-summary:${state.sessionViewerDataVersion}:${sortedIds.join(",")}:${sortedWeeks.join(",")}`;
+  const detailIds = [...new Set(detailAthleteIds)].filter((athleteId) => safeAthleteIds.includes(athleteId)).sort();
+  const detailKey = detailIds.length ? `${summaryKey}:detail:${detailIds.join(",")}` : summaryKey;
+  const detailRowsKey = detailIds.length ? `${detailKey}:rows` : "";
+  const rowsToMap = (rows = [], detailed = false) => {
     const assignmentsByAthlete = new Map();
-    currentAssignments.forEach((assignment) => {
-      const rows = assignmentsByAthlete.get(assignment.athlete_id) || [];
-      const assignmentProgress = reconcileAwardedProgress(assignment, assignment.progress || null, assignment.awards || []);
-      rows.push({ ...assignment, progress: assignmentProgress, percentageAttempts: assignment.percentage_attempts || [], assignmentAttempts: assignment.assignment_attempts || [] });
-      assignmentsByAthlete.set(assignment.athlete_id, rows);
+    (rows || []).filter((assignment) => categoryInfo[assignment.category]).forEach((assignment) => {
+      const grouped = assignmentsByAthlete.get(assignment.athlete_id) || [];
+      const awards = detailed ? (assignment.awards || []) : (assignment.recent_award_at ? [{ points: 1, created_at: assignment.recent_award_at }] : []);
+      const percentageAttempts = detailed
+        ? (assignment.percentage_attempts || [])
+        : Array.from({ length: Math.max(0, Number(assignment.percentage_attempt_count || 0)) }, (_, index) => ({ attempt_number: index + 1 }));
+      const assignmentProgress = reconcileAwardedProgress(assignment, assignment.progress || null, awards);
+      grouped.push({ ...assignment, progress: assignmentProgress, percentageAttempts, assignmentAttempts: detailed ? (assignment.assignment_attempts || []) : [], awards });
+      assignmentsByAthlete.set(assignment.athlete_id, grouped);
     });
-    return cacheSet(cacheKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() });
-  })();
-  state.inFlight.set(requestKey, request);
-  try {
-    return await request;
-  } finally {
-    state.inFlight.delete(requestKey);
-  }
+    return assignmentsByAthlete;
+  };
+  const requestRpc = async (key, rpcName, ids, { detailed = false } = {}) => {
+    if (!force) {
+      const cached = cacheGet(key, 12000);
+      if (cached) return cached;
+      if (state.inFlight.has(key)) return state.inFlight.get(key);
+    }
+    const requestKey = force ? `${key}:force` : key;
+    if (state.inFlight.has(requestKey)) return state.inFlight.get(requestKey);
+    const request = (async () => {
+      const { data, error } = await client.rpc(rpcName, {
+        p_athlete_ids: ids,
+        p_week_starts: ids.map((athleteId) => weekStartByAthlete.get(athleteId)),
+      });
+      if (error) throw error;
+      return cacheSet(key, rowsToMap(data || [], detailed));
+    })();
+    state.inFlight.set(requestKey, request);
+    try {
+      return await request;
+    } finally {
+      state.inFlight.delete(requestKey);
+    }
+  };
+  const summaryPromise = requestRpc(summaryKey, "get_coach_session_viewer_plan_summary", safeAthleteIds);
+  const detailPromise = detailIds.length ? requestRpc(detailRowsKey, "get_coach_session_viewer_plan_data", detailIds, { detailed: true }) : null;
+  const [summaryAssignments, detailAssignments] = await Promise.all([summaryPromise, detailPromise]);
+  const assignmentsByAthlete = new Map(summaryAssignments || []);
+  if (detailAssignments) detailIds.forEach((athleteId) => assignmentsByAthlete.set(athleteId, detailAssignments.get(athleteId) || []));
+  const resultKey = detailIds.length ? detailKey : `${summaryKey}:result`;
+  return cacheSet(resultKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() });
 }
 
 const categoryInfo = {
@@ -12981,11 +13000,13 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   const groupRoster = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id));
   const groupRiderIds = new Set(groupRoster.map((athlete) => athlete.id));
   const groupBattles = (Array.isArray(battleResult.data) ? battleResult.data : []).filter((battle) => ["pending", "accepted"].includes(battle.status) && (battle.participants || []).some((participant) => groupRiderIds.has(participant.athlete_id)));
-  const filteredRoster = groupRoster.filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
+  const filteredRoster = groupRoster.filter((athlete) => !search || String(athlete.display_name || "").toLowerCase().includes(search));
   if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
     state.sessionViewerOpenAthleteId = "";
   }
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster);
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, {
+    detailAthleteIds: state.sessionViewerOpenAthleteId ? [state.sessionViewerOpenAthleteId] : [],
+  });
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
@@ -13727,8 +13748,11 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
   const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
   const filteredRoster = roster
     .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
-    .filter((athlete) => !search || athlete.display_name.toLowerCase().includes(search));
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, { force });
+    .filter((athlete) => !search || String(athlete.display_name || "").toLowerCase().includes(search));
+  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, {
+    force,
+    detailAthleteIds: state.sessionViewerOpenAthleteId ? [state.sessionViewerOpenAthleteId] : [],
+  });
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || !rosterGrid.isConnected
     || state.sessionViewerGroup !== requestedGroup || state.sessionViewerVenue !== requestedVenue || state.sessionViewerSearch !== requestedSearch) return;
   state.sessionViewerActiveSessionCache = activeGroupSession;
