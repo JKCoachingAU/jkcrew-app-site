@@ -1,13 +1,13 @@
 const CACHE_PREFIX = "jkcrew-shell-";
-const RELEASE_VERSION = "2.14.193";
+const RELEASE_VERSION = "2.14.195";
 const CACHE_NAME = `${CACHE_PREFIX}v${RELEASE_VERSION}`;
 const APP_SHELL = [
   "./vendor/supabase-2.116.0.min.js",
   "./",
   "./index.html",
-  "./styles.css?v=2.14.193",
+  "./styles.css?v=2.14.195",
   "./shred-zone.css?v=2.14.193",
-  "./app.js?v=2.14.193",
+  "./app.js?v=2.14.195",
   "./recovery-mode.js?v=2.14.193",
   "./recovery-mode.css?v=2.14.193",
   "./rider-health.js?v=2.14.193",

@@ -27,9 +27,9 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.193";
+const RELEASE_VERSION = "2.14.195";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
-const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
+const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
   session: null,
   user: null,
@@ -424,6 +424,7 @@ const coachNav = [
   ["command", "Command"],
   ["sessionViewer", "Session"],
   ["crew", "Riders"],
+  ["teams", "Teams"],
   ["battleViewer", "Challenges"],
   ["coachTools", "Coach Tools"],
   ["more", "More"],
@@ -432,6 +433,7 @@ const coachNavGroups = [
   { id: "command", label: "Command", icon: "◇", links: [["command", "Dashboard"]] },
   { id: "sessionViewer", label: "Session", icon: "●", links: [["sessionViewer", "Session Viewer"]] },
   { id: "crew", label: "Riders", icon: "✦", links: [["crew", "Students"], ["student", "Rider Profiles"]] },
+  { id: "teams", label: "Teams", icon: "♢", links: [["teams", "Teams"]] },
   { id: "battleViewer", label: "Challenges", icon: "⚡", links: [["battleViewer", "Battles & Challenges"]] },
   { id: "coachTools", label: "Coach Tools", icon: "▤", links: [["coachTools", "Tools Hub"], ["sessionTracker", "Session Tracker"], ["planner", "Sheet Scheduler"], ["videoReviews", "Video Reviews"], ["tricktionary", "Tricktionary"], ["contests", "Events & Runs"], ["uciTracker", "Road to LA28"], ["uciSchedule", "UCI 2027 Schedule"], ["pastEvents", "Past Events"]] },
   { id: "more", label: "More", icon: "●", links: [["more", "More Hub"], ["bikeGarage", "Bike Garage"], ["adminRecords", "Admin & Records"], ["parents", "Parents"], ["board", "Board"], ["profile", "Profile"]] },
@@ -449,6 +451,7 @@ const parentNav = [
 function coachPrimaryView(view = "") {
   if (view === "sessionViewer") return "sessionViewer";
   if (view === "battleViewer") return "battleViewer";
+  if (view === "teams") return "teams";
   if (["crew", "student", "studentPreview", "parentPreview", "recovery"].includes(view)) return "crew";
   if (["coachTools", "sessionTracker", "planner", "videoReviews", "tricktionary", "contests", "uciSchedule", "uciTracker", "pastEvents"].includes(view)) return "coachTools";
   if (["more", "bikeGarage", "shredZone", "jkcYard", "adminRecords", "parents", "board", "profile", "publicProfile"].includes(view)) return "more";
@@ -1727,7 +1730,7 @@ function renderAuth(mode = "login", message = "") {
         <div class="auth-card">
           <div class="eyebrow">Welcome to JKCREW</div>
           <h2>${mode === "login" ? "Sign in" : "Join the crew"}</h2>
-          <p class="subcopy">${mode === "login" ? "Pick up where you left off." : "Create your athlete or parent account."}</p>
+          <p class="subcopy">${mode === "login" ? "Pick up where you left off." : "Create an athlete, parent or coach account."}</p>
           <div class="auth-tabs">
             <button class="auth-tab ${mode === "login" ? "active" : ""}" type="button" data-auth-mode="login">Sign in</button>
             <button class="auth-tab ${mode === "signup" ? "active" : ""}" type="button" data-auth-mode="signup">Create account</button>
@@ -1739,7 +1742,12 @@ function renderAuth(mode = "login", message = "") {
             </div>
             <div class="field ${mode === "signup" ? "" : "hidden"}">
               <label for="role">Account type</label>
-              <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option></select>
+              <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option><option value="coach">Coach</option></select>
+            </div>
+            <div class="field ${mode === "signup" ? "" : "hidden"} hidden" id="coach-country-field">
+              <label for="coach-country">Coach country</label>
+              <select id="coach-country" name="countryCode"><option value="">Choose country</option>${countryOptionsHtml()}</select>
+              <small class="field-hint">This is used for your coach account and team overview.</small>
             </div>
             <div class="field">
               <label for="email">Email</label>
@@ -1758,6 +1766,9 @@ function renderAuth(mode = "login", message = "") {
     </div>`;
   document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => renderAuth(button.dataset.authMode)));
   document.querySelector("#auth-form").addEventListener("submit", (event) => handleAuth(event, mode));
+  document.querySelector("#role")?.addEventListener("change", (event) => {
+    document.querySelector("#coach-country-field")?.classList.toggle("hidden", event.currentTarget.value !== "coach");
+  });
   document.querySelector("#forgot-password")?.addEventListener("click", () => renderForgotPassword("", document.querySelector("#email")?.value || ""));
 }
 
@@ -1980,14 +1991,17 @@ async function handleAuth(event, mode) {
     }
 
     const displayName = form.get("displayName").trim();
-    const role = form.get("role") === "parent" ? "parent" : "athlete";
+    const requestedRole = String(form.get("role") || "athlete");
+    const role = ["athlete", "parent", "coach"].includes(requestedRole) ? requestedRole : "athlete";
+    const countryCode = role === "coach" ? String(form.get("countryCode") || "").trim().toUpperCase() : "";
+    const countryName = role === "coach" ? (countryOptions.find(([code]) => code === countryCode)?.[1] || "") : "";
     if (!displayName) {
       showAuthFormMessage(authForm, "Please add a display name.");
       return;
     }
     const { data: signupData, error: signupError } = await withTimeout(
       client.functions.invoke("create-jkcrew-account", {
-        body: { email, password, displayName, role, website: "" },
+        body: { email, password, displayName, role, countryCode, countryName, website: "" },
       }),
       "Create account", 15000
     );
@@ -2058,7 +2072,7 @@ function riderHasUciPoints(profile = state.profile, snapshot = window.JKCUciRank
 }
 
 function primaryNavButtonHtml([id, label], recovery = false) {
-  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", uciTracker: "◎", crew: "✦", command: "◇", sessionViewer: "●", sessionTracker: "□", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
+  const navIcons = { home: "⌂", coaching: "▶", session: "↗", challenges: "⚡", battleViewer: "⚡", tricktionary: "+", contests: "🏆", uciTracker: "◎", crew: "✦", command: "◇", sessionViewer: "●", teams: "♢", sessionTracker: "□", coachTools: "▤", more: "•", planner: "▤", parents: "P", videoReviews: "▣", board: "#", profile: "●", notes: "✎", parentWeek: "✓", parentCoaching: "▣", parentCalendar: "□", parentMore: "•" };
   return `<button class="nav-btn" type="button" data-view="${id}"${id === "uciTracker" ? ' aria-label="Road to LA28" title="Road to LA28"' : ""}><span class="nav-icon">${navIcons[id] || "•"}</span><span class="primary-nav-label">${label}</span>${recovery ? "" : navNotificationBadge(id)}</button>`;
 }
 
@@ -2724,6 +2738,7 @@ async function navigate(view, options = {}) {
     command: renderCoachCommand,
     sessionViewer: renderSessionViewer,
     battleViewer: renderCoachBattleViewer,
+    teams: renderTeams,
     coachTools: renderCoachTools,
     sessionTracker: renderSessionTracker,
     uciSchedule: renderUciSchedule,
@@ -3053,7 +3068,7 @@ async function getLeaderboard({ allowFallback = true } = {}) {
 
   const request = (async () => {
     const { data, error } = await retryNetworkRequest(
-      () => client.rpc("get_weekly_leaderboard"),
+      () => client.rpc("get_weekly_leaderboard_with_half_points"),
       "Leaderboard load",
       { attempts: 2, timeoutMs: 15000 }
     );
@@ -3088,7 +3103,7 @@ async function getAthleteHomeLeaderboard() {
 
   const request = (async () => {
     const { data, error } = await retryNetworkRequest(
-      () => client.rpc("get_weekly_leaderboard"),
+      () => client.rpc("get_weekly_leaderboard_with_half_points"),
       "Home leaderboard load",
       { attempts: 2, timeoutMs: 15000 }
     );
@@ -3963,6 +3978,7 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
 
 const categoryInfo = {
   daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
+  other: { label: "Other Things to Try", description: "Extra weekly experiments · 0.5 point each when landed" },
   dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
   one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
   percentage: { label: "Percentage Tricks", description: "10 attempts · 100%=3, 90%=2, 80%=1" },
@@ -3974,6 +3990,7 @@ const categoryInfo = {
 
 const categoryRewardLabels = {
   daily: "Full list · 1 pt",
+  other: "0.5 pt each",
   one_bang: "2 pts each",
   dialled: "2 pts each",
   trick_links: "2 pts per link",
@@ -4020,6 +4037,7 @@ const plannerStatusRank = {
 
 const sessionViewerListTabs = [
   { id: "daily", label: "Daily Tricks" },
+  { id: "other", label: "Other Things to Try" },
   { id: "one_bang", label: "One Bangs" },
   { id: "dialled", label: "Dialled" },
   { id: "trick_links", label: "Trick Links" },
@@ -4731,7 +4749,7 @@ function dailyVenueGroups(assignments, interactive = false, profile = null, sele
 }
 
 function assignmentGroups(assignments, interactive = false, profile = null, selectedVenue = "") {
-  const sessionCategoryOrder = ["daily", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "bonus"];
+  const sessionCategoryOrder = ["daily", "other", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "bonus"];
   return sessionCategoryOrder.map((category) => {
     const info = categoryDisplayInfo(category, profile);
     if (category === "daily") return dailyVenueGroups(assignments, interactive, profile, selectedVenue);
@@ -7498,7 +7516,7 @@ function athleteHomeSectionStatus(label, retryKey = "") {
 
 async function getAthleteHomeVerifiedLeaderboard() {
   // Home must distinguish unavailable rankings from a verified zero-point week.
-  const { data, error } = await client.rpc("get_weekly_leaderboard");
+  const { data, error } = await client.rpc("get_weekly_leaderboard_with_half_points");
   if (error) throw error;
   if (!Array.isArray(data)) throw new Error("Rankings could not be verified.");
   return data;
@@ -8109,7 +8127,7 @@ async function renderParentHome() {
 }
 
 function parentCategorySummaryHtml(assignments = []) {
-  const categories = ["daily", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "bonus"];
+  const categories = ["daily", "other", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "bonus"];
   return `<div class="parent-week-summary">${categories.map((category) => {
     const info = categoryDisplayInfo(category);
     const rows = assignments.filter((assignment) => assignment.category === category || (category === "foam_pit" && assignment.category === "foam"));
@@ -8719,8 +8737,13 @@ async function recordAssignmentAction(event) {
   button.classList.toggle("complete", !wasComplete);
   button.textContent = wasComplete ? "" : "✓";
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.assignmentAction === "landed");
+  const isOther = button.dataset.assignmentCategory === "other";
   const isLine = button.dataset.assignmentCategory === "lines";
-  const { data, error } = await saveProgressRpc(isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue", isLine ? {
+  const rpcName = isOther ? "record_other_try_action" : isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue";
+  const rpcArgs = isOther ? {
+    p_assignment_id: button.dataset.assignmentId,
+    p_action: button.dataset.assignmentAction,
+  } : isLine ? {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
     p_venue: state.selectedVenue || "",
@@ -8728,7 +8751,8 @@ async function recordAssignmentAction(event) {
     p_assignment_id: button.dataset.assignmentId,
     p_action: button.dataset.assignmentAction,
     p_venue: state.selectedVenue || "",
-  });
+  };
+  const { data, error } = await saveProgressRpc(rpcName, rpcArgs);
   if (error) {
     setSyncStatus("error");
     clearPendingAssignmentProgress(button.dataset.assignmentId);
@@ -8743,11 +8767,13 @@ async function recordAssignmentAction(event) {
   cacheClear(`schedule:${state.user.id}:`);
   cacheClear("leaderboard");
   cacheClear("park-king:");
-  const pointsNote = result.points_awarded ? ` · +${result.points_awarded} points` : result.points_removed ? ` · -${result.points_removed} points` : "";
+  const awardedPoints = Number(result.points_awarded || 0) + Number(result.half_points_awarded || 0);
+  const removedPoints = Number(result.points_removed || 0) + Number(result.half_points_removed || 0);
+  const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
   const message = `${result.message}${pointsNote}.`;
   notify(message);
   await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
-  if (tickingComplete && Number(result.points_awarded || 0) > 0) await showUpdatedWeeklyScore(Number(result.points_awarded), trickName);
+  if (tickingComplete && awardedPoints > 0) await showUpdatedWeeklyScore(awardedPoints, trickName);
   refreshOpenTrainingProgress(state.user.id);
   if (state.view === "home") await renderAthleteHome();
   else await renderSession();
@@ -12923,6 +12949,7 @@ function paintSessionViewerSnapshot(schedules = []) {
 function sessionViewerRiderCountersHtml(entry) {
   const categories = [
     ["one_bang", "One Bangs"],
+    ["other", "Other Things to Try"],
     ["dialled", "Dialled"],
     ["percentage", "Percentage"],
     ["trick_links", "Trick Links"],
@@ -13514,8 +13541,13 @@ async function recordViewerAssignmentAction(event) {
   button.textContent = wasComplete ? "" : "✓";
   setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
   try {
+    const isOther = button.dataset.assignmentCategory === "other";
     const isLine = button.dataset.assignmentCategory === "lines";
-    const { data, error } = await withTimeout(saveProgressRpc(isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue", isLine ? {
+    const rpcName = isOther ? "record_other_try_action" : isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue";
+    const rpcArgs = isOther ? {
+      p_assignment_id: button.dataset.assignmentId,
+      p_action: button.dataset.viewerAssignmentAction,
+    } : isLine ? {
       p_assignment_id: button.dataset.assignmentId,
       p_action: button.dataset.viewerAssignmentAction,
       p_venue: state.sessionViewerVenue || "",
@@ -13523,7 +13555,8 @@ async function recordViewerAssignmentAction(event) {
       p_assignment_id: button.dataset.assignmentId,
       p_action: button.dataset.viewerAssignmentAction,
       p_venue: state.sessionViewerVenue || "",
-    }), "Update trick progress", 15000);
+    };
+    const { data, error } = await withTimeout(saveProgressRpc(rpcName, rpcArgs), "Update trick progress", 15000);
     if (error) throw error;
     const result = Array.isArray(data) ? data[0] : data;
     const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
@@ -13531,7 +13564,9 @@ async function recordViewerAssignmentAction(event) {
     invalidateSessionViewerData();
     cacheClear("leaderboard");
     cacheClear("park-king:");
-    const pointsNote = result?.points_awarded ? ` · +${result.points_awarded} points` : result?.points_removed ? ` · -${result.points_removed} points` : "";
+    const awardedPoints = Number(result?.points_awarded || 0) + Number(result?.half_points_awarded || 0);
+    const removedPoints = Number(result?.points_removed || 0) + Number(result?.half_points_removed || 0);
+    const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
     notify(`${result?.message || "Trick progress updated"}${pointsNote}.`);
     refreshOpenTrainingProgress(athleteId);
     await refreshSessionViewerLight({ force: true });
@@ -15814,6 +15849,116 @@ async function copyParentContact(event) {
   notify("Parent contact details copied.");
 }
 
+function teamCountryLabel(team = {}) {
+  const label = team.country_name || countryNameFromCode(team.country_code || "") || team.country_code || "Country not set";
+  return team.country_code ? `${countryFlag(team.country_code)} ${label}` : label;
+}
+
+async function renderTeams() {
+  if (!isCoachRole(state.profile?.role)) {
+    navigate("home");
+    return;
+  }
+  const [{ data: teams, error: teamsError }, { data: links, error: linksError }] = await Promise.all([
+    client.from("coach_teams").select("id,coach_id,name,country_code,country_name,status,created_at,updated_at").eq("coach_id", state.user.id).order("status").order("created_at"),
+    client.from("coach_athletes").select("athlete_id,team_id").eq("coach_id", state.user.id),
+  ]);
+  if (teamsError) throw teamsError;
+  if (linksError) throw linksError;
+  const activeTeams = (teams || []).filter(team => team.status === "active");
+  const linkedIds = [...new Set((links || []).map(link => link.athlete_id).filter(Boolean))];
+  const { data: riders, error: ridersError } = linkedIds.length
+    ? await client.from("profiles").select("id,display_name,avatar,country_code").in("id", linkedIds).order("display_name")
+    : { data: [], error: null };
+  if (ridersError) throw ridersError;
+  const riderById = new Map((riders || []).map(rider => [rider.id, rider]));
+  const teamOptions = activeTeams.map(team => `<option value="${team.id}">${escapeHtml(team.name)}</option>`).join("");
+  const teamCards = (teams || []).map(team => {
+    const teamRiders = (links || []).filter(link => link.team_id === team.id).map(link => riderById.get(link.athlete_id)).filter(Boolean);
+    return `<article class="team-card ${team.status === "archived" ? "team-card-archived" : ""}">
+      <div class="team-card-head"><div><div class="eyebrow">${team.status === "active" ? "Active team" : "Archived team"}</div><h3>${escapeHtml(team.name)}</h3><p>${escapeHtml(teamCountryLabel(team))}</p></div><span class="team-student-count">${teamRiders.length} student${teamRiders.length === 1 ? "" : "s"}</span></div>
+      <div class="team-card-riders">${teamRiders.length ? teamRiders.map(rider => `<span class="team-rider-chip">${avatarHtml(rider, "team-rider-avatar")} ${escapeHtml(rider.display_name)}</span>`).join("") : `<span class="muted">No students assigned yet.</span>`}</div>
+      <div class="team-card-actions">${team.status === "active" ? `<button class="secondary-btn compact-btn" type="button" data-rename-team="${team.id}">Rename</button><button class="secondary-btn compact-btn" type="button" data-archive-team="${team.id}">Archive</button>` : `<span class="status-pill">Archived</span>`}</div>
+    </article>`;
+  }).join("");
+  const assignmentRows = (links || []).map(link => {
+    const rider = riderById.get(link.athlete_id);
+    if (!rider) return "";
+    return `<div class="team-assignment-row"><div>${avatarHtml(rider, "team-rider-avatar")}<strong>${escapeHtml(rider.display_name)}</strong></div><select data-athlete-team="${rider.id}" aria-label="Team for ${escapeHtml(rider.display_name)}">${teamOptions.replace(`value="${link.team_id}"`, `value="${link.team_id}" selected`)}</select></div>`;
+  }).join("");
+  let ownerPanel = "";
+  if (state.profile?.is_platform_owner) {
+    const { data: overview, error: overviewError } = await client.rpc("get_platform_coach_overview");
+    if (overviewError) throw overviewError;
+    const ownerCoaches = overview?.coaches || [];
+    const countryTotals = overview?.country_totals || [];
+    ownerPanel = `<section class="panel owner-overview-panel"><div class="panel-head"><div><div class="eyebrow">Platform owner</div><div class="panel-title">Coach accounts</div><div class="panel-meta">Aggregate account and student counts only. Other coaches’ team records, riders, tricks, runs and media stay closed.</div></div><span class="status-pill">${Number(overview?.total_coaches || 0)} coaches</span></div>
+      <div class="owner-summary-grid"><div><strong>${Number(overview?.total_coaches || 0)}</strong><span>coach accounts</span></div><div><strong>${Number(overview?.total_students || 0)}</strong><span>students across coaches</span></div></div>
+      <div class="owner-overview-columns"><div><h3>By coach</h3><div class="owner-coach-list">${ownerCoaches.length ? ownerCoaches.map(coach => `<div class="owner-coach-row"><div><strong>${escapeHtml(coach.display_name || "Coach")}</strong><small>${escapeHtml(coach.email || "")} · ${escapeHtml(coach.country_name || "Country not set")}</small></div><span>${escapeHtml(coach.account_status || "unknown")} · ${Number(coach.student_count || 0)} student${Number(coach.student_count || 0) === 1 ? "" : "s"}</span></div>`).join("") : `<div class="empty compact-empty">No coach accounts yet.</div>`}</div></div><div><h3>By country</h3><div class="owner-country-list">${countryTotals.length ? countryTotals.map(country => `<div class="owner-coach-row"><div><strong>${escapeHtml(country.country_name || "Country not set")}</strong><small>${escapeHtml(country.country_code || "UNSET")}</small></div><span>${Number(country.coach_count || 0)} coach${Number(country.coach_count || 0) === 1 ? "" : "es"} · ${Number(country.student_count || 0)} students</span></div>`).join("") : `<div class="empty compact-empty">No country totals yet.</div>`}</div></div></div>
+    </section>`;
+  }
+  document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach accounts</div><h1>Your <span>teams</span></h1><p>Create and manage separate teams. Every rider link, progress record and media item remains scoped to its coach.</p></div></div>
+    <section class="coach-dashboard-top"><div class="stat-card compact-stat-card"><strong>${activeTeams.length}</strong><span>Active teams</span><small>Owned by you</small></div><div class="stat-card compact-stat-card"><strong>${linkedIds.length}</strong><span>Students</span><small>Across your teams</small></div></section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Create a team</div><div class="panel-meta">Use a different team for each country, program or training squad.</div></div></div><form id="create-team-form" class="trick-form team-create-form"><div class="field"><label for="team-name">Team name</label><input id="team-name" name="name" required maxlength="80" placeholder="JKCREW Australia"></div><div class="field"><label for="team-country">Country</label><select id="team-country" name="countryCode"><option value="">Choose country</option>${countryOptionsHtml()}</select></div><button class="primary-btn" type="submit">Create team</button></form></section>
+    <section class="teams-grid">${teamCards || `<div class="empty">No teams yet. Create your first team above.</div>`}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Assign students</div><div class="panel-meta">A student can only be assigned to one of your active teams.</div></div></div>${assignmentRows || `<div class="empty">Create a student from Riders to see them here.</div>`}</section>
+    ${ownerPanel}`;
+  document.querySelector("#create-team-form")?.addEventListener("submit", saveCoachTeam);
+  document.querySelectorAll("[data-rename-team]").forEach(button => button.addEventListener("click", () => renameCoachTeam(button.dataset.renameTeam)));
+  document.querySelectorAll("[data-archive-team]").forEach(button => button.addEventListener("click", () => archiveCoachTeam(button.dataset.archiveTeam)));
+  document.querySelectorAll("[data-athlete-team]").forEach(select => select.addEventListener("change", () => moveAthleteToTeam(select.dataset.athleteTeam, select.value)));
+}
+
+async function saveCoachTeam(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (form.dataset.saving === "true") return;
+  form.dataset.saving = "true";
+  const values = new FormData(form);
+  const countryCode = String(values.get("countryCode") || "").toUpperCase();
+  const countryName = countryOptions.find(([code]) => code === countryCode)?.[1] || "";
+  try {
+    const { error } = await client.from("coach_teams").insert({ coach_id: state.user.id, name: String(values.get("name") || "").trim(), country_code: countryCode, country_name: countryName });
+    if (error) throw error;
+    notify("Team created.");
+    await renderTeams();
+  } catch (error) {
+    notify(messageFrom(error, "Team could not be created. Check the name and try again."), "error");
+  } finally { delete form.dataset.saving; }
+}
+
+async function renameCoachTeam(teamId) {
+  const name = window.prompt("New team name");
+  if (!name?.trim()) return;
+  const { error } = await client.from("coach_teams").update({ name: name.trim(), updated_at: new Date().toISOString() }).eq("id", teamId).eq("coach_id", state.user.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Team renamed.");
+  await renderTeams();
+}
+
+async function archiveCoachTeam(teamId) {
+  if (!window.confirm("Archive this team? Students must be moved to another active team first.")) return;
+  const { error } = await client.from("coach_teams").update({ status: "archived", updated_at: new Date().toISOString() }).eq("id", teamId).eq("coach_id", state.user.id);
+  if (error) return notify(messageFrom(error), "error");
+  notify("Team archived.");
+  await renderTeams();
+}
+
+async function moveAthleteToTeam(athleteId, teamId) {
+  const { error } = await client.from("coach_athletes").update({ team_id: teamId || null }).eq("coach_id", state.user.id).eq("athlete_id", athleteId);
+  if (error) return notify(messageFrom(error, "Student could not be moved."), "error");
+  cacheClear("roster");
+  cacheClear("session-viewer-roster:");
+  notify("Student moved to team.");
+  await renderTeams();
+}
+
+async function getDefaultCoachTeamId() {
+  const { data, error } = await client.from("coach_teams").select("id").eq("coach_id", state.user.id).eq("status", "active").order("created_at").limit(1);
+  if (error) throw error;
+  return data?.[0]?.id || null;
+}
+
 async function createStudent(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -15834,7 +15979,8 @@ async function createStudent(event) {
     button.textContent = "Create and add student";
     return notify(data?.error || messageFrom(error), "error");
   }
-  const { error: linkError } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: data.userId });
+  const teamId = await getDefaultCoachTeamId();
+  const { error: linkError } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: data.userId, team_id: teamId });
   if (linkError) return notify(messageFrom(linkError), "error");
   await client.from("coach_athlete_groups").upsert({ coach_id: state.user.id, athlete_id: data.userId, group_name: "monday", membership_type: "weekly" }, { onConflict: "coach_id,athlete_id,group_name" });
   cacheClear("roster");
@@ -15846,7 +15992,8 @@ async function createStudent(event) {
 async function addAthlete(event) {
   event.preventDefault();
   const athleteId = new FormData(event.currentTarget).get("athleteId");
-  const { error } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: athleteId });
+  const teamId = await getDefaultCoachTeamId();
+  const { error } = await client.from("coach_athletes").insert({ coach_id: state.user.id, athlete_id: athleteId, team_id: teamId });
   if (error) return notify(messageFrom(error), "error");
   await client.from("coach_athlete_groups").upsert({ coach_id: state.user.id, athlete_id: athleteId, group_name: "monday", membership_type: "weekly" }, { onConflict: "coach_id,athlete_id,group_name" });
   cacheClear("roster");
