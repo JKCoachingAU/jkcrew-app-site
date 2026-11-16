@@ -5869,6 +5869,8 @@ html.contest-merge-open body { overflow: hidden; }
 }
 .viewer-list-tone-daily { --viewer-list-tone: var(--rider-aqua, #16dfcf); }
 .viewer-list-tone-other { --viewer-list-tone: #c57cff; }
+.rider-shell [data-assignment-section="other"] { --rider-tone: #c57cff; }
+.parent-shell .parent-readonly [data-assignment-section="other"] { --parent-category: #c57cff; }
 .viewer-list-tone-one_bang { --viewer-list-tone: var(--rider-violet, #8a54ff); }
 .viewer-list-tone-dialled { --viewer-list-tone: var(--rider-blue, #3a9cff); }
 .viewer-list-tone-lines { --viewer-list-tone: var(--rider-coral, #ff6c55); }

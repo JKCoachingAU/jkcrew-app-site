@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.193";
+const version = "2.14.196";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -238,7 +238,12 @@ assert(parentEngagementMigration.includes("last_app_opened_at"), "Parent engagem
 assert(parentEngagementMigration.includes("queue_parent_engagement_alerts"), "Parent inactivity and low-progress alerts need a scheduled queue function");
 assert(parentEngagementMigration.includes("parent-engagement:"), "Parent engagement alerts must be deduplicated per parent, rider and week");
 assert(parentEngagementMigration.includes("'sheet'"), "Parent engagement pushes must respect the existing sheet notification preference");
-assert(app.includes('saveProgressRpc(isLine ? "record_line_action_at_venue"'), "Rider and coach Line actions must preserve the selected venue");
+for (const [handler, venue] of [["recordAssignmentAction", "state.selectedVenue"], ["recordViewerAssignmentAction", "state.sessionViewerVenue"]]) {
+  const body = functionBody(handler);
+  assert(body.includes('isLine ? "record_line_action_at_venue"'), `${handler} routes Line scoring through the venue-aware RPC`);
+  assert(body.includes(`p_venue: ${venue} || ""`), `${handler} preserves the selected venue`);
+  assert(body.includes('isOther ? "record_other_try_action"'), `${handler} routes half-point completions through the Other Things to Try RPC`);
+}
 assert(parkKingLiveScoreMigration.includes("'percentage', 'lines', 'bonus'"), "Park King scores must include Lines");
 assert(!parkKingLiveScoreMigration.includes("session.ended_at is not null"), "Park King must update while a training session is live");
 assert(parkKingLiveScoreMigration.includes("jkcrew_country_timezone"), "Detached Daily completion recovery must use the rider's local date");
@@ -488,8 +493,8 @@ assert(dailyVenueGroupsBody.includes("complete}/${visibleAssignments.length}"), 
 assert(functionBody("renderSession").includes("assignmentGroups(assignments, true, state.profile, selectedVenue)"), "Rider Session must pass the chosen location into the Daily list");
 
 const coachNavBody = app.match(/const coachNav = \[([\s\S]*?)\];/)?.[1] || "";
-assert.equal((coachNavBody.match(/\["/g) || []).length, 6, "Coach mobile navigation must include live Challenge oversight");
-for (const label of ["Command", "Session", "Riders", "Challenges", "Coach Tools", "More"]) {
+assert.equal((coachNavBody.match(/\["/g) || []).length, 7, "Coach mobile navigation includes Teams and live Challenge oversight");
+for (const label of ["Command", "Session", "Riders", "Teams", "Challenges", "Coach Tools", "More"]) {
   assert(coachNavBody.includes(`"${label}"`), `Coach navigation is missing ${label}`);
 }
 
@@ -1537,7 +1542,7 @@ assert(athleteHomeBody.includes("openRunBuilder") && functionBody("openRunBuilde
 assert(athleteHomeBody.includes("athleteCoachingCtaHtml(requests)"), "Athlete Home must display the video-help action");
 assert(!athleteHomeBody.includes("rememberCoachingReplies(coachingRequests)"), "The Home notification badge must remain visible until the Coaching page actually opens");
 const homeLeaderboardBody = functionBody("getAthleteHomeLeaderboard");
-assert(homeLeaderboardBody.includes('client.rpc("get_weekly_leaderboard")'), "The lightweight Home leaderboard must use the existing leaderboard rules");
+assert(homeLeaderboardBody.includes('client.rpc("get_weekly_leaderboard_with_half_points")'), "The lightweight Home leaderboard includes precise half-point scores");
 assert(!homeLeaderboardBody.includes('client.from("profiles")'), "The Home leaderboard must not perform a second profile-hydration query");
 const weeklyAssignmentsBody = functionBody("getWeeklyAssignments");
 assert(weeklyAssignmentsBody.includes("includeAssignmentAttempts = true"), "Detailed weekly assignment history must remain the default away from Home");
