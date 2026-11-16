@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.197";
+const RELEASE_VERSION = "2.14.198";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -3978,11 +3978,11 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
 
 const categoryInfo = {
   daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
-  other: { label: "Fundamental Skills", description: "Weekly fundamentals · 0.5 point each when landed" },
   dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
   one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
   percentage: { label: "Percentage Tricks", description: "10 attempts · 100%=3, 90%=2, 80%=1" },
   foam_pit: { label: "Foam Pit", description: "Practice only · no points awarded" },
+  other: { label: "Fundamental Skills", description: "Weekly fundamentals · 0.5 point each when landed" },
   bonus: { label: "Bonus Tricks", description: "Gold challenge · 5 points each" },
   trick_links: { label: "Trick Links", description: "Land 2 tricks back to back · 2 points per completed link" },
   lines: { label: "Lines", description: "Link 3–4 tricks in one run · 3 points each" },
@@ -4037,13 +4037,13 @@ const plannerStatusRank = {
 
 const sessionViewerListTabs = [
   { id: "daily", label: "Daily Tricks" },
-  { id: "other", label: "Fundamental Skills" },
   { id: "one_bang", label: "One Bangs" },
   { id: "dialled", label: "Dialled" },
   { id: "trick_links", label: "Trick Links" },
   { id: "lines", label: "Lines" },
   { id: "percentage", label: "Percentage" },
   { id: "foam_pit", label: "Foam" },
+  { id: "other", label: "Fundamental Skills" },
   { id: "bonus", label: "Bonus Trick" },
 ];
 
@@ -4749,7 +4749,7 @@ function dailyVenueGroups(assignments, interactive = false, profile = null, sele
 }
 
 function assignmentGroups(assignments, interactive = false, profile = null, selectedVenue = "") {
-  const sessionCategoryOrder = ["daily", "other", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "bonus"];
+  const sessionCategoryOrder = ["daily", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "other", "bonus"];
   return sessionCategoryOrder.map((category) => {
     const info = categoryDisplayInfo(category, profile);
     if (category === "daily") return dailyVenueGroups(assignments, interactive, profile, selectedVenue);
@@ -8127,7 +8127,7 @@ async function renderParentHome() {
 }
 
 function parentCategorySummaryHtml(assignments = []) {
-  const categories = ["daily", "other", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "bonus"];
+  const categories = ["daily", "one_bang", "dialled", "trick_links", "lines", "percentage", "foam_pit", "other", "bonus"];
   return `<div class="parent-week-summary">${categories.map((category) => {
     const info = categoryDisplayInfo(category);
     const rows = assignments.filter((assignment) => assignment.category === category || (category === "foam_pit" && assignment.category === "foam"));

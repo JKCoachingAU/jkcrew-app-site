@@ -12824,3 +12824,126 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
   .owner-coach-row { align-items: flex-start; flex-direction: column; }
   .owner-coach-row span { text-align: left; }
 }
+
+/* Rider training lists: quiet surfaces, with colour reserved for actions/results. */
+.rider-shell #view[data-view="session"] .assignment-group {
+  --rider-tone: var(--text);
+  margin: 10px 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .assignment-group::before,
+.rider-shell #view[data-view="session"] .assignment-group::after { content: none; }
+.rider-shell #view[data-view="session"] .assignment-group > .assignment-group-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 66px;
+  margin: 0;
+  padding: 14px;
+}
+.rider-shell #view[data-view="session"] .assignment-group .panel-title {
+  color: var(--text);
+  font: 650 15px/1.35 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rider-shell #view[data-view="session"] .assignment-summary-actions { gap: 8px; }
+.rider-shell #view[data-view="session"] .category-reward-pill {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 10px/1.3 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rider-shell #view[data-view="session"] .assignment-group .category-count {
+  min-width: 36px;
+  min-height: 26px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 600 11px/1.2 var(--body);
+}
+.rider-shell #view[data-view="session"] .assignment-group .accordion-caret {
+  min-width: 16px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .bonus-rare-tag { display: none; }
+.rider-shell #view[data-view="session"] .assignment-group > .assignment-list,
+.rider-shell #view[data-view="session"] .daily-venue-stack { padding: 0 14px 14px; }
+.rider-shell #view[data-view="session"] .daily-venue-accordion,
+.rider-shell #view[data-view="session"] .assignment-row,
+.rider-shell #view[data-view="session"] .percentage-card {
+  border-color: var(--line);
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .daily-venue-accordion summary strong {
+  color: var(--text);
+  font: 600 13px/1.4 var(--body);
+  text-transform: none;
+}
+.rider-shell #view[data-view="session"] .assignment-check,
+.rider-shell #view[data-view="session"] .attempt-btn {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .assignment-row.complete {
+  border-color: color-mix(in srgb, var(--rider-aqua) 34%, var(--line));
+  background: color-mix(in srgb, var(--rider-aqua) 4%, var(--surface-2));
+}
+.rider-shell #view[data-view="session"] .assignment-check.complete {
+  border-color: var(--rider-aqua);
+  background: var(--rider-aqua);
+  color: #02110f;
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .park-king-card {
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .park-king-card::after { content: none; }
+.rider-shell #view[data-view="session"] .park-king-card .eyebrow,
+.rider-shell #view[data-view="session"] .park-king-label span,
+.rider-shell #view[data-view="session"] .park-champion-tag { color: var(--muted); text-shadow: none; }
+.rider-shell #view[data-view="session"] .park-king-rider strong {
+  color: var(--text);
+  font: 700 14px/1.3 var(--body);
+  text-transform: none;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+.rider-shell #view[data-view="session"] .park-king-avatar {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.rider-shell #view[data-view="session"] .park-king-crown { color: var(--rider-gold); filter: none; transform: none; font-size: 18px; }
+@media (max-width: 380px) {
+  .rider-shell #view[data-view="session"] .assignment-group > .assignment-group-head { padding: 12px; gap: 8px; }
+  .rider-shell #view[data-view="session"] .assignment-summary-actions { gap: 6px; }
+  .rider-shell #view[data-view="session"] .category-reward-pill { font-size: 9px; }
+}
