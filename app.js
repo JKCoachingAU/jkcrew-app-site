@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.200";
+const RELEASE_VERSION = "2.14.201";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -47,6 +47,7 @@ const state = {
   parentAthleteId: "",
   publicAthleteId: null,
   selectedVenue: "",
+  riderVenueSessionContext: null,
   sessionOpenDailyVenues: new Set(),
   sessionOpenAssignmentSections: new Set(),
   sessionViewerGroup: "monday",
@@ -1615,6 +1616,8 @@ async function handleSession(session) {
   state.recoveryMount?.destroy();
   state.recoveryMount = null;
   if ((state.user?.id || "") !== nextUserId) {
+    state.selectedVenue = "";
+    state.riderVenueSessionContext = null;
     state.recoveryOpenCheckin = false;
     window.JKCRecovery?.cleanup({ clearDrafts: true });
     if (state.user) app.innerHTML = "";
@@ -4257,6 +4260,25 @@ function newestDailyListForVenue(assignments = [], venue = "") {
 
 function selectedVenueFor(assignments = []) {
   const venues = dailyVenues(assignments);
+  const userId = state.user?.id;
+  const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
+  const ridingDay = dateForTimezone(riderTimeZone);
+  const previousContext = state.riderVenueSessionContext;
+  if (previousContext && (previousContext.userId !== userId || previousContext.ridingDay !== ridingDay)) state.riderVenueSessionContext = null;
+  const active = state.activeTraining;
+  const activeVenue = userId && active?.id && active.athlete_id === userId && !active.ended_at
+    && Number.isFinite(Date.parse(active.started_at))
+    && dateForTimezone(riderTimeZone, new Date(active.started_at)) === ridingDay
+    ? dailyRpcVenue(active.daily_venue) : "";
+  if (activeVenue && state.riderVenueSessionContext?.sessionId !== active.id) {
+    state.riderVenueSessionContext = { userId, sessionId: active.id, venue: venueLabel(activeVenue), ridingDay };
+    state.selectedVenue = state.riderVenueSessionContext.venue;
+  }
+  // Keep a park adopted from today's live session available after its timer
+  // ends. This remembers the displayed venue only; it never attaches late
+  // awards to a closed session or guesses a venue from closed-session history.
+  const contextualVenue = state.riderVenueSessionContext?.venue;
+  if (contextualVenue && !venues.some((venue) => venueIdentityKey(venue) === venueIdentityKey(contextualVenue))) venues.push(contextualVenue);
   const selectedIdentity = venueIdentityKey(state.selectedVenue);
   const matchingVenue = venues.find((venue) => venueIdentityKey(venue) === selectedIdentity);
   if (matchingVenue !== undefined) state.selectedVenue = matchingVenue;
@@ -4273,7 +4295,10 @@ function assignmentsForVenue(assignments = [], venue = "") {
 function venueSelectorHtml(assignments = []) {
   const venues = dailyVenues(assignments);
   const selected = selectedVenueFor(assignments);
-  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === selected ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  for (const contextualVenue of [selected, state.riderVenueSessionContext?.venue]) {
+    if (contextualVenue && !venues.some((venue) => venueIdentityKey(venue) === venueIdentityKey(contextualVenue))) venues.push(contextualVenue);
+  }
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venueIdentityKey(venue) === venueIdentityKey(selected) ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
   return `<section class="panel venue-panel">
     <div class="panel-head"><div><div class="panel-title">Training venue</div><div class="panel-meta">Choose the skate park for today's Daily Tricks</div></div></div>
     <div class="venue-select-wrap"><select id="session-venue">${options}</select></div>
@@ -4447,7 +4472,11 @@ function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTrainin
   // A saved Daily time belongs to its venue. Starting another list leaves it saved.
   if (activeTraining?.daily_completed_seconds != null && (activeTraining.daily_venue == null || venueIdentityKey(dailyRpcVenue(activeTraining.daily_venue)) !== venueIdentityKey(dailyRpcVenue(selectedVenue)))) activeTraining = null;
   const venues = dailyVenues(assignments);
-  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venue === selectedVenue ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
+  const rememberedVenue = state.riderVenueSessionContext?.userId === state.user?.id ? state.riderVenueSessionContext?.venue : "";
+  for (const contextualVenue of [selectedVenue, rememberedVenue]) {
+    if (contextualVenue && !venues.some((venue) => venueIdentityKey(venue) === venueIdentityKey(contextualVenue))) venues.push(contextualVenue);
+  }
+  const options = venues.map((venue) => `<option value="${escapeHtml(venue)}" ${venueIdentityKey(venue) === venueIdentityKey(selectedVenue) ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
   const selectedDaily = assignmentsForVenue(assignments.filter((assignment) => assignment.category === "daily"), selectedVenue);
   const dailyDone = selectedDaily.filter(isAssignmentComplete).length;
   const dailySaved = activeTraining?.daily_completed_seconds != null;
@@ -8567,6 +8596,7 @@ async function renderSession({ forceParkKing = false, forceAssignments = false, 
     getWeeklyAssignments(userId, { force: forceAssignments }),
     getLeaderboard(),
     client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at,daily_venue").eq("athlete_id", userId).gte("started_at", recentStartIso).order("started_at", { ascending: false }).limit(8),
+    loadActiveSession({ canApply }),
   ]);
   if (!canApply()) return;
   const { assignments, awards } = schedule;
@@ -8583,7 +8613,6 @@ async function renderSession({ forceParkKing = false, forceAssignments = false, 
   });
   const requestedVenueKey = venueIdentityKey(selectedVenue);
   const parkKingPromise = contestPrepSession ? Promise.resolve(null) : getParkKing(selectedVenue, { force: forceParkKing });
-  await loadActiveSession({ canApply });
   const parkKing = await parkKingPromise;
   if (!canApply() || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
   rememberSessionExpansions();

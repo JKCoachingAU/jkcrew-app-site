@@ -104,7 +104,7 @@ const names = [
       window.saveExtraTricks = async (tricks, message) => { (qa.extraSaves ||= []).push({ tricks: structuredClone(tricks), message }); };
       if (!crypto.randomUUID) crypto.randomUUID = () => 'synthetic-extra-trick';
       window.escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-      window.categoryInfo = Object.fromEntries(['daily', 'one_bang', 'dialled', 'lines', 'percentage', 'foam_pit', 'bonus'].map(category => [category, { label: category, description: 'Training list' }]));
+      window.categoryInfo = Object.fromEntries(['daily', 'one_bang', 'dialled', 'trick_links', 'lines', 'percentage', 'foam_pit', 'other', 'bonus'].map(category => [category, { label: category, description: 'Training list' }]));
       window.categoryRewardLabels = {};
       window.categoryDisplayInfo = category => categoryInfo[category];
       window.isAssignmentComplete = () => false;
