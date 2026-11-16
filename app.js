@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.198";
+const RELEASE_VERSION = "2.14.199";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -4453,24 +4453,20 @@ function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTrainin
   const dailySaved = activeTraining?.daily_completed_seconds != null;
   const timerHtml = activeTraining
     ? `<div class="hub-timer"><span>${dailySaved ? "Daily time saved" : "Daily timer"}</span><strong id="trick-timer">${formatTime(activeTraining.daily_completed_seconds ?? Math.max(0, Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000)))}</strong></div>`
-    : `<div class="hub-timer ready"><span>Ready</span><strong>GO</strong></div>`;
+    : `<div class="hub-timer ready"><span>Ready to start</span><strong>00:00</strong></div>`;
   const actionHtml = activeTraining
     ? `<button class="secondary-btn start-session-btn" id="finish-daily-tricks" type="button" ${!dailySaved && !selectedDaily.length ? "disabled" : ""}>${dailySaved ? "View Daily result" : "Finish Daily Tricks"}</button>`
     : `<button class="primary-btn start-session-btn" id="create-session" type="button">Start Daily Tricks</button>`;
+  const todayTime = latestDailyTime(activeTraining, latestTraining);
   return `<section class="panel daily-session-hub">
-    <div class="daily-hub-main">
-      <div>
-        <div class="panel-title">Daily Tricks timer</div>
-        <div class="panel-meta">${escapeHtml(venueLabel(selectedVenue))} · ${dailyDone}/${selectedDaily.length} landed today · finish anytime; complete the full list to earn a Daily point</div>
-      </div>
-      ${timerHtml}
-    </div>
+    <div class="daily-hub-heading"><div class="panel-title">Daily Tricks timer</div><div class="panel-meta">${dailyDone}/${selectedDaily.length} landed today · full list earns 1 point</div></div>
+    <div class="field daily-hub-venue"><label for="session-venue">Venue</label><select id="session-venue">${options}</select></div>
+    <div class="daily-hub-main">${timerHtml}</div>
     <div class="daily-hub-grid">
-      <div class="field"><label for="session-venue">Venue</label><select id="session-venue">${options}</select></div>
       <div class="session-pb-chip"><span>Daily PB</span><strong>${formatPbTime(state.profile?.daily_pb_seconds)}</strong></div>
-      <div class="session-pb-chip"><span>Today's time</span><strong>${latestDailyTime(activeTraining, latestTraining)}</strong></div>
-      <div class="daily-hub-actions">${actionHtml}${trainingProgressButtonHtml(state.user.id, state.profile?.display_name || "Rider")}</div>
+      <div class="session-pb-chip session-time-chip ${todayTime === "Not finished today" ? "is-pending" : ""}"><span>Today's time</span><strong>${todayTime}</strong></div>
     </div>
+    <div class="daily-hub-actions">${actionHtml}${trainingProgressButtonHtml(state.user.id, state.profile?.display_name || "Rider")}</div>
   </section>`;
 }
 

@@ -12947,3 +12947,32 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
   .rider-shell #view[data-view="session"] .assignment-summary-actions { gap: 6px; }
   .rider-shell #view[data-view="session"] .category-reward-pill { font-size: 9px; }
 }
+
+/* Daily timer controls: venue, readout, equal summaries, then clear actions. */
+.rider-shell #view[data-view="session"] .daily-session-hub { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: none; }
+.rider-shell #view[data-view="session"] .daily-session-hub::before { content: none; }
+.rider-shell #view[data-view="session"] .daily-hub-heading .panel-title { color: var(--text); font: 700 17px/1.3 var(--body); text-transform: none; letter-spacing: 0; }
+.rider-shell #view[data-view="session"] .daily-hub-heading .panel-meta { margin-top: 4px; font: 500 11px/1.5 var(--body); text-transform: none; letter-spacing: 0; }
+.rider-shell #view[data-view="session"] .daily-hub-venue { margin: 0; padding: 0; min-width: 0; border: 0; background: transparent; box-shadow: none; }
+.rider-shell #view[data-view="session"] .daily-hub-venue label { margin-bottom: 6px; color: var(--muted); font: 600 11px/1.3 var(--body); text-transform: none; letter-spacing: 0; }
+.rider-shell #view[data-view="session"] .daily-hub-venue select { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); font: 600 14px/1.4 var(--body); }
+.rider-shell #view[data-view="session"] .daily-hub-main { display: block; margin: 0; }
+.rider-shell #view[data-view="session"] .hub-timer { width: 100%; min-width: 0; padding: 14px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.rider-shell #view[data-view="session"] .hub-timer span { font: 500 11px/1.4 var(--body); letter-spacing: 0; text-transform: none; }
+.rider-shell #view[data-view="session"] .hub-timer strong { margin-top: 8px; color: var(--rider-aqua); font: 650 48px/1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.rider-shell #view[data-view="session"] .hub-timer.ready strong { color: var(--text); }
+.rider-shell #view[data-view="session"] .daily-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; }
+.rider-shell #view[data-view="session"] .session-pb-chip { min-width: 0; min-height: 76px; padding: 12px; align-content: start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); box-shadow: none; }
+.rider-shell #view[data-view="session"] .session-pb-chip span { color: var(--muted); font: 500 11px/1.4 var(--body); text-transform: none; letter-spacing: 0; }
+.rider-shell #view[data-view="session"] .session-pb-chip strong { margin-top: 8px; color: var(--text); font: 650 20px/1.2 var(--body); }
+.rider-shell #view[data-view="session"] .session-time-chip.is-pending strong { color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.rider-shell #view[data-view="session"] .daily-hub-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; margin: 0; }
+#app .rider-shell #view[data-view="session"] .daily-hub-actions > button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: 12px; border-radius: 9px; font: 650 13px/1.3 var(--body); text-transform: none; letter-spacing: 0; box-shadow: none; }
+#app .rider-shell #view[data-view="session"] .daily-hub-actions > .primary-btn { border: 1px solid var(--rider-aqua); background: var(--rider-aqua); color: #02110f; }
+#app .rider-shell #view[data-view="session"] .daily-hub-actions > .secondary-btn,
+#app .rider-shell #view[data-view="session"] .daily-hub-actions > .training-progress-trigger { border: 1px solid var(--line); background: transparent; color: var(--text); }
+.rider-shell #view[data-view="session"] .daily-hub-actions .training-progress-trigger > span:first-child { display: inline; width: auto; height: auto; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 16px; box-shadow: none; }
+.rider-shell #view[data-view="session"] #rider-session-refresh { min-height: 40px; padding: 9px 12px; border-color: var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font: 600 12px/1.3 var(--body); text-transform: none; letter-spacing: 0; box-shadow: none; }
+@media (max-width: 600px) {
+  .rider-shell #view[data-view="session"] .daily-hub-actions { grid-template-columns: minmax(0, 1fr); }
+}
