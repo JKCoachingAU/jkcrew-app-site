@@ -27,10 +27,10 @@
     return entry.promise;
   }
   function toolbarHtml() {
-    return '<div class="trick-auto-toolbar"><div><strong>Auto sorting is on</strong><small>Known tricks find their place. Tap Sort for anything that needs a hand.</small></div><button class="secondary-btn" type="button" data-auto-organise>Auto-organise</button></div>';
+    return '<div class="trick-auto-toolbar"><div><strong>Auto sorting</strong><small>Known tricks find their place.</small></div><button class="secondary-btn" type="button" data-auto-organise>Auto-organise</button></div>';
   }
   function cardButtonHtml(entry) {
-    return `<button class="tricktionary-rename-btn trick-sort-btn" type="button" draggable="false" data-sort-trick="${esc(entry.key)}" aria-label="Sort ${esc(entry.title)}">${entry.tricktionaryCategory === 'new' ? 'Sort trick ↗' : 'Change category'}</button>`;
+    return `<button class="tricktionary-rename-btn trick-sort-btn" type="button" draggable="false" data-sort-trick="${esc(entry.key)}" aria-label="Sort ${esc(entry.title)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M7 12h14M11 18h10"/></svg>${entry.tricktionaryCategory === 'new' ? 'Sort trick' : 'Category'}</button>`;
   }
   function dialog(title, intro, config) {
     activeDialog?.close();

@@ -66,80 +66,91 @@ Deno.serve(async (request) => {
 
     for (const item of queue) {
       const isCheckinReminder = item.notification_type === "recovery_checkin_reminder";
-      const { data: subscriptionRows, error: subscriptionError } = await supabase
-        .from("push_subscriptions")
-        .select("id, endpoint, p256dh, auth")
-        .eq("user_id", item.recipient_id)
-        .eq("enabled", true)
-        .limit(12);
-
       let delivered = 0;
       let failed = 0;
       const errors: string[] = [];
-
-      if (subscriptionError) {
-        failed = 1;
-        errors.push(subscriptionError.message);
-      } else {
-        for (const subscription of (subscriptionRows || []) as SubscriptionRow[]) {
-          let reminderTtl = 0;
-          if (isCheckinReminder) {
+      const eligible = async () => {
+        const { data, error } = await supabase.rpc("validate_jkcrew_push_scope", { p_notification_id: item.id });
+        if (error) throw error;
+        return data === true;
+      };
+      try {
+        // Claims and delivery are separate operations. Re-check current account
+        // approval and source-team membership before loading devices or sending.
+        if (await eligible()) {
+          const { data: subscriptionRows, error: subscriptionError } = await supabase
+            .from("push_subscriptions")
+            .select("id, endpoint, p256dh, auth")
+            .eq("user_id", item.recipient_id)
+            .eq("enabled", true)
+            .limit(12);
+          if (subscriptionError) throw subscriptionError;
+          for (const subscription of (subscriptionRows || []) as SubscriptionRow[]) {
+            if (!(await eligible())) break;
+            let reminderTtl = 0;
+            if (isCheckinReminder) {
+              try {
+                // The rider may finish a check-in or have recovery switched off
+                // after the queue was claimed. Fail closed before each device.
+                const { data: validation, error: validationError } = await supabase.rpc("validate_jkcrew_recovery_push", {
+                  p_worker_secret: workerSecret,
+                  p_notification_id: item.id,
+                });
+                if (validationError) throw validationError;
+                reminderTtl = Math.min(2 * 60 * 60, Math.floor((Date.parse(validation?.expires_at || "") - Date.now()) / 1000));
+                if (validation?.eligible !== true || !Number.isFinite(reminderTtl) || reminderTtl <= 0) break;
+              } catch (error) {
+                // A database outage says nothing about this device subscription.
+                failed += 1;
+                errors.push(error instanceof Error ? error.message : String(error));
+                break;
+              }
+            }
             try {
-              // The rider may finish a check-in or have recovery switched off
-              // after the queue was claimed. Fail closed before each device.
-              const { data: validation, error: validationError } = await supabase.rpc("validate_jkcrew_recovery_push", {
-                p_worker_secret: workerSecret,
-                p_notification_id: item.id,
-              });
-              if (validationError) throw validationError;
-              reminderTtl = Math.min(2 * 60 * 60, Math.floor((Date.parse(validation?.expires_at || "") - Date.now()) / 1000));
-              if (validation?.eligible !== true || !Number.isFinite(reminderTtl) || reminderTtl <= 0) break;
+              await webpush.sendNotification(
+                {
+                  endpoint: subscription.endpoint,
+                  keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+                },
+                JSON.stringify({
+                  title: item.title,
+                  body: item.body,
+                  url: item.url || "./",
+                  type: item.notification_type,
+                  notificationId: item.id,
+                  ...(isCheckinReminder ? { view: "home", recovery_page: "today" } : (item.payload || {})),
+                }),
+                {
+                  TTL: isCheckinReminder ? reminderTtl : item.notification_type === "crew_chat" ? 60 * 60 * 6 : 60 * 60 * 24 * 3,
+                  urgency: item.notification_type === "crew_chat" ? "high" : "normal",
+                },
+              );
+              delivered += 1;
+              await supabase.from("push_subscriptions").update({
+                last_success_at: new Date().toISOString(),
+                last_error: "",
+                failure_count: 0,
+                updated_at: new Date().toISOString(),
+              }).eq("id", subscription.id);
             } catch (error) {
-              // A database outage says nothing about this device subscription.
               failed += 1;
-              errors.push(error instanceof Error ? error.message : String(error));
-              break;
+              const statusCode = Number((error as { statusCode?: number })?.statusCode || 0);
+              const message = error instanceof Error ? error.message : String(error);
+              errors.push(message);
+              await supabase.from("push_subscriptions").update({
+                enabled: statusCode === 404 || statusCode === 410 ? false : true,
+                last_error: message.slice(0, 500),
+                failure_count: statusCode === 404 || statusCode === 410 ? 99 : 1,
+                updated_at: new Date().toISOString(),
+              }).eq("id", subscription.id);
             }
           }
-          try {
-            await webpush.sendNotification(
-              {
-                endpoint: subscription.endpoint,
-                keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-              },
-              JSON.stringify({
-                title: item.title,
-                body: item.body,
-                url: item.url || "./",
-                type: item.notification_type,
-                notificationId: item.id,
-                ...(isCheckinReminder ? { view: "home", recovery_page: "today" } : (item.payload || {})),
-              }),
-              {
-                TTL: isCheckinReminder ? reminderTtl : item.notification_type === "crew_chat" ? 60 * 60 * 6 : 60 * 60 * 24 * 3,
-                urgency: item.notification_type === "crew_chat" ? "high" : "normal",
-              },
-            );
-            delivered += 1;
-            await supabase.from("push_subscriptions").update({
-              last_success_at: new Date().toISOString(),
-              last_error: "",
-              failure_count: 0,
-              updated_at: new Date().toISOString(),
-            }).eq("id", subscription.id);
-          } catch (error) {
-            failed += 1;
-            const statusCode = Number((error as { statusCode?: number })?.statusCode || 0);
-            const message = error instanceof Error ? error.message : String(error);
-            errors.push(message);
-            await supabase.from("push_subscriptions").update({
-              enabled: statusCode === 404 || statusCode === 410 ? false : true,
-              last_error: message.slice(0, 500),
-              failure_count: statusCode === 404 || statusCode === 410 ? 99 : 1,
-              updated_at: new Date().toISOString(),
-            }).eq("id", subscription.id);
-          }
         }
+      } catch (error) {
+        // A failed authorization read never permits delivery and does not
+        // disable an otherwise valid browser subscription.
+        failed += 1;
+        errors.push(error instanceof Error ? error.message : String(error));
       }
 
       deliveredTotal += delivered;

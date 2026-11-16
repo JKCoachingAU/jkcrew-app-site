@@ -125,8 +125,9 @@ vm.runInContext(constants + '\n' + [...gates, ...renders].map(extract).join('\n'
   vm.runInContext(extract('showUpdatedWeeklyScore'), context);
   await context.showUpdatedWeeklyScore(1, 'Daily list');
   eq(popup.kind, 'score', 'Trick points still use score feedback');
-  eq(popup.title, '+1 leaderboard point', 'Normal daily point is preserved');
-  eq(popup.message, 'Daily list · Weekly score 27', 'Weekly total is preserved');
+  eq(popup.pointsChange, 1, 'Normal daily point is passed as an explicit number');
+  eq(popup.trickName, 'Daily list', 'Score feedback retains its trick name');
+  eq(popup.weeklyTotal, undefined, 'Immediate score feedback does not invent a weekly total');
   // Statically check primary full-page paths that are covered by existing role integration tests.
   for (const name of ['renderAthleteHome', 'renderRestrictedRiderHome', 'renderParentHome', 'renderParentMore', 'renderStudentProfile', 'getCoachPreviewData']) {
     const code = extract(name);

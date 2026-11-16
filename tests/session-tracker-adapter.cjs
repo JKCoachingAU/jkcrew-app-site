@@ -49,8 +49,8 @@ function setup() {
         : { id: params.p_id, updated_at: '2026-11-04T02:00:00.123456Z', archived_at: params.p_archived ? '2026-11-04T02:00:00Z' : null });
     },
   };
-  const factory = new Function('state', 'client', 'withTimeout', 'isCoachRole', `${extract('createCoachSessionTrackerAdapter')}; return createCoachSessionTrackerAdapter;`)(
-    qa.state, client, promise => promise, role => ['coach', 'admin'].includes(role));
+  const factory = new Function('state', 'client', 'withTimeout', 'isCoachRole', 'getCoachTeamScopeIds', `${extract('createCoachSessionTrackerAdapter')}; return createCoachSessionTrackerAdapter;`)(
+    qa.state, client, promise => promise, role => ['coach', 'admin'].includes(role), async () => ['coach', 'team-colleague']);
   qa.adapter = factory({ userId: 'coach', isActive: () => qa.active });
   qa.count = table => qa.queries.filter(query => query.table === table).length;
   qa.release = key => qa.pending[key]?.shift()?.();
@@ -66,7 +66,7 @@ function setup() {
   eq(first.blocks, qa.rows.coach_training_blocks, 'Training blocks accompany existing context');
   const sessionQuery = qa.queries.find(query => query.table === 'coach_tracked_sessions');
   for (const expected of [
-    ['eq', 'coach_id', 'coach'], ['is', 'archived_at', null], ['gte', 'session_date', range.from], ['lt', 'session_date', range.to],
+    ['in', 'coach_id', ['coach', 'team-colleague']], ['is', 'archived_at', null], ['gte', 'session_date', range.from], ['lt', 'session_date', range.to],
     ['eq', 'venue', 'Park'], ['contains', 'rider_ids', ['rider-1']], ['range', 0, 30],
     ['order', 'session_date', { ascending: true }], ['order', 'start_time', { ascending: true, nullsFirst: false }], ['order', 'id', { ascending: true }],
   ]) ok(sessionQuery.calls.some(call => JSON.stringify(call) === JSON.stringify(expected)), `Scoped query: ${JSON.stringify(expected)}`);
@@ -74,8 +74,9 @@ function setup() {
   ok(profileQuery.calls.some(call => call[0] === 'select' && call[1] === 'id,display_name'), 'Roster does not download avatars, media or progress');
   ok(profileQuery.calls.some(call => call[0] === 'in' && call[1] === 'id' && call[2].length === 1), 'Roster uses deduplicated linked IDs');
   ok(profileQuery.calls.some(call => call[0] === 'eq' && call[1] === 'role' && call[2] === 'athlete'), 'Roster excludes other account roles');
-  for (const table of ['coach_athletes', 'coach_venues', 'coach_training_blocks']) {
-    ok(qa.queries.find(query => query.table === table).calls.some(call => call[0] === 'eq' && call[1] === 'coach_id' && call[2] === 'coach'), `${table} owner filter`);
+  ok(qa.queries.find(query => query.table === 'coach_athletes').calls.some(call => call[0] === 'eq' && call[1] === 'coach_id' && call[2] === 'coach'), 'Materialized roster uses actor links');
+  for (const table of ['coach_venues', 'coach_training_blocks']) {
+    ok(qa.queries.find(query => query.table === table).calls.some(call => call[0] === 'in' && call[1] === 'coach_id' && JSON.stringify(call[2]) === '["coach","team-colleague"]'), `${table} approved team filter`);
   }
   qa.rows.coach_tracked_sessions = [];
   const next = await qa.adapter.load({ ...range, offset: 30 });

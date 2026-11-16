@@ -111,7 +111,7 @@ vm.runInContext(['cacheGet', 'cacheSet', 'cacheClear', 'invalidateHelpRequestDat
   hold = new Promise(resolve => { release = resolve; });
   const privateRead = context.fetchHelpVideoMedia('00003'); await new Promise(resolve => setImmediate(resolve));
   context.state.user.id = 'different-parent'; release(); hold = null;
-  await assert.rejects(privateRead, /account changed/);
+  await assert.rejects(privateRead, /account (?:access )?changed/);
   assert(!context.state.videoReviewMedia.has('00003'), 'Late media cannot populate another signed-in account');
   context.state.user.id = 'coach'; context.state.cache = {}; calls = []; bytes = 0;
   for (const tick of [0, 20000, 40000]) { now = 5000000 + tick; await context.getCoachRoster(); }

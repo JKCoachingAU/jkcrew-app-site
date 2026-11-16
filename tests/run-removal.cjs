@@ -10,7 +10,7 @@ function extract(name) {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 }
-const names = ['canEditRun', 'runRemovalButtonHtml', 'bindRunRemovalActions', 'refreshRunRemovalView',
+const names = ['cacheGet','canManageCoachTeamRecord','canEditRun', 'runRemovalButtonHtml', 'bindRunRemovalActions', 'refreshRunRemovalView',
   'archiveRunPlan', 'runSummaryCardHtml', 'runPlansHtml', 'coachEventRunViewerHtml',
   'openCoachEventRunModal', 'closeContestEventModal', 'riderSavedRunsHtml', 'openRiderSavedRuns',
   'bindRiderSavedRuns', 'openProgressRun', 'notify', 'showUndoToast', 'setButtonBusy', 'withTimeout',
@@ -31,7 +31,7 @@ const names = ['canEditRun', 'runRemovalButtonHtml', 'bindRunRemovalActions', 'r
       const toast=document.querySelector('#toast');
       const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
       const dateLabel=value=>String(value||''),isCoachRole=role=>role==='coach'||role==='admin',messageFrom=error=>error?.message||String(error);
-      const playNotificationSound=()=>{},cacheClear=()=>{},setSyncStatus=()=>{};
+      const playNotificationSound=()=>{},cacheClear=()=>{},setSyncStatus=()=>{},getCoachTeamScopeIds=async()=>['coach'];
       const runReviewPanelHtml=()=>'',runMapHtml=()=>'<div class="test-run-photo">Course photo</div>',runPlaybackControlsHtml=()=>'';
       const bindRunPlaybackControls=()=>{},stopRunPlayback=()=>{},editRunPlan=()=>{},openRunDuplicate=()=>{};
       const RUN_SUMMARY_SELECT=${JSON.stringify(app.match(/^const RUN_SUMMARY_SELECT = ("[^"]+");/m)?.[1] ? JSON.parse(app.match(/^const RUN_SUMMARY_SELECT = ("[^"]+");/m)[1]) : '')};
@@ -51,7 +51,7 @@ const names = ['canEditRun', 'runRemovalButtonHtml', 'bindRunRemovalActions', 'r
         const filters=[];let patch=null,columns='*',promise;
         const query={
           select(value){columns=value;return this;},update(value){patch=structuredClone(value);return this;},
-          eq(key,value){filters.push({operator:'eq',key,value});return this;},is(key,value){filters.push({operator:'is',key,value});return this;},
+          eq(key,value){filters.push({operator:'eq',key,value});return this;},is(key,value){filters.push({operator:'is',key,value});return this;},in(key,value){filters.push({operator:'in',key,value});return this;},
           order(){return this;},limit(){return this;},
           then(resolve,reject){return execute(false).then(resolve,reject);},single(){return execute(true);},maybeSingle(){return execute(true);}
         };
@@ -68,7 +68,7 @@ const names = ['canEditRun', 'runRemovalButtonHtml', 'bindRunRemovalActions', 'r
               if(failure==='returned')return {data:null,error:{message:'Simulated database failure'}};
               if(failure==='no-row')return {data:single?null:[],error:null};
             }else reads.push(call);
-            const matches=records.filter(record=>filters.every(filter=>(record[filter.key]??null)===filter.value));
+            const matches=records.filter(record=>filters.every(filter=>filter.operator==='in' ? filter.value.includes(record[filter.key]) : (record[filter.key]??null)===filter.value));
             if(patch)matches.forEach(record=>Object.assign(record,structuredClone(patch),{updated_at:'2026-09-11T03:00:00.'+String(writes.length).padStart(3,'0')+'Z'}));
             return {data:single?structuredClone(matches[0]||null):structuredClone(matches),error:null};
           })();
@@ -108,7 +108,7 @@ const names = ['canEditRun', 'runRemovalButtonHtml', 'bindRunRemovalActions', 'r
       assert.equal(call.table, 'run_plans');
       assert.deepEqual(Object.keys(call.patch), ['archived_at'], 'Removal changes no content, ownership or review fields');
       assert(call.filters.some(filter => filter.key==='id' && filter.value===id));
-      assert(call.filters.some(filter => filter.key===(role==='athlete'?'athlete_id':'coach_id') && filter.value===(role==='athlete'?'rider':'coach')));
+      assert(call.filters.some(filter => role==='athlete' ? filter.key==='athlete_id' && filter.value==='rider' : filter.key==='coach_id' && filter.operator==='in' && JSON.stringify(filter.value)==='["coach"]'));
       assert(call.filters.some(filter => filter.key==='archived_at' && filter.value===archivedAt));
       assert(call.filters.some(filter => filter.key==='updated_at'), 'Archive and Undo protect against concurrent saved-run changes');
     };

@@ -1,0 +1,58 @@
+// Exercise the real shared-save implementations using synthetic teams only.
+const fs=require('node:fs');const path=require('node:path');const assert=require('node:assert/strict');
+const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
+const sql=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261116133833_keep_shared_coach_schedules_consistent.sql'),'utf8');
+const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+(async()=>{const db=new PGlite();let checks=0;const q=(s,a=[])=>db.query(s,a);const scalar=async(s,a=[])=>Object.values((await q(s,a)).rows[0])[0];const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;};const as=n=>q("select set_config('request.jwt.claim.sub',$1,false)",[id(n)]);
+try{
+await db.exec(`create role anon;create role authenticated;create schema auth;create schema private;
+create function auth.uid()returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+create table auth.users(id uuid primary key);
+create table profiles(id uuid primary key references auth.users on delete cascade,role text,team_id uuid,approved boolean default true);
+create table coach_athletes(coach_id uuid,athlete_id uuid,primary key(coach_id,athlete_id));
+create table private.coach_team_memberships(coach_id uuid,team_id uuid,role text,status text default 'active',joined_at timestamptz default now());
+create function private.jkcrew_profiles_share_team(uuid,uuid)returns boolean language sql stable as $$select a.team_id=b.team_id from public.profiles a,public.profiles b where a.id=$1 and b.id=$2$$;
+create function private.jkcrew_is_team_coach(uuid)returns boolean language sql stable as $$select me.approved and me.role='coach' and target.role='coach' and me.team_id=target.team_id from public.profiles me,public.profiles target where me.id=auth.uid()and target.id=$1$$;
+create function private.tricktionary_automation_role()returns text language sql stable as $$select role from public.profiles where id=auth.uid()and approved$$;
+create function private.tricktionary_subcategory_is_valid(text,text)returns boolean language sql immutable as $$select $1='air' and $2 in('other','spins')$$;
+create function private.normalize_trick_link(text)returns text language sql immutable as $$select btrim($1)$$;
+create function public.jkcrew_week_bounds(text)returns table(week_start_date date)language sql stable as $$select date_trunc('week',now())::date$$;
+create table coach_venues(id uuid default gen_random_uuid(),coach_id uuid,name text,sort_order integer);
+create table weekly_trick_assignments(id uuid primary key default gen_random_uuid(),coach_id uuid,athlete_id uuid,week_start date,trick_name text,category text,target_reps integer,notes text default '',sort_order integer,venue text default '',created_at timestamptz default now(),updated_at timestamptz default now(),unique(coach_id,athlete_id,week_start,sort_order));
+create table weekly_assignment_plans(id uuid primary key default gen_random_uuid(),coach_id uuid,athlete_id uuid,target_week_start date,trick_name text,category text,target_reps integer,notes text,sort_order integer,venue text,status text,created_at timestamptz default now(),updated_at timestamptz default now(),published_at timestamptz);
+create table assignment_progress(assignment_id uuid primary key references weekly_trick_assignments,athlete_id uuid,completed_at timestamptz);
+create table private.tricktionary_catalog(coach_id uuid,source_key text,display_title text,category text,subcategory text,updated_at timestamptz default now(),primary key(coach_id,source_key));
+create table private.coach_team_invites(code text primary key,consumed_by uuid references profiles,consumed_at timestamptz);
+`);
+for(const [n,role,team]of[[1,'coach',101],[2,'coach',101],[3,'athlete',101],[4,'coach',102],[5,'parent',101]]){await q('insert into auth.users values($1)',[id(n)]);await q('insert into profiles(id,role,team_id)values($1,$2,$3)',[id(n),role,id(team)]);}
+await q("insert into private.coach_team_memberships(coach_id,team_id,role)values($1,$2,'head_coach'),($3,$2,'assistant_coach'),($4,$5,'head_coach')",[id(1),id(101),id(2),id(4),id(102)]);
+await q('insert into coach_athletes values($1,$2),($3,$2)',[id(1),id(3),id(2)]);
+await db.exec(sql);
+const names=['save_weekly_assignments','save_weekly_assignment_plan','save_weekly_assignment_draft','ensure_weekly_assignment_draft','save_weekly_lines'];
+const bodies=[...sql.matchAll(/CREATE OR REPLACE FUNCTION private\.(approved_[a-z0-9]+)\((.*)\)\n RETURNS integer/g)];eq(bodies.length,5,'Five real schedule save functions tested');
+for(let i=0;i<bodies.length;i++){const [,impl,args]=bodies[i];const count=args.split(',').length;await db.exec(`create function public.${names[i]}(${args})returns integer language plpgsql as $$begin if not private.jkcrew_is_team_coach(auth.uid())or not private.jkcrew_profiles_share_team(auth.uid(),$1)then raise exception 'Private team';end if;return private.${impl}(${Array.from({length:count},(_,n)=>'$'+(n+1)).join(',')});end$$;`);}
+const week=await scalar("select date_trunc('week',now())::date::text");const future=await scalar("select(date_trunc('week',now())::date+7)::text");
+let sheet=[{trick_name:'Fixture One',category:'one_bang',target_reps:1,notes:'head'},{trick_name:'Fixture Line',category:'lines',target_reps:1,notes:'head'}];
+await as(1);await q('select save_weekly_assignments($1,$2,$3,null)',[id(3),week,JSON.stringify(sheet)]);
+const prior=(await q('select id,trick_name from weekly_trick_assignments order by trick_name')).rows;const one=prior.find(x=>x.trick_name==='Fixture One').id;const line=prior.find(x=>x.trick_name==='Fixture Line').id;
+await q('insert into assignment_progress values($1,$2,now())',[one,id(3)]);
+await as(2);sheet[0].notes='assistant';await q('select save_weekly_assignments($1,$2,$3,null)',[id(3),week,JSON.stringify(sheet)]);
+eq((await q('select id,trick_name from weekly_trick_assignments order by trick_name')).rows,prior,'Full-week edit retains head assignment IDs and row count');
+eq(await scalar('select count(*)::int from assignment_progress where assignment_id=$1 and completed_at is not null',[one]),1,'Existing progress remains attached');
+await db.exec('begin');await q('select save_weekly_lines($1,$2,$3)',[id(3),week,JSON.stringify([{trick_name:'Fixture Line',notes:'Shared line'}])]);
+eq(await scalar("select id from weekly_trick_assignments where category='lines'"),line,'Lines edit retains existing ID');
+for(const name of names){const header=bodies[names.indexOf(name)][0];const start=sql.indexOf(header),end=sql.indexOf('$function$;',start);assert(sql.slice(start,end).includes('pg_advisory_xact_lock')&&sql.slice(start,end).includes('jkcrew-weekly-list:'),name+' serializes rider/week edits');checks++;}await db.exec('commit');
+const planned=JSON.stringify(sheet.filter(x=>x.category!=='lines'));
+await as(1);await q('select save_weekly_assignment_draft($1,$2,$3,null)',[id(3),future,planned]);
+await as(2);await q('select ensure_weekly_assignment_draft($1,$2)',[id(3),future]);
+eq(await scalar("select count(*)::int from weekly_assignment_plans where status='draft_next_week'"),1,'Preparing colleague draft does not copy it');
+await q('select save_weekly_assignment_draft($1,$2,$3,null)',[id(3),future,planned]);eq(await scalar("select count(*)::int from weekly_assignment_plans where status='draft_next_week'"),1,'Draft replacement leaves one active row');
+await as(1);await q('select save_weekly_assignment_plan($1,$2,$3,null)',[id(3),future,planned]);
+await as(2);await q('select save_weekly_assignment_plan($1,$2,$3,null)',[id(3),future,planned]);eq(await scalar("select count(*)::int from weekly_assignment_plans where status='scheduled_next_week'"),1,'Scheduled update leaves one team plan');
+await as(1);await q("select private.save_tricktionary_catalog_entry('fixture trick','Fixture Trick','air','other')");
+await as(2);eq((await scalar('select private.read_tricktionary_catalog(null)')).some(x=>x.source_key==='fixture trick'),true,'Assistant reads team catalogue');await q("select private.save_tricktionary_catalog_entry('fixture trick','Shared Fixture','air','spins')");
+await as(1);eq((await scalar('select private.read_tricktionary_catalog(null)')).find(x=>x.source_key==='fixture trick').title,'Shared Fixture','Head sees assistant classification edit');eq(await scalar('select count(*)::int from private.tricktionary_catalog'),1,'Catalogue does not acquire conflicting coach copies');
+await as(4);await assert.rejects(q('select save_weekly_lines($1,$2,$3)',[id(3),week,'[]']),/Private team/);checks++;eq(await scalar('select private.read_tricktionary_catalog(null)'),[],'Foreign coach cannot read catalogue');
+await q("insert into private.coach_team_invites values('spent',$1,now())",[id(5)]);await q('delete from auth.users where id=$1',[id(5)]);eq((await q("select consumed_by is null cleared,consumed_at is not null spent from private.coach_team_invites where code='spent'")).rows,[{cleared:true,spent:true}],'Family Auth deletion preserves spent invitation without blocking cascade');
+console.log(`PASS: ${checks} shared schedule save checks; stable IDs/progress, one draft/plan, rider-week locks, one catalogue, foreign denial and family deletion.`);
+}finally{await db.close();}})().catch(e=>{console.error(e.message,e.where||'');process.exitCode=1;});

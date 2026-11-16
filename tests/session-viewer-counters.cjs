@@ -22,7 +22,7 @@ const names = [
   'activeSessionViewerList', 'sessionViewerTabsForEntry', 'sessionViewerPlanList', 'sessionViewerListCount',
   'openSessionViewerCounter', 'selectViewerListTab',
   'sessionViewerSnapshotHtml', 'paintSessionViewerSnapshot', 'renderSessionViewer', 'refreshSessionViewerLight',
-  'sessionViewerVenueOptions', 'sessionViewerGroupTabs', 'sessionViewerVenueTabs',
+  'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml',
   'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom',
   'bindSessionViewerActions', 'bindSessionViewerFastActions', 'dailySessionHubHtml',
 ];

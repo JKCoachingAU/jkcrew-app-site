@@ -1,0 +1,130 @@
+// Isolated approval quarantine checks: synthetic accounts and tables only.
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { PGlite } = require(process.env.JKCREW_PGLITE_PATH || '@electric-sql/pglite');
+const root = path.resolve(__dirname, '..');
+const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20261116123231_require_platform_approval_for_coaches.sql'), 'utf8');
+const id = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
+(async () => {
+  const db = new PGlite();
+  let checks = 0;
+  const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
+  const q = (sql, args = []) => db.query(sql, args);
+  const scalar = async (sql, args = []) => Object.values((await q(sql, args)).rows[0])[0];
+  const as = async actor => {
+    await db.exec('reset role');
+    await q("select set_config('request.jwt.claim.sub',$1,false)", [actor || '']);
+    await db.exec('set role authenticated');
+  };
+  try {
+    await db.exec(`
+      create schema private; create schema auth; create schema storage;
+      create role anon; create role authenticated; create role service_role;
+      grant usage on schema public,private,auth,storage to authenticated;
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      create type public.user_role as enum('coach','admin','athlete','parent');
+      create table auth.users(id uuid primary key,email text,raw_app_meta_data jsonb default '{}',raw_user_meta_data jsonb default '{}',deleted_at timestamptz,banned_until timestamptz,confirmed_at timestamptz default now());
+      create table profiles(id uuid primary key,display_name text,role public.user_role,is_platform_owner boolean default false,email text,country_code text default '',country_name text default '',updated_at timestamptz default now());
+      create table coach_teams(id uuid primary key,coach_id uuid references profiles,name text,country_code text,country_name text,status text default 'active',created_at timestamptz default now());
+      create table coach_athletes(coach_id uuid references profiles,athlete_id uuid references profiles);
+      create table protected_rows(id int primary key,secret text);
+      create table storage.objects(id int primary key,name text);
+      create table storage.buckets(id text primary key,public boolean);
+      grant select,insert,update,delete on profiles,coach_teams,protected_rows,storage.objects to authenticated;
+      alter table profiles enable row level security;
+      create policy original_profile_access on profiles to authenticated using(true) with check(true);
+      alter table protected_rows enable row level security;
+      create policy original_data_access on protected_rows to authenticated using(true) with check(true);
+      alter table storage.objects enable row level security;
+      create policy original_storage_access on storage.objects to authenticated using(true) with check(true);
+      create function public.fixture_scalar(p_increment int default 2) returns int language sql stable security definer set search_path=public as $$select count(*)::int + p_increment from protected_rows$$;
+      create function public.fixture_table(p_limit int default 5) returns table(id int,secret text) language sql stable security definer set search_path=public as $$select id,secret from protected_rows order by id limit p_limit$$;
+      create function public.fixture_composite() returns protected_rows language sql stable security definer set search_path=public as $$select * from protected_rows order by id limit 1$$;
+      create function public.fixture_void(p_id int default 9) returns void language plpgsql security definer set search_path=public as $$begin insert into protected_rows values(p_id,'fixture added'); end$$;
+      create function public.fixture_nested() returns int language plpgsql stable security definer set search_path=public as $$begin return public.fixture_scalar(3); end$$;
+      create function public.fixture_out(p_id int, out result text) language plpgsql stable security definer set search_path=public as $$begin select secret into result from protected_rows where id=p_id; end$$;
+      create function public.fixture_immutable(p_value int) returns int language sql immutable as $$select p_value*2$$;
+      create function public.ensure_current_profile() returns profiles language sql stable security definer as $$select * from profiles where id=auth.uid()$$;
+      create function public.jkcrew_check_rider_feature_access() returns boolean language sql stable as $$select true$$;
+      insert into protected_rows values(1,'first'),(2,'second');
+      insert into storage.objects values(1,'private clip');
+      insert into storage.buckets values('profile-showreels',true),('other-fixture',true);
+    `);
+    for (const [n, name, role, owner] of [[1,'Owner','coach',true],[2,'Pending','coach',false],[3,'Rider','athlete',false],[4,'Parent','parent',false],[5,'Admin','admin',false]]) {
+      await q('insert into profiles(id,display_name,role,is_platform_owner,email) values($1,$2,$3,$4,$5)', [id(n), name, role, owner,`${name.toLowerCase()}@example.test`]);
+      await q('insert into auth.users(id,email,raw_app_meta_data) values($1,$2,$3)', [id(n),`${name.toLowerCase()}@example.test`,JSON.stringify({role})]);
+    }
+    await q("insert into coach_teams values($1,$2,'Fixture team','DE','Germany','active',now())", [id(20),id(2)]);
+    await q('insert into coach_athletes values($1,$2),($3,$2)',[id(1),id(3),id(2)]);
+    await db.exec('begin');
+    await db.exec(migration);
+    await db.exec('commit');
+    eq(await scalar("select public from storage.buckets where id='profile-showreels'"), false, 'Showreel bucket is private');
+    eq(await scalar("select public from storage.buckets where id='other-fixture'"), true, 'Unrelated bucket setting is unchanged');
+    eq(await scalar("select status from private.coach_account_access where coach_id=$1",[id(1)]),'approved','Existing owner retains approval');
+    eq(await scalar("select status from private.coach_account_access where coach_id=$1",[id(2)]),'pending','Existing non-owner coach defaults pending');
+    eq(await scalar("select count(*)::int from private.coach_account_access"),3,'Rider and parent do not become coach approval entries');
+    await as(id(2));
+    eq(await scalar('select count(*)::int from protected_rows'),0,'Pending coach cannot read direct application tables');
+    eq(await scalar('select count(*)::int from storage.objects'),0,'Pending coach cannot list private files');
+    eq(await scalar('select count(*)::int from profiles'),1,'Pending coach can read only their own profile');
+    for (const sql of ['select fixture_scalar()', 'select * from fixture_table()', 'select fixture_composite()', 'select fixture_void()', 'select fixture_nested()', 'select fixture_out(1)']) {
+      await assert.rejects(q(sql), /awaiting platform approval|suspended/); checks++;
+    }
+    await assert.rejects(q("insert into protected_rows values(3,'forbidden')"),/row-level security/); checks++;
+    await assert.rejects(q("insert into storage.objects values(2,'forbidden')"),/row-level security/); checks++;
+    eq(await scalar('select fixture_immutable(4)'),8,'Immutable math helper stays available');
+    eq(await scalar('select (ensure_current_profile()).id'),id(2),'Profile bootstrap stays available');
+    eq(await scalar('select jkcrew_check_rider_feature_access()'),true,'Feature pre-request helper stays available');
+    const pending = await scalar('select get_my_team_access()');
+    eq(pending.approval_status,'pending','Pending status can be read without feature access');
+    eq(pending.coaches,[],'Pending status exposes no team coach list');
+    await assert.rejects(q("select set_coach_access($1,'approved')",[id(2)]),/Platform-owner access required/); checks++;
+    await as(id(5));
+    await assert.rejects(q('select fixture_scalar()'),/awaiting platform approval|suspended/); checks++;
+    await as(id(1));
+    const overview=await scalar('select get_platform_coach_overview()');
+    eq(overview.total_students,1,'Owner overview counts distinct students across coaches');
+    eq(JSON.stringify(overview).includes('Rider'),false,'Owner aggregate does not disclose student names');
+    eq(JSON.stringify(overview).includes('rider@example.test'),false,'Owner aggregate does not disclose student email');
+    eq(await scalar('select fixture_scalar()'),4,'Owner scalar RPC/default remains compatible');
+    eq((await q('select * from fixture_table(1)')).rows,[{id:1,secret:'first'}],'TABLE return/default preserved');
+    eq(await scalar('select (fixture_composite()).id'),1,'Composite return preserved');
+    eq(await scalar('select fixture_nested()'),5,'Nested guarded function remains compatible');
+    eq(await scalar('select fixture_out(1)'),'first','OUT argument signature remains compatible');
+    await q('select fixture_void(9)');
+    eq(await scalar('select count(*)::int from protected_rows'),3,'Approved void write remains functional');
+    await q("select set_coach_access($1,'approved')",[id(2)]);
+    await as(id(2));
+    eq(await scalar('select fixture_scalar(0)'),3,'Approval takes effect with the same signed-in identity');
+    await as(id(1));
+    await q("select set_coach_access($1,'suspended')",[id(2)]);
+    await as(id(2));
+    await assert.rejects(q('select fixture_scalar()'),/awaiting platform approval|suspended/); checks++;
+    eq(await scalar('select count(*)::int from protected_rows'),0,'Suspension removes direct access immediately');
+    eq((await scalar('select get_my_team_access()')).approval_status,'suspended','Suspended status remains readable');
+    await as(id(3));
+    eq(await scalar('select fixture_scalar(0)'),3,'Existing athlete role remains functional');
+    await as(id(4));
+    eq(await scalar('select fixture_scalar(0)'),3,'Existing parent role remains functional');
+    await db.exec('reset role');
+    await q("select set_config('request.jwt.claim.sub','',false)");
+    await db.exec('create trigger fixture_new_auth_user after insert on auth.users for each row execute function public.handle_new_user()');
+    await q('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id(6),'untrusted@example.test',JSON.stringify({role:'admin',display_name:'Untrusted role'})]);
+    eq(await scalar('select role::text from profiles where id=$1',[id(6)]),'athlete','User-editable metadata cannot create admin privileges');
+    await q('insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data) values($1,$2,$3,$4)',[id(7),'newcoach@example.test',JSON.stringify({role:'coach'}),JSON.stringify({role:'admin'})]);
+    eq(await scalar('select role::text from profiles where id=$1',[id(7)]),'coach','Server metadata supplies the coach role');
+    eq(await scalar('select status from private.coach_account_access where coach_id=$1',[id(7)]),'pending','A new server-created coach is pending by default');
+    await as(id(7));
+    await assert.rejects(q("insert into profiles(id,display_name,role,is_platform_owner) values($1,'Escalation','coach',true)",[id(7)]),/privileges|owner|access/i);checks++;
+    await assert.rejects(q("insert into profiles(id,display_name,role) values($1,'Escalation','admin')",[id(7)]),/privileges|server|account|role/i);checks++;
+    await db.exec('reset role');
+    eq(await scalar('select count(*)::int from protected_rows'),3,'Approval operations did not delete application data');
+    eq(await scalar('select count(*)::int from private.coach_account_access_audit'),2,'Owner decisions have audit records');
+    for (const fn of ['public.fixture_scalar(integer)','public.get_my_team_access()','public.set_coach_access(uuid,text)']) {
+      eq(await scalar('select has_function_privilege($1,$2,\'execute\')',['anon',fn]),false,'Anonymous execute revoked: '+fn);
+    }
+    console.log(`PASS: ${checks} isolated coach approval checks; direct rows/storage, scalar/TABLE/composite/OUT/void/nested RPCs, defaults, immediate approval/suspension, owner controls and data preservation.`);
+  } finally { await db.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

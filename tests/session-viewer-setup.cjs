@@ -10,7 +10,7 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const names = ['renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupTabs', 'sessionViewerVenueTabs', 'sessionViewerSnapshotHtml', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'resetPageExpansions', 'navigate'];
+const names = ['renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml', 'sessionViewerSnapshotHtml', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'resetPageExpansions', 'navigate'];
 const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH });
@@ -92,11 +92,11 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       await page.evaluate(() => renderSessionViewer());
       await assertOpen(false, 'Fresh Session view starts closed');
       await summary().click(); await assertOpen(true, 'Native summary opens setup');
-      await page.locator('[data-viewer-group="monday"]').click();
-      await page.waitForFunction(() => document.querySelector('[data-viewer-group="monday"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('[data-test-rider="monday"]'));
+      await page.locator('#viewer-group-filter').selectOption('monday');
+      await page.waitForFunction(() => document.querySelector('#viewer-group-filter')?.value === 'monday' && document.querySelector('[data-test-rider="monday"]'));
       await assertOpen(true, 'Choosing a group keeps location options open');
-      await page.locator('[data-viewer-venue="Park B"]').click();
-      await page.waitForFunction(() => document.querySelector('[data-viewer-venue="Park B"]')?.getAttribute('aria-pressed') === 'true');
+      await page.locator('#viewer-venue-filter').selectOption('Park B');
+      await page.waitForFunction(() => document.querySelector('#viewer-venue-filter')?.value === 'Park B');
       await assertOpen(true, 'Choosing a venue keeps setup open');
       await clickRefresh(); await assertOpen(true, 'Refresh preserves explicitly opened setup');
       await summary().click(); await assertOpen(false, 'Explicit close is recorded');
@@ -109,7 +109,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 
       // Close the current disclosure while a group render waits for its plans.
       await page.evaluate(() => { qaHoldPlan = true; });
-      await page.locator('[data-viewer-group="tuesday"]').click();
+      await page.locator('#viewer-group-filter').selectOption('tuesday');
       await page.waitForFunction(() => qaPendingPlans.length === 1);
       await page.evaluate(() => { window.qaDetachedSetup = document.querySelector('#session-viewer-setup'); });
       await summary().click(); await assertOpen(false, 'Close takes effect during a pending render');
@@ -122,9 +122,9 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 
       // Resolve the latest group first, then deliver its older response last.
       await summary().click(); await assertOpen(true, 'Setup can reopen after a delayed close');
-      await page.locator('[data-viewer-group="monday"]').click();
+      await page.locator('#viewer-group-filter').selectOption('monday');
       await page.waitForFunction(() => qaPendingPlans.length === 1);
-      await page.locator('[data-viewer-group="wednesday"]').click();
+      await page.locator('#viewer-group-filter').selectOption('wednesday');
       await page.waitForFunction(() => qaPendingPlans.length === 2);
       await page.evaluate(() => { const newest = qaPendingPlans.pop(); newest.resolve(newest.data); });
       await page.waitForFunction(() => Boolean(document.querySelector('[data-test-rider="wednesday"]')));
@@ -153,13 +153,13 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         await renderSessionViewer();
       });
       await summary().click(); await assertOpen(true, 'Active session setup remains inspectable');
-      const filters = page.locator('[data-viewer-group], [data-viewer-venue]');
-      assert((await filters.count()) >= 5);
-      assert(await filters.evaluateAll(buttons => buttons.every(button => button.disabled)), 'Active sessions keep group and location filters disabled');
-      await filters.evaluateAll(buttons => buttons.forEach(button => button.click()));
+      const filters = page.locator('#viewer-group-filter, #viewer-venue-filter');
+      assert.equal(await filters.count(), 2);
+      assert(await filters.evaluateAll(selects => selects.every(select => select.disabled)), 'Active sessions keep group and location filters disabled');
+      await filters.evaluateAll(selects => selects.forEach(select => { select.selectedIndex = select.options.length - 1; select.dispatchEvent(new Event('change', { bubbles: true })); }));
       assert.deepEqual(await page.evaluate(() => [state.sessionViewerGroup, state.sessionViewerVenue]), ['monday', 'Park B']);
       await clickRefresh(); await assertOpen(true, 'Active-session refresh retains setup expansion');
-      assert(await filters.evaluateAll(buttons => buttons.every(button => button.disabled)));
+      assert(await filters.evaluateAll(selects => selects.every(select => select.disabled)));
       assert.deepEqual(errors, [], `No browser errors at width ${width}`);
       console.log(`PASS ${width}px: setup open/close, group/location/refresh continuity, keyboard, in-flight close, stale/disconnected toggle guards, latest group wins, navigation reset and active-session filter lock.`);
       await page.close();

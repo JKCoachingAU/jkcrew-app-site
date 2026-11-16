@@ -21,7 +21,7 @@ const context = vm.createContext({
   riderXpSummary: () => ({ level: 5, current_badge: 'test' }),
   client: {
     rpc: async name => {
-      assert.equal(name, 'get_weekly_leaderboard');
+      assert.equal(name, 'get_weekly_leaderboard_with_half_points');
       qa.calls++;
       const fail = qa.fail;
       if (qa.hold) await new Promise(resolve => { qa.release = resolve; });

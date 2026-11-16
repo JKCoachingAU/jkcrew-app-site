@@ -45,15 +45,15 @@ const {PGlite}=require(process.env.JKCREW_PGLITE_PATH||'@electric-sql/pglite');
  const run={id:id(11),athlete_id:rider,coach_id:coach,created_by:coach,updated_at:'2026-09-10T00:00:00.123456Z',title:'Finals',points:content.points,image_data_url:'photo'};
  const state={user:{id:rider},profile:{role:'athlete'},selectedAthleteId:stranger};let rpcCall=null,queryId=null,saveError=null;
  const ctx=vm.createContext({escapeHtml:String,dateLabel:()=>"",runMapHtml:()=>"",runReviewPanelHtml:()=>"",runPlaybackControlsHtml:()=>"",state,liveRun:null,runUndoStack:[],runRedoStack:[],isCoachRole:r=>r==='coach',setButtonBusy:()=>()=>{},withTimeout:async p=>p,runView:v=>v||{},closeContestEventModal:()=>{},navigate:async()=>{},document:{querySelector:()=>null},notify:()=>{},messageFrom:e=>e.message,runBuilderRefreshView:async()=>{},cacheClear:()=>{},setSyncStatus:()=>{},runBuilderStage:()=> 'playback',FormData:class{get(k){return k==='title'?'Edited':'Notes';}},client:{from:()=>({select(){return this},eq(k,v){queryId=v;return this},single:async()=>({data:run})}),rpc:async(name,args)=>{rpcCall={name,args};return {error:saveError};}}});
- vm.runInContext(['coachEventRunViewerHtml','canEditRun','runRemovalButtonHtml','editRunPlan','saveRunPlan'].map(extract).join('\n'),ctx);
+ vm.runInContext(['coachEventRunViewerHtml','cacheGet','canManageCoachTeamRecord','canEditRun','runRemovalButtonHtml','editRunPlan','saveRunPlan'].map(extract).join('\n'),ctx);
  assert(vm.runInContext(`canEditRun(${JSON.stringify(run)})`,ctx),'Rider can edit coach-created run');
  assert(ctx.coachEventRunViewerHtml([run]).includes('data-edit-run='));
  state.profile.role='parent';assert(!ctx.coachEventRunViewerHtml([run]).includes('data-edit-run='));assert.equal(vm.runInContext(`canEditRun(${JSON.stringify(run)})`,ctx),false);
  for(const actor of [rider,coach]){
   state.user.id=actor;state.profile.role=actor===coach?'coach':'athlete';
   await ctx.editRunPlan({currentTarget:{dataset:{editRun:run.id}}});assert.equal(queryId,run.id);assert.equal(state.runBuilder.athleteId,rider);assert.equal(state.runBuilder.updatedAt,run.updated_at);
-  await ctx.saveRunPlan({preventDefault(){},currentTarget:{}});assert.equal(rpcCall.name,'save_shared_run_edits');assert.equal(rpcCall.args.p_run_id,run.id);assert.equal(rpcCall.args.p_expected_updated_at,run.updated_at);assert.equal(rpcCall.args.p_content.athlete_id,rider);assert.equal(state.runBuilder,null);
+  await ctx.saveRunPlan({preventDefault(){},currentTarget:{querySelectorAll:()=>[]}});assert.equal(rpcCall.name,'save_shared_run_edits');assert.equal(rpcCall.args.p_run_id,run.id);assert.equal(rpcCall.args.p_expected_updated_at,run.updated_at);assert.equal(rpcCall.args.p_content.athlete_id,rider);assert.equal(state.runBuilder,null);
  }
- await ctx.editRunPlan({currentTarget:{dataset:{editRun:run.id}}});saveError={message:'This run changed'};await ctx.saveRunPlan({preventDefault(){},currentTarget:{}});assert(state.runBuilder,'Stale-save failure retains the local edits');
+ await ctx.editRunPlan({currentTarget:{dataset:{editRun:run.id}}});saveError={message:'This run changed'};await ctx.saveRunPlan({preventDefault(){},currentTarget:{querySelectorAll:()=>[]}});assert(state.runBuilder,'Stale-save failure retains the local edits');
  console.log('PASS: rider/coach edits of either creator, preserved identity, fresh exact-run loading, stale-save protection, denied outsiders/parents/unlinked coaches, no duplicate saves and retained failed drafts.');
 })().catch(e=>{console.error(e);process.exit(1);});

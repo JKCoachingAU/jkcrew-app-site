@@ -13,6 +13,7 @@ const consume=(name,details={})=>{calls.push({name,...details});return Promise.r
 const client={auth:{signInWithPassword:credentials=>consume('password',credentials),getSession:()=>consume('session'),resetPasswordForEmail:(email,opts)=>consume('reset',{email,opts}),updateUser:body=>consume('update',body),signOut:options=>consume('logout',{options})},functions:{invoke:(name,body)=>consume('signup',{body})},from(){return{delete(){return this},eq(){return this},then(resolve,reject){return consume('pushDelete').then(resolve,reject)}}}};
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cancelScreenLoading=()=>{},renderBootRecovery=message=>{app.innerHTML='<div class="boot-recovery">'+escapeHtml(message)+'</div>';};
+const countryOptions=[['AU','Australia'],['DE','Germany']],countryOptionsHtml=()=>'<option value="AU">Australia</option><option value="DE">Germany</option>';
 const wait=()=>Promise.resolve(),withTimeout=(promise,label,ms)=>testTimeout(promise,label,timeoutOverrides[label]??ms);
 const notify=(message,kind)=>notices.push({message,kind}),handleSessionOnce=async session=>{state.session=session;state.user=session?.user||null;app.innerHTML='<main id="view">Dashboard</main>';};
 const cleanPasswordRecoveryUrl=()=>{},leaveLiveRun=async()=>true,supportsPushNotifications=()=>window.pushEnabled===true,clearLocalAuthSession=()=>{calls.push({name:'clearLocal'});};

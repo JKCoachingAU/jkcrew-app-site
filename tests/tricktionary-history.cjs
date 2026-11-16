@@ -16,15 +16,17 @@ const context = {
   TRICKTIONARY_CATEGORY_LABELS: { new: 'New Tricks', box: 'Box', spine: 'Spine', air: 'Air', hip: 'Hip' },
   categoryInfo: { daily: { label: 'Daily Tricks' }, lines: { label: 'Lines' }, dialled: { label: 'Dialled' } },
   PROFILE_SELECT: 'id,country_code',
+  escapeHtml: value => String(value || ''), venueLabel: value => value || 'Park',
 };
 vm.createContext(context);
 vm.runInContext([
   'normalizeTrickKey', 'safeTricktionaryCategory', 'manualTricktionary', 'tricktionaryMeta',
   'resolveTricktionaryAlias', 'tricktionaryCategoryFromText', 'splitLineTricks', 'assignmentPresentation', 'tricktionaryLineComponents',
   'tricktionaryLandingDate', 'landedTricktionaryEntries', 'getTricktionaryPagedRows', 'getTricktionaryData',
+  'trickObstacleCategory', 'previousTrainingSheetsHtml',
 ].map(functionCode).join('\n'), context);
 const aggregate = data => Array.from(context.landedTricktionaryEntries({ profile: { country_code: 'AU' }, ...data }));
-const counts = data => Object.fromEntries(aggregate(data).map(entry => [entry.title, entry.count]));
+const counts = data => Object.fromEntries(aggregate(data).filter(entry => entry.count > 0).map(entry => [entry.title, entry.count]));
 const at = day => `2026-09-${day}T01:00:00Z`;
 const assignment = (id, trick_name, category = 'daily', extra = {}) => ({ id, trick_name, category, ...extra });
 const landing = (id, assignment_id, trick_name, category, day, extra = {}) => ({ id, assignment_id, trick_name, category, landed_at: at(day), landing_date: category === 'daily' ? `2026-09-${day}` : null, landed_count: 1, evidence_type: 'progress', ...extra });
@@ -41,7 +43,15 @@ assert.deepEqual(counts({
 assert.deepEqual(counts({
   assignments: [assignment('d1', 'Barspin'), assignment('d2', 'Tailwhip')],
   awards: [{ assignment_id: 'd1', award_key: 'daily-complete:Park:2026-09-07', points: 1, created_at: at('07') }],
-}), { Barspin: 1 }, 'A full-list award never invents landings for sibling assignments');
+}), {}, 'A full-list award does not prove any individual trick was ticked');
+assert.deepEqual(counts({
+  assignments: [assignment('weekly', 'Unticked weekly', 'one_bang'), assignment('daily', 'Unticked daily')],
+  progress: [{ assignment_id: 'weekly', completed_at: null }, { assignment_id: 'daily', progress_date: null }],
+  awards: [
+    { assignment_id: 'weekly', award_key: 'one_bang:weekly', points: 2, created_at: at('07') },
+    { assignment_id: 'daily', award_key: 'daily-under-20:Park:2026-09-07', points: 1, created_at: at('07') },
+  ],
+}), {}, 'Positive weekly receipts and Daily timer bonuses never manufacture unticked landings');
 
 assert.deepEqual(counts({
   assignments: [assignment('p', 'Tailwhip', 'percentage')],
@@ -87,6 +97,12 @@ assert.deepEqual(counts({
   landingHistory: [landing('assignment:line', 'line', 'Manual', 'lines', '07', { notes: 'Barspin - 360' })],
   awards: [{ assignment_id: 'line', award_key: 'lines:line', points: 2, created_at: at('07') }],
 }), { '360': 1, Barspin: 1, Manual: 1 }, 'Editing a completed Line later does not turn its old completion into landings of the new tricks');
+assert.deepEqual(counts({
+  assignments: [assignment('edited', 'Replacement trick', 'one_bang')],
+  progress: [{ assignment_id: 'edited', completed_at: at('08') }],
+  landingHistory: [landing('assignment:edited', 'edited', 'Original ticked trick', 'one_bang', '07')],
+  awards: [{ assignment_id: 'edited', award_key: 'one_bang:edited', points: 2, created_at: at('08') }],
+}), { 'Original ticked trick': 1 }, 'Immutable tick snapshots stay authoritative across dates when a sheet name is edited');
 assert.deepEqual(counts({ landingHistory: [landing('l', 'line', 'Manual', 'lines', '07', { notes: 'Keep looking ahead' })] }), { Manual: 1 }, 'Free-form notes do not become invented tricks');
 assert.deepEqual(counts({ landingHistory: [landing('l', 'line', '360 SWITCH DOWNY FAT SPINE | FLAIR BAR 10FT | TRIPLE TRUCK FAT SPINE', 'lines', '07')] }), { '360 SWITCH DOWNY FAT SPINE': 1, 'FLAIR BAR 10FT': 1, 'TRIPLE TRUCK FAT SPINE': 1 }, 'Explicit pipe-separated Lines credit each confirmed trick');
 assert.deepEqual(counts({ landingHistory: [landing('l', 'line', 'CANNON BALL BOX', 'lines', '07', { notes: 'INDIAN AIR - OPPO AIR 10ft over coping - NO FOOT CAN FAT SPINE - ALLEYOOP TBOG' })] }), { 'ALLEYOOP TBOG': 1, 'CANNON BALL BOX': 1, 'INDIAN AIR': 1, 'NO FOOT CAN FAT SPINE': 1, 'OPPO AIR 10ft over coping': 1 }, 'Confirmed five-trick Lines retain every component');
@@ -111,7 +127,13 @@ assert.deepEqual(counts({
 assert.deepEqual(counts({
   profile: { tricktionary_meta: { aliases: { 'old name': 'new name' }, titles: { 'new name': 'Renamed trick' }, hidden: { hidden: true } }, manual_tricktionary: [{ id: 'manual', title: 'Old Name', count: 4 }] },
   landingHistory: [landing('x1', 'one', 'Old Name', 'one_bang', '07'), landing('x2', 'two', 'Hidden', 'one_bang', '07'), landing('x3', 'three', 'Foam flair', 'foam_pit', '07')],
-}), { 'Renamed trick': 5 }, 'Manual history stays additive, renamed aliases combine, deliberate deletions and foam stay excluded');
+}), { 'Renamed trick': 1 }, 'Manual records are separate from verified landings; aliases, deliberate deletions and foam remain respected');
+const manualEvidence = aggregate({
+  profile: { manual_tricktionary: [{ id: 'manual-only', title: 'Recorded only', count: 4, completed: true }, { id: 'manual-ticked', title: 'Recorded and ticked', count: 3 }] },
+  assignments: [assignment('ticked', 'Recorded and ticked', 'one_bang')],
+  progress: [{ assignment_id: 'ticked', completed_at: at('07') }],
+});
+assert.deepEqual(manualEvidence.map(entry => [entry.title, entry.count, entry.manualCount]), [['Recorded and ticked', 1, 3], ['Recorded only', 0, 4]], 'Manual history is retained separately, while a real explicit progress tick remains a verified landing');
 assert.deepEqual(counts({
   profile: { tricktionary_meta: { hidden: { 'manual → barspin → 360': true } } },
   landingHistory: [landing('line', 'line', 'Manual → Barspin → 360', 'lines', '07')],
@@ -119,8 +141,16 @@ assert.deepEqual(counts({
 assert.deepEqual(counts({
   profile: { tricktionary_meta: { aliases: { 'manual → barspin → 360': 'competition line' }, titles: { 'competition line': 'Competition Line' } }, manual_tricktionary: [{ id: 'manual', title: 'Competition Line', count: 3 }] },
   landingHistory: [landing('line', 'line', 'Manual → Barspin → 360', 'lines', '07')],
-}), { 'Competition Line': 4 }, 'An intentionally renamed or merged full-Line card keeps its existing canonical organisation and additive manual history');
+}), { 'Competition Line': 1 }, 'A renamed or merged full-Line card keeps its canonical organisation without converting manual history into ticked landings');
 assert.equal(context.tricktionaryLandingDate('2026-09-08T01:00:00Z', { country_code: 'CO' }), '2026-09-07', 'Daily source matching uses the rider local date');
+const priorSheet = context.previousTrainingSheetsHtml({
+  assignments: [assignment('bonus-only', 'Unticked Daily'), assignment('renamed', 'New sheet name', 'one_bang'), assignment('partial-percent', 'Partial percentage', 'percentage')],
+  progress: [{ assignment_id: 'renamed', completed_at: at('08') }],
+  awards: [{ assignment_id: 'bonus-only', award_key: 'daily-complete:Park:2026-09-07', points: 1 }],
+  landingHistory: [landing('assignment:renamed', 'renamed', 'Original ticked name', 'one_bang', '07'), landing('percentage:partial', 'partial-percent', 'Partial percentage', 'percentage', '07', { evidence_type: 'percentage' })],
+});
+assert(!priorSheet.includes('previous-sheet-row complete'), 'Prior-sheet summaries do not claim completion for list bonuses, edited names or one landed percentage rep');
+assert(priorSheet.includes('1 pts'), 'Earned scoring receipts remain in the prior-sheet point total');
 
 async function queryChecks() {
   const calls = [];

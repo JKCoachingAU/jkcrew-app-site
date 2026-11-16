@@ -11,7 +11,7 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const functions = ['renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupTabs', 'sessionViewerVenueTabs', 'sessionViewerSnapshotHtml', 'showAddDailyLocation', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'getCoachVenues'];
+const functions = ['renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml', 'sessionViewerSnapshotHtml', 'showAddDailyLocation', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'getCoachVenues'];
 const constants = app.slice(app.indexOf('const venueKey ='), app.indexOf('\n\nfunction avatarHtml', app.indexOf('const venueKey =')));
 const screenshotDir = process.env.JKCREW_SCREENSHOT_DIR || '/tmp/jkcrew-daily-location-qa';
 fs.mkdirSync(screenshotDir, { recursive: true });
@@ -36,6 +36,7 @@ const check = (value, message) => { assert(value, message); checks++; };
         window.qaVenues = ['LOGANLAND', 'Beenleigh', 'PIZZEY SKATE PARK'].map((name, index) => ({ id: `saved-${index}`, coach_id: 'coach', name, sort_order: index }));
         window.qaInserts = []; window.qaNotices = []; window.qaSession = null; window.qaHoldRead = false; window.qaHoldInsert = false; window.qaPendingReads = []; window.qaPendingInserts = []; window.qaFailRead = false; window.qaFailInsert = false; window.qaDuplicateInsert = false;
         window.getSessionViewerRoster = async () => qaRoster;
+        window.getCoachTeamScopeIds = async () => [state.user.id];
         window.getActiveCoachGroupSession = async () => qaSession;
         window.getSessionViewerPlanData = async () => ({ assignmentsByAthlete: qaRows, runsByAthlete: new Map(), runProgressByPlan: new Map() });
         window.withTimeout = promise => promise;
@@ -44,9 +45,10 @@ const check = (value, message) => { assert(value, message); checks++; };
           from: table => {
             if (table !== 'coach_venues') throw Error(`Unexpected table ${table}`);
             return {
-              select: columns => { if (columns !== "*") throw Error("Unexpected venue read fields"); let owner; let orders = 0; const query = {
-                eq: (field, value) => { if (field !== 'coach_id') throw Error('Owner filter missing'); owner = value; return query; },
-                order: () => { if (++orders < 2) return query; const result = () => qaFailRead ? Promise.reject(Error('Connection unavailable')) : Promise.resolve({ data: qaVenues.filter(row => row.coach_id === owner).map(row => ({ ...row })) }); return qaHoldRead ? new Promise((resolve, reject) => qaPendingReads.push(() => result().then(resolve, reject))) : result(); },
+              select: columns => { if (columns !== "*") throw Error("Unexpected venue read fields"); let owners = []; let orders = 0; const query = {
+                eq: (field, value) => { if (field !== 'coach_id') throw Error('Owner filter missing'); owners = [value]; return query; },
+                in: (field, values) => { if (field !== 'coach_id') throw Error('Team scope filter missing'); owners = [...values]; return query; },
+                order: () => { if (++orders < 2) return query; const result = () => qaFailRead ? Promise.reject(Error('Connection unavailable')) : Promise.resolve({ data: qaVenues.filter(row => owners.includes(row.coach_id)).map(row => ({ ...row })) }); return qaHoldRead ? new Promise((resolve, reject) => qaPendingReads.push(() => result().then(resolve, reject))) : result(); },
               }; return query; },
               insert: row => { qaInserts.push({ ...row }); return { select: columns => { if (columns !== 'id,name,sort_order') throw Error('Unexpected saved fields'); return { single: () => {
                 const result = () => {
@@ -82,14 +84,14 @@ const check = (value, message) => { assert(value, message); checks++; };
       const fill = name => page.locator('#new-daily-location').fill(name);
       const save = () => page.locator('.daily-location-dialog [type="submit"]').click();
       const closed = () => page.waitForFunction(() => !document.querySelector('.daily-location-dialog'));
-      const ready = name => page.waitForFunction(name => Boolean([...document.querySelectorAll('[data-viewer-venue]')].find(el => el.dataset.viewerVenue === name)), name);
+      const ready = name => page.waitForFunction(name => Boolean([...document.querySelectorAll('#viewer-venue-filter option')].find(el => el.value === name)), name);
       await page.evaluate(() => renderSessionViewer());
       const add = page.locator('#add-daily-location');
       await add.scrollIntoViewIfNeeded();
       const box = await add.boundingBox();
-      check(box.width === 44 && box.height === 44, `${width}/${theme}: square44 tap target`);
+      check(box.width === box.height && box.width >= 44, `${width}/${theme}: square accessible tap target`);
       check(await add.getAttribute('aria-label') === 'Add daily location', 'Accessible plus label');
-      check(await add.evaluate(el => el.previousElementSibling?.dataset.viewerVenue === 'PIZZEY SKATE PARK'), 'Plus follows final park');
+      check(await add.evaluate(el => Boolean(el.closest('.viewer-location-filter')?.querySelector('#viewer-venue-filter'))), 'Plus stays beside the location selector');
       await page.screenshot({ path: path.join(screenshotDir, `locations-${theme}-${width}.png`) });
       await open();
       check(await page.locator('#new-daily-location').evaluate(el => el === document.activeElement), 'Name gets focus');
@@ -100,15 +102,15 @@ const check = (value, message) => { assert(value, message); checks++; };
       await page.screenshot({ path: path.join(screenshotDir, `add-location-${theme}-${width}.png`) });
       await save(); await closed(); await ready('New Park');
       check(await page.evaluate(() => state.sessionViewerVenue === 'New Park'), 'New location selected');
-      check(await page.locator('[data-viewer-venue="New Park"]').getAttribute('aria-pressed') === 'true', 'Selected location button');
+      check(await page.locator('#viewer-venue-filter').inputValue() === 'New Park', 'Selected location is displayed');
       const writes = await page.evaluate(() => qaInserts);
       check(writes.length === 1 && writes[0].coach_id === 'coach' && writes[0].name === 'New Park' && writes[0].sort_order === 3, 'Only appended owner-scoped venue row');
       check(await page.locator('[data-test-rider="monday"]').textContent().then(text => text.includes('0 daily tricks')), 'New park starts without fabricated tricks');
-      await page.locator('[data-viewer-group="tuesday"]').click(); await ready('New Park');
-      check(await page.locator('[data-viewer-venue="New Park"]').count() === 1, 'Empty saved park survives group switch');
+      await page.locator('#viewer-group-filter').selectOption('tuesday'); await ready('New Park');
+      check(await page.locator('#viewer-venue-filter option[value="New Park"]').count() === 1, 'Empty saved park survives group switch');
       await page.evaluate(async () => { state.sessionViewerVenue = ''; await renderSessionViewer(); });
       await ready('New Park');
-      check(await page.locator('[data-viewer-venue="New Park"]').count() === 1, 'Empty saved park survives fresh render');
+      check(await page.locator('#viewer-venue-filter option[value="New Park"]').count() === 1, 'Empty saved park survives fresh render');
       await open(); await fill('new park'); await save(); await closed();
       check(await page.evaluate(() => qaInserts.length) === 1, 'Canonical duplicate avoids insert');
       await open(); await fill('Beenleigh Skate Park'); await save(); await closed();
@@ -155,9 +157,9 @@ const check = (value, message) => { assert(value, message); checks++; };
       check(await page.evaluate(() => state.sessionViewerVenue === qaBeforeLate.venue && qaNotices.length === qaBeforeLate.notices), 'Late committed save cannot update a different view');
       await page.keyboard.press('Escape'); await closed();
       await page.evaluate(async () => { state.view = 'sessionViewer'; await renderSessionViewer(); }); await ready('Late Response Park');
-      check(await page.locator('[data-viewer-venue="Late Response Park"]').count() === 1, 'Later refresh discovers a save completed after navigation');
+      check(await page.locator('#viewer-venue-filter option[value="Late Response Park"]').count() === 1, 'Later refresh discovers a save completed after navigation');
       await page.evaluate(async () => { qaFailRead = true; await renderSessionViewer(); });
-      check(await page.locator('[data-viewer-venue="PIZZEY SKATE PARK"]').count() === 1, 'Saved-location read failure leaves existing daily locations usable');
+      check(await page.locator('#viewer-venue-filter option[value="PIZZEY SKATE PARK"]').count() === 1, 'Saved-location read failure leaves existing daily locations usable');
       await page.evaluate(() => { qaFailRead = false; state.profile.role = 'athlete'; showAddDailyLocation(); });
       check(await page.locator('.daily-location-dialog').count() === 0, 'Rider role cannot open coach location creator');
       await page.evaluate(() => { state.profile.role = 'coach'; });
@@ -165,10 +167,10 @@ const check = (value, message) => { assert(value, message); checks++; };
       await page.evaluate(async () => { qaSession = { id: 'live', group_name: 'monday', venue: 'LOGANLAND', status: 'active', started_at: new Date().toISOString(), coach_group_session_participants: [{ athlete_id: 'monday' }] }; await renderSessionViewer(); });
       await open(); await fill('Next Session Park'); await save(); await closed(); await ready('Next Session Park');
       check(await page.evaluate(() => state.sessionViewerVenue === 'LOGANLAND'), 'Adding during active session retains live venue');
-      check(await page.locator('[data-viewer-venue="Next Session Park"]').isDisabled(), 'New park obeys active-session location lock');
+      check(await page.locator('#viewer-venue-filter').isDisabled(), 'New park obeys active-session location lock');
       check(await page.evaluate(() => qaNotices.at(-1).includes('after this session')), 'Active session explains next-session availability');
       await page.evaluate(async () => { qaSession = null; await renderSessionViewer(); }); await ready('Next Session Park');
-      check(await page.locator('[data-viewer-venue="Next Session Park"]').isEnabled(), 'Saved park usable after session ends');
+      check(await page.locator('#viewer-venue-filter').isEnabled(), 'Saved park usable after session ends');
       check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No viewport overflow');
       check(errors.length === 0, `No browser errors: ${errors.join(', ')}`);
       await page.close();

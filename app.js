@@ -27,13 +27,17 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.201";
+const RELEASE_VERSION = "2.14.202";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
   session: null,
   user: null,
   profile: null,
+  coachAccountAccess: null,
+  coachAccessCheckedAt: 0,
+  coachAccessRequest: null,
+  coachAccessTimer: null,
   view: "home",
   activeTraining: null,
   activeBattles: null,
@@ -93,6 +97,8 @@ const state = {
   videoReviewSearchTimer: null,
   videoReviewMedia: new Map(),
   videoReviewRecordedReplies: new Map(),
+  videoReviewComparisons: new Map(),
+  videoReviewComparisonRaf: null,
   videoReviewRecording: null,
   videoReviewRecordingStarting: null,
   videoReviewActiveRequestId: "",
@@ -392,12 +398,19 @@ let tusClientPromise = null;
 
 function cacheGet(key, ttlMs = 8000) {
   const entry = state.cache?.[key];
-  if (!entry || Date.now() - entry.time > ttlMs) return null;
+  if (!entry || entry.userId !== (state.user?.id || null)
+      || entry.generation !== (state.sessionSetupVersion || 0)
+      || Date.now() - entry.time > ttlMs) return null;
   return entry.value;
 }
 
-function cacheSet(key, value) {
-  state.cache[key] = { value, time: Date.now() };
+function cacheSet(key, value, scope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 }) {
+  if (scope.userId !== (state.user?.id || null) || scope.generation !== (state.sessionSetupVersion || 0)) {
+    const error = new Error("Your account access changed. Refresh to load current data.");
+    error.name = "AbortError";
+    throw error;
+  }
+  state.cache[key] = { value, time: Date.now(), userId: scope.userId, generation: scope.generation };
   return value;
 }
 
@@ -405,6 +418,39 @@ function cacheClear(prefix = "") {
   Object.keys(state.cache || {}).forEach((key) => {
     if (!prefix || key.startsWith(prefix)) delete state.cache[key];
   });
+}
+
+async function getCoachTeamScopeIds() {
+  const scope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
+  if (!scope.userId || !isCoachRole(state.profile?.role)) throw new Error("Coach sign-in required.");
+  const key = "coach-team-scope";
+  const cached = cacheGet(key, 15000);
+  if (cached) return [...cached];
+  const existing = state.inFlight.get(key);
+  if (existing) return existing;
+  const request = (async () => {
+    // This endpoint returns approved members of the actor's purchasing team.
+    // Country and the owner's platform privileges never expand this scope.
+    const { data, error } = await withTimeout(client.rpc("get_my_team_access"), "Load team access", 12000);
+    if (error) throw error;
+    const access = Array.isArray(data) ? data[0] : data;
+    const validId = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    if (access?.approval_status !== "approved" || !validId(access.team?.id) || !Array.isArray(access.coaches)
+      || !["head_coach", "coach", "assistant_coach"].includes(access.team?.role)
+      || access.coaches.some(coach => !validId(coach.coach_id) || !["head_coach", "coach", "assistant_coach"].includes(coach.role))) {
+      throw new Error("Your approved team access could not be verified. Refresh and try again.");
+    }
+    const ids = [...new Set(access.coaches.map(coach => coach.coach_id))];
+    if (!ids.includes(scope.userId)) throw new Error("Your team membership could not be verified. Refresh and try again.");
+    return [...cacheSet(key, ids, scope)];
+  })().finally(() => { if (state.inFlight.get(key) === request) state.inFlight.delete(key); });
+  state.inFlight.set(key, request);
+  return request;
+}
+
+function canManageCoachTeamRecord(coachId) {
+  return Boolean(isCoachRole(state.profile?.role) && state.user?.id && coachId
+    && (coachId === state.user.id || cacheGet("coach-team-scope", Infinity)?.includes(coachId)));
 }
 
 function invalidateSessionViewerData() {
@@ -1171,24 +1217,40 @@ function celebrate(message) {
   setTimeout(() => burst.remove(), 4200);
 }
 
-function showProgressPopup({ kind = "xp", title = "Progress updated", message = "", badge = null } = {}) {
+function showProgressPopup({ kind = "xp", title = "Progress updated", message = "", badge = null, pointsChange = null, trickName = "", weeklyTotal = null } = {}) {
   if (!XP_PROGRESSION_ENABLED && ["xp", "badge", "level", "prestige"].includes(kind)) return;
-  let stack = document.querySelector(".progress-popup-stack");
+  const isScore = kind === "score";
+  const scoreAmount = Number(pointsChange);
+  if (isScore && (!Number.isFinite(scoreAmount) || scoreAmount === 0)) return;
+  let stack = document.querySelector(isScore ? ".score-popup-stack" : ".progress-popup-stack:not(.score-popup-stack)");
   if (!stack) {
     stack = document.createElement("div");
-    stack.className = "progress-popup-stack";
+    stack.className = `progress-popup-stack${isScore ? " score-popup-stack" : ""}`;
     stack.setAttribute("aria-live", "polite");
+    stack.setAttribute("aria-relevant", "additions");
     document.body.appendChild(stack);
   }
   const popup = document.createElement("div");
   popup.className = `progress-popup ${kind === "badge" ? "badge-popup" : kind === "daily" ? "daily-popup" : kind === "score" ? "score-popup" : "xp-popup"}`;
-  const marker = kind === "badge"
-    ? `<span class="progress-popup-badge">${badge ? levelBadgeHtml(badge, true) : "★"}</span>`
-    : kind === "daily" ? `<span class="progress-popup-xp">✓</span>`
-    : kind === "score" ? `<span class="progress-popup-xp">PTS</span>`
-    : `<span class="progress-popup-xp">+XP</span>`;
-  popup.innerHTML = `${marker}<span class="progress-popup-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(message)}</small></span>`;
+  popup.setAttribute("aria-atomic", "true");
+  if (isScore) {
+    const pointLabel = Math.abs(scoreAmount) === 1 ? "point" : "points";
+    const amount = `${scoreAmount > 0 ? "+" : ""}${scoreAmount.toLocaleString("en", { maximumFractionDigits: 20 })}`;
+    const hasTotal = weeklyTotal !== null && weeklyTotal !== undefined && weeklyTotal !== "" && Number.isFinite(Number(weeklyTotal));
+    const total = hasTotal ? Number(weeklyTotal).toLocaleString("en", { maximumFractionDigits: 20 }) : "";
+    popup.classList.toggle("is-adjustment", scoreAmount < 0);
+    popup.innerHTML = `<span class="score-popup-points"><strong>${escapeHtml(amount)}</strong><small>${pointLabel}</small></span><span class="progress-popup-copy"><span class="score-popup-status"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${scoreAmount > 0 ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M3 10h11a6 6 0 0 1 0 12M3 10l5-5M3 10l5 5"/>'}</svg>${scoreAmount > 0 ? "Points earned" : "Score updated"}</span><strong class="score-popup-trick">${escapeHtml(trickName || "Training progress")}</strong><small class="score-popup-total">${hasTotal ? `Weekly total <b>${escapeHtml(total)} <span>pts</span></b>` : "Points saved"}</small></span>`;
+  } else {
+    const marker = kind === "badge"
+      ? `<span class="progress-popup-badge">${badge ? levelBadgeHtml(badge, true) : "★"}</span>`
+      : kind === "daily" ? `<span class="progress-popup-xp">✓</span>`
+      : `<span class="progress-popup-xp">+XP</span>`;
+    popup.innerHTML = `${marker}<span class="progress-popup-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(message)}</small></span>`;
+  }
   stack.appendChild(popup);
+  if (isScore) {
+    while (stack.children.length > 1 && (stack.children.length > 3 || stack.getBoundingClientRect().top < 16 || stack.getBoundingClientRect().bottom > window.innerHeight - 16)) stack.firstElementChild.remove();
+  }
   playNotificationSound(kind);
   requestAnimationFrame(() => popup.classList.add("show"));
   setTimeout(() => {
@@ -1198,6 +1260,7 @@ function showProgressPopup({ kind = "xp", title = "Progress updated", message = 
       if (!stack.children.length) stack.remove();
     }, 220);
   }, kind === "badge" ? 5000 : kind === "daily" ? 1600 : 3200);
+  return popup;
 }
 
 function showLevelUpModal(summary) {
@@ -1267,14 +1330,24 @@ async function refreshOwnXpAfterAction({ announceXp = false, trickName = "" } = 
 }
 
 async function showUpdatedWeeklyScore(pointsChange = 0, trickName = "") {
-  if (!Number(pointsChange)) return;
-  const leaderboard = await getLeaderboard();
-  const row = leaderboard.find((entry) => entry.athlete_id === state.user.id);
-  showProgressPopup({
+  const awardedPoints = Number(pointsChange);
+  if (!Number.isFinite(awardedPoints) || awardedPoints === 0) return;
+  const viewerId = state.user?.id;
+  const popup = showProgressPopup({
     kind: "score",
-    title: `${pointsChange > 0 ? "+" : ""}${pointsChange} leaderboard point${Math.abs(pointsChange) === 1 ? "" : "s"}`,
-    message: `${trickName ? `${trickName} · ` : ""}Weekly score ${Number(row?.weekly_points || 0)}`,
+    pointsChange: awardedPoints,
+    trickName,
   });
+  void getLeaderboard({ allowFallback: false }).then((leaderboard) => {
+    if (!popup?.isConnected || state.user?.id !== viewerId) return;
+    const row = leaderboard.find((entry) => entry.athlete_id === viewerId);
+    if (row?.weekly_points === null || row?.weekly_points === undefined || row.weekly_points === "" || !Number.isFinite(Number(row.weekly_points))) return;
+    const total = Number(row.weekly_points).toLocaleString("en", { maximumFractionDigits: 20 });
+    popup.querySelector(".score-popup-total").innerHTML = `Weekly total <b>${escapeHtml(total)} <span>pts</span></b>`;
+  }).catch((error) => {
+    console.warn("Weekly score refresh failed after points were saved.", error);
+  });
+  return popup;
 }
 
 function updateInstallButton() {
@@ -1610,12 +1683,50 @@ async function handleSession(session) {
   cancelScreenLoading();
   clearInterval(state.timer);
   clearInterval(state.riderAccessTimer);
+  clearInterval(state.coachAccessTimer);
+  state.coachAccessTimer = null;
   teardownRealtimeSync();
   document.querySelector("#live-run-invitation")?.remove();
   window.JKCRiderHealth?.cleanup();
   state.recoveryMount?.destroy();
   state.recoveryMount = null;
   if ((state.user?.id || "") !== nextUserId) {
+    cacheClear();
+    state.inFlight.clear();
+    state.coachRosterIds = null;
+    state.sessionViewerRosterCache = null;
+    state.sessionViewerActiveSessionCache = null;
+    state.sessionViewerDataCache = null;
+    state.sessionViewerDataVersion += 1;
+    state.commandParkKingRows = [];
+    state.commandParkKingVenues = [];
+    state.commandParkKingVenue = "";
+    state.selectedAthleteId = null;
+    state.parentAthleteId = "";
+    state.publicAthleteId = null;
+    state.plannerAthleteId = null;
+    state.coachTricktionaryAthleteId = null;
+    state.sessionViewerGroup = "monday";
+    state.sessionViewerVenue = "";
+    state.sessionViewerSearch = "";
+    state.sessionViewerOpenAthleteId = "";
+    state.sessionViewerActiveList = "";
+    state.sessionViewerRenderVersion += 1;
+    state.boardRenderVersion += 1;
+    state.boardRankingsRenderVersion += 1;
+    state.pendingAssignmentProgress.clear();
+    state.pendingPercentageAttempts.clear();
+    state.notificationUnread = [];
+    document.querySelectorAll(".progress-popup-stack, #achievement-celebration, .success-burst, #notification-centre-drawer").forEach(element => element.remove());
+    const privateToast = document.querySelector("#toast");
+    if (privateToast) {
+      clearTimeout(notify.timeout);
+      privateToast.textContent = "";
+      privateToast.className = "toast";
+    }
+    state.coachAccountAccess = null;
+    state.coachAccessCheckedAt = 0;
+    state.coachAccessRequest = null;
     state.selectedVenue = "";
     state.riderVenueSessionContext = null;
     state.recoveryOpenCheckin = false;
@@ -1672,6 +1783,15 @@ async function handleSession(session) {
     }
     if (data.id !== nextUserId) throw new Error("Your JKCREW profile could not be verified. Please retry loading your account.");
     state.profile = data;
+    applyTheme(data.app_theme);
+    await refreshCoachAccountAccess({ force: true });
+    if (!isCurrent()) return;
+    if (coachAccountBlocked()) {
+      state.view = "coachApproval";
+      renderCoachApprovalScreen();
+      startCoachApprovalWatch();
+      return;
+    }
     await refreshRiderFeatureAccess({ force: true, enforce: false });
     if (!isCurrent()) return;
     recordMyAppOpen();
@@ -1700,6 +1820,7 @@ async function handleSession(session) {
   renderShell();
   state.sessionReadyUserId = state.user.id;
   startRiderFeatureAccessWatch();
+  startCoachApprovalWatch();
   void navigate(state.view, { accessChecked: true });
   // Realtime is an enhancement, not a gate to opening the app. On a slow
   // mobile connection the roster query used to leave a successful login on
@@ -1707,6 +1828,112 @@ async function handleSession(session) {
   void setupRealtimeSync().catch((realtimeError) => {
     console.warn("Realtime progress sync unavailable", realtimeError);
   });
+}
+
+function coachAccountBlocked() {
+  return isCoachRole(state.profile?.role) && !state.profile?.is_platform_owner
+    && state.coachAccountAccess?.approval_status !== "approved";
+}
+
+async function refreshCoachAccountAccess({ force = false } = {}) {
+  if (!isCoachRole(state.profile?.role)) return null;
+  if (state.profile.is_platform_owner) {
+    state.coachAccountAccess = { approval_status: "approved" };
+    return state.coachAccountAccess;
+  }
+  const userId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
+  if (!userId) return null;
+  if (!force && state.coachAccountAccess && Date.now() - state.coachAccessCheckedAt < 15000) return state.coachAccountAccess;
+  if (state.coachAccessRequest?.userId === userId && state.coachAccessRequest.setupVersion === setupVersion) return state.coachAccessRequest.promise;
+  const request = { userId, setupVersion, promise: null };
+  request.promise = (async () => {
+    let result;
+    try {
+      const { data, error } = await withTimeout(client.rpc("get_my_team_access"), "Check coach approval", 12000);
+      if (error) throw error;
+      result = Array.isArray(data) ? data[0] : data;
+      if (!result || !["approved", "pending", "suspended"].includes(result.approval_status)) throw new Error("Coach approval could not be verified.");
+    } catch (error) {
+      result = { approval_status: "unavailable", message: "We couldn’t verify your coach access. Check your connection and try again." };
+    }
+    if (state.user?.id === userId && state.sessionSetupVersion === setupVersion) {
+      state.coachAccountAccess = result;
+      state.coachAccessCheckedAt = Date.now();
+    }
+    return result;
+  })().finally(() => { if (state.coachAccessRequest === request) state.coachAccessRequest = null; });
+  state.coachAccessRequest = request;
+  return request.promise;
+}
+
+function renderCoachApprovalScreen() {
+  const status = state.coachAccountAccess?.approval_status;
+  const title = status === "suspended" ? "Coach access paused" : status === "unavailable" ? "Check your coach access" : "Awaiting approval";
+  const message = status === "suspended" ? "Your account access is paused. The platform owner can restore access." : status === "unavailable" ? "We couldn’t verify access. Try again when your connection is ready." : "Your coach account needs approval from the platform owner before your team workspace opens.";
+  cancelScreenLoading();
+  teardownRealtimeSync();
+  clearInterval(state.sessionViewerTimer);
+  clearInterval(state.sessionViewerClock);
+  clearInterval(state.timer);
+  window.JKCRiderHealth?.cleanup();
+  closeTrainingProgressViews();
+  closeAthleteReviewViewer();
+  closeContestEventModal();
+  closeEventCourseViewer();
+  resetVideoReviewPrivateState();
+  document.querySelectorAll(".progress-popup-stack, #achievement-celebration, .success-burst, #notification-centre-drawer").forEach(element => element.remove());
+  const privateToast = document.querySelector("#toast");
+  if (privateToast) {
+    clearTimeout(notify.timeout);
+    privateToast.textContent = "";
+    privateToast.className = "toast";
+  }
+  cacheClear();
+  state.inFlight.clear();
+  state.sessionReadyUserId = "";
+  app.innerHTML = `<main class="coach-approval-page"><section class="coach-approval-card" aria-labelledby="coach-approval-title"><img src="icons/jkc-logo.png?v=2.11.77" alt="JK Coaching"><span class="coach-approval-status">${status === "suspended" ? "Access paused" : status === "unavailable" ? "Verification needed" : "Coach application"}</span><h1 id="coach-approval-title">${title}</h1><p>${escapeHtml(message)}</p><div class="coach-approval-actions"><button class="primary-btn" id="coach-approval-retry" type="button">Check approval</button><button class="secondary-btn" id="coach-approval-signout" type="button">Sign out</button></div></section></main>`;
+  document.querySelector("#coach-approval-retry")?.addEventListener("click", async (event) => {
+    const userId = state.user?.id;
+    const restore = setButtonBusy(event.currentTarget, "Checking…");
+    try {
+      await refreshCoachAccountAccess({ force: true });
+      if (state.user?.id !== userId) return;
+      if (!coachAccountBlocked()) await handleSession(state.session);
+      else renderCoachApprovalScreen();
+    } finally { restore(); }
+  });
+  document.querySelector("#coach-approval-signout")?.addEventListener("click", async (event) => {
+    const restore = setButtonBusy(event.currentTarget, "Signing out…");
+    try {
+      const { error } = await client.auth.signOut();
+      if (error) throw error;
+      await handleSession(null);
+    } catch (_) {
+      if (document.querySelector(".coach-approval-card p")) document.querySelector(".coach-approval-card p").textContent = "Couldn’t sign out. Check your connection and try again.";
+    } finally { restore(); }
+  });
+}
+
+function startCoachApprovalWatch() {
+  clearInterval(state.coachAccessTimer);
+  state.coachAccessTimer = null;
+  if (!isCoachRole(state.profile?.role) || state.profile.is_platform_owner) return;
+  state.coachAccessTimer = setInterval(async () => {
+    if (document.visibilityState === "hidden" || state.coachAccessRequest) return;
+    const userId = state.user?.id;
+    const wasBlocked = coachAccountBlocked();
+    await refreshCoachAccountAccess({ force: true });
+    if (!userId || state.user?.id !== userId) return;
+    if (wasBlocked && !coachAccountBlocked()) await handleSession(state.session);
+    else if (!wasBlocked && coachAccountBlocked()) {
+      state.sessionSetupVersion += 1;
+      state.sessionRenderVersion += 1;
+      state.athleteHomeRenderVersion += 1;
+      state.view = "coachApproval";
+      renderCoachApprovalScreen();
+    }
+  }, 30000);
 }
 
 function authHeroMarkup() {
@@ -1747,11 +1974,14 @@ function renderAuth(mode = "login", message = "") {
               <label for="role">Account type</label>
               <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option><option value="coach">Coach</option></select>
             </div>
-            <div class="field ${mode === "signup" ? "" : "hidden"} hidden" id="coach-country-field">
-              <label for="coach-country">Coach country</label>
-              <select id="coach-country" name="countryCode"><option value="">Choose country</option>${countryOptionsHtml()}</select>
-              <small class="field-hint">This is used for your coach account and team overview.</small>
+            <div class="coach-signup-fields hidden" id="coach-signup-fields" hidden>
+              <div class="field" id="coach-country-field"><label for="coach-country">Coach country</label><select id="coach-country" name="countryCode"><option value="">Choose country</option>${mode === "signup" ? countryOptionsHtml() : ""}</select></div>
+              <div class="field"><label for="coach-team-role">Team role</label><select id="coach-team-role" name="teamRole"><option value="head_coach">Head coach — create a team</option><option value="coach">Coach — join with an invite</option><option value="assistant_coach">Assistant coach — join with an invite</option></select></div>
+              <div class="field" id="coach-team-name-field"><label for="coach-team-name">Team name</label><input id="coach-team-name" name="teamName" maxlength="80" placeholder="Your coaching team"></div>
+              <div class="field hidden" id="coach-invite-field" hidden><label for="coach-invite-code">Team invite code</label><input id="coach-invite-code" name="inviteCode" maxlength="100" autocomplete="off" autocapitalize="characters" placeholder="Code from your head coach"></div>
+              <p class="form-note">All coach accounts need platform-owner approval before app access. Your country does not join you to a team.</p>
             </div>
+            <div class="field ${mode === "signup" ? "" : "hidden"}" id="member-team-code-field"><label for="member-team-code">Team invite code <small>(optional)</small></label><input id="member-team-code" name="registrationInviteCode" maxlength="100" autocomplete="off" autocapitalize="characters" placeholder="Code from your coach"><small class="field-hint">Use your coach’s code so they can link you to their private team.</small></div>
             <div class="field">
               <label for="email">Email</label>
               <input id="email" name="email" type="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="next" required autocomplete="email" placeholder="you@example.com">
@@ -1769,9 +1999,26 @@ function renderAuth(mode = "login", message = "") {
     </div>`;
   document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => renderAuth(button.dataset.authMode)));
   document.querySelector("#auth-form").addEventListener("submit", (event) => handleAuth(event, mode));
-  document.querySelector("#role")?.addEventListener("change", (event) => {
-    document.querySelector("#coach-country-field")?.classList.toggle("hidden", event.currentTarget.value !== "coach");
-  });
+  const updateCoachSignupFields = () => {
+    const coach = mode === "signup" && document.querySelector("#role").value === "coach";
+    const headCoach = coach && document.querySelector("#coach-team-role").value === "head_coach";
+    const fields = document.querySelector("#coach-signup-fields");
+    fields.hidden = !coach;
+    fields.classList.toggle("hidden", !coach);
+    for (const selector of ["#coach-country", "#coach-team-role"]) { const input = document.querySelector(selector); input.disabled = !coach; input.required = coach; }
+    for (const [fieldId, inputId, visible] of [["#coach-team-name-field", "#coach-team-name", headCoach], ["#coach-invite-field", "#coach-invite-code", coach && !headCoach]]) {
+      const field = document.querySelector(fieldId), input = document.querySelector(inputId);
+      field.hidden = !visible; field.classList.toggle("hidden", !visible); input.disabled = !visible; input.required = visible;
+    }
+    const memberField = document.querySelector("#member-team-code-field");
+    const memberCode = document.querySelector("#member-team-code");
+    memberField.hidden = mode !== "signup" || coach;
+    memberField.classList.toggle("hidden", memberField.hidden);
+    memberCode.disabled = memberField.hidden;
+  };
+  document.querySelector("#role")?.addEventListener("change", updateCoachSignupFields);
+  document.querySelector("#coach-team-role")?.addEventListener("change", updateCoachSignupFields);
+  updateCoachSignupFields();
   document.querySelector("#forgot-password")?.addEventListener("click", () => renderForgotPassword("", document.querySelector("#email")?.value || ""));
 }
 
@@ -1998,13 +2245,20 @@ async function handleAuth(event, mode) {
     const role = ["athlete", "parent", "coach"].includes(requestedRole) ? requestedRole : "athlete";
     const countryCode = role === "coach" ? String(form.get("countryCode") || "").trim().toUpperCase() : "";
     const countryName = role === "coach" ? (countryOptions.find(([code]) => code === countryCode)?.[1] || "") : "";
+    const teamRole = role === "coach" ? String(form.get("teamRole") || "head_coach") : "";
+    const teamName = role === "coach" && teamRole === "head_coach" ? String(form.get("teamName") || "").trim() : "";
+    const inviteCode = role === "coach" ? (teamRole !== "head_coach" ? String(form.get("inviteCode") || "").trim() : "") : String(form.get("registrationInviteCode") || "").trim();
     if (!displayName) {
       showAuthFormMessage(authForm, "Please add a display name.");
       return;
     }
+    if (role === "coach" && (!countryCode || !countryName)) return showAuthFormMessage(authForm, "Choose your coach country.");
+    if (role === "coach" && !["head_coach", "coach", "assistant_coach"].includes(teamRole)) return showAuthFormMessage(authForm, "Choose your team role.");
+    if (role === "coach" && teamRole === "head_coach" && !teamName) return showAuthFormMessage(authForm, "Add your team name.");
+    if (role === "coach" && teamRole !== "head_coach" && !inviteCode) return showAuthFormMessage(authForm, "Add the invite code from your head coach.");
     const { data: signupData, error: signupError } = await withTimeout(
       client.functions.invoke("create-jkcrew-account", {
-        body: { email, password, displayName, role, countryCode, countryName, website: "" },
+        body: { email, password, displayName, role, countryCode, countryName, ...(role === "coach" ? { teamRole, teamName, inviteCode } : inviteCode ? { inviteCode } : {}), website: "" },
       }),
       "Create account", 15000
     );
@@ -2042,7 +2296,7 @@ async function handleAuth(event, mode) {
       renderAuth("login", "Account created. Sign in with your new email and password.");
       document.querySelector("#email").value = email;
     }
-    notify("Welcome to JKCREW. Your account is ready.");
+    notify(role === "coach" ? "Coach account created. Platform-owner approval is required before app access." : "Welcome to JKCREW. Your account is ready.");
   } catch (error) {
     if (authForm.isConnected === false) return;
     if (state.session?.user) {
@@ -2113,10 +2367,10 @@ function renderShell() {
   const role = state.profile.role;
   const recovery = riderRecoveryActive();
   const shellClass = recovery ? "rider-shell recovery-shell" : isCoachRole(role) ? "coach-shell" : role === "athlete" ? "rider-shell" : "parent-shell";
-  const nav = recovery ? [["home", "Recovery"]] : isCoachRole(role) ? coachNav : role === "parent" ? parentNav : athleteNav.filter(([id]) => id !== "uciTracker" || riderHasUciPoints());
+  const nav = recovery ? [["home", "Recovery"]] : isCoachRole(role) ? coachNav.filter(([id]) => id !== "teams" || state.profile.is_platform_owner) : role === "parent" ? parentNav : athleteNav.filter(([id]) => id !== "uciTracker" || riderHasUciPoints());
   const bottomNavHtml = nav.map(item => primaryNavButtonHtml(item, recovery)).join("");
   const sidebarNavHtml = isCoachRole(role)
-    ? coachNavGroups.map((group) => `
+    ? coachNavGroups.filter((group) => group.id !== "teams" || state.profile.is_platform_owner).map((group) => `
         <details class="sidebar-nav-group" data-nav-group="${group.id}">
           <summary class="nav-btn group-nav-btn" data-view="${group.id}"><span class="nav-icon">${group.icon}</span><span>${group.label}</span>${navNotificationBadge(group.id)}</summary>
           <div class="sidebar-subnav">
@@ -2620,6 +2874,16 @@ function resetPageExpansions({ expandedNavGroup = "" } = {}) {
 async function navigate(view, options = {}) {
   const viewerId = state.user?.id;
   const setupVersion = state.sessionSetupVersion;
+  if (isCoachRole(state.profile?.role) && !state.profile?.is_platform_owner) {
+    await refreshCoachAccountAccess();
+    if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
+    if (coachAccountBlocked()) {
+      state.view = "coachApproval";
+      renderCoachApprovalScreen();
+      return;
+    }
+    if (view === "teams") view = "command";
+  }
   if (state.profile?.role === "athlete" && !options.accessChecked) {
     const allowed = await refreshRiderFeatureAccess({ force: true, enforce: false });
     if (state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) return;
@@ -2841,9 +3105,11 @@ function teardownRealtimeSync() {
 }
 
 async function realtimeVisibleAthleteIds() {
+  const userId = state.user?.id, generation = state.sessionSetupVersion || 0;
   if (state.profile?.role === "athlete") return [state.user.id];
   if (state.profile?.role === "parent") {
     const { data, error } = await client.from("parent_athletes").select("athlete_id").eq("parent_id", state.user.id);
+    if (state.user?.id !== userId || (state.sessionSetupVersion || 0) !== generation) return [];
     if (error) {
       console.warn("Parent realtime scope failed", error);
       return [];
@@ -2852,6 +3118,7 @@ async function realtimeVisibleAthleteIds() {
   }
   if (isCoachRole(state.profile?.role)) {
     const { data, error } = await client.from("coach_athletes").select("athlete_id").eq("coach_id", state.user.id);
+    if (state.user?.id !== userId || (state.sessionSetupVersion || 0) !== generation) return [];
     if (error) {
       console.warn("Coach realtime scope failed", error);
       return [];
@@ -3063,6 +3330,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
 }
 
 async function getLeaderboard({ allowFallback = true } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}${allowFallback ? "" : ":verified"}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
@@ -3083,21 +3351,22 @@ async function getLeaderboard({ allowFallback = true } = {}) {
     state.leaderboardFallbackNotified = false;
     const rows = data || [];
     const ids = rows.map((row) => row.athlete_id).filter(Boolean);
-    if (!ids.length) return cacheSet(cacheKey, rows);
+    if (!ids.length) return cacheSet(cacheKey, rows, cacheScope);
     const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, ghost_mode").in("id", ids);
     if (profileError) console.warn("Leaderboard profile extras failed", profileError);
     const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
     return cacheSet(cacheKey, rows.map((row) => {
       const profile = byId.get(row.athlete_id) || {};
       return { ...row, ghost_mode: Boolean(row.ghost_mode ?? profile.ghost_mode), daily_pb_seconds: row.daily_pb_seconds ?? profile.daily_pb_seconds ?? null };
-    }));
-  })().finally(() => state.inFlight.delete(cacheKey));
+    }), cacheScope);
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
 
   state.inFlight.set(cacheKey, request);
   return request;
 }
 
 async function getAthleteHomeLeaderboard() {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = `leaderboard-home:weekly:${state.user?.id || "anon"}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
@@ -3112,11 +3381,11 @@ async function getAthleteHomeLeaderboard() {
     );
     if (error) {
       console.error("Home leaderboard RPC failed", error);
-      return cacheSet(cacheKey, await getLeaderboardFallback(error));
+      return cacheSet(cacheKey, await getLeaderboardFallback(error), cacheScope);
     }
     state.leaderboardFallbackNotified = false;
-    return cacheSet(cacheKey, Array.isArray(data) ? data : []);
-  })().finally(() => state.inFlight.delete(cacheKey));
+    return cacheSet(cacheKey, Array.isArray(data) ? data : [], cacheScope);
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
 
   state.inFlight.set(cacheKey, request);
   return request;
@@ -3309,9 +3578,32 @@ async function getTricktionaryData(athleteId) {
 }
 
 async function getPublicAthleteProfile(athleteId) {
+  const viewerId = state.user?.id;
+  const generation = state.sessionSetupVersion || 0;
   const { data, error } = await client.rpc("get_public_athlete_profile", { p_athlete_id: athleteId });
   if (error) throw error;
-  return Array.isArray(data) ? data[0] : data;
+  if (state.user?.id !== viewerId || (state.sessionSetupVersion || 0) !== generation) throw new Error("Your account access changed. Reload the rider profile.");
+  const profile = Array.isArray(data) ? data[0] : data;
+  if (!profile || !Array.isArray(profile.showreel_videos) || !profile.showreel_videos.length) return profile;
+  const showreels = await Promise.all(profile.showreel_videos.map(async (clip) => {
+    let storagePath = String(clip.storage_path || "").trim();
+    // Older rows stored public bucket URLs. The bucket is now private; resolve
+    // only this project's legacy object path, then let Storage RLS authorize it.
+    if (!storagePath && clip.video_url) {
+      try {
+        const legacy = new URL(clip.video_url);
+        const prefix = "/storage/v1/object/public/profile-showreels/";
+        if (legacy.origin === new URL(SUPABASE_URL).origin && legacy.pathname.startsWith(prefix)) storagePath = decodeURIComponent(legacy.pathname.slice(prefix.length));
+      } catch (_) { /* Unrecognized legacy URLs are not private playback sources. */ }
+    }
+    if (!storagePath) return { ...clip, video_url: "" };
+    try {
+      const { data: signed, error: signingError } = await withTimeout(client.storage.from("profile-showreels").createSignedUrl(storagePath, 300), "Load private rider clip", 8000);
+      return { ...clip, storage_path: storagePath, video_url: signingError ? "" : signed?.signedUrl || "" };
+    } catch (_) { return { ...clip, storage_path: storagePath, video_url: "" }; }
+  }));
+  if (state.user?.id !== viewerId || (state.sessionSetupVersion || 0) !== generation) throw new Error("Your account access changed. Reload the rider profile.");
+  return { ...profile, showreel_videos: showreels };
 }
 
 async function getPublicRiderBattleRecord(athleteId) {
@@ -3321,6 +3613,7 @@ async function getPublicRiderBattleRecord(athleteId) {
 }
 
 async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = true, force = false } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const athleteCountryCode = await getAthleteCountryCode(athleteId);
   const weekStart = weekStartDateForCountry(athleteCountryCode);
   const cacheKey = `schedule:${athleteId}:${weekStart}:${includeAssignmentAttempts ? "full" : "summary"}`;
@@ -3382,7 +3675,8 @@ async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = tru
       assignmentAttempts: assignmentAttempts || [],
     };
     // An older request must not overwrite a newer, explicitly refreshed sheet.
-    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, result);
+    if (cacheScope.userId !== (state.user?.id || null) || cacheScope.generation !== (state.sessionSetupVersion || 0)) cacheSet(cacheKey, null, cacheScope);
+    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, result, cacheScope);
     return result;
   })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
   state.inFlight.set(cacheKey, request);
@@ -3396,6 +3690,7 @@ function invalidateHelpRequestData() {
 }
 
 async function getHelpRequests(athleteId) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const viewerId = state.user?.id;
   if (!viewerId || !athleteId) return [];
   const cacheKey = `help-requests:${viewerId}:${athleteId}`;
@@ -3418,7 +3713,8 @@ async function getHelpRequests(athleteId) {
       rows.push(...(data || []));
       if ((data || []).length < pageSize) break;
     }
-    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, rows);
+    if (cacheScope.userId !== (state.user?.id || null) || cacheScope.generation !== (state.sessionSetupVersion || 0)) cacheSet(cacheKey, null, cacheScope);
+    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, rows, cacheScope);
     return rows;
   })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
   state.inFlight.set(cacheKey, request);
@@ -3562,15 +3858,17 @@ let recentEventCoursePhoto = null;
 async function getEventCoursePhoto(eventId = "") {
   if (!eventId) return null;
   const userId = state.user?.id;
-  const key = `event-course:${userId}:${eventId}`;
+  const generation = state.sessionSetupVersion || 0;
+  const key = `event-course:${userId}:${generation}:${eventId}`;
   if (recentEventCoursePhoto?.key === key && Date.now() - recentEventCoursePhoto.time < 30000) return recentEventCoursePhoto.photo;
   if (state.inFlight.has(key)) return state.inFlight.get(key);
   const request = (async () => {
     const { data, error } = await withTimeout(client.from("event_course_photos")
       .select("event_id,image_data_url,updated_at").eq("event_id", eventId).maybeSingle(), "Park layout", 15000);
     if (error) throw error;
+    if (state.user?.id !== userId || (state.sessionSetupVersion || 0) !== generation) throw new Error("Your account access changed. Reopen the event layout.");
     // Keep only one recent shared photo in memory; never persist private runs.
-    if (state.user?.id === userId && data) recentEventCoursePhoto = { key, photo: data, time: Date.now() };
+    if (data) recentEventCoursePhoto = { key, photo: data, time: Date.now() };
     return data || null;
   })().finally(() => { if (state.inFlight.get(key) === request) state.inFlight.delete(key); });
   state.inFlight.set(key, request);
@@ -3578,43 +3876,54 @@ async function getEventCoursePhoto(eventId = "") {
 }
 
 async function getCoachVenues() {
-  const { data, error } = await client.from("coach_venues").select("*").eq("coach_id", state.user.id).order("sort_order", { ascending: true }).order("name");
+  const userId = state.user?.id, generation = state.sessionSetupVersion;
+  const coachIds = await getCoachTeamScopeIds();
+  const { data, error } = await client.from("coach_venues").select("*").in("coach_id", coachIds).order("sort_order", { ascending: true }).order("name");
   if (error) throw error;
-  return data || [];
+  if (state.user?.id !== userId || state.sessionSetupVersion !== generation) throw new Error("Your account access changed. Reopen locations.");
+  const seen = new Set();
+  return (data || []).filter(venue => {
+    const name = String(venue.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!name || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
 }
 
 async function getCoachCommandData(roster = [], { overview = false } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const ids = roster.map((athlete) => athlete.id);
   const weekStartByAthlete = new Map(roster.map((athlete) => [athlete.id, weekStartDateForCountry(athlete.country_code || "AU")]));
   const rosterWeekStarts = [...new Set(weekStartByAthlete.values())];
   const cacheKey = `coach-command:${ids.slice().sort().join(",")}:${rosterWeekStarts.slice().sort().join(",")}${overview ? ":overview" : ""}`;
   const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
+  const coachIds = await getCoachTeamScopeIds();
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
   const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans] = await Promise.all([
-    client.from("coach_calendar_events").select("*").eq("coach_id", state.user.id).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
-    ids.length ? client.from("athlete_coach_status").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
+    client.from("coach_calendar_events").select("*").in("coach_id", coachIds).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
+    ids.length ? client.from("athlete_coach_status").select("*").in("coach_id", coachIds).in("athlete_id", ids).order("updated_at", { ascending: false }).order("coach_id") : { data: [], error: null },
     ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
     ids.length && !overview ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
     ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category, venue, week_start").in("athlete_id", ids).in("week_start", rosterWeekStarts) : { data: [], error: null },
     ids.length && !overview ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
     ids.length && !overview ? client.from("assignment_attempts").select("*").in("athlete_id", ids).in("week_start", rosterWeekStarts).order("attempted_at", { ascending: false }) : { data: [], error: null },
-    overview ? { data: [], error: null } : client.from("attendance_sessions").select("*, attendance_records(*)").eq("coach_id", state.user.id).order("session_date", { ascending: false }).limit(8),
-    ids.length ? client.from("parent_athletes").select("*").eq("coach_id", state.user.id).in("athlete_id", ids) : { data: [], error: null },
+    overview ? { data: [], error: null } : client.from("attendance_sessions").select("*, attendance_records(*)").in("coach_id", coachIds).order("session_date", { ascending: false }).limit(8),
+    ids.length ? client.from("parent_athletes").select("*").in("coach_id", coachIds).in("athlete_id", ids) : { data: [], error: null },
     client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
-    ids.length ? client.from("weekly_progress_notifications").select("*").eq("coach_id", state.user.id).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
+    ids.length ? client.from("weekly_progress_notifications").select("*").in("coach_id", coachIds).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
     client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
     ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
-    client.from("rider_sheet_proposals").select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, created_at").eq("coach_id", state.user.id).eq("status", "pending").order("created_at", { ascending: true }),
-    ids.length ? client.from("trick_help_requests").select("id, athlete_id, coach_id, question, status, created_at, video_file_name, video_storage_path").eq("coach_id", state.user.id).in("athlete_id", ids).eq("status", "open").order("created_at", { ascending: true }).limit(60) : { data: [], error: null },
+    client.from("rider_sheet_proposals").select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, created_at").in("coach_id", coachIds).eq("status", "pending").order("created_at", { ascending: true }),
+    ids.length ? client.from("trick_help_requests").select("id, athlete_id, coach_id, question, status, created_at, video_file_name, video_storage_path").in("coach_id", coachIds).in("athlete_id", ids).eq("status", "open").order("created_at", { ascending: true }).limit(60) : { data: [], error: null },
     ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, contest_item_id, created_at, updated_at").in("athlete_id", ids).not("contest_item_id", "is", null).is("archived_at", null).order("created_at", { ascending: false }).limit(40) : { data: [], error: null },
     client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
-    ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, updated_at").eq("coach_id", state.user.id).in("athlete_id", ids).eq("run_status", "ready_for_review").is("archived_at", null).order("updated_at", { ascending: true }) : { data: [], error: null },
+    ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, updated_at").in("coach_id", coachIds).in("athlete_id", ids).eq("run_status", "ready_for_review").is("archived_at", null).order("updated_at", { ascending: true }) : { data: [], error: null },
   ]);
   [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans].forEach((result) => { if (result.error) throw result.error; });
   return cacheSet(cacheKey, {
     calendar: calendar.data || [],
-    statuses: statusRows.data || [],
+    statuses: (statusRows.data || []).filter((row, index, rows) => rows.findIndex(other => other.athlete_id === row.athlete_id) === index),
     dashboardItems: dashboardItems.data || [],
     sessions: sessions.data || [],
     scheduleRows: (scheduleRows.data || []).filter((row) => row.week_start === weekStartByAthlete.get(row.athlete_id)),
@@ -3631,19 +3940,22 @@ async function getCoachCommandData(roster = [], { overview = false } = {}) {
     eventRunPlans: eventRunPlans.data || [],
     reviewRunPlans: reviewRunPlans.data || [],
     battles: Array.isArray(battleRows.data) ? battleRows.data : [],
-  });
+  }, cacheScope);
 }
 
 async function getStudentPrivateData(athleteId) {
+  const userId = state.user?.id, generation = state.sessionSetupVersion;
+  const coachIds = await getCoachTeamScopeIds();
   const [record, documents, injuries, attendance, runs, removedRuns] = await Promise.all([
-    client.from("athlete_private_records").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).maybeSingle(),
-    client.from("athlete_documents").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }),
-    client.from("injury_reports").select("*").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("injured_at", { ascending: false }).limit(8),
-    client.from("attendance_records").select("*, attendance_sessions(*)").eq("coach_id", state.user.id).eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(8),
+    client.from("athlete_private_records").select("*").in("coach_id", coachIds).eq("athlete_id", athleteId).order("updated_at", { ascending: false }).order("coach_id").limit(1).maybeSingle(),
+    client.from("athlete_documents").select("*").in("coach_id", coachIds).eq("athlete_id", athleteId).order("created_at", { ascending: false }),
+    client.from("injury_reports").select("*").in("coach_id", coachIds).eq("athlete_id", athleteId).order("injured_at", { ascending: false }).limit(8),
+    client.from("attendance_records").select("*, attendance_sessions(*)").in("coach_id", coachIds).eq("athlete_id", athleteId).order("created_at", { ascending: false }).limit(8),
     client.from("run_plans").select("*").eq("athlete_id", athleteId).is("archived_at", null).order("updated_at", { ascending: false }).limit(8),
     client.from("run_plans").select(RUN_SUMMARY_SELECT).eq("athlete_id", athleteId).not("archived_at", "is", null).order("updated_at", { ascending: false }).limit(100),
   ]);
   [record, documents, injuries, attendance, runs, removedRuns].forEach((result) => { if (result.error) throw result.error; });
+  if (state.user?.id !== userId || state.sessionSetupVersion !== generation) throw new Error("Your account access changed. Reopen the rider profile.");
   return {
     record: record.data || {},
     documents: documents.data || [],
@@ -3654,6 +3966,7 @@ async function getStudentPrivateData(athleteId) {
 }
 
 async function getRunPlans(athleteId) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = `run-plans:${athleteId}`;
   const cached = cacheGet(cacheKey, 15000);
   if (cached) return cached;
@@ -3665,8 +3978,8 @@ async function getRunPlans(athleteId) {
       client.from("run_plans").select(RUN_SUMMARY_SELECT).eq("athlete_id", athleteId).not("archived_at", "is", null).order("updated_at", { ascending: false }).limit(100),
     ]);
     [runs, removedRuns].forEach((result) => { if (result.error) throw result.error; });
-    return cacheSet(cacheKey, [...(runs.data || []), ...(removedRuns.data || [])]);
-  })().finally(() => state.inFlight.delete(cacheKey));
+    return cacheSet(cacheKey, [...(runs.data || []), ...(removedRuns.data || [])], cacheScope);
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
   state.inFlight.set(cacheKey, request);
   return request;
 }
@@ -3694,9 +4007,10 @@ async function getEventCoachRoster() {
 async function getCoachContestRunPlans(eventIds = [], roster = []) {
   const athleteIds = roster.map((athlete) => athlete.id).filter(Boolean);
   if (!eventIds.length || !athleteIds.length) return [];
+  const coachIds = await getCoachTeamScopeIds();
   const { data, error } = await client.from("run_plans")
     .select(RUN_SUMMARY_SELECT)
-    .eq("coach_id", state.user.id)
+    .in("coach_id", coachIds)
     .in("athlete_id", athleteIds)
     .in("contest_item_id", eventIds)
     .order("updated_at", { ascending: false })
@@ -3880,13 +4194,14 @@ function weekStartDateForCountry(countryCode = "", date = new Date()) {
   return localCalendarDate.toISOString().slice(0, 10);
 }
 async function getAthleteCountryCode(athleteId) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   if (athleteId === state.profile?.id || athleteId === state.user?.id) return state.profile?.country_code || "AU";
   const cacheKey = `athlete-country:${athleteId}`;
   const cached = cacheGet(cacheKey, 5 * 60 * 1000);
   if (cached) return cached;
   const { data, error } = await client.from("profiles").select("country_code").eq("id", athleteId).maybeSingle();
   if (error) throw error;
-  return cacheSet(cacheKey, data?.country_code || "AU");
+  return cacheSet(cacheKey, data?.country_code || "AU", cacheScope);
 }
 function assignmentLocalDate(assignment = {}) {
   return dateForCountryCode(assignment.athlete_country_code || assignment.country_code || state.profile?.country_code || "AU");
@@ -3921,6 +4236,7 @@ async function getActiveCoachGroupSession() {
 }
 
 async function getSessionViewerPlanData(athletes = [], { force = false, detailAthleteIds = [] } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   if (!athletes.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
   const athleteRows = athletes.map((athlete) => typeof athlete === "string" ? { id: athlete, country_code: "AU" } : athlete).filter((athlete) => athlete?.id);
   const safeAthleteIds = [...new Set(athleteRows.map((athlete) => athlete.id))];
@@ -3961,13 +4277,13 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
         p_week_starts: ids.map((athleteId) => weekStartByAthlete.get(athleteId)),
       });
       if (error) throw error;
-      return cacheSet(key, rowsToMap(data || [], detailed));
+      return cacheSet(key, rowsToMap(data || [], detailed), cacheScope);
     })();
     state.inFlight.set(requestKey, request);
     try {
       return await request;
     } finally {
-      state.inFlight.delete(requestKey);
+      if (state.inFlight.get(requestKey) === request) state.inFlight.delete(requestKey);
     }
   };
   const summaryPromise = requestRpc(summaryKey, "get_coach_session_viewer_plan_summary", safeAthleteIds);
@@ -3976,7 +4292,7 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
   const assignmentsByAthlete = new Map(summaryAssignments || []);
   if (detailAssignments) detailIds.forEach((athleteId) => assignmentsByAthlete.set(athleteId, detailAssignments.get(athleteId) || []));
   const resultKey = detailIds.length ? detailKey : `${summaryKey}:result`;
-  return cacheSet(resultKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() });
+  return cacheSet(resultKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() }, cacheScope);
 }
 
 const categoryInfo = {
@@ -4306,6 +4622,7 @@ function venueSelectorHtml(assignments = []) {
 }
 
 async function getParkKing(venue = "", { force = false } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const selected = venueKey(venue);
   if (!selected) return null;
   const cacheKey = `park-king:${venueIdentityKey(selected)}`;
@@ -4323,18 +4640,19 @@ async function getParkKing(venue = "", { force = false } = {}) {
       return null;
     }
     const king = Array.isArray(data) ? data[0] || null : data || null;
-    cacheSet(cacheKey, { king });
+    cacheSet(cacheKey, { king }, cacheScope);
     return king;
   })();
   if (!force) state.inFlight.set(cacheKey, request);
   try {
     return await request;
   } finally {
-    if (!force) state.inFlight.delete(cacheKey);
+    if (!force && state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey);
   }
 }
 
 async function getAllParkKings({ force = false } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = "park-kings:all";
   if (!force) {
     const cached = cacheGet(cacheKey, 30000);
@@ -4343,21 +4661,18 @@ async function getAllParkKings({ force = false } = {}) {
   const existingRequest = !force ? state.inFlight.get(cacheKey) : null;
   if (existingRequest) return existingRequest;
   const request = (async () => {
-    const { data, error } = await client
-      .from("park_king_snapshots")
-      .select("venue_key, venue_name, athlete_id, display_name, points, updated_at, crown_title")
-      .order("venue_name", { ascending: true });
+    const { data, error } = await client.rpc("get_team_park_kings");
     if (error) {
       console.warn("Park Kings list could not load", error);
       return [];
     }
-    return cacheSet(cacheKey, data || []);
+    return cacheSet(cacheKey, data || [], cacheScope);
   })();
   if (!force) state.inFlight.set(cacheKey, request);
   try {
     return await request;
   } finally {
-    if (!force) state.inFlight.delete(cacheKey);
+    if (!force && state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey);
   }
 }
 
@@ -5822,12 +6137,12 @@ function coachManualTricktionaryPanel(athlete = {}) {
     const addedAt = trick.addedAt || trick.createdAt;
     const count = Math.max(1, Number(trick.count || trick.landedCount || 1));
     return `<div class="list-row">
-      <div><strong>${escapeHtml(title)}</strong><small>Manual Tricktionary entry · ${count} landed${addedAt ? ` · Added ${escapeHtml(dateLabel(addedAt))}` : ""}</small></div>
+      <div><strong>${escapeHtml(title)}</strong><small>Manual history · ${count} recorded${addedAt ? ` · Added ${escapeHtml(dateLabel(addedAt))}` : ""}</small></div>
       <button class="danger-btn compact-btn" type="button" data-coach-remove-manual-trick="${escapeHtml(trick.id || sourceTitle)}">Remove</button>
     </div>`;
   }).filter(Boolean).join("") : `<div class="empty compact-empty">No manual Tricktionary tricks added yet.</div>`;
   return `<section class="panel">
-    <div class="panel-head"><div><div class="panel-title">Tricktionary management</div><div class="panel-meta">Add landed tricks that were not captured on a weekly sheet</div></div></div>
+    <div class="panel-head"><div><div class="panel-title">Manual trick history</div><div class="panel-meta">Recorded separately from ticked tricks</div></div></div>
     <form id="coach-manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a landed trick for this rider"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
     <div class="goal-list">${rows}</div>
     <small class="form-note">Manual Tricktionary entries are private to the coach, rider, and linked parents. They do not award points.</small>
@@ -5861,7 +6176,7 @@ function landedTricktionaryEntries(data = {}) {
   const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
   const byName = new Map();
   const addEntry = (assignment, count, landedAt, sourceOverride = "", manual = false, manualId = "") => {
-    if (!assignment || !Number(count)) return;
+    if (!assignment || !Number.isFinite(Number(count)) || Number(count) <= 0) return;
     const sourceKey = normalizeTrickKey(assignment.trick_name || "");
     if (!sourceKey) return;
     const key = resolveTricktionaryAlias(sourceKey, meta.aliases);
@@ -5888,12 +6203,14 @@ function landedTricktionaryEntries(data = {}) {
       weekStart: assignment.week_start || "",
       landedAt,
       count: 0,
+      manualCount: 0,
       manual,
       manualIds: [],
       memberKeys: new Set(),
     };
     previous.tricktionaryContextNotes = [...new Set([previous.tricktionaryContextNotes, assignment.tricktionaryContextNotes || assignment.notes].filter(Boolean).flatMap(value => String(value).split("\n")))].join("\n");
-    previous.count += Number(count);
+    if (manual) previous.manualCount += Number(count);
+    else previous.count += Number(count);
     previous.sources.add(sourceOverride || categoryInfo[assignment.category]?.label || assignment.category || "Manual add");
     previous.memberKeys.add(sourceKey);
     previous.memberKeys.add(key);
@@ -5910,7 +6227,7 @@ function landedTricktionaryEntries(data = {}) {
   const days = new Map();
   const historyPercentageIds = new Set();
   const revokedPercentageIds = new Set();
-  const historyAssignmentDays = new Set();
+  const historyAssignmentIds = new Set();
   const revokedAssignments = new Set();
   const revokedSessionDays = new Set();
   const componentsFor = (assignment) => {
@@ -5923,8 +6240,7 @@ function landedTricktionaryEntries(data = {}) {
   };
   (data.landingHistory || []).forEach((landing) => {
     if (!landing.assignment_id || landing.category === "percentage") return;
-    const day = tricktionaryLandingDate(landing.landed_at, profile, landing.landing_date);
-    historyAssignmentDays.add(`${landing.assignment_id}:${day}`);
+    historyAssignmentIds.add(landing.assignment_id);
   });
   (data.landingHistory || []).filter((landing) => landing.evidence_type === "revoked").forEach((landing) => {
     if (landing.category === "percentage" && String(landing.id).startsWith("percentage:")) {
@@ -5981,24 +6297,12 @@ function landedTricktionaryEntries(data = {}) {
     const day = tricktionaryLandingDate(landedAt, profile, assignment.category === "daily" ? progress.progress_date : "");
     // A saved snapshot describes what was landed then. Editing a sheet later
     // must not turn its old tick into proof of the replacement trick or Line.
-    if (historyAssignmentDays.has(`${assignment.id}:${day}`)) return;
+    if (historyAssignmentIds.has(assignment.id)) return;
     const count = assignment.category === "dialled" ? Math.max(1, Number(progress.streak_count || 1)) : 1;
     addEvidence(assignment, count, landedAt, day, `${assignment.id}:${day}`, "assignment");
   });
-  (data.awards || []).forEach((award) => {
-    const assignment = assignmentsById.get(award.assignment_id);
-    if (!assignment || assignment.category === "percentage") return;
-    const progress = progressByAssignment.get(assignment.id);
-    if (assignment.category !== "daily" && progress?.completed_at) return;
-    const key = String(award.award_key || "");
-    // Daily list/first-finish bonuses do not prove anything about sibling
-    // assignments. Only the explicitly linked trick can be recovered here.
-    const isDailyEvidence = /^(?:daily-trick|daily-complete|daily-under-20|daily):/.test(key);
-    if (assignment.category === "daily" ? !isDailyEvidence : Number(award.points || 0) <= 0) return;
-    const day = tricktionaryLandingDate(award.created_at, profile, assignment.category === "daily" ? key.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] : "");
-    if (historyAssignmentDays.has(`${assignment.id}:${day}`)) return;
-    addEvidence(assignment, 1, award.created_at, day, `${assignment.id}:${day}`, "assignment");
-  });
+  // A point award is a scoring receipt, not a trick tick. List bonuses and old
+  // awards attached to an edited sheet must never invent a landed trick.
   (data.percentageAttempts || []).forEach((attempt, index) => {
     if (attempt.landed !== true || historyPercentageIds.has(String(attempt.id))) return;
     const assignment = assignmentsById.get(attempt.assignment_id);
@@ -6063,10 +6367,11 @@ function tricktionaryEntriesHtml(entries = [], attempts = [], profile = {}) {
   if (!entries.length) return `<div class="empty compact-empty">No landed tricks in the Tricktionary yet.</div>`;
   return `<div class="tricktionary-grid">${entries.map((entry) => {
     const attemptCount = attemptMap.get(entry.key || normalizeTrickKey(entry.title))?.count || 0;
-    const landedCount = Math.max(1, Number(entry.count || 1));
+    const landedCount = Math.max(0, Number(entry.count || 0));
+    const recordedCount = Math.max(0, Number(entry.manualCount || 0));
     return `<article class="tricktionary-card">
-      <div class="tricktionary-card-main"><div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Latest week ${escapeHtml(entry.weekStart)}` : ""}</small></div><div class="tricktionary-count-badge"><strong>${landedCount}</strong><small>landed</small></div></div>
-      <div class="tricktionary-card-meta"><span>${escapeHtml(entry.obstacle)}</span>${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}</div>
+      <div class="tricktionary-card-main"><div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Latest week ${escapeHtml(entry.weekStart)}` : ""}</small></div><div class="tricktionary-count-badge"><strong>${landedCount || recordedCount}</strong><small>${landedCount ? "landed" : "recorded"}</small></div></div>
+      <div class="tricktionary-card-meta"><span>${escapeHtml(entry.obstacle)}</span>${landedCount && recordedCount ? `<span>${recordedCount} manually recorded</span>` : ""}${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}</div>
       ${entry.manual && state.profile?.id === entry.ownerId && entry.manualRemoveId ? `<button class="danger-btn compact-btn" type="button" data-remove-manual-trick="${escapeHtml(entry.manualRemoveId)}">Remove manual entry</button>` : ""}
     </article>`;
   }).join("")}</div>`;
@@ -6075,22 +6380,22 @@ function tricktionaryEntriesHtml(entries = [], attempts = [], profile = {}) {
 function tricktionaryCardHtml(entry = {}, attemptMap = new Map(), editable = false) {
   const key = entry.key || normalizeTrickKey(entry.title);
   const attemptCount = attemptMap.get(key)?.count || 0;
-  const landedCount = Math.max(1, Number(entry.count || 1));
+  const landedCount = Math.max(0, Number(entry.count || 0));
+  const recordedCount = Math.max(0, Number(entry.manualCount || 0));
   const category = safeTricktionaryCategory(entry.tricktionaryCategory);
   const subcategory = category === "new" ? "" : tricktionarySubcategory(entry, category);
   const memberKeys = [...new Set([key, ...(Array.isArray(entry.memberKeys) ? entry.memberKeys : [])].map(normalizeTrickKey).filter(Boolean))];
   return `<article class="tricktionary-card tricktionary-drag-card" ${editable ? `draggable="true" data-tricktionary-card="1"` : ""} data-trick-key="${escapeHtml(key)}" data-trick-title="${escapeHtml(entry.title)}" data-trick-category="${escapeHtml(category)}" data-trick-subcategory="${escapeHtml(subcategory)}" data-trick-landed="${landedCount}" data-trick-member-keys="${escapeHtml(encodeURIComponent(JSON.stringify(memberKeys)))}">
     <div class="tricktionary-card-main">
       <div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.source)}${entry.weekStart ? ` · Latest week ${escapeHtml(entry.weekStart)}` : ""}</small></div>
-      <div class="tricktionary-card-actions"><div class="tricktionary-count-badge"><strong>${landedCount}</strong><small>landed</small></div>${editable ? `<button class="tricktionary-delete-btn" type="button" draggable="false" data-delete-tricktionary-entry="${escapeHtml(key)}" aria-label="Delete ${escapeHtml(entry.title)} from the Tricktionary" title="Delete trick">×</button>` : ""}</div>
+      <div class="tricktionary-card-actions"><div class="tricktionary-count-badge"><strong>${landedCount || recordedCount}</strong><small>${landedCount ? "landed" : "recorded"}</small></div>${editable ? `<button class="tricktionary-delete-btn" type="button" draggable="false" data-delete-tricktionary-entry="${escapeHtml(key)}" aria-label="Delete ${escapeHtml(entry.title)} from the Tricktionary" title="Delete trick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>` : ""}</div>
     </div>
     <div class="tricktionary-card-meta">
       <span>${escapeHtml(TRICKTIONARY_CATEGORY_LABELS[category] || "New Tricks")}</span>
+      ${landedCount && recordedCount ? `<span>${recordedCount} manually recorded</span>` : ""}
       ${attemptCount ? `<span>Attempts: ${attemptCount}</span>` : ""}
-      ${editable && typeof JKCrewTricktionaryTools !== "undefined" ? JKCrewTricktionaryTools.cardButtonHtml(entry) : ""}
-      ${editable ? `<button class="tricktionary-rename-btn" type="button" draggable="false" data-rename-tricktionary-entry="${escapeHtml(key)}" aria-label="Edit name for ${escapeHtml(entry.title)}">Edit name</button>` : ""}
-      ${editable ? `<span class="tricktionary-drag-hint tricktionary-drag-handle">↕ Hold + drag to move or merge</span>` : ""}
     </div>
+    ${editable ? `<div class="tricktionary-card-controls">${typeof JKCrewTricktionaryTools !== "undefined" ? JKCrewTricktionaryTools.cardButtonHtml(entry) : ""}<button class="tricktionary-rename-btn" type="button" draggable="false" data-rename-tricktionary-entry="${escapeHtml(key)}" aria-label="Edit name for ${escapeHtml(entry.title)}">Edit name</button><span class="tricktionary-drag-hint tricktionary-drag-handle">Drag to organise</span></div>` : ""}
   </article>`;
 }
 
@@ -6188,8 +6493,8 @@ async function mergeTricktionaryEntries(athleteId, sourceEntry = {}, targetEntry
   const source = String(sourceEntry.title || "").trim();
   const target = String(targetEntry.title || "").trim();
   if (!athleteId || !source || !target || normalizeTrickKey(source) === normalizeTrickKey(target)) return;
-  const combinedTotal = Math.max(1, Number(sourceEntry.landedCount || 1)) + Math.max(1, Number(targetEntry.landedCount || 1));
-  const title = window.prompt(`Name the single merged trick. All ${combinedTotal} landed results and every attempt will stay attached.`, target);
+  const combinedTotal = Math.max(0, Number(sourceEntry.landedCount || 0)) + Math.max(0, Number(targetEntry.landedCount || 0));
+  const title = window.prompt("Name the single merged trick. Saved landings, manual history and attempts will stay attached.", target);
   const cleanTitle = String(title || "").trim();
   if (!cleanTitle) return;
   const sourceKeys = [...new Set([sourceEntry.key, ...(sourceEntry.memberKeys || [])].map(normalizeTrickKey).filter(Boolean))];
@@ -6217,7 +6522,7 @@ async function mergeTricktionaryEntries(athleteId, sourceEntry = {}, targetEntry
   });
   if (error) throw error;
   cacheClear("roster");
-  notify(`Tricks merged — ${combinedTotal} landed results are now combined under ${cleanTitle.slice(0, 120)}.`);
+  notify(`Tricks merged — ${combinedTotal} ticked landings and saved manual history are kept under ${cleanTitle.slice(0, 120)}.`);
   return true;
 }
 
@@ -6232,7 +6537,7 @@ function tricktionaryDragEntry(card) {
     title: card.dataset.trickTitle || "",
     category: card.dataset.trickCategory || "new",
     subcategory: card.dataset.trickSubcategory || "",
-    landedCount: Math.max(1, Number(card.dataset.trickLanded || 1)),
+    landedCount: Math.max(0, Number(card.dataset.trickLanded || 0)),
     memberKeys: Array.isArray(memberKeys) ? memberKeys : [],
   };
 }
@@ -6554,13 +6859,14 @@ function bindTricktionaryBoard({ athleteId, refresh, data, roster = [] }) {
 }
 
 async function getMyCoachMessages(limit = 3) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   if (!state.user?.id) return [];
   const cacheKey = `coach-messages:${state.user.id}:${limit}`;
   const cached = cacheGet(cacheKey, 5000);
   if (cached) return cached;
   const { data, error } = await client.rpc("get_my_coach_messages", { p_limit: limit });
   if (error) throw error;
-  return cacheSet(cacheKey, data || []);
+  return cacheSet(cacheKey, data || [], cacheScope);
 }
 
 function coachMessagesHtml(messages = []) {
@@ -6657,6 +6963,19 @@ function previousTrainingSheetsHtml(data = {}) {
     return map;
   }, new Map());
   const progressByAssignment = new Map((data.progress || []).map((row) => [row.assignment_id, row]));
+  const snapshotsByAssignment = (data.landingHistory || []).reduce((map, landing) => {
+    const rows = map.get(landing.assignment_id) || [];
+    rows.push(landing);
+    map.set(landing.assignment_id, rows);
+    return map;
+  }, new Map());
+  const completedOnSheet = (assignment) => {
+    const snapshots = snapshotsByAssignment.get(assignment.id) || [];
+    const progress = progressByAssignment.get(assignment.id);
+    if (assignment.category === "percentage") return Boolean(progress?.completed_at) && (!snapshots.length || snapshots.some(landing => landing.evidence_type !== "revoked" && Number(landing.landed_count) > 0 && normalizeTrickKey(assignmentPresentation(landing).title) === normalizeTrickKey(assignmentPresentation(assignment).title)));
+    if (snapshots.length) return snapshots.some(landing => landing.evidence_type !== "revoked" && Number(landing.landed_count) > 0 && normalizeTrickKey(assignmentPresentation(landing).title) === normalizeTrickKey(assignmentPresentation(assignment).title));
+    return Boolean(assignment.category === "daily" ? progress?.progress_date : progress?.completed_at);
+  };
   const awardsByAssignment = (data.awards || []).reduce((map, award) => {
     const rows = map.get(award.assignment_id) || [];
     rows.push(award);
@@ -6678,14 +6997,13 @@ function previousTrainingSheetsHtml(data = {}) {
       if (!rows.length) return "";
       return `<div class="previous-sheet-group"><strong>${escapeHtml(label)}</strong>${rows.map((assignment) => {
         const presentation = assignmentPresentation(assignment);
-        const progress = progressByAssignment.get(assignment.id);
-        const done = Boolean((assignment.category === "daily" ? progress?.progress_date : progress?.completed_at) || (awardsByAssignment.get(assignment.id) || []).length);
+        const done = completedOnSheet(assignment);
         const attempts = attemptsByAssignment.get(assignment.id) || 0;
         return `<div class="list-row previous-sheet-row ${done ? "complete" : ""}"><div><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(categoryInfo[assignment.category]?.label || assignment.category)} · ${done ? "Completed" : "Not completed"} · Attempts: ${attempts}${presentation.notes ? ` · ${escapeHtml(presentation.notes)}` : ""}</small></div><span class="assignment-check">${done ? "✓" : ""}</span></div>`;
       }).join("")}</div>`;
     }).filter(Boolean).join("");
     const dailyTotal = assignments.filter((assignment) => assignment.category === "daily").length;
-    const dailyDone = assignments.filter((assignment) => assignment.category === "daily" && (progressByAssignment.get(assignment.id)?.progress_date || (awardsByAssignment.get(assignment.id) || []).length)).length;
+    const dailyDone = assignments.filter((assignment) => assignment.category === "daily" && completedOnSheet(assignment)).length;
     const venues = [...new Set(assignments.map((assignment) => venueLabel(assignment.venue)).filter(Boolean))].join(", ");
     return `<details class="previous-sheet-week">
       <summary><span><strong>Week ${escapeHtml(week)}</strong><small>${escapeHtml(venues || "Venue not set")} · ${dailyDone}/${dailyTotal} Daily · ${points} pts</small></span><span class="accordion-caret">Open</span></summary>
@@ -6712,7 +7030,7 @@ async function renderTricktionary() {
     ${state.shredZoneReturn === "tricktionary" ? `<button class="secondary-btn shred-tricktionary-back" type="button" data-back-shred-zone>← Shred Zone</button>` : ""}
     <div class="page-head"><div><div class="eyebrow">Progress history</div><h1>My <span>Tricktionary</span></h1><p>Your personal BMX trick library, built from landed training-sheet tricks plus manual history.</p></div></div>
     <section class="panel">
-      <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">${entries.length} tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Trick library</div><div class="panel-meta">${entries.filter(entry => entry.count > 0).length} ticked tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div></div>
       <form id="manual-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="Add a trick here"><input name="count" type="number" min="1" max="999" value="1" aria-label="Landed count"><button class="primary-btn" type="submit">+</button></form>
       ${tricktionaryBoardHtml(entries, data.attempts, { editable: true, profile: data.profile })}
     </section>
@@ -7192,7 +7510,7 @@ async function renderParentTricktionary() {
     ${parentChildSwitcherHtml(context)}
     ${parentPageHeadHtml("Rider library", "Tricktionary", "history", `${firstName(context.selected)}'s read-only landed tricks, attempts and Daily PB.`)}
     <section class="panel parent-child-card">
-      <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div><button class="secondary-btn compact-btn" type="button" data-parent-open-view="parentMore">Back to More</button></div>
+      <div class="panel-head"><div><div class="panel-title">${escapeHtml(data.profile.display_name)}'s Tricktionary</div><div class="panel-meta">${entries.filter(entry => entry.count > 0).length} ticked tricks · Daily PB ${formatPbTime(data.profile.daily_pb_seconds)}</div></div><button class="secondary-btn compact-btn" type="button" data-parent-open-view="parentMore">Back to More</button></div>
       ${tricktionaryBoardHtml(entries, data.attempts, { profile: data.profile })}
       <div class="settings-divider"></div>
       <div class="panel-title">Attempted this week</div>
@@ -7227,7 +7545,7 @@ async function renderCoachTricktionary() {
     <div class="page-head"><div><div class="eyebrow">Coach Tricktionary</div><h1>Rider <span>Tricktionary</span></h1><p>Filter by rider and view their private trick library, attempts, Daily PB, and saved weekly sheets.</p></div></div>
     <section class="panel coach-tricktionary-controls">
       <div class="field"><label for="coach-tricktionary-athlete">Select rider</label><select id="coach-tricktionary-athlete">${options}</select></div>
-      <div class="coach-tricktionary-summary">${avatarHtml(displayProfile, "student-chip-avatar")}<div><strong>${escapeHtml(displayProfile.display_name)}</strong><small>${entries.length} landed tricks · Daily PB ${formatPbTime(displayProfile.daily_pb_seconds)}</small></div></div>
+      <div class="coach-tricktionary-summary">${avatarHtml(displayProfile, "student-chip-avatar")}<div><strong>${escapeHtml(displayProfile.display_name)}</strong><small>${entries.filter(entry => entry.count > 0).length} ticked tricks · Daily PB ${formatPbTime(displayProfile.daily_pb_seconds)}</small></div></div>
     </section>
     <section class="panel compact-panel">
       <div class="panel-head"><div><div class="panel-title">Landed tricks</div><div class="panel-meta">Private to coach, rider, and linked parents</div></div></div>
@@ -7405,7 +7723,7 @@ function privateProgressMilestonesHtml(data = {}) {
 
 function runReviewPanelHtml(run = {}) {
   if (run.archived_at || run.plan_type !== "competition") return "";
-  const coach = isCoachRole(state.profile?.role) && run.coach_id === state.user?.id;
+  const coach = canManageCoachTeamRecord(run.coach_id);
   const owner = state.profile?.role === "athlete" && run.athlete_id === state.user?.id && run.created_by === state.user?.id;
   const ready = run.run_status === "ready_for_review";
   const reviewed = run.run_status === "reviewed";
@@ -8262,7 +8580,7 @@ async function renderParentMore() {
     ${parentChildSwitcherHtml(context)}
     ${parentPageHeadHtml("Family account", "More", "tools", `Progress history, run plans, safety information and settings for ${firstName(athlete)}.`)}
     <div class="parent-more-grid">
-      <section class="panel parent-more-card"><div class="parent-more-icon">+</div><div><span>Rider library</span><h2>Tricktionary</h2><p>${entries.length} landed trick${entries.length === 1 ? "" : "s"} · Daily PB ${formatPbTime(athlete.daily_pb_seconds)}</p></div><button class="secondary-btn" type="button" data-parent-open-view="tricktionary">Open Tricktionary</button></section>
+      <section class="panel parent-more-card"><div class="parent-more-icon">+</div><div><span>Rider library</span><h2>Tricktionary</h2><p>${entries.filter(entry => entry.count > 0).length} ticked tricks · Daily PB ${formatPbTime(athlete.daily_pb_seconds)}</p></div><button class="secondary-btn" type="button" data-parent-open-view="tricktionary">Open Tricktionary</button></section>
       <section class="panel parent-more-card"><div class="parent-more-icon">H</div><div><span>Read-only records</span><h2>Training history</h2><p>Previous weekly sheets, attempts and completed tricks.</p></div>${previousTrainingSheetsHtml(tricktionary)}</section>
       <section class="panel parent-more-card"><div class="parent-more-icon">R</div><div><span>Competition prep</span><h2>Run plans</h2><p>${runs.filter((run) => !run.archived_at).length} active plan${runs.filter((run) => !run.archived_at).length === 1 ? "" : "s"} saved for rider and coach review.</p></div><details class="parent-more-details"><summary>View run plans</summary><div class="run-list">${runPlansHtml(runs)}</div></details></section>
       <section class="panel parent-more-card parent-safety-card"><div class="parent-more-icon">!</div><div><span>Safety & contact</span><h2>Need help?</h2><p>For a training concern, contact Coach JK through your usual coaching channel. For an emergency, call local emergency services first.</p></div></section>
@@ -8748,6 +9066,8 @@ async function startSession() {
 
 async function recordAssignmentAction(event) {
   if (event.currentTarget.dataset.assignmentCategory === "daily") return recordDailyTrainingAction(event, false);
+  const actorId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
@@ -8779,6 +9099,7 @@ async function recordAssignmentAction(event) {
     p_venue: state.selectedVenue || "",
   };
   const { data, error } = await saveProgressRpc(rpcName, rpcArgs);
+  if (state.user?.id !== actorId || state.sessionSetupVersion !== setupVersion) return;
   if (error) {
     setSyncStatus("error");
     clearPendingAssignmentProgress(button.dataset.assignmentId);
@@ -8798,7 +9119,7 @@ async function recordAssignmentAction(event) {
   const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
   const resultMessage = isOther ? (tickingComplete ? "Fundamental skill landed" : "Fundamental skill unticked") : result.message;
   const message = `${resultMessage}${pointsNote}.`;
-  notify(message);
+  if (!(tickingComplete && awardedPoints > 0)) notify(message);
   await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
   if (tickingComplete && awardedPoints > 0) await showUpdatedWeeklyScore(awardedPoints, trickName);
   refreshOpenTrainingProgress(state.user.id);
@@ -8986,6 +9307,7 @@ function invalidateLeaderboardUciLinks() {
 }
 
 async function getLeaderboardUciLinks({ force = false } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const viewerId = state.user?.id;
   if (!viewerId) return [];
   const setupVersion = state.sessionSetupVersion;
@@ -9005,7 +9327,7 @@ async function getLeaderboardUciLinks({ force = false } = {}) {
     if (error) throw error;
     if (!Array.isArray(data)) throw new Error("JKC rider links couldn’t load.");
     if ((state.leaderboardUciVersion || 0) !== generation || state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion) throw new Error("Rider links changed. Refresh to see the latest links.");
-    cacheSet(key, data);
+    cacheSet(key, data, cacheScope);
     return data;
   })().finally(() => {
     if (state.inFlight.get(key) === request) {
@@ -9320,8 +9642,9 @@ async function submitPointRecalculation(event) {
 }
 
 async function createDeductionParentNotification(athleteId, amount, reason) {
+  const coachIds = await getCoachTeamScopeIds();
   const [{ data: links, error: linksError }, { data: athlete, error: athleteError }] = await Promise.all([
-    client.from("parent_athletes").select("parent_id").eq("coach_id", state.user.id).eq("athlete_id", athleteId),
+    client.from("parent_athletes").select("parent_id").in("coach_id", coachIds).eq("athlete_id", athleteId),
     client.from("profiles").select("display_name").eq("id", athleteId).single(),
   ]);
   if (linksError || athleteError) {
@@ -12160,11 +12483,13 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
     if (!contextRequest) {
       const requestVersion = contextVersion;
       const request = (async () => {
+        const coachIds = await getCoachTeamScopeIds();
+        assertActive();
         const [links, locations, blocks] = await Promise.all([
           checkedRequest(client.from("coach_athletes").select("athlete_id").eq("coach_id", userId), "Riders"),
-          checkedRequest(client.from("coach_venues").select("id,name,sort_order").eq("coach_id", userId)
+          checkedRequest(client.from("coach_venues").select("id,name,sort_order").in("coach_id", coachIds)
             .order("sort_order", { ascending: true }).order("name"), "Locations"),
-          checkedRequest(client.from("coach_training_blocks").select("id,name,start_date,updated_at").eq("coach_id", userId)
+          checkedRequest(client.from("coach_training_blocks").select("id,name,start_date,updated_at").in("coach_id", coachIds)
             .order("start_date", { ascending: false }).order("id").range(0, 500), "Training blocks"),
         ]);
         assertActive();
@@ -12191,9 +12516,11 @@ function createCoachSessionTrackerAdapter({ userId, isActive }) {
       const pageOffset = Number(offset);
       if (!Number.isSafeInteger(pageOffset) || pageOffset < 0) throw new Error("Refresh your session list and try again.");
       if (refreshContext) { context = null; contextRequest = null; contextVersion += 1; }
+      const coachIds = await getCoachTeamScopeIds();
+      assertActive();
       const fields = "id,coach_id,session_date,start_time,venue,rider_ids,archived_at,created_at,updated_at,block_id,park_fee_cents,park_fee_basis,session_kind,session_completed,extra_fee_cents,park_fee_paid_by_coach,invoice_date,invoice_status";
       let query = client.from("coach_tracked_sessions")
-        .select(fields).eq("coach_id", userId).is("archived_at", null);
+        .select(fields).in("coach_id", coachIds).is("archived_at", null);
       if (blockId) {
         // A complete block is small (usually 30 sessions). Fetch it together so
         // totals never depend on a page or a location/rider filter. The UI
@@ -13088,7 +13415,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       entry.daily = assignmentsForVenue(entry.allDaily, state.sessionViewerVenue);
     });
   }
-  const venueOptions = sessionViewerVenueOptions(groupRoster, schedules);
+  const venueOptions = sessionViewerVenueOptions(groupRoster, schedules, coachVenues);
   const requestedVenue = state.sessionViewerVenue;
   const requestedVenueKey = venueIdentityKey(requestedVenue);
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
@@ -13110,18 +13437,22 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   document.querySelector("#view").innerHTML = `
     <div class="page-head session-page-head"><div><div class="eyebrow">Coach workspace</div><h1>Live <span>session</span></h1><p>Your group, their progress, one place.</p></div><button class="secondary-btn compact-btn" type="button" id="viewer-refresh" aria-label="Refresh session"><span aria-hidden="true">↻</span><span class="session-refresh-label">Refresh</span></button></div>
     <section class="panel group-session-control coach-tone-aqua ${activeGroupSession?.status || "ready"}">
-      <div class="session-timer-heading"><span class="session-state-badge"><i aria-hidden="true"></i>${started ? (activeGroupSession.status === "paused" ? "Paused" : "Live session") : "Ready to ride"}</span><span class="session-timer-caption">Daily Tricks clock</span></div>
-      <div class="group-timer-block"><div class="timer-label">${escapeHtml(coachGroupLabel(activeGroupSession?.group_name || state.sessionViewerGroup))}<span> / ${escapeHtml(venueLabel(activeGroupSession?.venue || state.sessionViewerVenue))}</span></div><div class="group-session-timer" id="group-session-timer" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${started ? formatTime(groupSessionElapsedSeconds(activeGroupSession)) : "00:00"}</div><small>${started ? (activeGroupSession.status === "paused" ? "Clock paused · resume when everyone is ready" : "Clock running · open a rider to log their tricks") : "Choose your group and location, then start the clock"}</small></div>
-      <div class="group-session-actions">
-        ${started ? `<button class="secondary-btn" id="pause-group-session" type="button">${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button">End session</button>` : `<button class="primary-btn" id="start-group-session" type="button">Start session →</button>`}
+      <div class="session-timer-heading"><span class="session-timer-caption"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"/><path d="M12 10v4l2 2M9 2h6M12 2v4M18 6l2-2"/></svg>Daily Tricks clock</span><span class="session-state-badge"><i aria-hidden="true"></i>${started ? (activeGroupSession.status === "paused" ? "Paused" : "Live session") : "Ready to ride"}</span></div>
+      <div class="session-clock-layout">
+        <div class="session-clock-face"><div class="session-clock-eyebrow">Elapsed time</div><div class="group-session-timer" id="group-session-timer" role="timer" aria-label="Elapsed Daily Tricks time" data-started-at="${escapeHtml(activeGroupSession?.started_at || "")}" data-paused-at="${escapeHtml(activeGroupSession?.paused_at || "")}" data-paused-seconds="${Number(activeGroupSession?.total_paused_seconds || 0)}" data-status="${escapeHtml(activeGroupSession?.status || "ready")}">${sessionViewerClockFaceHtml(started ? groupSessionElapsedSeconds(activeGroupSession) : 0)}</div><div class="session-clock-units" aria-hidden="true"><span>Minutes</span><span>Seconds</span></div></div>
+        <div class="group-timer-block"><div class="timer-label">${escapeHtml(coachGroupLabel(activeGroupSession?.group_name || state.sessionViewerGroup))}<span>${escapeHtml(venueLabel(activeGroupSession?.venue || state.sessionViewerVenue))}</span></div><small>${started ? (activeGroupSession.status === "paused" ? "Clock paused. Resume when everyone is ready." : "Clock running. Open a rider to log their tricks.") : "Choose your group and park, then start when everyone is ready."}</small>
+          <div class="group-session-actions">
+            ${started ? `<button class="secondary-btn" id="pause-group-session" type="button"><svg viewBox="0 0 20 20" aria-hidden="true">${activeGroupSession.status === "paused" ? `<path d="m7 4 8 6-8 6Z"/>` : `<path d="M6 4h2v12H6zM12 4h2v12h-2z"/>`}</svg>${activeGroupSession.status === "paused" ? "Resume" : "Pause"}</button><button class="danger-btn" id="end-group-session" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1"/></svg>End session</button>` : `<button class="primary-btn" id="start-group-session" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 8 6-8 6Z"/></svg>Start session</button>`}
+          </div>
+        </div>
       </div>
       <div class="session-snapshot" data-session-snapshot>${sessionViewerSnapshotHtml(schedules)}</div>
     </section>
     <details id="session-viewer-setup" class="panel session-viewer-controls coach-tone-blue" ${state.sessionViewerSetupOpen ? "open" : ""}>
-      <summary class="session-setup-summary"><span><strong>Group & location</strong><small>${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</small></span><span class="session-setup-caret" aria-hidden="true">+</span></summary>
+      <summary class="session-setup-summary"><span class="session-setup-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h6m4 0h6M4 17h10m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></span><span class="session-setup-copy"><strong>Group & location</strong><small>${escapeHtml(coachGroupLabel(state.sessionViewerGroup))} · ${escapeHtml(venueLabel(state.sessionViewerVenue))}</small></span><span class="session-setup-caret" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 8 4 4 4-4"/></svg></span></summary>
       <div class="session-setup-fields">
-        <div class="field viewer-group-filter"><label>Group filter</label><div class="viewer-filter-tabs viewer-group-tabs" role="group" aria-label="Group filter">${sessionViewerGroupTabs(started)}</div></div>
-        <div class="field viewer-location-filter"><label>Location filter</label><div class="viewer-filter-tabs viewer-venue-tabs" role="group" aria-label="Location filter">${sessionViewerVenueTabs(groupRoster, schedules, started, coachVenues)}<button id="add-daily-location" class="daily-location-add" type="button" aria-label="Add daily location" title="Add daily location" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
+        <div class="field viewer-group-filter"><label for="viewer-group-filter">Group</label><div class="viewer-select-wrap"><svg class="viewer-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v2"/></svg><select id="viewer-group-filter" ${started ? "disabled" : ""}>${sessionViewerGroupOptions()}</select><svg class="viewer-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></div></div>
+        <div class="field viewer-location-filter"><label for="viewer-venue-filter">Location</label><div class="viewer-location-controls"><div class="viewer-select-wrap"><svg class="viewer-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg><select id="viewer-venue-filter" ${started ? "disabled" : ""}>${venueOptions || `<option value="">Add a location</option>`}</select><svg class="viewer-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></div><button id="add-daily-location" class="daily-location-add" type="button" aria-label="Add daily location" title="Add daily location" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
         ${started ? `<small class="session-setup-note">Group and location stay fixed until this session ends.</small>` : ""}
       </div>
     </details>
@@ -13154,21 +13485,15 @@ function sessionViewerVenueOptions(groupRoster = [], schedules = [], coachVenues
   return values.map((venue) => `<option value="${escapeHtml(venue)}" ${venueIdentityKey(venue) === selectedIdentity ? "selected" : ""}>${escapeHtml(venueLabel(venue))}</option>`).join("");
 }
 
-function sessionViewerGroupTabs(disabled = false) {
-  return coachGroups.map(([id, label]) => {
-    const active = id === state.sessionViewerGroup;
-    return `<button class="viewer-filter-tab viewer-group-tab ${active ? "active" : ""}" type="button" data-viewer-group="${escapeHtml(id)}" aria-pressed="${active}" ${disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
-  }).join("");
+function sessionViewerGroupOptions() {
+  return coachGroups.map(([id, label]) => `<option value="${escapeHtml(id)}" ${id === state.sessionViewerGroup ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
 
-function sessionViewerVenueTabs(groupRoster = [], schedules = [], disabled = false, coachVenues = []) {
-  const options = sessionViewerVenueOptions(groupRoster, schedules, coachVenues);
-  const select = document.createElement("select");
-  select.innerHTML = options;
-  return [...select.options].map((option) => {
-    const active = venueIdentityKey(option.value) === venueIdentityKey(state.sessionViewerVenue);
-    return `<button class="viewer-filter-tab viewer-venue-tab ${active ? "active" : ""}" type="button" data-viewer-venue="${escapeHtml(option.value)}" aria-pressed="${active}" ${disabled ? "disabled" : ""}>${escapeHtml(option.textContent)}</button>`;
-  }).join("");
+function sessionViewerClockFaceHtml(seconds = 0) {
+  const elapsed = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const remainder = String(elapsed % 60).padStart(2, "0");
+  return `<span class="session-clock-digits${minutes.length > 3 ? " wide-clock-digits" : ""}" data-clock-minutes>${minutes}</span><span class="session-clock-separator" aria-hidden="true">:</span><span class="session-clock-digits" data-clock-seconds>${remainder}</span>`;
 }
 
 function showAddDailyLocation() {
@@ -13228,7 +13553,7 @@ function showAddDailyLocation() {
         else saved = data;
       }
       if (!saved?.name) throw new Error("The location could not be confirmed. Please try again.");
-      const liveSession = Boolean(state.sessionViewerActiveSessionCache || document.querySelector("[data-viewer-venue]:disabled"));
+      const liveSession = Boolean(state.sessionViewerActiveSessionCache || document.querySelector("#viewer-venue-filter:disabled"));
       if (!liveSession) {
         state.sessionViewerVenue = saved.name;
         state.sessionViewerOpenAthleteId = "";
@@ -13277,7 +13602,8 @@ function updateGroupSessionTimerDom() {
     total_paused_seconds: Number(timerElement.dataset.pausedSeconds || 0),
     status: timerElement.dataset.status,
   };
-  timerElement.textContent = formatTime(groupSessionElapsedSeconds(pseudoSession));
+  const face = sessionViewerClockFaceHtml(groupSessionElapsedSeconds(pseudoSession));
+  if (timerElement.innerHTML !== face) timerElement.innerHTML = face;
 }
 
 function activeSessionViewerList() {
@@ -13425,17 +13751,20 @@ function bindSessionViewerActions() {
     window.JKPreviousWeekLandings?.clear();
     renderSessionViewer();
   });
-  document.querySelectorAll("[data-viewer-group]").forEach((button) => button.addEventListener("click", (event) => {
-    const nextGroup = event.currentTarget.dataset.viewerGroup;
-    if (!nextGroup || nextGroup === state.sessionViewerGroup) return;
+  document.querySelector("#viewer-group-filter")?.addEventListener("change", (event) => {
+    const select = event.currentTarget;
+    const nextGroup = select.value;
+    if (select.disabled || state.sessionViewerActiveSessionCache || !coachGroups.some(([id]) => id === nextGroup) || nextGroup === state.sessionViewerGroup) return;
     state.sessionViewerGroup = nextGroup;
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "";
     renderSessionViewer();
-  }));
-  document.querySelectorAll("[data-viewer-venue]").forEach((button) => button.addEventListener("click", (event) => {
-    state.sessionViewerVenue = event.currentTarget.dataset.viewerVenue;
+  });
+  document.querySelector("#viewer-venue-filter")?.addEventListener("change", (event) => {
+    const select = event.currentTarget;
+    if (select.disabled || state.sessionViewerActiveSessionCache || ![...select.options].some((option) => option.value === select.value)) return;
+    state.sessionViewerVenue = select.value;
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "";
     const currentCard = state.sessionViewerGroup === contestPrepGroupId ? null : document.querySelector("#session-viewer-park-king");
@@ -13445,7 +13774,7 @@ function bindSessionViewerActions() {
       currentCard.replaceWith(wrapper.firstElementChild);
     }
     renderSessionViewer();
-  }));
+  });
   document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
     state.sessionViewerSearch = event.target.value;
     clearTimeout(state.sessionViewerSearchTimer);
@@ -14699,7 +15028,7 @@ function runPlaybackControlsHtml(points = [], id = "run") {
 }
 
 function canEditRun(run = {}) {
-  if (isCoachRole(state.profile?.role)) return run.coach_id === state.user.id;
+  if (isCoachRole(state.profile?.role)) return canManageCoachTeamRecord(run.coach_id);
   return state.profile?.role === "athlete" && run.athlete_id === state.user?.id;
 }
 
@@ -14908,6 +15237,7 @@ function runBuilderPanel(runs = [], options = {}) {
 }
 
 async function getSessionViewerRoster() {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = `session-viewer-roster:${state.user.id}`;
   const cached = cacheGet(cacheKey, 30000);
   if (cached) {
@@ -14921,8 +15251,9 @@ async function getSessionViewerRoster() {
   if (error) throw error;
   const ids = [...new Set((links || []).map((link) => link.athlete_id).filter(Boolean))];
   if (!ids.length) {
+    const roster = cacheSet(cacheKey, [], cacheScope);
     state.coachRosterIds = new Set();
-    return cacheSet(cacheKey, []);
+    return roster;
   }
 
   const [{ data: athletes, error: athleteError }, { data: groupLinks, error: groupError }] = await Promise.all([
@@ -14943,11 +15274,13 @@ async function getSessionViewerRoster() {
     const groupNames = groupsByAthlete.get(athlete.id) || [primaryGroupByAthlete.get(athlete.id) || "monday"];
     return { ...athlete, groupName: groupNames[0] || "monday", groupNames };
   });
+  cacheSet(cacheKey, roster, cacheScope);
   state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
-  return cacheSet(cacheKey, roster);
+  return roster;
 }
 
 async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = `roster:${state.user.id}${summary ? ":dashboard" : ""}`;
   const cached = cacheGet(cacheKey, maxAgeMs);
   if (cached) {
@@ -14958,8 +15291,9 @@ async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
   if (error) throw error;
   const ids = links.map((link) => link.athlete_id);
   if (!ids.length) {
+    const roster = cacheSet(cacheKey, [], cacheScope);
     state.coachRosterIds = new Set();
-    return cacheSet(cacheKey, []);
+    return roster;
   }
   const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
     client.from("profiles").select(summary ? "id,display_name,country_code,level,last_app_opened_at,uci_id" : PROFILE_SELECT).in("id", ids).order("display_name"),
@@ -14981,11 +15315,13 @@ async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
     const groupNames = groupsByAthlete.get(athlete.id) || [groupByAthlete.get(athlete.id) || "monday"];
     return { ...athlete, groupName: groupNames[0] || "monday", groupNames, weeklyPoints: athleteSessions.reduce((sum, session) => sum + session.total_points, 0), sessionCount: athleteSessions.length };
   });
+  cacheSet(cacheKey, roster, cacheScope);
   state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
-  return cacheSet(cacheKey, roster);
+  return roster;
 }
 
 async function getCoachLiveActivity(roster = []) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   if (!isCoachRole(state.profile?.role) || !roster.length) return [];
   const athleteIds = roster.map((athlete) => athlete.id).filter(Boolean);
   const cacheKey = `coach-live:${athleteIds.slice().sort().join(",")}`;
@@ -15048,7 +15384,7 @@ async function getCoachLiveActivity(roster = []) {
   return cacheSet(cacheKey, [...pointItems, ...sessionItems]
     .filter((item) => item.at)
     .sort((a, b) => new Date(b.at) - new Date(a.at))
-    .slice(0, 24));
+    .slice(0, 24), cacheScope);
 }
 
 function coachLiveRowsHtml(items = [], emptyText = "Live rider activity will show here.") {
@@ -15081,9 +15417,10 @@ function bindDailyVenuePicker() {
 }
 
 async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const coachIds = await getCoachTeamScopeIds();
   const { data, error } = await client.from("weekly_assignment_plans")
     .select("*")
-    .eq("coach_id", state.user.id)
+    .in("coach_id", coachIds)
     .eq("athlete_id", athleteId)
     .eq("target_week_start", targetWeekStart)
     .in("status", plannerEditableStatuses)
@@ -15102,9 +15439,10 @@ async function getWeeklyAssignmentPlan(athleteId, targetWeekStart = nextWeekStar
 async function getRecoverablePlannerDraft(athleteId, targetWeekStart = nextWeekStartDate()) {
   const currentWeekStart = weekStartDate();
   if (currentWeekStart === targetWeekStart) return [];
+  const coachIds = await getCoachTeamScopeIds();
   const { data, error } = await client.from("weekly_assignment_plans")
     .select("*")
-    .eq("coach_id", state.user.id)
+    .in("coach_id", coachIds)
     .eq("athlete_id", athleteId)
     .eq("target_week_start", currentWeekStart)
     .in("status", ["draft", "draft_next_week"])
@@ -15181,6 +15519,7 @@ function plannerCompletedStrip(assignments = [], show = false) {
 }
 
 async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWeekStartDate()) {
+  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const cacheKey = `planner-template:${athleteId}:${targetWeekStart}`;
   const cached = cacheGet(cacheKey, 20000);
   if (cached) return cached;
@@ -15216,7 +15555,7 @@ async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWe
     rows = (data || []).filter((assignment) => categoryInfo[assignment.category]);
   }
 
-  if (!rows.length) return cacheSet(cacheKey, { assignments: [], completedKeys: [] });
+  if (!rows.length) return cacheSet(cacheKey, { assignments: [], completedKeys: [] }, cacheScope);
   const latestWeekStart = rows[0].week_start;
   const assignments = rows
     .filter((assignment) => assignment.week_start === latestWeekStart)
@@ -15231,7 +15570,7 @@ async function getPlannerTemplateAssignments(athleteId, targetWeekStart = nextWe
   return cacheSet(cacheKey, {
     assignments,
     completedKeys: [...completedKeys],
-  });
+  }, cacheScope);
 }
 
 function plannerSummaryPriority(row = {}, targetWeekStart = nextWeekStartDate()) {
@@ -15310,7 +15649,7 @@ async function renderPlanner() {
     getPlannerTemplateAssignments(athlete.id, targetWeekStart),
     client.from("weekly_assignment_plans")
       .select("athlete_id, category, updated_at, status, target_week_start")
-      .eq("coach_id", state.user.id)
+      .in("coach_id", await getCoachTeamScopeIds())
       .in("target_week_start", [...new Set([targetWeekStart, weekStartDate()])])
       .in("status", plannerSummaryStatuses),
   ]);
@@ -15682,7 +16021,7 @@ function coachPreviewTricktionaryHtml({ athlete, tricktionaryData }) {
   const data = tricktionaryData || { profile: athlete, assignments: [], progress: [], awards: [], attempts: [], percentageAttempts: [] };
   const entries = landedTricktionaryEntries(data).map((entry) => ({ ...entry, ownerId: athlete.id }));
   return `<div class="phone-preview-content">
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Tricktionary</div><div class="panel-meta">${entries.length} landed tricks · Daily PB ${formatPbTime(data.profile?.daily_pb_seconds)}</div></div></div>${tricktionaryBoardHtml(entries, data.attempts || [], { profile: data.profile })}</section>
+    <section class="panel"><div class="panel-head"><div><div class="panel-title">Tricktionary</div><div class="panel-meta">${entries.filter(entry => entry.count > 0).length} ticked tricks · Daily PB ${formatPbTime(data.profile?.daily_pb_seconds)}</div></div></div>${tricktionaryBoardHtml(entries, data.attempts || [], { profile: data.profile })}</section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Attempted this week</div></div></div>${weeklyAttemptsHtml((data.attempts || []).filter((attempt) => attempt.week_start === weekStartDate()), data.profile)}</section>
   </div>`;
 }
@@ -15784,7 +16123,7 @@ async function renderParents() {
   const [roster, parentResult, linkResult] = await Promise.all([
     getCoachRoster(),
     client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
-    client.from("parent_athletes").select("*").eq("coach_id", state.user.id).order("created_at", { ascending: false }),
+    client.from("parent_athletes").select("*").in("coach_id", await getCoachTeamScopeIds()).order("created_at", { ascending: false }),
   ]);
   if (parentResult.error) throw parentResult.error;
   if (linkResult.error) throw linkResult.error;
@@ -15889,6 +16228,49 @@ function teamCountryLabel(team = {}) {
 }
 
 async function renderTeams() {
+  if (!isCoachRole(state.profile?.role) || state.profile?.is_platform_owner !== true) return navigate(isCoachRole(state.profile?.role) ? "command" : "home");
+  const viewerId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const view = document.querySelector("#view");
+  const { data: overview, error } = await withTimeout(client.rpc("get_platform_coach_overview"), "Coach account overview", 15000);
+  if (error) throw error;
+  if (!view?.isConnected || document.querySelector("#view") !== view || state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion || state.profile?.is_platform_owner !== true || !isCoachRole(state.profile?.role) || state.view !== "teams") return;
+  const coaches = Array.isArray(overview?.coaches) ? overview.coaches : [];
+  const countries = Array.isArray(overview?.country_totals) ? overview.country_totals : [];
+  const roleLabels = { head_coach: "Head coach", coach: "Coach", assistant_coach: "Assistant coach" };
+  const coachRows = coaches.map(coach => {
+    const coachId = String(coach.coach_id || "");
+    const status = ["pending", "approved", "suspended"].includes(coach.approval_status) ? coach.approval_status : "pending";
+    const self = coachId === viewerId;
+    const count = Math.max(0, Number(coach.student_count) || 0);
+    return `<article class="owner-coach-row owner-coach-account" data-coach-account="${escapeHtml(coachId)}"><div class="owner-coach-identity"><strong>${escapeHtml(coach.display_name || "Coach")}${self ? " · Your account" : ""}</strong><small>${escapeHtml(coach.email || "")}</small><small>${escapeHtml(coach.country_name || coach.country_code || "Country not set")} · ${escapeHtml(roleLabels[coach.team_role] || "Coach")}${coach.team_name ? ` · ${escapeHtml(coach.team_name)}` : ""}</small></div><div class="owner-coach-account-meta"><span class="owner-access-status" data-approval-status="${status}">${status === "approved" ? "Approved" : status === "suspended" ? "Suspended" : "Pending approval"}</span><small>${escapeHtml(coach.account_status || "Account status unavailable")}</small><span>${count} student${count === 1 ? "" : "s"}</span></div>${self ? `<span class="form-note">Platform owner</span>` : `<div class="owner-coach-access-actions">${status !== "approved" ? `<button class="secondary-btn compact-btn" type="button" data-set-coach-access="${escapeHtml(coachId)}" data-coach-access-status="approved">Approve access</button>` : ""}${status !== "suspended" ? `<button class="secondary-btn compact-btn" type="button" data-set-coach-access="${escapeHtml(coachId)}" data-coach-access-status="suspended">Suspend</button>` : ""}</div>`}</article>`;
+  }).join("");
+  view.innerHTML = `<div class="page-head"><div><div class="eyebrow">Platform owner</div><h1>Coach <span>teams</span></h1><p>Approve coach accounts and view aggregate student counts.</p></div></div><section class="panel owner-overview-panel"><div class="panel-head"><div><div class="panel-title">Coach accounts</div><div class="panel-meta">Student records, tricks, runs and media remain private to each team.</div></div></div><div class="owner-summary-grid"><div><strong>${Math.max(0, Number(overview?.total_coaches) || 0)}</strong><span>Coach accounts</span></div><div><strong>${Math.max(0, Number(overview?.total_students) || 0)}</strong><span>Students · counts only</span></div></div><div class="owner-coach-list">${coachRows || `<div class="empty compact-empty">No coach accounts yet.</div>`}</div></section><section class="panel owner-country-panel"><div class="panel-head"><div class="panel-title">Totals by country</div></div><div class="owner-country-list">${countries.map(country => `<div class="owner-coach-row"><div><strong>${escapeHtml(country.country_name || country.country_code || "Country not set")}</strong><small>${escapeHtml(country.country_code || "")}</small></div><span>${Math.max(0, Number(country.coach_count) || 0)} coaches · ${Math.max(0, Number(country.student_count) || 0)} students</span></div>`).join("") || `<div class="empty compact-empty">No country totals yet.</div>`}</div></section>`;
+  view.querySelectorAll("[data-set-coach-access]").forEach(button => button.addEventListener("click", setCoachAccountAccess));
+}
+
+async function setCoachAccountAccess(event) {
+  if (!isCoachRole(state.profile?.role) || state.profile?.is_platform_owner !== true) return;
+  const button = event.currentTarget, coachId = button.dataset.setCoachAccess, status = button.dataset.coachAccessStatus;
+  if (!coachId || coachId === state.user?.id || !["approved", "suspended"].includes(status) || button.disabled) return;
+  const viewerId = state.user.id, setupVersion = state.sessionSetupVersion;
+  const controls = [...button.closest("[data-coach-account]").querySelectorAll("button")];
+  controls.forEach(control => { control.disabled = true; });
+  try {
+    const { data, error } = await withTimeout(client.rpc("set_coach_access", { p_coach_id: coachId, p_status: status }), "Update coach access", 15000);
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    if (result?.coach_id !== coachId || result?.approval_status !== status) throw new Error("Coach access could not be confirmed. Refresh the account overview before trying again.");
+    if (!button.isConnected || state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion || state.profile?.is_platform_owner !== true) return;
+    notify(status === "approved" ? "Coach access approved." : "Coach access suspended.");
+    await renderTeams();
+  } catch (error) {
+    if (button.isConnected && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion) notify(messageFrom(error), "error");
+  } finally {
+    if (button.isConnected) controls.forEach(control => { control.disabled = false; });
+  }
+}
+
+async function renderCoachTeamSettings() {
   if (!isCoachRole(state.profile?.role)) {
     navigate("home");
     return;
@@ -15918,7 +16300,7 @@ async function renderTeams() {
   const assignmentRows = (links || []).map(link => {
     const rider = riderById.get(link.athlete_id);
     if (!rider) return "";
-    return `<div class="team-assignment-row"><div>${avatarHtml(rider, "team-rider-avatar")}<strong>${escapeHtml(rider.display_name)}</strong></div><select data-athlete-team="${rider.id}" aria-label="Team for ${escapeHtml(rider.display_name)}">${teamOptions.replace(`value="${link.team_id}"`, `value="${link.team_id}" selected`)}</select></div>`;
+    return `<div class="team-assignment-row"><div>${avatarHtml(rider, "team-rider-avatar")}<strong title="${escapeHtml(rider.display_name)}">${escapeHtml(rider.display_name)}</strong></div><select data-athlete-team="${rider.id}" aria-label="Team for ${escapeHtml(rider.display_name)}">${teamOptions.replace(`value="${link.team_id}"`, `value="${link.team_id}" selected`)}</select></div>`;
   }).join("");
   let ownerPanel = "";
   if (state.profile?.is_platform_owner) {
@@ -15935,7 +16317,7 @@ async function renderTeams() {
     <section class="coach-dashboard-top"><div class="stat-card compact-stat-card"><strong>${activeTeams.length}</strong><span>Active teams</span><small>Owned by you</small></div><div class="stat-card compact-stat-card"><strong>${linkedIds.length}</strong><span>Students</span><small>Across your teams</small></div></section>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Create a team</div><div class="panel-meta">Use a different team for each country, program or training squad.</div></div></div><form id="create-team-form" class="trick-form team-create-form"><div class="field"><label for="team-name">Team name</label><input id="team-name" name="name" required maxlength="80" placeholder="JKCREW Australia"></div><div class="field"><label for="team-country">Country</label><select id="team-country" name="countryCode"><option value="">Choose country</option>${countryOptionsHtml()}</select></div><button class="primary-btn" type="submit">Create team</button></form></section>
     <section class="teams-grid">${teamCards || `<div class="empty">No teams yet. Create your first team above.</div>`}</section>
-    <section class="panel"><div class="panel-head"><div><div class="panel-title">Assign students</div><div class="panel-meta">A student can only be assigned to one of your active teams.</div></div></div>${assignmentRows || `<div class="empty">Create a student from Riders to see them here.</div>`}</section>
+    <section class="panel team-assignment-panel"><div class="panel-head"><div><div class="panel-title">Assign students</div><div class="panel-meta">A student can only be assigned to one of your active teams.</div></div></div><div class="team-assignment-list">${assignmentRows || `<div class="empty">Create a student from Riders to see them here.</div>`}</div></section>
     ${ownerPanel}`;
   document.querySelector("#create-team-form")?.addEventListener("submit", saveCoachTeam);
   document.querySelectorAll("[data-rename-team]").forEach(button => button.addEventListener("click", () => renameCoachTeam(button.dataset.renameTeam)));
@@ -16184,8 +16566,8 @@ async function renderStudentProfile() {
   const athlete = roster.find((entry) => entry.id === state.selectedAthleteId);
   const [schedule, { data: templates, error: templateError }, { data: parentLinks, error: parentLinkError }, { data: parentProfiles, error: parentProfileError }, helpRequests, dashboardItems, coachVenues, runPlans, leaderboard] = await Promise.all([
     getWeeklyAssignments(athlete.id),
-    client.from("coach_schedule_templates").select("*").eq("coach_id", state.user.id).ilike("student_name", athlete.display_name).limit(1),
-    client.from("parent_athletes").select("parent_id, relationship, created_at").eq("coach_id", state.user.id).eq("athlete_id", athlete.id),
+    client.from("coach_schedule_templates").select("*").in("coach_id", await getCoachTeamScopeIds()).ilike("student_name", athlete.display_name).order("id").limit(1),
+    client.from("parent_athletes").select("parent_id, relationship, created_at").in("coach_id", await getCoachTeamScopeIds()).eq("athlete_id", athlete.id),
     client.from("profiles").select("id, display_name, email, phone, avatar, created_at").eq("role", "parent").order("display_name"),
     getHelpRequests(athlete.id),
     getDashboardItems(athlete.id),
@@ -16446,13 +16828,22 @@ function planAccordionSection(title, meta, body) {
 }
 
 async function saveCoachVenueNames(rows) {
-  const venues = rows.map((row, index) => ({
-    coach_id: state.user.id,
-    name: row.name,
-    sort_order: index,
-  }));
-  const { error: deleteError } = await client.from("coach_venues").delete().eq("coach_id", state.user.id);
+  const userId = state.user?.id, generation = state.sessionSetupVersion;
+  const coachIds = await getCoachTeamScopeIds();
+  const { data: existing, error: readError } = await client.from("coach_venues").select("coach_id,name").in("coach_id", coachIds);
+  if (readError) throw readError;
+  if (state.user?.id !== userId || state.sessionSetupVersion !== generation) throw new Error("Your account access changed. Reopen locations.");
+  const nameKey = name => String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const seen = new Set((existing || []).filter(venue => venue.coach_id !== userId).map(venue => nameKey(venue.name)));
+  const venues = rows.filter(row => {
+    const key = nameKey(row.name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((row, index) => ({ coach_id: userId, name: row.name, sort_order: index }));
+  const { error: deleteError } = await client.from("coach_venues").delete().eq("coach_id", userId);
   if (deleteError) throw deleteError;
+  if (state.user?.id !== userId || state.sessionSetupVersion !== generation) throw new Error("Your account access changed. Reopen locations.");
   if (!venues.length) return;
   const { error } = await client.from("coach_venues").insert(venues);
   if (error) throw error;
@@ -16800,28 +17191,47 @@ async function linkParentFromAdmin(event) {
 }
 
 async function unlinkParentAccount(event) {
+  const userId = state.user?.id, generation = state.sessionSetupVersion;
+  const view = state.view;
   const parentId = event.currentTarget.dataset.unlinkParent;
-  const { error } = await client.from("parent_athletes")
-    .delete()
-    .eq("coach_id", state.user.id)
-    .eq("athlete_id", state.selectedAthleteId)
-    .eq("parent_id", parentId);
-  if (error) return notify(messageFrom(error), "error");
-  notify("Parent viewer unlinked.");
-  await renderStudentProfile();
+  const athleteId = state.selectedAthleteId;
+  try {
+    const coachIds = await getCoachTeamScopeIds();
+    if (state.user?.id !== userId || state.sessionSetupVersion !== generation) return;
+    const { data, error } = await client.from("parent_athletes").delete()
+      .in("coach_id", coachIds).eq("athlete_id", athleteId).eq("parent_id", parentId)
+      .select("parent_id,athlete_id");
+    if (state.user?.id !== userId || state.sessionSetupVersion !== generation) return;
+    if (error) throw error;
+    if (!data?.length) return notify("This parent link is no longer available. Refresh the rider profile and try again.", "error");
+    cacheClear("coach-command:");
+    notify("Parent viewer unlinked.");
+    if (state.view === view && state.selectedAthleteId === athleteId) await renderStudentProfile();
+  } catch (error) {
+    if (state.user?.id === userId && state.sessionSetupVersion === generation) notify(messageFrom(error), "error");
+  }
 }
 
 async function unlinkParentFromAdmin(event) {
+  const userId = state.user?.id, generation = state.sessionSetupVersion;
+  const view = state.view;
   const parentId = event.currentTarget.dataset.unlinkParentGlobal;
   const athleteId = event.currentTarget.dataset.unlinkAthleteGlobal;
-  const { error } = await client.from("parent_athletes")
-    .delete()
-    .eq("coach_id", state.user.id)
-    .eq("athlete_id", athleteId)
-    .eq("parent_id", parentId);
-  if (error) return notify(messageFrom(error), "error");
-  notify("Parent account unlinked.");
-  await renderParents();
+  try {
+    const coachIds = await getCoachTeamScopeIds();
+    if (state.user?.id !== userId || state.sessionSetupVersion !== generation) return;
+    const { data, error } = await client.from("parent_athletes").delete()
+      .in("coach_id", coachIds).eq("athlete_id", athleteId).eq("parent_id", parentId)
+      .select("parent_id,athlete_id");
+    if (state.user?.id !== userId || state.sessionSetupVersion !== generation) return;
+    if (error) throw error;
+    if (!data?.length) return notify("This parent link is no longer available. Refresh linked parents and try again.", "error");
+    cacheClear("coach-command:");
+    notify("Parent account unlinked.");
+    if (state.view === view) await renderParents();
+  } catch (error) {
+    if (state.user?.id === userId && state.sessionSetupVersion === generation) notify(messageFrom(error), "error");
+  }
 }
 
 async function savePrivateRecord(event) {
@@ -17575,7 +17985,10 @@ async function archiveRunPlan(event, onChanged = refreshRunRemovalView) {
   const restoreButton = setButtonBusy(button, restoring ? "Restoring…" : "Removing…");
   const updateArchive = async (archivedAt, expectedArchivedAt, expectedUpdatedAt) => {
     if (state.user?.id !== userId) throw new Error("Sign in to the same account to change this run.");
-    let query = client.from("run_plans").update({ archived_at: archivedAt }).eq("id", runId).eq(ownerColumn, userId);
+    const coachIds = isCoachRole(state.profile?.role) ? await getCoachTeamScopeIds() : null;
+    if (state.user?.id !== userId) throw new Error("Sign in to the same account to change this run.");
+    let query = client.from("run_plans").update({ archived_at: archivedAt }).eq("id", runId);
+    query = coachIds ? query.in("coach_id", coachIds) : query.eq(ownerColumn, userId);
     query = expectedArchivedAt ? query.eq("archived_at", expectedArchivedAt) : query.is("archived_at", null);
     if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
     const { data, error } = await query.select(RUN_SUMMARY_SELECT).single();
@@ -18013,6 +18426,7 @@ function coachReviewWorkspaceHtml(request) {
   const originalRiderVideoUrl = media.video_url || media.video_data_url || "";
   const riderVideoUrl = media.video_playback_url || media.video_data_url || "";
   const recordedReply = state.videoReviewRecordedReplies.get(request.id) || null;
+  const comparison = state.videoReviewComparisons?.get(request.id) || null;
   const reviewed = status === "reviewed";
   const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
   const hasSavedReply = Boolean(request.coach_comment || request.coach_video_storage_path || coachVideoUrl || ["replied", "reviewed"].includes(status));
@@ -18028,15 +18442,26 @@ function coachReviewWorkspaceHtml(request) {
       <div class="coach-review-record-status" aria-live="polite"><span class="coach-review-record-dot" aria-hidden="true"></span><strong data-review-record-status>${recordedReply ? "Recording ready to send" : "Ready when you are"}</strong><time data-review-record-time>${recordedReply ? videoReviewTimeLabel(recordedReply.durationSeconds) : "0:00"}</time></div>
       ${recordedReply ? `<div class="coach-review-recorded-preview"><video src="${escapeHtml(recordedReply.url)}" controls playsinline preload="metadata"></video><div><strong>Saved review preview</strong><small>${videoReviewTimeLabel(recordedReply.durationSeconds)} · ${videoSizeLabel(recordedReply.file?.size)} · private until you send it</small><button class="secondary-btn compact-btn" type="button" data-review-record-remove="${request.id}">Remove recording</button></div></div>` : ""}
     </section>` : "";
-  const player = riderVideoUrl ? `<div class="coach-review-stage" id="coach-review-stage">
+  const player = riderVideoUrl ? `<section class="coach-review-compare-tools" aria-label="Second video view">
+      <div class="coach-review-compare-head"><div><strong>Compare two views</strong><small>Align the same moment, then link playback.</small></div><label class="secondary-btn compact-btn coach-review-reference-upload">${comparison ? "Replace clip" : "+ Add second view"}<input id="coach-review-reference-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" aria-label="Choose second video view"></label></div>
+      <p class="coach-review-compare-private">Second clips stay in this review until you leave. Record your comparison to send both views to the rider.</p>
+      <div class="coach-review-reference-controls" ${comparison ? "" : "hidden"}>
+        <div class="coach-review-reference-name"><span data-review-reference-name>${escapeHtml(comparison?.name || "Second view")}</span><button type="button" class="secondary-btn compact-btn" data-review-reference-remove>Remove</button></div>
+        <label for="coach-review-reference-scrubber">Second-view position <output id="coach-review-reference-time">0:00.00</output></label>
+        <input id="coach-review-reference-scrubber" type="range" min="0" max="1000" value="0" aria-label="Second view timeline for alignment">
+        <div class="coach-review-reference-buttons"><button type="button" data-review-reference-step="-1" aria-label="Previous frame in second view">← Frame</button><button type="button" data-review-reference-play>Play second view</button><button type="button" data-review-reference-step="1" aria-label="Next frame in second view">Frame →</button></div>
+        <div class="coach-review-link-row"><button type="button" class="secondary-btn compact-btn" data-review-link aria-pressed="${Boolean(comparison?.linked)}">${comparison?.linked ? "Unlink views" : "Link at these frames"}</button><span data-review-link-status role="status">${comparison?.linked ? "Views linked" : "Pause each clip on the same moment, then link."}</span></div>
+      </div>
+    </section>
+    <div class="coach-review-views ${comparison ? "has-reference" : ""}" id="coach-review-views"><div class="coach-review-stage" id="coach-review-stage">
       <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" crossorigin="anonymous" playsinline preload="auto"></video>
       <canvas id="coach-review-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Video drawing layer"></canvas>
       <div class="coach-review-stage-label"><span>01 · Rider clip</span><strong id="coach-review-speed-label">1×</strong></div>
-    </div>
+    </div><div class="coach-review-stage coach-review-reference-stage" id="coach-review-reference-stage" ${comparison ? "" : "hidden"}><video id="coach-review-reference-video" ${comparison ? `src="${escapeHtml(comparison.url)}"` : ""} muted playsinline preload="metadata"></video><div class="coach-review-stage-label"><span>02 · Second view</span></div></div></div>
     <div class="coach-review-playback" aria-label="Video playback controls">
-      <button type="button" data-review-step="-0.033" aria-label="Previous frame">← Frame</button>
+      <button type="button" data-review-step="-1" aria-label="Previous frame">← Frame</button>
       <button class="coach-review-play" type="button" data-review-play>▶ Play</button>
-      <button type="button" data-review-step="0.033" aria-label="Next frame">Frame →</button>
+      <button type="button" data-review-step="1" aria-label="Next frame">Frame →</button>
       <span id="coach-review-time">0:00 / 0:00</span>
       <input id="coach-review-scrubber" type="range" min="0" max="1000" value="0" aria-label="Video timeline">
       <button type="button" data-review-fullscreen aria-label="Open video full screen">⛶ Expand</button>
@@ -18053,6 +18478,7 @@ function coachReviewWorkspaceHtml(request) {
         <button type="button" data-review-draw-clear>Clear</button>
       </div></section>
     </div>
+    <label class="coach-review-frame-rate">Frame steps<select id="coach-review-frame-rate" aria-label="Frame step rate">${[24, 25, 30, 50, 60, 120].map(fps => `<option value="${fps}" ${fps === (comparison?.frameRate || 30) ? "selected" : ""}>${fps} fps</option>`).join("")}</select><small>Match your clip’s frame rate.</small></label>
     ${recorderPanel}` : `<div class="coach-review-load-stage">
       <div class="coach-review-load-icon" aria-hidden="true">▶</div>
       <span>01 · Watch</span>
@@ -18094,11 +18520,231 @@ function coachReviewWorkspaceHtml(request) {
   </section>`;
 }
 
+function activeCoachReviewComparison() {
+  return state.videoReviewComparisons?.get(state.videoReviewActiveRequestId) || null;
+}
+
+function clearCoachReviewComparison(requestId) {
+  const comparison = state.videoReviewComparisons?.get(requestId);
+  if (comparison?.url) URL.revokeObjectURL(comparison.url);
+  state.videoReviewComparisons?.delete(requestId);
+}
+
+function coachReviewFrameTime(seconds = 0) {
+  const value = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+  return `${videoReviewTimeLabel(value)}.${String(Math.floor((value % 1) * 100)).padStart(2, "0")}`;
+}
+
+function coachReviewLinkedRange(video, reference, comparison) {
+  const offset = Number(comparison?.referenceAnchor || 0) - Number(comparison?.riderAnchor || 0);
+  const riderDuration = Number.isFinite(video?.duration) ? video.duration : 0;
+  const referenceDuration = Number.isFinite(reference?.duration) ? reference.duration : 0;
+  return { offset, min: Math.max(0, -offset), max: Math.min(riderDuration, referenceDuration - offset) };
+}
+
+function pauseCoachReviewVideos() {
+  const comparison = activeCoachReviewComparison();
+  if (comparison) { comparison.playSerial = Number(comparison.playSerial || 0) + 1; comparison.playingWanted = false; comparison.buffering = false; }
+  document.querySelector("#coach-review-video")?.pause();
+  document.querySelector("#coach-review-reference-video")?.pause();
+}
+
+function syncCoachReviewReference(force = false) {
+  const comparison = activeCoachReviewComparison();
+  const video = document.querySelector("#coach-review-video");
+  const reference = document.querySelector("#coach-review-reference-video");
+  if (!comparison?.linked || !video || !reference || reference.readyState < 1) return;
+  const range = coachReviewLinkedRange(video, reference, comparison);
+  if (range.max <= range.min) { pauseCoachReviewVideos(); return; }
+  const target = Math.max(0, Math.min(reference.duration, video.currentTime + range.offset));
+  if ((video.currentTime < range.min || video.currentTime >= range.max) && !video.paused) pauseCoachReviewVideos();
+  if (force || Math.abs(reference.currentTime - target) > 0.08) reference.currentTime = target;
+  if (reference.playbackRate !== video.playbackRate) {
+    try { reference.playbackRate = video.playbackRate; }
+    catch (_) { comparison.linked = false; pauseCoachReviewVideos(); updateCoachReviewComparisonUi(); notify("This browser cannot link both clips at that speed. Choose another speed and relink.", "error"); }
+  }
+}
+
+function seekCoachReviewVideos(seconds, referenceOnly = false) {
+  const video = document.querySelector("#coach-review-video");
+  const reference = document.querySelector("#coach-review-reference-video");
+  const comparison = activeCoachReviewComparison();
+  pauseCoachReviewVideos();
+  if (referenceOnly && reference && comparison) {
+    comparison.linked = false;
+    reference.currentTime = Math.max(0, Math.min(Number.isFinite(reference.duration) ? reference.duration : 0, Number(seconds) || 0));
+  } else if (video) {
+    const range = comparison?.linked ? coachReviewLinkedRange(video, reference, comparison) : { min: 0, max: Number.isFinite(video.duration) ? video.duration : 0 };
+    video.currentTime = Math.max(range.min, Math.min(Math.max(range.min, range.max), Number(seconds) || 0));
+    syncCoachReviewReference(true);
+  }
+  updateCoachReviewComparisonUi();
+  updateCoachReviewPlayerUi();
+}
+
+async function playCoachReviewVideos(referenceOnly = false) {
+  const video = document.querySelector("#coach-review-video");
+  const reference = document.querySelector("#coach-review-reference-video");
+  const comparison = activeCoachReviewComparison();
+  if (!video) return;
+  if (referenceOnly && reference && comparison) {
+    pauseCoachReviewVideos();
+    comparison.linked = false;
+    updateCoachReviewComparisonUi();
+    try { await reference.play(); } catch (_) { notify("The second view could not play. Try another video file.", "error"); }
+    return;
+  }
+  if (!video.paused) { pauseCoachReviewVideos(); return; }
+  if (comparison) comparison.playingWanted = true;
+  if (comparison?.linked) {
+    const range = coachReviewLinkedRange(video, reference, comparison);
+    if (range.max <= range.min) return notify("Those sync points have no shared playback time. Unlink and choose another moment.", "error");
+    if (video.currentTime < range.min || video.currentTime >= range.max - 0.02) video.currentTime = range.min;
+    syncCoachReviewReference(true);
+  }
+  const serial = comparison ? comparison.playSerial = Number(comparison.playSerial || 0) + 1 : null;
+  const playbacks = [video.play()];
+  if (comparison?.linked && reference) playbacks.push(reference.play());
+  const results = await Promise.allSettled(playbacks);
+  if (comparison && (activeCoachReviewComparison() !== comparison || comparison.playSerial !== serial)) return;
+  if (comparison?.buffering && comparison.playingWanted) return;
+  if (results.some(result => result.status === "rejected")) {
+    pauseCoachReviewVideos();
+    notify("Playback could not start. Wait for both clips to load, then tap Play again.", "error");
+  }
+}
+
+function updateCoachReviewComparisonUi() {
+  const comparison = activeCoachReviewComparison();
+  const reference = document.querySelector("#coach-review-reference-video");
+  const link = document.querySelector("[data-review-link]");
+  const status = document.querySelector("[data-review-link-status]");
+  if (link) { link.textContent = comparison?.linked ? "Unlink views" : "Link at these frames"; link.setAttribute("aria-pressed", String(Boolean(comparison?.linked))); }
+  if (status) status.textContent = comparison?.buffering ? "Loading both views… playback resumes when ready" : comparison?.linked ? "Views linked · play, scrub or step both together" : "Pause each clip on the same moment, then link.";
+  const time = document.querySelector("#coach-review-reference-time");
+  if (time && reference) time.textContent = coachReviewFrameTime(reference.currentTime);
+  const scrubber = document.querySelector("#coach-review-reference-scrubber");
+  if (scrubber && reference) scrubber.value = String(reference.duration ? Math.round(reference.currentTime / reference.duration * 1000) : 0);
+  const play = document.querySelector("[data-review-reference-play]");
+  if (play && reference) play.textContent = reference.paused ? "Play second view" : "Pause second view";
+}
+
+function bindCoachReviewComparison(refreshCanvas) {
+  const requestId = state.videoReviewActiveRequestId;
+  const userId = state.user?.id;
+  const video = document.querySelector("#coach-review-video");
+  const reference = document.querySelector("#coach-review-reference-video");
+  const fileInput = document.querySelector("#coach-review-reference-file");
+  if (!video || !reference || !fileInput) return;
+  const current = () => video.isConnected && state.view === "videoReviews" && state.videoReviewActiveRequestId === requestId && state.user?.id === userId;
+  const locked = () => Boolean(state.videoReviewRecording || state.videoReviewRecordingStarting);
+  const frameRate = () => Number(document.querySelector("#coach-review-frame-rate")?.value || 30);
+  const refresh = () => { updateCoachReviewComparisonUi(); refreshCanvas(); };
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file || !current() || locked()) return;
+    if (!supportedHelpVideoFile(file) || file.size > COACH_VIDEO_MAX_BYTES) {
+      fileInput.value = "";
+      return notify("Choose a supported second video under 50 MB (MP4, MOV or WebM).", "error");
+    }
+    pauseCoachReviewVideos();
+    clearCoachReviewComparison(requestId);
+    if (!state.videoReviewComparisons) state.videoReviewComparisons = new Map();
+    const comparison = { url: URL.createObjectURL(file), name: file.name, frameRate: frameRate(), linked: false, riderAnchor: 0, referenceAnchor: 0, playSerial: 0 };
+    state.videoReviewComparisons.set(requestId, comparison);
+    reference.src = comparison.url;
+    reference.muted = true;
+    document.querySelector("#coach-review-reference-stage").hidden = false;
+    document.querySelector("#coach-review-views").classList.add("has-reference");
+    document.querySelector(".coach-review-reference-controls").hidden = false;
+    document.querySelector("[data-review-reference-name]").textContent = file.name;
+    const uploadLabel = fileInput.closest("label");
+    if (uploadLabel?.firstChild) uploadLabel.firstChild.textContent = "Replace clip";
+    fileInput.value = "";
+    refresh();
+  });
+  document.querySelector("[data-review-reference-remove]")?.addEventListener("click", () => {
+    if (locked()) return;
+    pauseCoachReviewVideos();
+    clearCoachReviewComparison(requestId);
+    reference.removeAttribute("src"); reference.load();
+    document.querySelector("#coach-review-reference-stage").hidden = true;
+    document.querySelector("#coach-review-views").classList.remove("has-reference");
+    document.querySelector(".coach-review-reference-controls").hidden = true;
+    const uploadLabel = fileInput.closest("label");
+    if (uploadLabel?.firstChild) uploadLabel.firstChild.textContent = "+ Add second view";
+    refresh();
+  });
+  document.querySelector("[data-review-link]")?.addEventListener("click", () => {
+    if (!current()) return;
+    const comparison = activeCoachReviewComparison();
+    if (!comparison) return;
+    pauseCoachReviewVideos();
+    if (!comparison.linked && (video.readyState < 2 || reference.readyState < 2)) return notify("Wait for both clips to load before linking frames.", "error");
+    comparison.linked = !comparison.linked;
+    if (comparison.linked) { comparison.riderAnchor = video.currentTime; comparison.referenceAnchor = reference.currentTime; }
+    updateCoachReviewComparisonUi();
+  });
+  document.querySelector("#coach-review-reference-scrubber")?.addEventListener("input", event => seekCoachReviewVideos(Number(event.currentTarget.value) / 1000 * (reference.duration || 0), true));
+  document.querySelector("[data-review-reference-play]")?.addEventListener("click", () => reference.paused ? playCoachReviewVideos(true) : pauseCoachReviewVideos());
+  document.querySelectorAll("[data-review-reference-step]").forEach(button => button.addEventListener("click", () => seekCoachReviewVideos(reference.currentTime + Number(button.dataset.reviewReferenceStep) / frameRate(), true)));
+  document.querySelector("#coach-review-frame-rate")?.addEventListener("change", () => { const comparison = activeCoachReviewComparison(); if (comparison) comparison.frameRate = frameRate(); });
+  reference.addEventListener("loadedmetadata", () => {
+    if (!current()) return;
+    const comparison = activeCoachReviewComparison();
+    if (comparison?.referenceTime) reference.currentTime = Math.min(reference.duration, comparison.referenceTime);
+    if (comparison?.riderTime) video.currentTime = Math.min(video.duration || comparison.riderTime, comparison.riderTime);
+    refresh();
+  });
+  reference.addEventListener("timeupdate", () => { if (!current()) return; const comparison = activeCoachReviewComparison(); if (comparison) comparison.referenceTime = reference.currentTime; updateCoachReviewComparisonUi(); });
+  reference.addEventListener("play", updateCoachReviewComparisonUi);
+  reference.addEventListener("pause", updateCoachReviewComparisonUi);
+  reference.addEventListener("ended", () => { if (current() && activeCoachReviewComparison()?.linked) pauseCoachReviewVideos(); });
+  reference.addEventListener("error", () => {
+    if (!current() || !activeCoachReviewComparison()) return;
+    pauseCoachReviewVideos();
+    const recording = state.videoReviewRecording;
+    if (recording) { recording.failure = new Error("The second video stopped playing. The recording was not saved; reload that clip and try again."); stopCoachReviewRecording(); }
+    else notify("This second video could not play in this browser. Remove it and choose another file.", "error");
+  });
+  const waiting = () => {
+    if (!current()) return;
+    const comparison = activeCoachReviewComparison();
+    if (!comparison?.linked || !comparison.playingWanted) return;
+    comparison.buffering = true;
+    video.pause(); reference.pause();
+    updateCoachReviewComparisonUi();
+  };
+  const ready = () => {
+    const comparison = activeCoachReviewComparison();
+    if (!current() || !comparison?.buffering || !comparison.playingWanted || video.readyState < 3 || reference.readyState < 3) return;
+    comparison.buffering = false;
+    void playCoachReviewVideos();
+  };
+  reference.addEventListener("waiting", waiting);
+  video.addEventListener("waiting", waiting);
+  reference.addEventListener("canplay", ready);
+  video.addEventListener("canplay", ready);
+  video.addEventListener("pause", () => { if (current() && activeCoachReviewComparison()?.linked) reference.pause(); });
+  video.addEventListener("ended", () => { if (current()) pauseCoachReviewVideos(); });
+  video.addEventListener("seeking", () => { if (current()) syncCoachReviewReference(true); });
+  video.addEventListener("timeupdate", () => { if (!current()) return; const comparison = activeCoachReviewComparison(); if (comparison) comparison.riderTime = video.currentTime; syncCoachReviewReference(); updateCoachReviewComparisonUi(); });
+  const tick = () => {
+    state.videoReviewComparisonRaf = null;
+    if (!current() || video.paused) return;
+    syncCoachReviewReference();
+    if (!video.paused) state.videoReviewComparisonRaf = requestAnimationFrame(tick);
+  };
+  video.addEventListener("play", () => { if (!state.videoReviewComparisonRaf) tick(); });
+  refresh();
+}
+
 function releaseVideoReviewMedia(requestId) {
   state.inFlight?.delete(`help-media:${state.user?.id}:${requestId}`);
   const media = state.videoReviewMedia.get(requestId);
   if (media?.video_playback_url) URL.revokeObjectURL(media.video_playback_url);
   state.videoReviewMedia.delete(requestId);
+  clearCoachReviewComparison(requestId);
 }
 
 function clearCoachRecordedReply(requestId) {
@@ -18119,6 +18765,7 @@ function cleanupCoachReviewRecordingSession(session) {
     stream?.getTracks?.().forEach((track) => track.stop());
   });
   if (session.sourceVideo?.isConnected) session.sourceVideo.muted = session.sourceWasMuted;
+  if (session.referenceVideo?.isConnected) session.referenceVideo.muted = session.referenceWasMuted;
   session.outputCanvas?.remove();
   session.chunks = [];
   if (state.videoReviewRecording === session) state.videoReviewRecording = null;
@@ -18143,6 +18790,9 @@ function discardCoachReviewRecording() {
 
 function teardownCoachVideoReviewEditor() {
   discardCoachReviewRecording();
+  pauseCoachReviewVideos();
+  if (state.videoReviewComparisonRaf) cancelAnimationFrame(state.videoReviewComparisonRaf);
+  state.videoReviewComparisonRaf = null;
   if (state.videoReviewResizeHandler) window.removeEventListener("resize", state.videoReviewResizeHandler);
   if (state.videoReviewFullscreenHandler) {
     document.removeEventListener("fullscreenchange", state.videoReviewFullscreenHandler);
@@ -18159,6 +18809,7 @@ function resetVideoReviewPrivateState() {
   clearTimeout(state.videoReviewSearchTimer);
   [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
   [...state.videoReviewRecordedReplies.keys()].forEach(clearCoachRecordedReply);
+  [...(state.videoReviewComparisons?.keys() || [])].forEach(clearCoachReviewComparison);
   state.videoReviewDrawings.clear();
   state.videoReviewActiveRequestId = "";
   state.videoReviewStatus = "all";
@@ -18255,6 +18906,7 @@ function createCoachReviewMediaRecorder(stream) {
 }
 
 function coachReviewRecordingSize(video) {
+  if (activeCoachReviewComparison() && document.querySelector("#coach-review-reference-video")?.videoWidth) return { width: 1280, height: 720 };
   const sourceWidth = Math.max(1, Number(video.videoWidth || 1280));
   const sourceHeight = Math.max(1, Number(video.videoHeight || 720));
   const scale = Math.min(1, 1280 / Math.max(sourceWidth, sourceHeight));
@@ -18264,19 +18916,41 @@ function coachReviewRecordingSize(video) {
 
 function paintCoachReviewRecordingFrame(session) {
   if (!session || session.discarded || session.cleanedUp) return;
-  const { context, outputCanvas, sourceVideo, requestId } = session;
+  const { context, outputCanvas, sourceVideo, referenceVideo, requestId } = session;
+  if (referenceVideo && (sourceVideo.readyState < 2 || referenceVideo.readyState < 2)) {
+    session.rafId = window.requestAnimationFrame(() => paintCoachReviewRecordingFrame(session));
+    return;
+  }
   context.fillStyle = "#000";
   context.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
-  if (sourceVideo.readyState >= 2) context.drawImage(sourceVideo, 0, 0, outputCanvas.width, outputCanvas.height);
+  let riderRect = { x: 0, y: 0, width: outputCanvas.width, height: outputCanvas.height };
+  if (referenceVideo) {
+    const gap = 12, half = (outputCanvas.width - gap * 3) / 2;
+    const contain = (video, left) => {
+      const scale = Math.min(half / video.videoWidth, (outputCanvas.height - 64) / video.videoHeight);
+      const width = video.videoWidth * scale, height = video.videoHeight * scale;
+      const rect = { x: left + (half - width) / 2, y: 52 + (outputCanvas.height - 64 - height) / 2, width, height };
+      context.drawImage(video, rect.x, rect.y, width, height);
+      return rect;
+    };
+    riderRect = contain(sourceVideo, gap);
+    contain(referenceVideo, gap * 2 + half);
+    context.fillStyle = "#eaf4f8"; context.font = "600 20px sans-serif"; context.textBaseline = "top";
+    context.fillText("Rider clip", gap + 8, 16);
+    context.fillText("Second view", gap * 2 + half + 8, 16);
+  } else if (sourceVideo.readyState >= 2) context.drawImage(sourceVideo, 0, 0, outputCanvas.width, outputCanvas.height);
   const drawings = state.videoReviewDrawings.get(requestId) || [];
+  context.save();
+  context.translate(riderRect.x, riderRect.y);
   [...drawings, state.videoReviewActiveRequestId === requestId ? state.videoReviewDraftDrawing : null]
     .filter(Boolean)
-    .forEach((drawing) => drawCoachReviewShape(context, drawing, outputCanvas.width, outputCanvas.height));
+    .forEach((drawing) => drawCoachReviewShape(context, drawing, riderRect.width, riderRect.height));
+  context.restore();
   session.rafId = window.requestAnimationFrame(() => paintCoachReviewRecordingFrame(session));
 }
 
 function setCoachReviewRecordingControlsLocked(locked) {
-  document.querySelectorAll("[data-open-video-review], #video-review-status, #video-review-rider, #video-review-search, [data-open-student], [data-mark-help-reviewed], [data-review-fullscreen]")
+  document.querySelectorAll("[data-open-video-review], #video-review-status, #video-review-rider, #video-review-search, [data-open-student], [data-mark-help-reviewed], [data-review-fullscreen], #coach-review-reference-file, [data-review-reference-remove]")
     .forEach((control) => { control.disabled = locked; });
 }
 
@@ -18402,6 +19076,7 @@ async function startCoachReviewRecording(requestId) {
   if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop the current review recording first.", "error");
   if (!requestId || requestId !== state.videoReviewActiveRequestId) return notify("That review changed before recording started. Open it again and retry.", "error");
   const video = document.querySelector("#coach-review-video");
+  const reference = activeCoachReviewComparison() ? document.querySelector("#coach-review-reference-video") : null;
   const canvas = document.querySelector("#coach-review-canvas");
   const panel = document.querySelector(".coach-review-recorder");
   const button = document.querySelector("[data-review-record-toggle]");
@@ -18431,6 +19106,7 @@ async function startCoachReviewRecording(requestId) {
       && state.view === "videoReviews"
       && state.videoReviewActiveRequestId === requestId
       && video.isConnected
+      && (!reference || reference.isConnected)
       && canvas.isConnected
       && panel.isConnected
       && button.isConnected;
@@ -18441,6 +19117,7 @@ async function startCoachReviewRecording(requestId) {
   };
   try {
     await waitForCoachReviewVideoFrame(video);
+    if (reference) await waitForCoachReviewVideoFrame(reference);
     ensureCurrentStart();
     if (!String(video.currentSrc || video.src || "").startsWith("blob:") && !String(video.currentSrc || video.src || "").startsWith("data:")) {
       throw new Error("Reload the private video before recording so the finished review can include your drawings.");
@@ -18462,6 +19139,10 @@ async function startCoachReviewRecording(requestId) {
     context.fillStyle = "#000";
     context.fillRect(0, 0, width, height);
     context.drawImage(video, 0, 0, width, height);
+    if (reference) {
+      context.drawImage(reference, width / 2, 0, width / 2, height);
+      context.getImageData(0, 0, 1, 1);
+    }
     context.getImageData(0, 0, 1, 1);
     canvasStream = outputCanvas.captureStream(30);
     const videoTrack = canvasStream.getVideoTracks()[0];
@@ -18481,6 +19162,8 @@ async function startCoachReviewRecording(requestId) {
       context,
       sourceVideo: video,
       sourceWasMuted: video.muted,
+      referenceVideo: reference,
+      referenceWasMuted: reference?.muted,
       chunks: [],
       bytes: 0,
       startedAt: Date.now(),
@@ -18492,6 +19175,7 @@ async function startCoachReviewRecording(requestId) {
     state.videoReviewRecordingStarting = null;
     state.videoReviewRecording = session;
     video.muted = true;
+    if (reference) reference.muted = true;
     state.videoReviewDrawEnabled = true;
     canvas.classList.add("drawing");
     const drawToggle = document.querySelector("[data-review-draw-toggle]");
@@ -18526,7 +19210,7 @@ async function startCoachReviewRecording(requestId) {
     panel.classList.remove("is-finalising");
     button.disabled = false;
     button.textContent = "Stop & save recording";
-    if (status) status.textContent = "Recording voice, video and drawings";
+    if (status) status.textContent = reference ? "Recording both views, voice and drawings" : "Recording voice, video and drawings";
     updateCoachReviewRecordingClock(session);
   } catch (error) {
     if (state.videoReviewRecordingStarting === startAttempt) state.videoReviewRecordingStarting = null;
@@ -18572,7 +19256,7 @@ function updateCoachReviewPlayerUi() {
   const play = document.querySelector("[data-review-play]");
   if (!video) return;
   if (scrubber) scrubber.value = String(video.duration ? Math.round((video.currentTime / video.duration) * 1000) : 0);
-  if (time) time.textContent = `${videoReviewTimeLabel(video.currentTime)} / ${videoReviewTimeLabel(video.duration)}`;
+  if (time) time.textContent = `${coachReviewFrameTime(video.currentTime)} / ${videoReviewTimeLabel(video.duration)}`;
   if (play) play.textContent = video.paused ? "Play" : "Pause";
 }
 
@@ -18584,13 +19268,15 @@ function bindCoachVideoReviewEditor() {
   const stage = document.querySelector("#coach-review-stage");
   const refreshCanvas = () => window.requestAnimationFrame(() => {
     if (stage && video.videoWidth && video.videoHeight) {
-      const isFullscreen = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+      const views = document.querySelector("#coach-review-views");
+      const hasComparison = Boolean(activeCoachReviewComparison());
+      const isFullscreen = document.fullscreenElement === stage || document.webkitFullscreenElement === stage || document.fullscreenElement === views || document.webkitFullscreenElement === views;
       if (!isFullscreen) {
         const mediaRatio = video.videoWidth / video.videoHeight;
         const maxHeight = Math.min(window.innerHeight * 0.68, 760);
         const availableWidth = stage.parentElement?.clientWidth || stage.clientWidth || 720;
-        stage.style.width = `${Math.min(availableWidth, maxHeight * mediaRatio)}px`;
-        stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        stage.style.width = hasComparison ? "100%" : `${Math.min(availableWidth, maxHeight * mediaRatio)}px`;
+        stage.style.aspectRatio = hasComparison ? "4 / 3" : `${video.videoWidth} / ${video.videoHeight}`;
       }
       const stageRect = stage.getBoundingClientRect();
       const mediaRatio = video.videoWidth / video.videoHeight;
@@ -18641,20 +19327,20 @@ function bindCoachVideoReviewEditor() {
     if (event.currentTarget.files?.[0]?.size) submit.textContent = "Send selected video to rider";
     else submit.textContent = state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId) ? "Send recorded review to rider" : "Send feedback to rider";
   });
-  document.querySelector("[data-review-play]")?.addEventListener("click", () => video.paused ? video.play().catch((error) => notify(messageFrom(error), "error")) : video.pause());
+  document.querySelector("[data-review-play]")?.addEventListener("click", () => playCoachReviewVideos());
   document.querySelectorAll("[data-review-step]").forEach((button) => button.addEventListener("click", () => {
-    video.pause();
-    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + Number(button.dataset.reviewStep || 0)));
-    updateCoachReviewPlayerUi();
+    const fps = Number(document.querySelector("#coach-review-frame-rate")?.value || 30);
+    seekCoachReviewVideos(video.currentTime + Number(button.dataset.reviewStep || 0) / fps);
   }));
   document.querySelector("#coach-review-scrubber")?.addEventListener("input", (event) => {
     if (!video.duration) return;
-    video.currentTime = (Number(event.target.value || 0) / 1000) * video.duration;
+    seekCoachReviewVideos((Number(event.target.value || 0) / 1000) * video.duration);
   });
   document.querySelectorAll("[data-review-speed]").forEach((button) => button.addEventListener("click", () => {
     const requestedSpeed = Number(button.dataset.reviewSpeed || 1);
     try {
       video.playbackRate = requestedSpeed;
+      syncCoachReviewReference(true);
     } catch (error) {
       notify("This browser cannot use that slow-motion speed.", "error");
     }
@@ -18663,7 +19349,7 @@ function bindCoachVideoReviewEditor() {
     if (label) label.textContent = video.playbackRate === requestedSpeed ? button.textContent : `${video.playbackRate}×`;
   }));
   document.querySelector("[data-review-fullscreen]")?.addEventListener("click", () => {
-    const stage = document.querySelector("#coach-review-stage");
+    const stage = document.querySelector(activeCoachReviewComparison() ? "#coach-review-views" : "#coach-review-stage");
     if (stage?.requestFullscreen) stage.requestFullscreen().catch(() => {
       if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
       else notify("Full screen is not available in this browser.", "error");
@@ -18676,7 +19362,7 @@ function bindCoachVideoReviewEditor() {
     canvas.classList.toggle("drawing", state.videoReviewDrawEnabled);
     event.currentTarget.classList.toggle("active", state.videoReviewDrawEnabled);
     event.currentTarget.textContent = state.videoReviewDrawEnabled ? "Drawing on" : "Draw on video";
-    if (state.videoReviewDrawEnabled) video.pause();
+    if (state.videoReviewDrawEnabled) pauseCoachReviewVideos();
   });
   document.querySelectorAll("[data-review-draw-tool]").forEach((button) => button.addEventListener("click", () => {
     state.videoReviewDrawTool = button.dataset.reviewDrawTool;
@@ -18719,6 +19405,7 @@ function bindCoachVideoReviewEditor() {
     activePointerId = null;
     redrawCoachReviewCanvas();
   });
+  bindCoachReviewComparison(refreshCanvas);
   refreshCanvas();
   updateCoachReviewPlayerUi();
   if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) setCoachReviewRecordingControlsLocked(true);
@@ -18854,12 +19541,14 @@ async function renderVideoReviews() {
 
 async function fetchHelpVideoMedia(requestId) {
   const viewerId = state.user?.id;
+  const generation = state.sessionSetupVersion || 0;
   if (!viewerId || !requestId) throw new Error("Sign in again to open your private review.");
-  const cached = state.videoReviewMedia.get(requestId);
+  const existingMedia = state.videoReviewMedia.get(requestId);
+  const cached = existingMedia?._viewerId === viewerId && existingMedia?._generation === generation ? existingMedia : null;
   const usesSignedUrl = Boolean(cached?.video_storage_path || cached?.coach_video_storage_path);
   const signedUrlFresh = !usesSignedUrl || (Date.now() - Number(cached?._signedAt || 0)) < ((HELP_VIDEO_SIGNED_URL_SECONDS - 60) * 1000);
   if (signedUrlFresh && (cached?._loaded || cached?.video_url || cached?.coach_video_url || cached?.video_data_url || cached?.coach_video_data_url)) return cached;
-  const key = `help-media:${viewerId}:${requestId}`;
+  const key = `help-media:${viewerId}:${generation}:${requestId}`;
   if (state.inFlight.has(key)) return state.inFlight.get(key);
   const request = (async () => {
     const { data, error } = await client.from("trick_help_requests")
@@ -18868,9 +19557,10 @@ async function fetchHelpVideoMedia(requestId) {
       .limit(1);
     if (error) throw error;
     if (!data?.length) throw new Error("Could not load that video. Check the rider is still linked to your coach account.");
+    if (state.user?.id !== viewerId || (state.sessionSetupVersion || 0) !== generation) throw new Error("Your account access changed. Please reopen coaching.");
     const [media] = await hydrateHelpRequestMediaUrls(data);
-    if (state.user?.id !== viewerId) throw new Error("The signed-in account changed. Please reopen coaching.");
-    const freshMedia = { ...media, ...(cached?.video_playback_url ? { video_playback_url: cached.video_playback_url } : {}), _signedAt: Date.now(), _loaded: true };
+    if (state.user?.id !== viewerId || (state.sessionSetupVersion || 0) !== generation) throw new Error("Your account access changed. Please reopen coaching.");
+    const freshMedia = { ...media, ...(cached?.video_playback_url ? { video_playback_url: cached.video_playback_url } : {}), _signedAt: Date.now(), _loaded: true, _viewerId: viewerId, _generation: generation };
     if (state.inFlight.get(key) === request) state.videoReviewMedia.set(requestId, freshMedia);
     return freshMedia;
   })().finally(() => { if (state.inFlight.get(key) === request) state.inFlight.delete(key); });
@@ -18879,13 +19569,19 @@ async function fetchHelpVideoMedia(requestId) {
 }
 
 async function prepareCoachReviewPlaybackMedia(requestId, media = {}) {
+  const generation = state.sessionSetupVersion || 0;
+  if ((media._viewerId && media._viewerId !== state.user?.id) || (media._generation !== undefined && media._generation !== generation)) {
+    const aborted = new Error("Your account access changed. Please reopen coaching.");
+    aborted.name = "AbortError";
+    throw aborted;
+  }
   if (media.video_playback_url || media.video_data_url || !media.video_storage_path) return media;
   const userId = state.user?.id;
   const { data, error } = await client.storage.from(TRICK_HELP_VIDEO_BUCKET).download(media.video_storage_path);
   if (error) throw error;
   if (!data?.size) throw new Error("The private rider video could not be downloaded for recording.");
   const playbackUrl = URL.createObjectURL(data);
-  if (state.user?.id !== userId || state.view !== "videoReviews" || state.videoReviewActiveRequestId !== requestId) {
+  if (state.user?.id !== userId || (state.sessionSetupVersion || 0) !== generation || state.view !== "videoReviews" || state.videoReviewActiveRequestId !== requestId) {
     URL.revokeObjectURL(playbackUrl);
     const aborted = new Error("The selected review changed while the private video was loading.");
     aborted.name = "AbortError";
@@ -18893,7 +19589,7 @@ async function prepareCoachReviewPlaybackMedia(requestId, media = {}) {
   }
   const current = state.videoReviewMedia.get(requestId) || media;
   if (current.video_playback_url) URL.revokeObjectURL(current.video_playback_url);
-  const prepared = { ...current, video_playback_url: playbackUrl };
+  const prepared = { ...current, video_playback_url: playbackUrl, _viewerId: userId, _generation: generation };
   state.videoReviewMedia.set(requestId, prepared);
   return prepared;
 }
@@ -18972,12 +19668,12 @@ async function renderNotes() {
     return;
   }
   if (!state.selectedAthleteId || !roster.some((athlete) => athlete.id === state.selectedAthleteId)) state.selectedAthleteId = roster[0].id;
-  const { data: notes, error } = await client.from("coach_notes").select("*").eq("coach_id", state.user.id).eq("athlete_id", state.selectedAthleteId).order("created_at", { ascending: false });
+  const { data: notes, error } = await client.from("coach_notes").select("*").in("coach_id", await getCoachTeamScopeIds()).eq("athlete_id", state.selectedAthleteId).order("created_at", { ascending: false });
   if (error) throw error;
   const options = roster.map((athlete) => `<option value="${athlete.id}" ${athlete.id === state.selectedAthleteId ? "selected" : ""}>${escapeHtml(athlete.display_name)}</option>`).join("");
   const notesHtml = notes.length ? notes.map((note) => `<article class="note"><p>${escapeHtml(note.note)}</p><small>${dateLabel(note.created_at)}</small></article>`).join("") : `<div class="empty">No private notes for this athlete yet.</div>`;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Coach <span>notes</span></h1><p>Only you can see the notes you write here.</p></div></div>
+    <div class="page-head"><div><div class="eyebrow">Private coach tools</div><h1>Coach <span>notes</span></h1><p>Shared only with approved coaches on your team.</p></div></div>
     <div class="two-col">
       <section class="panel"><div class="panel-head"><div class="panel-title">Notes</div><div class="field" style="margin:0"><select id="note-athlete">${options}</select></div></div><div class="notes-list">${notesHtml}</div></section>
       <section class="panel"><div class="panel-head"><div class="panel-title">Add note</div></div><form id="note-form"><div class="field"><label for="note-text">Private note</label><textarea id="note-text" name="note" required placeholder="Focus for next session..."></textarea></div><button class="primary-btn wide" type="submit">Save note</button></form></section>
@@ -19316,6 +20012,7 @@ async function togglePushNotifications(event) {
 }
 
 async function renderProfile() {
+  const profileViewerId = state.user?.id, profileSetupVersion = state.sessionSetupVersion;
   let trainingHistorySection = "";
   let coachPbSection = "";
   const pushState = await getPushNotificationState().catch((error) => {
@@ -19351,6 +20048,7 @@ async function renderProfile() {
       coachPbSection = `<section class="panel"><div class="empty compact-empty">Daily PB repair could not load: ${escapeHtml(messageFrom(error))}</div></section>`;
     }
   }
+  if (state.user?.id !== profileViewerId || state.sessionSetupVersion !== profileSetupVersion) return;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Your account</div><h1>Profile & <span>settings</span></h1><p>Update the name shown across JKCREW or sign out.</p></div></div>
     ${state.profile.role === "athlete" ? goalsSection(state.profile) : ""}
@@ -19412,10 +20110,12 @@ async function renderProfile() {
       </section>
     </div>
     ${state.profile.role === "athlete" ? uciProfileLinkHtml(state.profile) : ""}
+    ${isCoachRole(state.profile?.role) || ['athlete', 'parent'].includes(state.profile?.role) ? `<section class="panel coach-team-access" data-coach-team-access><div class="panel-head"><div class="panel-title">Team access</div></div><p role="status">Loading your team…</p></section>` : ""}
     ${coachPbSection}
     ${trainingHistorySection}
     ${state.profile.role === "athlete" ? `<section class="panel profile-library-card"><div class="panel-head"><div><div class="panel-title">My Tricktionary</div><div class="panel-meta">Your landed trick library and weekly attempt history now live under Profile & Settings.</div></div></div><button class="secondary-btn" type="button" id="open-tricktionary-from-profile">Open My Tricktionary</button></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Competition run planner</div><div class="panel-meta">Run planning now lives in Contests.</div></div></div><button class="primary-btn" type="button" id="open-contests-from-profile">Open Contests</button></section>` : ""}`;
   document.querySelector("#choose-own-avatar").addEventListener("click", () => document.querySelector("#own-avatar-file").click());
+  if (typeof JKCTeamAccess !== "undefined") void JKCTeamAccess.mount({ element: document.querySelector("[data-coach-team-access]"), client, userId: profileViewerId, profileRole: state.profile?.role, currentUser: () => state.user?.id, withTimeout, onChanged: () => handleSession(state.session) });
   if (state.profile.role === "athlete") bindGoalActions();
   document.querySelector("[data-open-bike-garage]")?.addEventListener("click", () => navigate("bikeGarage"));
   document.querySelector("#own-avatar-file").addEventListener("change", updateOwnAvatar);

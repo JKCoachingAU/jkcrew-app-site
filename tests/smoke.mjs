@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.201";
+const version = "2.14.202";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -760,14 +760,17 @@ const mergedFixture = {
 };
 const mergedEntries = tricktionaryAggregationFactory.landedTricktionaryEntries(mergedFixture);
 assert.equal(mergedEntries.length, 1, "Two merged trick names must render as exactly one trick");
-assert.equal(mergedEntries[0].count, 11, "Merged trick landings must sum without losing either source total");
+assert.equal(mergedEntries[0].count, 0, "Merged manual records must not invent ticked landings");
+assert.equal(mergedEntries[0].manualCount, 11, "Merged manual records must sum without losing either source total");
+assert.deepEqual(mergedEntries[0].manualIds.slice().sort(), ["one", "two"], "Merged manual history must retain each source's stable identity");
 assert.equal(mergedEntries[0].tricktionarySubcategory, "spins", "Saved Tricktionary subcategories must survive aggregation");
 const staleAliasTombstoneEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
   ...mergedFixture,
   profile: { ...mergedFixture.profile, tricktionary_meta: { ...mergedFixture.profile.tricktionary_meta, hidden: { "old backflip": new Date().toISOString() } } },
 });
 assert.equal(staleAliasTombstoneEntries.length, 1, "A stale tombstone on one historical alias must not hide the resolved canonical card");
-assert.equal(staleAliasTombstoneEntries[0].count, 11, "A stale alias tombstone must not remove only that source's landings from a merged total");
+assert.equal(staleAliasTombstoneEntries[0].count, 0, "A stale alias tombstone must not turn manual records into ticked landings");
+assert.equal(staleAliasTombstoneEntries[0].manualCount, 11, "A stale alias tombstone must not remove one source's recorded history from the merged total");
 const renamedTricktionaryEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
   profile: {
     tricktionary_meta: {
@@ -782,7 +785,8 @@ const renamedTricktionaryEntries = tricktionaryAggregationFactory.landedTricktio
 });
 assert.equal(renamedTricktionaryEntries.length, 1, "Renaming a canonical Tricktionary card must not duplicate its historical entry");
 assert.equal(renamedTricktionaryEntries[0].title, "Alleyoop Transfer", "Renamed Tricktionary history must display under the new canonical title");
-assert.equal(renamedTricktionaryEntries[0].count, 9, "Renaming a Tricktionary card must preserve every historical landing");
+assert.equal(renamedTricktionaryEntries[0].count, 0, "Renaming manual history must not claim an explicit tick");
+assert.equal(renamedTricktionaryEntries[0].manualCount, 9, "Renaming a Tricktionary card must preserve every manual history record");
 assert.equal(renamedTricktionaryEntries[0].tricktionarySubcategory, "transfers", "Renaming a Tricktionary card must preserve its Box Transfers placement");
 const hiddenEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
   ...mergedFixture,
@@ -801,7 +805,8 @@ const legacyMergedEntries = tricktionaryAggregationFactory.landedTricktionaryEnt
   },
 });
 assert.equal(legacyMergedEntries.length, 1, "Legacy synthetic merges must be repaired into one visible trick");
-assert.equal(legacyMergedEntries[0].count, 11, "Legacy synthetic merges must not inflate the total with their fake +1 landing");
+assert.equal(legacyMergedEntries[0].count, 0, "Legacy synthetic merges must not invent ticked landings");
+assert.equal(legacyMergedEntries[0].manualCount, 11, "Legacy synthetic merges must preserve recorded history without their fake +1 marker");
 assert.equal(tricktionaryAggregationFactory.tricktionaryMeta({ tricktionary_meta: { aliases: { old: "middle", middle: "final" } } }).aliases.old, "middle", "Stored alias chains must remain available for resolution");
 assert.equal(tricktionaryAggregationFactory.attemptsByTrick([{ trick_name: "Old" }, { trick_name: "Middle" }], { old: "middle", middle: "final" }, { final: "Final Trick" }).get("final").title, "Final Trick", "Merged attempts must use the canonical display name");
 assert.equal(tricktionaryAggregationFactory.attemptsByTrick([{ trick_name: "Old" }, { trick_name: "Middle" }], { old: "middle", middle: "final" }, { final: "Final Trick" }).get("final").count, 2, "Merged attempt totals must combine");
@@ -830,7 +835,20 @@ const mergedGroupEntries = tricktionaryAggregationFactory.landedTricktionaryEntr
   assignments: [], progress: [], awards: [], percentageAttempts: [],
 });
 assert.equal(mergedGroupEntries.length, 1, "Merging two already-merged groups must leave one visible trick");
-assert.equal(mergedGroupEntries[0].count, 10, "Merging two already-merged groups must preserve every landing");
+assert.equal(mergedGroupEntries[0].count, 0, "Merging recorded groups must not invent ticked landings");
+assert.equal(mergedGroupEntries[0].manualCount, 10, "Merging two already-merged groups must preserve every manual record");
+const tickedAndRecordedEntries = tricktionaryAggregationFactory.landedTricktionaryEntries({
+  ...mergedFixture,
+  assignments: [
+    { id: "real-tick", trick_name: "Old Backflip", category: "one_bang" },
+    { id: "receipt-only", trick_name: "Unticked replacement", category: "one_bang" },
+  ],
+  progress: [{ assignment_id: "real-tick", completed_at: "2026-11-16T08:00:00Z" }],
+  awards: [{ assignment_id: "receipt-only", award_key: "one_bang:receipt-only", points: 2, created_at: "2026-11-16T08:00:00Z" }],
+});
+assert.equal(tickedAndRecordedEntries.length, 1, "A point receipt alone must not create an unticked trick card");
+assert.equal(tickedAndRecordedEntries[0].count, 1, "Only the explicit progress tick counts as a landed result");
+assert.equal(tickedAndRecordedEntries[0].manualCount, 11, "Adding a real tick must leave the separately recorded manual history intact");
 assert(functionBody("coachManualTricktionaryPanel").includes('trick?.source === "merged"'), "Legacy fake merge markers must stay hidden from coach manual management");
 assert(app.includes('parentAthleteId: ""'), "Parent screens must track the selected linked rider");
 assert(functionBody("rememberParentAthleteId").includes("localStorage.setItem(parentSelectionStorageKey(), athleteId)"), "The selected child must persist per parent account");
@@ -918,7 +936,7 @@ assert(latestDailyMigration.includes("assignment.category = 'daily'"), "Latest-l
 assert(!latestDailyMigration.includes("56 days"), "Saved Daily locations must not disappear because of an age cutoff");
 assert(latestDailyMigration.includes("from public, anon"), "Anonymous users must not execute the effective rider or coach reads");
 assert(functionBody("sessionViewerVenueOptions").includes("venueIdentityKey"), "Coach location filters must canonicalize saved venue names");
-assert(functionBody("sessionViewerVenueTabs").includes("venueIdentityKey(option.value)"), "Coach location tabs must retain their canonical active location");
+assert(functionBody("sessionViewerVenueOptions").includes("selectedIdentity"), "Coach location selector must retain its canonical active location");
 
 const plannerLinesConstraintMigration = read("supabase/migrations/20260827071737_allow_lines_in_weekly_assignment_plans.sql");
 assert(
@@ -1141,21 +1159,18 @@ const coachToolsRender = functionBody("renderCoachTools");
 assert(coachToolsRender.includes("Sheet Scheduler"), "Coach Tools must rename Planner to Sheet Scheduler");
 assert(!coachToolsRender.includes("command-section-heading"), "Coach Tools must remove the duplicate numbered shortcut section");
 const sessionViewerBindings = functionBody("bindSessionViewerActions");
-const sessionViewerGroupFilters = functionBody("sessionViewerGroupTabs");
-const sessionViewerVenueFilters = functionBody("sessionViewerVenueTabs");
-assert(sessionViewerRender.includes("viewer-group-tabs"), "Coach Session must use group filter tabs");
-assert(sessionViewerRender.includes("viewer-venue-tabs"), "Coach Session must use location filter tabs");
-assert(sessionViewerRender.includes("sessionViewerGroupTabs(started)"), "Coach Session must lock group filters with an active session");
-assert(!sessionViewerRender.includes('<select id="viewer-group"'), "Coach Session must not fall back to a group dropdown");
-assert(sessionViewerBindings.includes('querySelectorAll("[data-viewer-group]")'), "Coach Session must bind every group filter tab");
-assert(sessionViewerBindings.includes("dataset.viewerGroup"), "Coach Session group tabs must update the selected group");
-assert(sessionViewerGroupFilters.includes("viewer-filter-tab viewer-group-tab"), "Group filters must share the location filter styling");
-assert(sessionViewerGroupFilters.includes("aria-pressed"), "Group filters must expose their selected state");
-assert(sessionViewerVenueFilters.includes("viewer-filter-tab viewer-venue-tab"), "Location filters must use the shared filter styling");
-assert(sessionViewerVenueFilters.includes("aria-pressed"), "Location filters must expose their selected state");
-assert(css.includes(".viewer-group-filter,"), "Group and location filters must share the full-width layout");
-assert(css.includes(".viewer-filter-tabs"), "Group and location filters must share a tab row");
-assert(css.includes("overflow-x: auto"), "Session filter tabs must stay usable on narrow screens");
+const sessionViewerGroupFilters = functionBody("sessionViewerGroupOptions");
+assert(sessionViewerRender.includes('id="viewer-group-filter"'), "Coach Session must use a compact native group selector");
+assert(sessionViewerRender.includes('id="viewer-venue-filter"'), "Coach Session must use a compact native location selector");
+assert(sessionViewerRender.includes('sessionViewerGroupOptions()'), "Coach Session group selector must retain the existing groups");
+assert(sessionViewerGroupFilters.includes('<option'), "Group selector must expose native options");
+assert(sessionViewerGroupFilters.includes('state.sessionViewerGroup'), "Group selector must retain its selected group");
+assert(sessionViewerBindings.includes('#viewer-group-filter') && sessionViewerBindings.includes('#viewer-venue-filter'), "Coach Session must bind both selectors");
+assert(sessionViewerBindings.includes('"change"'), "Native selectors must react to selection changes");
+assert(sessionViewerBindings.includes('sessionViewerActiveSessionCache'), "Live sessions must guard filter changes in event handlers");
+assert(css.includes('.session-setup-fields'), "Group and location selectors must retain responsive setup styling");
+assert(functionBody('sessionViewerClockFaceHtml').includes('data-clock-minutes') && functionBody('sessionViewerClockFaceHtml').includes('data-clock-seconds'), "Coach clock must keep separate readable minute and second fields");
+assert(sessionViewerRender.includes('role="timer"'), "Coach clock must expose its timer role");
 assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
 assert(functionBody("renderSessionViewer").includes("sessionGroupBattlesHtml(groupBattles"), "Coach Session must show the compact group battle tab at the bottom");
 const sessionGroupBattlesMarkup = functionBody("sessionGroupBattlesHtml");
@@ -1645,7 +1660,7 @@ assert(functionBody("prepareCoachReviewPlaybackMedia").includes(".download(media
 assert(functionBody("prepareCoachReviewPlaybackMedia").includes("URL.createObjectURL(data)"), "Rider analysis must use an origin-clean local playback URL");
 const revokedReviewUrls = [];
 const releaseMediaState = { videoReviewMedia: new Map([["review-1", { video_playback_url: "blob:private-source" }]]) };
-const releasePrivateMedia = new Function("state", "URL", `${functionBody("releaseVideoReviewMedia")}; return releaseVideoReviewMedia;`)(releaseMediaState, { revokeObjectURL: (url) => revokedReviewUrls.push(url) });
+const releasePrivateMedia = new Function("state", "URL", "clearCoachReviewComparison", `${functionBody("releaseVideoReviewMedia")}; return releaseVideoReviewMedia;`)(releaseMediaState, { revokeObjectURL: (url) => revokedReviewUrls.push(url) }, () => {});
 releasePrivateMedia("review-1");
 assert.deepEqual(revokedReviewUrls, ["blob:private-source"], "Private source playback URLs must be revoked exactly once when released");
 assert.equal(releaseMediaState.videoReviewMedia.size, 0, "Released private media must leave the in-memory cache");

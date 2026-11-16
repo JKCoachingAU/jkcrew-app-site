@@ -1,0 +1,32 @@
+.coach-signup-fields { padding:12px; margin-bottom:16px; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); }
+.coach-signup-fields .form-note { margin:0; font-size:12px; line-height:1.5; }
+.owner-coach-account { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; padding:16px 0; }
+.owner-coach-identity { min-width:0; overflow-wrap:anywhere; }
+.owner-coach-identity strong,.owner-coach-identity small { display:block; }
+.owner-coach-identity small { margin-top:5px; color:var(--muted); font-size:12px; }
+.owner-coach-account-meta { display:grid; justify-items:end; align-content:start; gap:5px; font-size:12px; }
+.owner-access-status,.team-access-status { padding:5px 8px; border:1px solid var(--line); border-radius:7px; color:var(--text); background:var(--surface-2); font:600 11px/1.3 var(--body); }
+.owner-access-status[data-approval-status="pending"] { border-color:color-mix(in srgb,var(--yellow) 35%,var(--line)); }
+.owner-access-status[data-approval-status="approved"] { border-color:color-mix(in srgb,var(--aqua) 30%,var(--line)); }
+.owner-coach-access-actions { display:flex; gap:8px; grid-column:1/-1; }
+.owner-coach-access-actions button,.coach-team-access button { min-height:44px; }
+#app #view .owner-coach-identity strong { white-space:normal; overflow:visible; text-overflow:clip; }
+#app #view .owner-coach-access-actions { display:flex; flex-wrap:wrap; gap:8px; }
+#app #view .owner-coach-access-actions button { flex:1 1 100px; width:auto; margin:0; text-transform:none; font:600 12px/1.3 var(--body); }
+.team-access-summary { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.team-access-summary strong { font-size:16px; overflow-wrap:anywhere; }
+.team-access-summary small { display:block; margin-top:5px; color:var(--muted); font-size:12px; }
+.team-access-coaches { display:grid; gap:0; margin-top:16px; border-top:1px solid var(--line); }
+.team-access-coaches>div { display:flex; justify-content:space-between; gap:10px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px; }
+.team-access-coaches span { color:var(--muted); font-size:12px; }
+.coach-team-access form { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin-top:16px; }
+.coach-team-access .field { flex:1 1 180px; min-width:0; margin:0; }
+.coach-team-access input,.coach-team-access select { width:100%; min-height:44px; }
+.team-invite-code { margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); }
+.team-invite-code label,.team-invite-code small { display:block; color:var(--muted); font-size:12px; line-height:1.5; }
+.team-invite-code>div { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.team-invite-code input { flex:1 1 160px; min-width:0; font-family:var(--mono); }
+.team-access-join { margin-top:18px; border-top:1px solid var(--line); }
+.team-access-join>summary { min-height:44px; padding:14px 0; cursor:pointer; font-size:13px; }
+.team-access-feedback { margin-bottom:0; color:var(--muted); font-size:12px; line-height:1.5; }
+@media(max-width:500px) { .owner-coach-account { grid-template-columns:1fr; } .owner-coach-account-meta { justify-items:start; grid-template-columns:auto auto; align-items:center; } .owner-coach-account-meta>span:last-child { grid-column:1/-1; } }

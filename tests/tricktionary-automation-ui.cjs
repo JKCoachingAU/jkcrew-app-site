@@ -168,7 +168,24 @@ async function layouts(page, name) {
     await coach.evaluate(()=>qaMount());
     const before=await evidence(coach);
     assert.equal(await mutationCalls(coach).then(rows=>rows.length),0,'Rendering and classifying suggestions never write');
-    assert.equal(await coach.locator('[data-trick-key="mystery move"]').getAttribute('data-trick-landed'),'6');
+    assert.equal(await coach.locator('[data-trick-key="mystery move"]').getAttribute('data-trick-landed'),'2');
+    assert.equal(await coach.locator('[data-trick-key="mystery move"] .tricktionary-count-badge').innerText(),'2\nlanded','Only explicit saved landings appear in the landed badge');
+    assert((await coach.locator('[data-trick-key="mystery move"] .tricktionary-card-meta').textContent()).includes('4 manually recorded'),'Mixed manual history is labelled separately');
+    assert.equal(await coach.locator('[data-trick-key="360 box"]').getAttribute('data-trick-landed'),'0','An unticked manual record never gets a landed minimum of one');
+    assert.equal(await coach.locator('[data-trick-key="360 box"] .tricktionary-count-badge strong').textContent(),'2','Manual-only cards retain their saved count');
+    assert.equal(await coach.locator('[data-trick-key="360 box"] .tricktionary-count-badge small').textContent(),'recorded','Manual-only cards do not claim a tick');
+    await layouts(coach,'tricktionary-clean-board');
+    const buttonLayout=await coach.locator('[data-trick-key="mystery move"]').evaluate(card=>({
+      actions:[...card.querySelectorAll('button')].map(button=>({height:button.getBoundingClientRect().height,width:button.getBoundingClientRect().width,transform:getComputedStyle(button).textTransform,shadow:getComputedStyle(button).boxShadow})),
+      image:getComputedStyle(card).backgroundImage,
+    }));
+    assert(buttonLayout.actions.every(button=>button.height>=44&&button.width>=44&&button.transform==='none'&&button.shadow==='none'),'Trick card actions are clean, accessible touch targets');
+    assert.equal(buttonLayout.image,'none','Trick cards use a flat surface');
+    const box=coach.locator('[data-tricktionary-drop-category="box"]');
+    await box.locator(':scope > summary').click();
+    assert.equal(await box.getAttribute('open'),'','Category bar opens natively');
+    await box.locator(':scope > summary').press('Enter');
+    assert.equal(await box.getAttribute('open'),null,'Category bar closes with the keyboard');
     await coach.locator('[data-sort-trick="mystery move"]').click();
     assert.equal(await mutationCalls(coach).then(rows=>rows.length),0,'Opening quick classification is read-only');
     await coach.check('[data-sort-form] [name=category][value=air]');
@@ -198,7 +215,7 @@ async function layouts(page, name) {
     assert.deepEqual(saved.at(-2),{name:'set_tricktionary_location',args:{p_athlete_id:'rider-a',p_trick_key:'mystery move',p_category:'air',p_subcategory:'flips'}});
     assert.deepEqual(saved.at(-1),{name:'save_tricktionary_catalog_entry',args:{p_source_key:'mystery move · air',p_title:'Mystery Move · Air',p_category:'air',p_subcategory:'flips'}});
     assert.equal(await evidence(coach),before,'Classification and teaching change organisation only');
-    assert.equal(await coach.locator('[data-trick-key="mystery move"]').getAttribute('data-trick-landed'),'6');
+    assert.equal(await coach.locator('[data-trick-key="mystery move"]').getAttribute('data-trick-landed'),'2');
     assert.equal(await coach.locator('[data-trick-key="mystery move"]').getAttribute('data-trick-category'),'air');
     await coach.close();
 

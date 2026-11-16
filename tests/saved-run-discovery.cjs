@@ -16,7 +16,7 @@ const extract=name=>{const start=app.search(new RegExp('^(?:async )?function '+n
  const rows=[{id:'coach-run',athlete_id:'rider',title:'Urban Sessions',created_by:'coach',contest_item_id:'event-a',updated_at:'Today'}, {id:'rider-run',athlete_id:'rider',title:'My finals',created_by:'rider',contest_item_id:'event-b',updated_at:'Yesterday'}];
  const client={from:table=>{const filters=[],q={select(columns){calls.push({table,columns,filters});return this},eq(k,v){filters.push([k,v]);return this},is(){return this},order(){return this},limit(){return this},then(resolve){return Promise.resolve({data:rows.filter(r=>filters.every(([k,v])=>r[k]===v))}).then(resolve)},single:async()=>({data:{...rows.find(r=>filters.every(([k,v])=>r[k]===v)),image_data_url:'photo',points:[{x:1,y:2}]}})};return q}};
  const openCoachEventRunModal=(runs)=>{window.opened=runs;closeContestEventModal()};
- ${['canEditRun','runRemovalButtonHtml','bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','riderSavedRunsHtml','openRiderSavedRuns','bindRiderSavedRuns','openProgressRun','closeContestEventModal','withTimeout','setButtonBusy'].map(extract).join('\n')}
+ ${['cacheGet','canManageCoachTeamRecord','canEditRun','runRemovalButtonHtml','bindRunRemovalActions','refreshRunRemovalView','archiveRunPlan','riderSavedRunsHtml','openRiderSavedRuns','bindRiderSavedRuns','openProgressRun','closeContestEventModal','withTimeout','setButtonBusy'].map(extract).join('\n')}
  document.addEventListener('click',event=>{const button=event.target.closest('[data-open-progress-run]');if(button)void openProgressRun(button)});
  bindRiderSavedRuns();
  `});

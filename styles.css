@@ -8655,8 +8655,99 @@ html[data-theme="light"] .home-uci-heading .eyebrow { color: #6742b5; }
   color: #07100f;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--rider-tone) 15%, transparent), 0 0 20px color-mix(in srgb, var(--rider-tone) 30%, transparent);
 }
-.score-popup { border-color: rgba(255,108,85,0.5); background: rgba(24,11,9,0.97); }
-.score-popup .progress-popup-xp { border-color: rgba(255,108,85,0.52); background: rgba(255,108,85,0.13); color: var(--rider-coral); }
+.score-popup-stack {
+  left: auto;
+  right: max(22px, env(safe-area-inset-right));
+  width: min(360px, calc(100vw - 28px));
+  gap: 9px;
+  transform: none;
+}
+.score-popup {
+  --score-accent: var(--aqua);
+  position: relative;
+  grid-template-columns: minmax(66px, auto) minmax(0, 1fr);
+  gap: 13px;
+  min-height: 102px;
+  padding: 13px 15px 13px 13px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--score-accent) 24%, var(--line));
+  border-radius: 15px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 34px rgba(0,0,0,.22);
+  transform: translateY(7px) scale(.98);
+  transition: opacity 180ms ease, transform 260ms cubic-bezier(.2,.8,.2,1);
+}
+.score-popup::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, #6ebdb0, #819dcc 58%, #ad95d4);
+}
+.score-popup.show { opacity: 1; transform: translateY(0) scale(1); }
+.score-popup.is-adjustment { --score-accent: #8c99c5; }
+.score-popup-points {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  min-height: 68px;
+  max-width: 100px;
+  padding: 7px 9px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--score-accent) 8%, var(--surface-2));
+  color: var(--score-accent);
+}
+.score-popup-points strong {
+  font: 750 30px/1.05 var(--body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.04em;
+  overflow-wrap: anywhere;
+}
+.score-popup-points small { color: var(--muted); font: 550 10px/1.3 var(--body); }
+.score-popup-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  color: var(--score-accent);
+  font: 650 10px/1.3 var(--body);
+}
+.score-popup-status svg { flex: 0 0 14px; }
+.score-popup .progress-popup-copy .score-popup-trick {
+  margin: 0;
+  color: var(--text);
+  font: 650 15px/1.3 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.score-popup .progress-popup-copy .score-popup-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  margin-top: 7px;
+  color: var(--muted);
+  font: 500 11px/1.3 var(--body);
+}
+.score-popup-total b { color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }
+.score-popup-total b span { color: var(--muted); font-weight: 500; }
+html[data-theme="light"] .score-popup { box-shadow: 0 10px 26px rgba(24,35,33,.1); }
+@media (max-width: 900px) {
+  .score-popup-stack {
+    top: auto;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(112px + env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+    max-width: 390px;
+    margin-inline: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .score-popup { transform: none; transition: none; }
+}
 .rider-shell #view[data-view="session"] .session-quick-jumps .secondary-btn {
   border-color: color-mix(in srgb, var(--aqua) 30%, var(--line));
   background: linear-gradient(135deg, rgba(32,227,195,0.1), rgba(93,92,255,0.08));
@@ -10725,42 +10816,63 @@ html[data-theme="light"] .parent-coach-message-list article { background: rgba(2
   .run-bend-control-mobile output { min-height: 40px; font-size: 0.72rem; }
 }
 
-/* Tricktionary skill-map polish: keep every role's category colours distinct. */
+/* Quiet Tricktionary surfaces; colour stays in the small category markers. */
 .rider-shell .tricktionary-zone,
 .parent-shell .tricktionary-zone,
 .coach-shell .tricktionary-zone {
-  border-color: color-mix(in srgb, var(--trick-tone) 44%, var(--line));
-  background:
-    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--trick-tone) 12%, transparent), transparent 40%),
-    linear-gradient(150deg, var(--trick-deep), rgba(8,13,16,0.94) 52%);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--trick-tone) 82%, transparent), 0 14px 34px rgba(0,0,0,0.2);
+  border-color: var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: none;
 }
+.tricktionary-board .tricktionary-zone::before { content: none; }
 .rider-shell .tricktionary-zone-header h3,
 .parent-shell .tricktionary-zone-header h3,
-.coach-shell .tricktionary-zone-header h3,
+.coach-shell .tricktionary-zone-header h3 { color: var(--text); font: 650 16px/1.2 var(--body); letter-spacing: 0; text-transform: none; }
 .rider-shell .tricktionary-zone-count,
 .parent-shell .tricktionary-zone-count,
-.coach-shell .tricktionary-zone-count { color: var(--trick-tone); }
+.coach-shell .tricktionary-zone-count { border-color: color-mix(in srgb, var(--trick-tone) 20%, var(--line)); background: color-mix(in srgb, var(--trick-tone) 6%, var(--surface-2)); color: color-mix(in srgb, var(--trick-tone) 65%, var(--text)); font: 600 12px var(--body); }
+.tricktionary-board .tricktionary-zone-heading > b { width: 32px; height: 32px; flex-basis: 32px; border-color: transparent; border-radius: 8px; background: color-mix(in srgb, var(--trick-tone) 7%, var(--surface-2)); color: color-mix(in srgb, var(--trick-tone) 60%, var(--text)); font: 600 11px var(--body); }
+.tricktionary-board .tricktionary-category-accordion > summary::after { width: 24px; height: 24px; border: 0; border-radius: 6px; color: var(--muted); background: none; font: 500 18px var(--body); transform: none; }
+.tricktionary-board .tricktionary-subcategory { border-color: var(--line); background: var(--surface-2); box-shadow: none; }
+.tricktionary-board .tricktionary-subcategory > summary { min-height: 46px; color: var(--text); font: 600 12px var(--body); text-transform: none; letter-spacing: 0; }
+.tricktionary-board .tricktionary-subcategory > summary::after { color: var(--muted); }
+.tricktionary-board .tricktionary-subcategory > summary b { color: var(--muted); background: var(--surface); font: 550 11px var(--body); }
+.tricktionary-board .tricktionary-drop-label { display: none; }
+.tricktionary-board.is-dragging .tricktionary-drop-label { display: block; }
+.tricktionary-board .tricktionary-help { padding: 0 2px; border: 0; border-radius: 0; background: none; font-size: 12px; }
+.tricktionary-board .tricktionary-help strong { color: var(--text); font: 600 12px var(--body); letter-spacing: 0; text-transform: none; }
 .rider-shell .tricktionary-card,
 .parent-shell .tricktionary-card,
 .coach-shell .tricktionary-card {
-  border-color: color-mix(in srgb, var(--trick-tone) 27%, var(--line));
-  background: linear-gradient(135deg, color-mix(in srgb, var(--trick-tone) 7%, rgba(255,255,255,0.035)), rgba(4,9,12,0.78));
+  gap: 10px;
+  padding: 12px;
+  border-color: var(--line);
+  background: var(--surface);
   box-shadow: none;
 }
+.tricktionary-board .tricktionary-card::before { content: none; }
+.tricktionary-board .tricktionary-card-main > div:first-child strong { color: var(--text); font: 650 14px/1.3 var(--body); }
+.tricktionary-board .tricktionary-count-badge { border: 0; border-radius: 8px; padding: 6px; background: var(--surface-2); }
+.tricktionary-board .tricktionary-count-badge strong { color: var(--text); font: 650 18px/1.1 var(--body); }
+.tricktionary-board .tricktionary-count-badge small { color: var(--muted); font: 500 9px/1.2 var(--body); text-transform: none; letter-spacing: 0; }
+.tricktionary-board .tricktionary-card-meta > span { border-color: var(--line); border-radius: 6px; padding: 3px 6px; color: var(--muted); font: 500 10px/1.3 var(--body); }
+.tricktionary-card-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.tricktionary-board .tricktionary-card-controls button { display: inline-flex; justify-content: center; align-items: center; gap: 5px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); font: 550 11px/1.2 var(--body); letter-spacing: 0; text-transform: none; box-shadow: none; }
+.tricktionary-board .tricktionary-card-controls button:hover { border-color: color-mix(in srgb, var(--trick-tone) 30%, var(--line)); background: color-mix(in srgb, var(--trick-tone) 6%, var(--surface-2)); }
+#app #view .tricktionary-board .tricktionary-delete-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--muted); }
+.tricktionary-board .tricktionary-delete-btn::before { content: none; }
+#app #view .tricktionary-board .tricktionary-delete-btn:hover { border-color: color-mix(in srgb, var(--red) 30%, var(--line)); color: var(--red); }
+.tricktionary-board .tricktionary-drag-hint { flex-basis: 100%; padding: 2px; color: var(--muted); font: 500 10px/1.3 var(--body); }
 html[data-theme="light"] .rider-shell .tricktionary-zone,
 html[data-theme="light"] .parent-shell .tricktionary-zone,
 html[data-theme="light"] .coach-shell .tricktionary-zone {
-  background:
-    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--trick-tone) 10%, transparent), transparent 42%),
-    linear-gradient(150deg, color-mix(in srgb, var(--trick-tone) 6%, white), rgba(248,245,238,0.98) 55%);
+  background: var(--surface);
 }
 html[data-theme="light"] .rider-shell .tricktionary-card,
 html[data-theme="light"] .parent-shell .tricktionary-card,
 html[data-theme="light"] .coach-shell .tricktionary-card,
-html[data-theme="light"] .tricktionary-subcategory {
-  background: color-mix(in srgb, var(--trick-tone) 5%, rgba(255,255,255,0.94));
-}
+html[data-theme="light"] .tricktionary-subcategory { background: var(--surface); }
 /* iPad/tablet layout -------------------------------------------------------
    Keep navigation familiar, use the full portrait width, and make the visual
    run-planning workflow comfortable for touch in either orientation. */
@@ -12074,45 +12186,76 @@ html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] {
 .coach-shell #view[data-view="sessionViewer"] .session-page-head p { margin: 0; }
 .coach-shell #view[data-view="sessionViewer"] .session-page-head > button { flex-shrink: 0; }
 .coach-shell #view[data-view="sessionViewer"] .group-session-control {
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px; padding: clamp(22px, 3vw, 36px); margin-bottom: 16px;
-  overflow: hidden; border: 1px solid #3d6670; border-radius: 24px;
-  color: #f5fbff;
-  background: radial-gradient(ellipse at 100% 0, #1a4456 0, transparent 60%), linear-gradient(120deg, #0b1822, #102639);
-  box-shadow: inset 4px 0 0 #53e9bd, 0 18px 42px #00000020;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: 20px; padding: clamp(18px, 2.5vw, 28px); margin-bottom: 14px;
+  overflow: hidden; border: 1px solid var(--session-edge); border-radius: 18px;
+  color: var(--session-ink); background: var(--session-surface); box-shadow: none;
 }
 .coach-shell #view[data-view="sessionViewer"] .group-session-control::before { display: none; }
-.coach-shell #view[data-view="sessionViewer"] .group-session-control.paused { box-shadow: inset 4px 0 0 #ffd17e, 0 18px 42px #00000020; border-color: #796441; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-control.paused { border-color: color-mix(in srgb, #c7a365 55%, var(--session-edge)); box-shadow: none; }
 .coach-shell #view[data-view="sessionViewer"] .session-timer-heading { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.coach-shell #view[data-view="sessionViewer"] .session-state-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #4ac99f65; border-radius: 7px; background: #153c38; color: #84f2ca; font: 800 11px/1.2 var(--body); letter-spacing: .09em; text-transform: uppercase; }
-.coach-shell #view[data-view="sessionViewer"] .session-state-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.coach-shell #view[data-view="sessionViewer"] .paused .session-state-badge { color: #ffdc9b; background: #42351f; border-color: #9a7a46; }
-.coach-shell #view[data-view="sessionViewer"] .ready .session-state-badge { color: #c0d0e0; background: #203547; border-color: #486072; }
-.coach-shell #view[data-view="sessionViewer"] .session-timer-caption { color: #aabfce; font: 700 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.coach-shell #view[data-view="sessionViewer"] .session-state-badge { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--session-complete) 25%, var(--session-edge)); border-radius: 20px; background: color-mix(in srgb, var(--session-complete) 7%, var(--session-surface)); color: var(--session-complete); font: 650 10px/1.2 var(--body); letter-spacing: 0; text-transform: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-state-badge i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.coach-shell #view[data-view="sessionViewer"] .paused .session-state-badge { color: var(--gold); background: color-mix(in srgb, #c7a365 8%, var(--session-surface)); border-color: color-mix(in srgb, #c7a365 30%, var(--session-edge)); }
+.coach-shell #view[data-view="sessionViewer"] .ready .session-state-badge { color: var(--session-muted); background: transparent; border-color: var(--session-edge); }
+.coach-shell #view[data-view="sessionViewer"] .session-timer-caption { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--session-muted); font: 650 12px/1.35 var(--body); letter-spacing: 0; text-transform: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-timer-caption svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--session-progress); }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: clamp(20px, 4vw, 48px); }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-face { min-width: 0; padding: 20px 16px 16px; border: 1px solid color-mix(in srgb, var(--session-progress) 18%, var(--session-edge)); border-radius: 12px; background: color-mix(in srgb, var(--session-progress) 3%, var(--session-surface)); }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-eyebrow { color: var(--session-muted); text-align: center; font: 500 10px/1.3 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .group-session-timer { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin: 10px 0 7px; color: var(--session-ink); font: 600 clamp(3.3rem, 6.5vw, 6rem)/1.1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: -.055em; text-shadow: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-digits { min-width: 0; text-align: center; }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-digits.wide-clock-digits { font-size: .6em; letter-spacing: -.04em; }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-separator { color: color-mix(in srgb, var(--session-progress) 70%, var(--session-muted)); font-size: .75em; transform: translateY(-.06em); }
+.coach-shell #view[data-view="sessionViewer"] .session-clock-units { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; color: var(--session-muted); text-align: center; font: 500 9px/1.4 var(--body); }
 .coach-shell #view[data-view="sessionViewer"] .group-timer-block { min-width: 0; }
-.coach-shell #view[data-view="sessionViewer"] .timer-label { color: #f4f8fc; font: 700 15px/1.5 var(--body); letter-spacing: .01em; text-transform: none; }
-.coach-shell #view[data-view="sessionViewer"] .timer-label > span { color: #aabfce; font-weight: 500; }
-.coach-shell #view[data-view="sessionViewer"] .group-session-timer { color: #f4f8fc; font: 800 clamp(3.7rem, 8vw, 6.8rem)/1.1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: -.055em; text-shadow: none; margin: 6px 0 10px; }
-.coach-shell #view[data-view="sessionViewer"] .group-timer-block > small { color: #b7c7d5; font: 500 12px/1.5 var(--body); letter-spacing: 0; text-transform: none; }
-.coach-shell #view[data-view="sessionViewer"] .group-session-actions { flex-direction: column; align-self: center; gap: 10px; }
-.coach-shell #view[data-view="sessionViewer"] .group-session-actions button { min-width: 148px; min-height: 46px; }
-.coach-shell #view[data-view="sessionViewer"] #pause-group-session { background: #eaf4ff; border-color: #fff; color: #102b40; }
-.coach-shell #view[data-view="sessionViewer"] #end-group-session { background: transparent; border-color: #627283; color: #ffb6ac; box-shadow: none; }
-.coach-shell #view[data-view="sessionViewer"] .session-snapshot { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #8eb3c530; padding-top: 20px; }
-.coach-shell #view[data-view="sessionViewer"] .session-snapshot > div { display: flex; flex-direction: column; gap: 6px; padding-inline: 20px; border-left: 1px solid #8eb3c530; }
-.coach-shell #view[data-view="sessionViewer"] .session-snapshot > div:first-child { padding-left: 0; border: 0; }
-.coach-shell #view[data-view="sessionViewer"] .session-snapshot strong { color: #f4f8fc; font: 700 clamp(1.4rem, 3vw, 2rem)/1 var(--body); font-variant-numeric: tabular-nums; }
-.coach-shell #view[data-view="sessionViewer"] .session-snapshot strong small { color: #a5bdd0; font-size: .6em; font-weight: 500; }
-.coach-shell #view[data-view="sessionViewer"] .session-snapshot span { color: #b7c7d5; font: 600 11px/1.3 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .timer-label { color: var(--session-ink); font: 700 20px/1.35 var(--body); letter-spacing: -.01em; text-transform: none; overflow-wrap: anywhere; }
+.coach-shell #view[data-view="sessionViewer"] .timer-label > span { display: block; margin-top: 4px; color: var(--session-muted); font: 500 14px/1.45 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .group-timer-block > small { display: block; max-width: 340px; margin-top: 10px; color: var(--session-muted); font: 500 12px/1.5 var(--body); letter-spacing: 0; text-transform: none; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-actions { display: flex; flex-direction: row; align-self: auto; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+#app .coach-shell #view[data-view="sessionViewer"] .group-session-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 120px; min-height: 46px; padding: 11px 16px; border-radius: 9px; font: 650 13px/1.3 var(--body); letter-spacing: 0; text-transform: none; box-shadow: none; }
+.coach-shell #view[data-view="sessionViewer"] .group-session-actions button svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
+#app .coach-shell #view[data-view="sessionViewer"] #pause-group-session { background: color-mix(in srgb, var(--session-progress) 12%, var(--session-surface)); border-color: color-mix(in srgb, var(--session-progress) 45%, var(--session-edge)); color: var(--session-ink); }
+#app .coach-shell #view[data-view="sessionViewer"] #end-group-session { background: transparent; border-color: var(--session-edge); color: var(--session-muted); }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border: 0; padding-top: 0; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot > div { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid color-mix(in srgb, var(--session-edge) 70%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--session-progress) 2%, var(--session-surface)); }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot > div:first-child { padding: 12px; border: 1px solid color-mix(in srgb, var(--session-edge) 70%, transparent); }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot strong { color: var(--session-ink); font: 650 24px/1 var(--body); font-variant-numeric: tabular-nums; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot strong small { color: var(--session-muted); font-size: .55em; font-weight: 500; }
+.coach-shell #view[data-view="sessionViewer"] .session-snapshot span { color: var(--session-muted); font: 500 10px/1.3 var(--body); }
 .coach-shell #view[data-view="sessionViewer"] .session-viewer-controls { display: block; padding: 0; overflow: hidden; border: 1px solid var(--session-edge); border-radius: 14px; background: var(--session-surface); box-shadow: none; }
 .coach-shell #view[data-view="sessionViewer"] .session-viewer-controls::before { display: none; }
-.coach-shell #view[data-view="sessionViewer"] .session-setup-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; cursor: pointer; list-style: none; color: var(--session-ink); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; cursor: pointer; list-style: none; color: var(--session-ink); }
 .coach-shell #view[data-view="sessionViewer"] .session-setup-summary::-webkit-details-marker { display: none; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-symbol { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 8px; color: var(--session-progress); background: color-mix(in srgb, var(--session-progress) 8%, var(--session-surface)); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-symbol svg { width: 19px; height: 19px; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-copy { flex: 1; min-width: 0; }
 .coach-shell #view[data-view="sessionViewer"] .session-setup-summary strong { display: block; font: 700 14px/1.4 var(--body); }
 .coach-shell #view[data-view="sessionViewer"] .session-setup-summary small { display: block; color: var(--session-muted); font: 500 12px/1.4 var(--body); margin-top: 3px; }
-.coach-shell #view[data-view="sessionViewer"] .session-setup-caret { color: var(--session-progress); font: 500 24px var(--body); }
-.coach-shell #view[data-view="sessionViewer"] .session-viewer-controls[open] .session-setup-caret { transform: rotate(45deg); }
-.coach-shell #view[data-view="sessionViewer"] .session-setup-fields { display: grid; gap: 18px; padding: 0 20px 20px; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-caret { display: grid; place-items: center; width: 22px; flex-shrink: 0; color: var(--session-muted); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-caret svg { width: 18px; height: 18px; }
+.coach-shell #view[data-view="sessionViewer"] .session-viewer-controls[open] .session-setup-caret { transform: rotate(180deg); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-fields { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; padding: 2px 16px 16px; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-fields .field { grid-column: auto; min-width: 0; margin: 0; }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-fields label { margin-bottom: 7px; color: var(--session-muted); font: 600 11px/1.3 var(--body); text-transform: none; letter-spacing: 0; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-wrap { position: relative; display: flex; min-width: 0; align-items: center; border-radius: 9px; background: color-mix(in srgb, var(--session-progress) 3%, var(--session-surface)); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-wrap select { width: 100%; min-width: 0; min-height: 48px; padding: 11px 33px 11px 38px; appearance: none; border: 1px solid var(--session-edge); border-radius: 9px; background: transparent; color: var(--session-ink); font: 550 16px/1.4 var(--body); text-overflow: ellipsis; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-wrap select:focus-visible { outline: 2px solid var(--session-progress); outline-offset: 2px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-wrap select:disabled { opacity: .65; cursor: not-allowed; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-wrap > svg { position: absolute; width: 17px; height: 17px; pointer-events: none; color: var(--session-muted); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-icon { left: 12px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-select-chevron { right: 11px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-location-controls { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 8px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-location-controls .daily-location-add { width: 48px; height: 48px; min-height: 48px; border-radius: 9px; color: var(--session-progress); border-color: color-mix(in srgb, var(--session-progress) 40%, var(--session-edge)); background: color-mix(in srgb, var(--session-progress) 7%, var(--session-surface)); }
+
+.coach-approval-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; color: var(--text); background: var(--bg); }
+.coach-approval-card { width: min(100%, 440px); padding: 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.coach-approval-card > img { display: block; width: 48px; height: 48px; margin-bottom: 24px; border-radius: 50%; }
+.coach-approval-status { color: var(--muted); font: 600 11px/1.4 var(--body); }
+.coach-approval-card h1 { margin: 8px 0 12px; color: var(--text); font: 700 clamp(26px, 7vw, 34px)/1.1 var(--body); letter-spacing: -.03em; text-transform: none; }
+.coach-approval-card p { margin: 0; color: var(--muted); font: 500 14px/1.6 var(--body); }
+.coach-approval-actions { display: grid; gap: 10px; margin-top: 24px; }
+.coach-approval-actions button { width: 100%; min-height: 46px; font: 650 14px/1.3 var(--body); border-radius: 9px; text-transform: none; letter-spacing: 0; }
 .daily-location-add { flex: 0 0 44px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid #599ae0; border-radius: 10px; color: #81b7f7; background: #3296ff14; }
 .daily-location-add svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .daily-location-add:hover { background: #3296ff2b; }
@@ -12128,7 +12271,7 @@ html[data-theme="light"] .coach-shell #view[data-view="sessionViewer"] {
 .daily-location-dialog footer { display: flex; justify-content: flex-end; gap: 10px; }
 .daily-location-dialog footer button { min-height: 44px; }
 html[data-theme="light"] .daily-location-add { color: #165da5; border-color: #4280bd; }
-.coach-shell #view[data-view="sessionViewer"] .session-setup-note { color: var(--session-muted); font: 500 12px/1.5 var(--body); }
+.coach-shell #view[data-view="sessionViewer"] .session-setup-note { grid-column: 1 / -1; margin: 0; color: var(--session-muted); font: 500 12px/1.5 var(--body); }
 .coach-shell #view[data-view="sessionViewer"] .session-viewer-layout { margin-top: 28px; }
 .coach-shell #view[data-view="sessionViewer"] .viewer-roster-head { align-items: center; margin-bottom: 18px; gap: 18px; }
 .coach-shell #view[data-view="sessionViewer"] .viewer-roster-head h2 { margin: 5px 0; font: 800 clamp(1.5rem, 3vw, 2rem)/1.1 var(--body); letter-spacing: -.02em; color: var(--session-ink); }
@@ -12169,11 +12312,16 @@ html[data-theme="light"] .daily-location-add { color: #165da5; border-color: #42
 .coach-shell #view[data-view="sessionViewer"] .viewer-inline-list .viewer-list-meta { color: var(--session-muted); }
 .coach-shell #view[data-view="sessionViewer"] .park-king-card { margin-block: 16px; padding: 14px 18px; border-radius: 10px; border-width: 0 0 0 3px; box-shadow: none; min-height: 64px; }
 @media (max-width: 640px) {
-  .coach-shell #view[data-view="sessionViewer"] .group-session-control { grid-template-columns: minmax(0, 1fr); gap: 20px; border-radius: 20px; }
+  .coach-shell #view[data-view="sessionViewer"] .group-session-control { gap: 18px; border-radius: 16px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-clock-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .coach-shell #view[data-view="sessionViewer"] .group-session-timer { font-size: clamp(3rem, 17vw, 5rem); }
+  .coach-shell #view[data-view="sessionViewer"] .session-timer-caption { gap: 6px; font-size: 11px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-state-badge { font-size: 9px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-setup-fields { grid-template-columns: minmax(0, 1fr); }
   .coach-shell #view[data-view="sessionViewer"] .group-session-actions { flex-direction: row; width: 100%; }
   .coach-shell #view[data-view="sessionViewer"] .group-session-actions button { flex: 1; min-width: 0; }
-  .coach-shell #view[data-view="sessionViewer"] .session-snapshot > div { padding-inline: 12px; }
-  .coach-shell #view[data-view="sessionViewer"] .session-snapshot span { font-size: 10px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-snapshot > div, .coach-shell #view[data-view="sessionViewer"] .session-snapshot > div:first-child { padding: 10px 8px; }
+  .coach-shell #view[data-view="sessionViewer"] .session-snapshot span { font-size: 9px; }
   .coach-shell #view[data-view="sessionViewer"] .viewer-roster-head { display: grid; grid-template-columns: minmax(0, 1fr); }
   .coach-shell #view[data-view="sessionViewer"] .viewer-search-filter { width: 100%; }
   .coach-shell #view[data-view="sessionViewer"] .viewer-rider-grid { grid-template-columns: minmax(0, 1fr); }
@@ -12787,7 +12935,15 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
 /* Multi-coach Teams tab. Keep team-management surfaces calm and separate
    from the high-colour training cards. */
 .teams-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
-.team-card { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(145deg, rgba(31, 48, 59, .92), rgba(11, 18, 25, .94)); }
+.team-card { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.coach-shell #view[data-view="teams"] .coach-dashboard-top { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 440px; }
+.coach-shell #view[data-view="teams"] .coach-dashboard-top .stat-card { display: grid; gap: 4px; min-height: 0; padding: 12px 16px; border-radius: 12px; }
+.coach-shell #view[data-view="teams"] .coach-dashboard-top .stat-card strong { font: 650 26px/1.1 var(--body); }
+.coach-shell #view[data-view="teams"] .coach-dashboard-top .stat-card span { font: 500 12px/1.3 var(--body); }
+.coach-shell #view[data-view="teams"] .coach-dashboard-top .stat-card small { display: none; }
+html[data-theme="light"] .coach-shell #view[data-view="teams"] { --bg: #f3f6fa; --surface: #fff; --surface-2: #f5f7fa; --line: #ccd8e1; --text: #142e3f; --muted: #526678; --aqua: #00776e; --yellow: #86610a; background: var(--bg); border-radius: 16px; }
+html[data-theme="light"] .coach-shell #view[data-view="teams"] :is(.panel, .stat-card, .team-card, .owner-summary-grid > div) { color: var(--text); background: var(--surface); border-color: var(--line); box-shadow: none; }
+html[data-theme="light"] .coach-shell #view[data-view="teams"] :is(h1, h2, h3, .panel-title) { color: var(--text); text-shadow: none; }
 .team-card-archived { opacity: .7; }
 .team-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .team-card h3 { margin: 4px 0 5px; font-size: 1.35rem; }
@@ -12798,11 +12954,15 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
 .team-rider-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .team-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .team-create-form { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(160px, 1fr) auto; align-items: end; gap: 12px; }
-.team-assignment-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.team-assignment-row:last-child { border-bottom: 0; }
+.team-assignment-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+.team-assignment-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, .75fr); align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.team-assignment-row:last-child { border-bottom: 1px solid var(--line); }
 .team-assignment-row > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.team-assignment-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.team-assignment-row select { width: min(280px, 48%); }
+.team-assignment-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13px/1.4 var(--body); }
+.team-assignment-row select { width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface-2); font: 550 12px/1.4 var(--body); text-overflow: ellipsis; }
+.team-assignment-row select:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; }
+@media (max-width: 1100px) { .team-assignment-list { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .team-assignment-row { grid-template-columns: minmax(0, 1fr) 120px; gap: 9px; }.team-assignment-row select { font-size: 16px; }.team-assignment-row strong { font-size: 12px; }.team-assignment-row .team-rider-avatar { width: 22px; height: 22px; flex: 0 0 22px; } }
 .owner-overview-panel { border-color: rgba(255, 207, 61, .36); }
 .owner-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0 22px; }
 .owner-summary-grid > div { display: grid; gap: 3px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(9, 15, 20, .55); }
@@ -13003,3 +13163,58 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
 .rider-shell #view[data-view="session"] .working-on-summary .accordion-caret { flex-shrink: 0; min-width: 16px; min-height: 24px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--muted); box-shadow: none; }
 .rider-shell #view[data-view="session"] .extra-tricks-panel[open] > .working-on-summary { border-bottom: 1px solid var(--line); }
 .rider-shell #view[data-view="session"] .extra-tricks-panel > .session-panel-accordion-body { padding: 14px; }
+
+/* Private video review: a second local view shares the existing coaching tools. */
+.coach-review-compare-tools { margin-bottom: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.coach-review-compare-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.coach-review-compare-head > div { min-width: 0; }
+.coach-review-compare-head strong { display: block; color: var(--text); font: 650 14px/1.3 var(--body); }
+.coach-review-compare-head small { display: block; margin-top: 4px; color: var(--muted); font: 500 11px/1.4 var(--body); }
+.coach-review-reference-upload { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-height: 40px; margin: 0; cursor: pointer; font: 600 12px/1.4 var(--body); }
+.coach-review-reference-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.coach-review-reference-upload:focus-within { outline: 2px solid var(--aqua); outline-offset: 3px; }
+.coach-review-reference-upload:has(input:disabled) { opacity: .55; cursor: default; }
+.coach-review-compare-private { margin: 10px 0 0; color: var(--muted); font: 400 11px/1.5 var(--body); }
+.coach-review-reference-controls { display: grid; gap: 9px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.coach-review-reference-controls[hidden], .coach-review-reference-stage[hidden] { display: none !important; }
+.coach-review-reference-name { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.coach-review-reference-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font: 550 12px/1.4 var(--body); }
+.coach-review-reference-controls > label { display: flex; justify-content: space-between; gap: 10px; margin: 0; color: var(--muted); font: 500 11px/1.4 var(--body); }
+.coach-review-reference-controls output { color: var(--text); font-variant-numeric: tabular-nums; }
+.coach-review-reference-controls input[type="range"] { width: 100%; min-width: 0; height: 24px; padding: 0; accent-color: #85a9d1; }
+.coach-review-reference-buttons { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 6px; }
+.coach-review-reference-buttons button { min-width: 0; min-height: 38px; padding: 8px 5px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--surface); font: 550 11px/1.3 var(--body); }
+.coach-review-link-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.coach-review-link-row button { min-height: 40px; }
+.coach-review-link-row button[aria-pressed="true"] { color: var(--text); border-color: #71b8ac; background: color-mix(in srgb, #71b8ac 12%, var(--surface)); }
+.coach-review-link-row > span { flex: 1 1 160px; color: var(--muted); font: 500 11px/1.5 var(--body); }
+.coach-review-views { min-width: 0; }
+.coach-review-views.has-reference { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; }
+.coach-review-views.has-reference .coach-review-stage { width: 100%; min-width: 0; aspect-ratio: 4 / 3; margin: 0; border-radius: 10px; box-shadow: none; }
+.coach-review-views.has-reference .coach-review-reference-stage { border-color: color-mix(in srgb, #85a9d1 35%, var(--line)); }
+.coach-review-views.has-reference .coach-review-stage-label { top: 7px; right: 7px; left: 7px; gap: 4px; }
+.coach-review-views.has-reference .coach-review-stage-label span, .coach-review-views.has-reference .coach-review-stage-label strong { padding: 5px 6px; font-size: 9px; }
+.coach-review-frame-rate { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; color: var(--muted); font: 500 11px/1.4 var(--body); }
+.coach-review-frame-rate select { width: auto; min-width: 85px; min-height: 38px; padding: 7px 28px 7px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--surface); font: 550 12px/1.4 var(--body); }
+.coach-review-frame-rate small { color: var(--muted); font-size: 10px; }
+.coach-review-views:fullscreen { width: 100%; height: 100%; align-items: center; padding: 12px; background: #050a10; }
+.coach-review-views:fullscreen .coach-review-stage { max-height: 100%; }
+html[data-theme="light"] .coach-shell #view[data-view="videoReviews"] {
+  --text: #193044; --muted: #526577; --surface: #fff; --surface-2: #f0f4f8; --line: #ced8e2; --aqua: #007e72;
+}
+html[data-theme="light"] .coach-shell #view[data-view="videoReviews"] :is(.coach-review-tool-label strong, .coach-review-recorder-head strong, .coach-review-record-status strong, .coach-review-recorded-preview strong) { color: var(--text); }
+html[data-theme="light"] .coach-shell #view[data-view="videoReviews"] :is(.coach-review-tool-group, .coach-review-playback) { background: #f0f4f8; border-color: #ced8e2; }
+html[data-theme="light"] .coach-shell #view[data-view="videoReviews"] :is(.coach-review-playback button, .coach-review-analysis-tools button, .coach-review-speed-row button, .coach-review-reference-upload, .coach-review-reference-name button) { color: #193044; background: #fff; border-color: #bdccd9; }
+html[data-theme="light"] .coach-shell #view[data-view="videoReviews"] :is(.coach-review-playback .coach-review-play, .coach-review-speed-row button.active, .coach-review-analysis-tools button.active) { color: #075c55; background: #d9f2ed; border-color: #76aaa0; }
+html[data-theme="light"] .coach-shell #view[data-view="videoReviews"] .coach-review-record-status time { color: #193044; }
+@media (max-width: 600px) {
+  .coach-review-compare-tools { padding: 11px; }
+  .coach-review-compare-head { align-items: flex-start; gap: 8px; }
+  .coach-review-reference-upload { max-width: 125px; min-height: 42px; padding: 8px; font-size: 11px; text-align: center; }
+  .coach-review-views.has-reference { gap: 6px; }
+  .coach-review-views.has-reference .coach-review-stage-label { top: 4px; right: 4px; left: 4px; }
+  .coach-review-views.has-reference .coach-review-stage-label span { font-size: 8px; padding: 4px; }
+  .coach-review-views.has-reference .coach-review-stage-label strong { display: none; }
+  .coach-review-reference-buttons button { min-height: 44px; font-size: 10px; }
+  .coach-review-frame-rate select { font-size: 16px; }
+}
