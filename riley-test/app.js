@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.199";
+const RELEASE_VERSION = "2.14.200";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -5524,6 +5524,7 @@ function bindGoalActions() {
 
 function extraTricksSection(profile = state.profile, editable = true) {
   const tricks = extraTricks(profile);
+  const activeCount = tricks.filter((trick) => !trick.completed).length;
   const rows = tricks.length ? tricks.map((trick) => `
     <div class="goal-row extra-trick-row ${trick.completed ? "complete" : ""}" data-extra-trick-id="${escapeHtml(trick.id)}">
       <button class="assignment-check" type="button" ${editable ? `data-extra-toggle="${escapeHtml(trick.id)}"` : "disabled"} aria-label="${trick.completed ? "Mark extra trick active" : "Mark extra trick worked on"}">${trick.completed ? "✓" : ""}</button>
@@ -5531,7 +5532,7 @@ function extraTricksSection(profile = state.profile, editable = true) {
       ${editable ? `<button class="secondary-btn compact-btn" type="button" data-extra-edit="${escapeHtml(trick.id)}">Edit</button><button class="danger-btn compact-btn" type="button" data-extra-delete="${escapeHtml(trick.id)}">Delete</button>` : ""}
     </div>`).join("") : `<div class="empty compact-empty">No extra tricks yet. Add something you are personally working on.</div>`;
   return `<details class="panel extra-tricks-panel session-panel-accordion">
-    <summary class="panel-head"><div><div class="panel-title">Working On</div><div class="panel-meta">Personal tricks · no points · coach can view</div></div><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
+    <summary class="panel-head working-on-summary"><span class="working-on-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 5 5-12 12-6 1 1-6Z"/><path d="m14 5 5 5"/></svg></span><span class="working-on-copy"><span class="panel-title">Working On</span><small>Personal practice · no points</small></span><span class="working-on-count">${tricks.length ? `${activeCount} active` : "Add tricks"}</span><span class="accordion-caret" aria-hidden="true">⌄</span></summary>
     <div class="session-panel-accordion-body">
       ${editable ? `<form id="extra-trick-form" class="goal-form extra-trick-form"><input name="title" required maxlength="120" placeholder="New trick I am working on"><input name="note" maxlength="180" placeholder="Optional note"><button class="primary-btn" type="submit">Add</button></form>` : ""}
       <div class="goal-list">${rows}</div>

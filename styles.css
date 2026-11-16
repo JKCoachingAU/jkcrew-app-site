@@ -12825,9 +12825,10 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
   .owner-coach-row span { text-align: left; }
 }
 
-/* Rider training lists: quiet surfaces, with colour reserved for actions/results. */
+/* Rider training lists: quiet surfaces with small, muted category accents. */
 .rider-shell #view[data-view="session"] .assignment-group {
   --rider-tone: var(--text);
+  --training-accent: #69bdb4;
   margin: 10px 0;
   padding: 0;
   border: 1px solid var(--line);
@@ -12835,6 +12836,14 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
   background: var(--surface);
   box-shadow: none;
 }
+.rider-shell #view[data-view="session"] [data-assignment-section="one-bang"] { --training-accent: #ad95d4; }
+.rider-shell #view[data-view="session"] [data-assignment-section="dialled"] { --training-accent: #7da7cf; }
+.rider-shell #view[data-view="session"] [data-assignment-section="trick_links"] { --training-accent: #c39db2; }
+.rider-shell #view[data-view="session"] [data-assignment-section="lines"] { --training-accent: #cb968a; }
+.rider-shell #view[data-view="session"] [data-assignment-section="percentage"] { --training-accent: #9db787; }
+.rider-shell #view[data-view="session"] [data-assignment-section="foam"] { --training-accent: #86b9c7; }
+.rider-shell #view[data-view="session"] [data-assignment-section="other"] { --training-accent: #b89cc8; }
+.rider-shell #view[data-view="session"] [data-assignment-section="bonus"] { --training-accent: #c8b47b; }
 .rider-shell #view[data-view="session"] .assignment-group::before,
 .rider-shell #view[data-view="session"] .assignment-group::after { content: none; }
 .rider-shell #view[data-view="session"] .assignment-group > .assignment-group-head {
@@ -12847,11 +12856,15 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
   padding: 14px;
 }
 .rider-shell #view[data-view="session"] .assignment-group .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--text);
   font: 650 15px/1.35 var(--body);
   letter-spacing: 0;
   text-transform: none;
 }
+.rider-shell #view[data-view="session"] .assignment-group .panel-title::before { content: ""; width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--training-accent); }
 .rider-shell #view[data-view="session"] .assignment-summary-actions { gap: 8px; }
 .rider-shell #view[data-view="session"] .category-reward-pill {
   min-height: 0;
@@ -12868,10 +12881,10 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
   min-width: 36px;
   min-height: 26px;
   padding: 5px 7px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--training-accent) 25%, var(--line));
   border-radius: 6px;
-  background: var(--surface-2);
-  color: var(--text);
+  background: color-mix(in srgb, var(--training-accent) 6%, var(--surface-2));
+  color: color-mix(in srgb, var(--training-accent) 65%, var(--text));
   font: 600 11px/1.2 var(--body);
 }
 .rider-shell #view[data-view="session"] .assignment-group .accordion-caret {
@@ -12949,7 +12962,7 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
 }
 
 /* Daily timer controls: venue, readout, equal summaries, then clear actions. */
-.rider-shell #view[data-view="session"] .daily-session-hub { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: none; }
+.rider-shell #view[data-view="session"] .daily-session-hub { display: grid; gap: 16px; padding: 18px; border: 1px solid color-mix(in srgb, var(--rider-aqua) 18%, var(--line)); border-radius: 14px; background: var(--surface); box-shadow: none; }
 .rider-shell #view[data-view="session"] .daily-session-hub::before { content: none; }
 .rider-shell #view[data-view="session"] .daily-hub-heading .panel-title { color: var(--text); font: 700 17px/1.3 var(--body); text-transform: none; letter-spacing: 0; }
 .rider-shell #view[data-view="session"] .daily-hub-heading .panel-meta { margin-top: 4px; font: 500 11px/1.5 var(--body); text-transform: none; letter-spacing: 0; }
@@ -12960,11 +12973,12 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
 .rider-shell #view[data-view="session"] .hub-timer { width: 100%; min-width: 0; padding: 14px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .rider-shell #view[data-view="session"] .hub-timer span { font: 500 11px/1.4 var(--body); letter-spacing: 0; text-transform: none; }
 .rider-shell #view[data-view="session"] .hub-timer strong { margin-top: 8px; color: var(--rider-aqua); font: 650 48px/1 var(--body); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
-.rider-shell #view[data-view="session"] .hub-timer.ready strong { color: var(--text); }
+.rider-shell #view[data-view="session"] .hub-timer.ready strong { color: color-mix(in srgb, var(--rider-aqua) 42%, var(--text)); }
 .rider-shell #view[data-view="session"] .daily-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; }
 .rider-shell #view[data-view="session"] .session-pb-chip { min-width: 0; min-height: 76px; padding: 12px; align-content: start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); box-shadow: none; }
 .rider-shell #view[data-view="session"] .session-pb-chip span { color: var(--muted); font: 500 11px/1.4 var(--body); text-transform: none; letter-spacing: 0; }
 .rider-shell #view[data-view="session"] .session-pb-chip strong { margin-top: 8px; color: var(--text); font: 650 20px/1.2 var(--body); }
+.rider-shell #view[data-view="session"] .session-pb-chip:first-child strong { color: color-mix(in srgb, #7da7cf 65%, var(--text)); }
 .rider-shell #view[data-view="session"] .session-time-chip.is-pending strong { color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.4; }
 .rider-shell #view[data-view="session"] .daily-hub-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; margin: 0; }
 #app .rider-shell #view[data-view="session"] .daily-hub-actions > button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: 12px; border-radius: 9px; font: 650 13px/1.3 var(--body); text-transform: none; letter-spacing: 0; box-shadow: none; }
@@ -12976,3 +12990,16 @@ html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links
 @media (max-width: 600px) {
   .rider-shell #view[data-view="session"] .daily-hub-actions { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Working On uses the same compact disclosure language as the weekly lists. */
+.rider-shell #view[data-view="session"] .extra-tricks-panel { margin: 16px 0; padding: 0; border: 1px solid color-mix(in srgb, #ad95d4 16%, var(--line)); border-radius: 12px; background: var(--surface); box-shadow: none; }
+.rider-shell #view[data-view="session"] .extra-tricks-panel::before { content: none; }
+.rider-shell #view[data-view="session"] .extra-tricks-panel > .working-on-summary { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 64px; margin: 0; padding: 13px 14px; }
+.rider-shell #view[data-view="session"] .working-on-icon { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, #ad95d4 8%, var(--surface-2)); color: color-mix(in srgb, #ad95d4 65%, var(--text)); }
+.rider-shell #view[data-view="session"] .working-on-copy { flex: 1; min-width: 0; }
+.rider-shell #view[data-view="session"] .working-on-copy .panel-title { display: block; color: var(--text); font: 650 15px/1.3 var(--body); text-transform: none; letter-spacing: 0; }
+.rider-shell #view[data-view="session"] .working-on-copy small { display: block; margin-top: 3px; color: var(--muted); font: 500 10px/1.35 var(--body); }
+.rider-shell #view[data-view="session"] .working-on-count { flex-shrink: 0; padding: 5px 7px; border-radius: 6px; background: color-mix(in srgb, #ad95d4 6%, var(--surface-2)); color: color-mix(in srgb, #ad95d4 55%, var(--text)); font: 550 10px/1.3 var(--body); white-space: nowrap; }
+.rider-shell #view[data-view="session"] .working-on-summary .accordion-caret { flex-shrink: 0; min-width: 16px; min-height: 24px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--muted); box-shadow: none; }
+.rider-shell #view[data-view="session"] .extra-tricks-panel[open] > .working-on-summary { border-bottom: 1px solid var(--line); }
+.rider-shell #view[data-view="session"] .extra-tricks-panel > .session-panel-accordion-body { padding: 14px; }
