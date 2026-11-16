@@ -27,7 +27,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.196";
+const RELEASE_VERSION = "2.14.197";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -3978,7 +3978,7 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
 
 const categoryInfo = {
   daily: { label: "Daily Tricks", description: "Same list all week · resets each day · full list = 1 point" },
-  other: { label: "Other Things to Try", description: "Extra weekly experiments · 0.5 point each when landed" },
+  other: { label: "Fundamental Skills", description: "Weekly fundamentals · 0.5 point each when landed" },
   dialled: { label: "Dialled", description: "Tick each trick once landed · 2 points each" },
   one_bang: { label: "One Bangs", description: "Tick each trick once landed · 2 points each" },
   percentage: { label: "Percentage Tricks", description: "10 attempts · 100%=3, 90%=2, 80%=1" },
@@ -4037,7 +4037,7 @@ const plannerStatusRank = {
 
 const sessionViewerListTabs = [
   { id: "daily", label: "Daily Tricks" },
-  { id: "other", label: "Other Things to Try" },
+  { id: "other", label: "Fundamental Skills" },
   { id: "one_bang", label: "One Bangs" },
   { id: "dialled", label: "Dialled" },
   { id: "trick_links", label: "Trick Links" },
@@ -8770,7 +8770,8 @@ async function recordAssignmentAction(event) {
   const awardedPoints = Number(result.points_awarded || 0) + Number(result.half_points_awarded || 0);
   const removedPoints = Number(result.points_removed || 0) + Number(result.half_points_removed || 0);
   const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
-  const message = `${result.message}${pointsNote}.`;
+  const resultMessage = isOther ? (tickingComplete ? "Fundamental skill landed" : "Fundamental skill unticked") : result.message;
+  const message = `${resultMessage}${pointsNote}.`;
   notify(message);
   await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
   if (tickingComplete && awardedPoints > 0) await showUpdatedWeeklyScore(awardedPoints, trickName);
@@ -12948,8 +12949,8 @@ function paintSessionViewerSnapshot(schedules = []) {
 
 function sessionViewerRiderCountersHtml(entry) {
   const categories = [
+    ["daily", "Daily Tricks"],
     ["one_bang", "One Bangs"],
-    ["other", "Other Things to Try"],
     ["dialled", "Dialled"],
     ["percentage", "Percentage"],
     ["trick_links", "Trick Links"],
@@ -12957,6 +12958,9 @@ function sessionViewerRiderCountersHtml(entry) {
     ["bonus", "Bonus"],
   ];
   const contestPrep = isContestPrepProfile(entry.athlete);
+  const fundamentals = sessionViewerAssignmentsForList(entry, "other");
+  const fundamentalsComplete = fundamentals.filter(isAssignmentComplete).length;
+  const fundamentalsOpen = state.sessionViewerOpenAthleteId === entry.athlete.id && state.sessionViewerActiveList === "other";
   return `<div class="viewer-rider-counters">${categories.map(([category, defaultLabel]) => {
     const assignments = sessionViewerAssignmentsForList(entry, category);
     const complete = assignments.filter(isAssignmentComplete).length;
@@ -12964,7 +12968,10 @@ function sessionViewerRiderCountersHtml(entry) {
     const description = `${label}: ${complete} of ${assignments.length} complete${category === "percentage" ? " · 10 attempts per set" : ""}`;
     const isOpen = state.sessionViewerOpenAthleteId === entry.athlete.id && state.sessionViewerActiveList === category;
     return `<button class="viewer-category-counter viewer-list-tone-${category}" type="button" data-viewer-counter="${category}" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open ${label} for ${entry.athlete.display_name}. ${description}`)}" title="${escapeHtml(description)}"><strong>${complete}<small>/${assignments.length}</small></strong><span>${escapeHtml(label)}</span></button>`;
-  }).join("")}</div>`;
+  }).join("")}</div>
+    <button class="viewer-fundamental-button viewer-list-tone-other" type="button" data-viewer-counter="other" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${fundamentalsOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open Fundamental Skills for ${entry.athlete.display_name}. ${fundamentalsComplete} of ${fundamentals.length} complete. 0.5 point each.`)}">
+      <span>Fundamental Skills</span><span class="viewer-fundamental-meta"><small>0.5 pt each</small><strong>${fundamentalsComplete}<small>/${fundamentals.length}</small></strong><b aria-hidden="true">${fundamentalsOpen ? "−" : "+"}</b></span>
+    </button>`;
 }
 
 function sessionViewerRiderCardHtml(entry, activeGroupSession) {
@@ -13567,7 +13574,8 @@ async function recordViewerAssignmentAction(event) {
     const awardedPoints = Number(result?.points_awarded || 0) + Number(result?.half_points_awarded || 0);
     const removedPoints = Number(result?.points_removed || 0) + Number(result?.half_points_removed || 0);
     const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
-    notify(`${result?.message || "Trick progress updated"}${pointsNote}.`);
+    const resultMessage = isOther ? (button.dataset.viewerAssignmentAction === "landed" ? "Fundamental skill landed" : "Fundamental skill unticked") : result?.message || "Trick progress updated";
+    notify(`${resultMessage}${pointsNote}.`);
     refreshOpenTrainingProgress(athleteId);
     await refreshSessionViewerLight({ force: true });
   } catch (error) {

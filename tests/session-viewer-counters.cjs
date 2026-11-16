@@ -10,8 +10,8 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const categories = ['one_bang', 'dialled', 'percentage', 'trick_links', 'lines', 'bonus'];
-const labels = ['One Bangs', 'Dialled', 'Percentage', 'Trick Links', 'Lines', 'Bonus'];
+const categories = ['daily', 'one_bang', 'dialled', 'percentage', 'trick_links', 'lines', 'bonus'];
+const labels = ['Daily Tricks', 'One Bangs', 'Dialled', 'Percentage', 'Trick Links', 'Lines', 'Bonus'];
 const names = [
   'pendingAssignmentState', 'setPendingAssignmentProgress', 'clearPendingAssignmentProgress',
   'percentageAttemptKey', 'setPendingPercentageAttempt', 'clearPendingPercentageAttempt',
@@ -26,7 +26,7 @@ const names = [
   'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom',
   'bindSessionViewerActions', 'bindSessionViewerFastActions', 'dailySessionHubHtml',
 ];
-const categoryConstants = ['categoryInfo', 'contestPrepCategoryInfo'].map(name => {
+const categoryConstants = ['categoryInfo', 'categoryRewardLabels', 'contestPrepCategoryInfo'].map(name => {
   const start = app.indexOf(`const ${name} = {`);
   assert(start >= 0, `Actual ${name} exists`);
   return app.slice(start, app.indexOf('\n};', start) + 3);
@@ -77,6 +77,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
         row('daily-a', 'daily', false, { venue: 'Park A', progress: { progress_date: qaToday } }),
         row('daily-b', 'daily', false, { venue: 'Park A' }),
         row('daily-other-park', 'daily', false, { progress: { progress_date: qaToday } }),
+        row('fundamental-done', 'other', true), row('fundamental-todo', 'other'),
         row('one-done', 'one_bang', true), row('one-todo', 'one_bang'),
         row('dialled-a', 'dialled', true), row('dialled-b', 'dialled', true), row('dialled-c', 'dialled'),
         row('percent-missed', 'percentage', false, { percentageAttempts: attempts(10) }),
@@ -134,17 +135,25 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     const toggle = rider => page.locator(`[data-viewer-athlete="${rider}"]`);
     const card = rider => toggle(rider).locator('xpath=ancestor::article[1]');
     const counter = (rider, category) => card(rider).locator(`[data-viewer-counter="${category}"]`);
-    const counters = async rider => card(rider).locator('[data-viewer-counter]').evaluateAll(elements =>
+    const fundamental = rider => card(rider).locator('.viewer-fundamental-button[data-viewer-counter="other"]');
+    const counters = async rider => card(rider).locator('.viewer-rider-counters [data-viewer-counter]').evaluateAll(elements =>
       elements.map(el => ({ category: el.dataset.viewerCounter, value: el.querySelector('strong').textContent.trim(), label: el.querySelector(':scope > span').textContent.trim() })));
     const expectCounters = async (values, rider = 'rider') => {
       assert.deepEqual(await counters(rider), categories.map((category, index) => ({ category, value: values[index], label: labels[index] })));
-      assert.equal(await card(rider).locator('.viewer-rider-counters > .viewer-category-counter').count(), 6);
+      assert.equal(await card(rider).locator('.viewer-rider-counters > .viewer-category-counter').count(), 7);
+      assert.equal(await card(rider).locator('.viewer-rider-counters [data-viewer-counter="other"]').count(), 0, 'Fundamental Skills is not a square counter');
+      assert.equal(await fundamental(rider).count(), 1, 'Fundamental Skills has one separate slim button');
     };
     await page.evaluate(() => renderSessionViewer());
-    const baseline = ['1/2', '2/3', '1/3', '1/2', '1/2', '0/1'];
+    const baseline = ['1/2', '1/2', '2/3', '1/3', '1/2', '1/2', '0/1'];
+    const parkBBaseline = ['1/1', ...baseline.slice(1)];
     await expectCounters(baseline);
-    await expectCounters(['0/0', '0/0', '0/0', '0/0', '0/0', '0/0'], 'empty');
-    assert.equal(await page.locator('[data-today-training-progress], .viewer-rider-score, .viewer-training-actions').count(), 0, 'No coach Today\'s Progress, old Daily counter, or empty action wrapper');
+    await expectCounters(['0/0', '0/0', '0/0', '0/0', '0/0', '0/0', '0/0'], 'empty');
+    assert.match(await fundamental('rider').innerText(), /Fundamental Skills/i);
+    assert.match(await fundamental('rider').innerText(), /0\.5\s*pt/i, 'Fundamental Skills preserves the half-point reward');
+    assert.match((await fundamental('rider').innerText()).replace(/\s/g, ''), /1\/2/, 'Fundamental Skills displays its weekly completion count');
+    assert(!await fundamental('rider').innerText().then(value => /Other Things to Try/i.test(value)), 'The old section name is removed');
+    assert.equal(await page.locator('[data-today-training-progress], .viewer-rider-score, .viewer-training-actions').count(), 0, 'No coach Today\'s Progress, retired score, or empty action wrapper');
     assert.equal(await card('rider').locator('.viewer-card-head strong').textContent(), await page.evaluate(() => qaRoster[0].display_name));
     assert.equal(await page.locator('.viewer-rider-grid img').count(), 0, 'Rider name is escaped instead of parsed as markup');
     assert.equal(await page.evaluate(() => Boolean(window.qaInjected)), false);
@@ -163,20 +172,31 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
         await expectCounters(baseline);
         const layout = await card('rider').evaluate(element => {
           const outer = element.getBoundingClientRect();
-          const items = [...element.querySelectorAll('[data-viewer-counter]')];
+          const items = [...element.querySelectorAll('.viewer-rider-counters [data-viewer-counter]')];
+          const counters = element.querySelector('.viewer-rider-counters').getBoundingClientRect();
+          const bar = element.querySelector('.viewer-fundamental-button').getBoundingClientRect();
+          const footer = element.querySelector('.viewer-card-footer').getBoundingClientRect();
           return {
             overflow: document.documentElement.scrollWidth > innerWidth + 1,
             clipped: items.some(item => { const r = item.getBoundingClientRect(); return r.width <= 0 || r.left < outer.left - 1 || r.right > outer.right + 1 || item.scrollWidth > item.clientWidth + 1; }),
             splitLabel: items.some(item => { const label = item.querySelector(':scope > span'); const range = document.createRange(); range.selectNodeContents(label); return !label.textContent.trim().includes(' ') && range.getClientRects().length > 1; }),
             tones: items.map(item => getComputedStyle(item).getPropertyValue('--viewer-list-tone').trim()),
             percentageColor: getComputedStyle(element.querySelector('[data-viewer-counter="percentage"] > span')).color,
+            fundamentalWidth: bar.width,
+            counterWidth: counters.width,
+            fundamentalBelow: bar.top >= counters.bottom - 1 && bar.bottom <= footer.top + 1,
+            fundamentalHeight: bar.height,
+            counterHeight: Math.min(...items.map(item => item.getBoundingClientRect().height)),
           };
         });
         assert.equal(layout.overflow, false, `${width}px ${theme}: no horizontal page overflow`);
-        assert.equal(layout.clipped, false, `${width}px ${theme}: all six counters fit the card`);
+        assert.equal(layout.clipped, false, `${width}px ${theme}: all seven counters fit the card`);
         assert.equal(layout.splitLabel, false, `${width}px ${theme}: category labels do not split within words`);
-        assert.equal(new Set(layout.tones).size, 6, `${theme}: six distinct category colours`);
+        assert.equal(new Set(layout.tones).size, 7, `${theme}: seven distinct category colours`);
         assert(layout.tones.every(Boolean), `${theme}: counter category colours resolve`);
+        assert(Math.abs(layout.fundamentalWidth - layout.counterWidth) < 2, `${width}px ${theme}: Fundamental Skills spans the row`);
+        assert(layout.fundamentalBelow, `${width}px ${theme}: Fundamental Skills sits below counters and above Daily status`);
+        assert(layout.fundamentalHeight >= 44 && layout.fundamentalHeight < layout.counterHeight, `${width}px ${theme}: Fundamental Skills is a slim accessible button`);
         const [red, green, blue] = layout.percentageColor.match(/[\d.]+/g).map(Number);
         assert(green > red && green > blue, `${theme}: Percentage remains green`);
         if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, `session-viewer-counters-${width}-${theme}.png`), fullPage: true, animations: 'disabled' });
@@ -186,9 +206,9 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     const contestLabels = await page.evaluate(() => {
       const element = document.createElement('div');
       element.innerHTML = sessionViewerRiderCountersHtml({ athlete: { ...qaRoster[0], groupNames: ['contest_prep'] }, assignments: qaRows, venue: 'Park A' });
-      return [...element.querySelectorAll('[data-viewer-counter] > span')].map(label => label.textContent);
+      return [...element.querySelectorAll('.viewer-rider-counters [data-viewer-counter] > span')].map(label => label.textContent);
     });
-    assert.deepEqual(contestLabels, ['Practice 2', 'Practice 3', 'Warm Up', 'Trick Links', 'Lines', 'Run 1 / Run 2'], 'Contest Prep counters retain their training sheet labels');
+    assert.deepEqual(contestLabels, ['Practice 1', 'Practice 2', 'Practice 3', 'Warm Up', 'Trick Links', 'Lines', 'Run 1 / Run 2'], 'Contest Prep counters retain their training sheet labels');
     await toggle('rider').click();
     await page.waitForFunction(() => document.querySelector('[data-viewer-athlete="rider"]')?.getAttribute('aria-expanded') === 'true');
     await expectCounters(baseline);
@@ -214,12 +234,15 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     };
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    for (const category of categories) {
+    for (const category of [...categories, 'other']) {
       await counter('rider', category).click();
       await expectOpen('rider', category);
       assert.notEqual(await page.evaluate(() => qaScrolls.at(-1).options.behavior), 'smooth', 'Reduced-motion selection avoids smooth scrolling');
       await expectCounters(baseline);
     }
+    await fundamental('rider').press('Enter');
+    await expectOpen('rider', 'other');
+    assert.match(await page.locator('[data-viewer-plan="rider"] [data-viewer-list-tab="other"]').innerText(), /Fundamental Skills/i, 'The separate button opens the renamed weekly list');
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 844 });
       for (const category of ['percentage', 'bonus']) {
@@ -299,30 +322,31 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       });
     }
     await page.evaluate(async () => { state.sessionViewerVenue = 'Park B'; await refreshSessionViewerLight(); });
-    await expectCounters(baseline); // Weekly categories do not follow the Daily venue filter.
+    await expectCounters(parkBBaseline); // Only Daily follows the selected venue.
+    assert.match((await fundamental('rider').innerText()).replace(/\s/g, ''), /1\/2/, 'Fundamental Skills is weekly and does not follow the Daily venue filter');
     await page.evaluate(async () => {
       setPendingAssignmentProgress('one-todo', true);
       setPendingAssignmentProgress('dialled-a', false);
       setPendingPercentageAttempt('percent-nine', 10, false);
       await refreshSessionViewerLight();
     });
-    await expectCounters(['2/2', '1/3', '2/3', '1/2', '1/2', '0/1']);
+    await expectCounters(['1/1', '2/2', '1/3', '2/3', '1/2', '1/2', '0/1']);
     await page.evaluate(async () => { setPendingPercentageAttempt('percent-missed', 10, null); await refreshSessionViewerLight(); });
-    await expectCounters(['2/2', '1/3', '1/3', '1/2', '1/2', '0/1']);
+    await expectCounters(['1/1', '2/2', '1/3', '1/3', '1/2', '1/2', '0/1']);
     await page.evaluate(async () => {
       state.pendingAssignmentProgress.clear(); state.pendingPercentageAttempts.clear();
       state.pendingAssignmentProgress.set('bonus-todo', { complete: true, time: Date.now() - 180000 });
       state.pendingPercentageAttempts.set('percent-nine:10', { attemptNumber: 10, landed: true, time: Date.now() - 180000 });
       await refreshSessionViewerLight();
     });
-    await expectCounters(baseline);
+    await expectCounters(parkBBaseline);
     await page.evaluate(async () => {
       qaRows.find(row => row.id === 'bonus-todo').progress = { completed_at: '2026-09-13T01:00:00Z' };
       await refreshSessionViewerLight({ force: true });
     });
-    await expectCounters(['1/2', '2/3', '1/3', '1/2', '1/2', '1/1']);
+    await expectCounters(['1/1', '1/2', '2/3', '1/3', '1/2', '1/2', '1/1']);
     await page.evaluate(() => renderSessionViewer());
-    await expectCounters(['1/2', '2/3', '1/3', '1/2', '1/2', '1/1']);
+    await expectCounters(['1/1', '1/2', '2/3', '1/3', '1/2', '1/2', '1/1']);
 
     await page.evaluate(async () => {
       qaSession = { id: 'active', group_name: 'tuesday', venue: 'Park A', status: 'running', started_at: new Date().toISOString(), coach_group_session_participants: [{ athlete_id: 'rider' }] };
@@ -336,7 +360,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     await page.evaluate(async () => { qaSession.coach_group_session_participants[0].daily_finish_seconds = 90; await refreshSessionViewerLight(); });
     assert.equal(await finish.textContent(), 'View Daily result', 'Saved Daily results remain reachable');
     assert.equal(await page.locator('[data-today-training-progress]').count(), 0);
-    await expectCounters(['1/2', '2/3', '1/3', '1/2', '1/2', '1/1']);
+    await expectCounters(['2/2', '1/2', '2/3', '1/3', '1/2', '1/2', '1/1']);
     const student = await page.evaluate(() => {
       state.profile = { role: 'athlete', display_name: 'Student & Rider' }; state.user.id = 'rider';
       const element = document.createElement('div'); element.innerHTML = dailySessionHubHtml(qaRows, 'Park A');

@@ -12757,7 +12757,18 @@ html[data-theme="light"] .previous-week-legend-tick { color: #227b2c; }
 .parent-shell .parent-readonly [data-assignment-section="trick_links"] { --parent-category: #f3a6cb; }
 .parent-week-summary [data-parent-category="trick_links"] strong { color: #e694bb; }
 .parent-week-summary { grid-template-columns: repeat(8, minmax(0, 1fr)); }
-.coach-shell #view[data-view="sessionViewer"] .viewer-rider-counters { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-counters { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-rider-card { grid-template-rows: repeat(5, auto); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-button { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; margin: 0; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--viewer-list-tone) 24%, var(--session-edge)); border-radius: 8px; background: color-mix(in srgb, var(--viewer-list-tone) 5%, transparent); color: var(--session-ink); text-align: left; box-shadow: none; font: 650 12px/1.3 var(--body); text-transform: none; letter-spacing: 0; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-button:is(:hover, [aria-expanded="true"]) { border-color: var(--viewer-list-tone); background: color-mix(in srgb, var(--viewer-list-tone) 12%, transparent); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-button:focus-visible { outline: 2px solid var(--viewer-list-tone); outline-offset: 3px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-button > span:first-child { color: var(--viewer-list-tone); }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-meta { display: flex; align-items: center; flex-shrink: 0; gap: 12px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-meta small { color: var(--session-muted); font-size: 10px; font-weight: 500; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-meta strong { color: var(--session-ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-meta b { color: var(--viewer-list-tone); font-size: 16px; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-card-footer { grid-row: 4; }
+.coach-shell #view[data-view="sessionViewer"] .viewer-progress { grid-row: 5; }
 .trick-links-proposal { margin: 18px 0; }
 .trick-links-proposal small { color: var(--muted); line-height: 1.5; }
 html[data-theme="light"] .viewer-list-tone-trick_links { --viewer-list-tone: #a33169; }
@@ -12765,7 +12776,12 @@ html[data-theme="light"] .rider-shell [data-assignment-section="trick_links"] { 
 html[data-theme="light"] .parent-shell .parent-readonly [data-assignment-section="trick_links"] { --parent-category: #a33169; }
 html[data-theme="light"] .parent-week-summary [data-parent-category="trick_links"] strong { color: #a33169; }
 @media (max-width: 760px) { .parent-week-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .coach-shell #view[data-view="sessionViewer"] .viewer-rider-counters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .coach-shell #view[data-view="sessionViewer"] .viewer-rider-counters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .coach-shell #view[data-view="sessionViewer"] .viewer-category-counter[data-viewer-counter="daily"] { grid-column: span 2; }
+  .coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-button { gap: 6px; padding-inline: 10px; }
+  .coach-shell #view[data-view="sessionViewer"] .viewer-fundamental-meta { gap: 8px; }
+}
 @media (max-width: 380px) { .parent-week-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Multi-coach Teams tab. Keep team-management surfaces calm and separate
