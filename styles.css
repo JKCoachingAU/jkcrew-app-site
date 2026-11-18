@@ -5508,6 +5508,11 @@ html.contest-merge-open body { overflow: hidden; }
 .uci-refresh-status.is-stale { border-color: color-mix(in srgb, var(--yellow) 50%, transparent); background: color-mix(in srgb, var(--yellow) 7%, transparent); }
 .uci-refresh-btn { flex-shrink: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--aqua); font: 700 0.8rem var(--body); cursor: pointer; }
 .uci-search-field { display: grid; gap: 7px; margin: 20px 0 14px; }
+.uci-standing-mode-field { display: grid; gap: 7px; max-width: 340px; margin: 18px 0 20px; }
+.uci-standing-mode-field[hidden] { display: none; }
+.uci-standing-mode-field label { color: var(--muted); font: 700 0.7rem var(--body); }
+.uci-standing-mode-field select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 36px 10px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background-color: var(--surface-2); font: 600 0.9rem var(--body); }
+.uci-standing-explanation { margin: -2px 0 14px; color: var(--muted); font: 400 0.8rem/1.5 var(--body); }
 .uci-search-field label { color: var(--muted); font: 800 0.65rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .uci-search-field input { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.025); color: var(--text); font: 400 1rem var(--body); }
 .uci-rankings-table { min-width: 0; }
@@ -8432,6 +8437,9 @@ html[data-theme="light"] .success-burst {
 .home-uci-rank { color: var(--text); font: 900 clamp(2.8rem, 6vw, 4.5rem)/1 var(--display); letter-spacing: -.04em; flex-shrink: 0; }
 .home-uci-detail { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .home-uci-detail strong { color: var(--text); font-size: .94rem; }
+.home-uci-world-cup { margin: 10px 0 0; color: var(--muted); font: 500 .78rem/1.5 var(--body); }
+.home-uci-world-cup strong { color: var(--text); font-weight: 700; }
+.home-uci-world-cup small { font: inherit; }
 .home-uci-detail span, .home-uci-detail small { color: var(--muted); font-size: .78rem; }
 .home-uci-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .home-uci-actions:empty { display: none; }

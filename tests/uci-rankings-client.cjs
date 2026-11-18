@@ -3,7 +3,9 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../uci-rankings.js'), 'utf8');
 const date = new Date().toISOString().slice(0, 10);
-const data = (name = 'Official rider') => ({ schemaVersion: 1, eventBreakdowns: {}, checkedAt: new Date().toISOString(), categories: Object.fromEntries(['men', 'women'].map(key => [key, { rankingDate: date, sourceUrl: 'https://dataride.uci.org/iframe/RankingDetails/239', rows: [{ rank: 1, name, nation: 'AUS', points: 123, uciId: '100001' }] }])) });
+const data = (name = 'Official rider') => ({ schemaVersion: 1, eventBreakdowns: {}, checkedAt: new Date().toISOString(), categories: Object.fromEntries(['men', 'women'].map(key => [key, { rankingDate: date, sourceUrl: 'https://dataride.uci.org/iframe/RankingDetails/239', rows: [{ rank: 1, name, nation: 'AUS', points: 123, uciId: '100001' }] }])),
+  worldCup: Object.fromEntries(['men', 'women'].map((key, i) => [key, { rankingDate: date, sourceUrl: `https://dataride.uci.org/iframe/RankingDetails/${272 + i}?groupId=${171 + i}&categoryId=${22 + i}&disciplineId=13&raceTypeId=137&rankingTypeId=1`, rows: [{ rank: 1, name, nation: 'AUS', points: 55, uciId: `${i + 1}0000000000` }] }])),
+  worldCupMeta: { status: 'current', checkedAt: new Date().toISOString(), lastAttemptAt: new Date().toISOString() } });
 function client({ stored, blocked = false, reply = async () => ({ ok: true, json: async () => data() }) } = {}) {
   const calls = [], notices = [], writes = [], storage = new Map(stored ? [['jkcrew-uci-rankings-v1', JSON.stringify(stored)]] : []);
   const events = Object.assign(new EventTarget(), { location: { href: 'https://jkcrew.test/riley-test/' } });
@@ -93,6 +95,43 @@ function client({ stored, blocked = false, reply = async () => ({ ok: true, json
   const aggregateOnly = data(); delete aggregateOnly.eventBreakdowns;
   const upgraded = client({stored:{data:aggregateOnly,loadedAt:Date.now()}}); await upgraded.load();
   assert.equal(upgraded.calls.length, 1, 'Aggregate-only pre-release cache refreshes for new event evidence');
+  const worldOnly = data(); delete worldOnly.worldCup; delete worldOnly.worldCupMeta;
+  const cupUpgrade = client({ stored: { data: worldOnly, loadedAt: Date.now() } });
+  assert.equal(cupUpgrade.peek().worldCup, undefined, 'Older cache never invents World Cup standings from world rankings');
+  await cupUpgrade.load(); await cupUpgrade.load();
+  assert.equal(cupUpgrade.calls.length, 1, 'Pre-World-Cup cache refreshes once and then reuses the new complete feed');
+  const separate = data();
+  separate.categories.men.rows[0] = { rank: 13, name: 'KINDERMANN Lars', nation: 'GER', points: 2610, uciId: '10124058738' };
+  separate.worldCup.men.rows[0].points = 2820;
+  separate.worldCup.men.rows.push({ rank: 10, name: 'KINDERMANN Lars', nation: 'GER', points: 1180, uciId: '10124058738' });
+  assert.equal(matcher.findRider(separate, '10124058738').row.rank, 13, 'World rank stays 13');
+  assert.equal(matcher.findWorldCupRider(separate, '10124058738').row.rank, 10, 'World Cup overall is independently matched as 10');
+  assert.equal(matcher.findWorldCupRider(separate, '10124058738').row.points, 1180, 'World Cup points remain separate from 2610 world-ranking points');
+  assert.equal(matcher.findWorldCupRider(worldOnly, '10124058738'), null, 'Missing World Cup source is not replaced by the world ranking');
+  const goodCup = data();
+  for (const update of [
+    value => { value.worldCup.men.sourceUrl = value.categories.men.sourceUrl; },
+    value => { value.worldCup.women.sourceUrl = value.worldCup.men.sourceUrl; },
+    value => { value.worldCup.women.sourceUrl += '&rankingTypeId=3'; value.worldCup.women.sourceUrl = value.worldCup.women.sourceUrl.replace('rankingTypeId=1', 'rankingTypeId=3'); },
+    value => { value.worldCup.men.rankingDate = '2026-02-31'; },
+    value => { value.worldCup.men.rankingDate = '2099-01-01'; },
+    value => { value.worldCup.women.rows[0].points = -1; },
+    value => { value.worldCup.women.rows.push({ ...value.worldCup.women.rows[0] }); },
+  ]) {
+    const invalidCup = structuredClone(goodCup); update(invalidCup);
+    const guarded = client({ stored: { data: goodCup, loadedAt: 1 }, reply: async () => ({ ok: true, json: async () => invalidCup }) });
+    assert.equal((await guarded.load()).stale, true, 'Invalid World Cup source/order/date/identity retains the validated snapshot');
+  }
+  const olderCup = data(); olderCup.worldCup.men.rankingDate = '2025-01-01';
+  const cupRegression = client({ stored: { data: goodCup, loadedAt: 1 }, reply: async () => ({ ok: true, json: async () => olderCup }) });
+  const retainedCup = await cupRegression.load();
+  assert.equal(retainedCup.worldCup.men.rankingDate, date, 'World Cup dates never move backwards');
+  assert.equal(retainedCup.worldCupStale, true, 'Retained World Cup data is labelled stale');
+  assert.equal(retainedCup.stale, false, 'An unavailable World Cup refresh does not mislabel a verified world ranking');
+  const missingCupRefresh = client({ stored: { data: goodCup, loadedAt: 1 }, reply: async () => ({ ok: true, json: async () => worldOnly }) });
+  const missingCupResult = await missingCupRefresh.load();
+  assert.equal(missingCupResult.worldCup.men.rows[0].points, 55, 'A partial feed retains known World Cup standings');
+  assert.equal(missingCupResult.worldCupStale, true, 'Partial source check cannot label retained World Cup data current');
   const old = { data: data(), loadedAt: 1 };
   const offline = client({ stored: old, reply: async () => { throw Error('Offline'); } });
   assert.equal((await offline.load()).stale, true, 'Offline results are labelled cached');

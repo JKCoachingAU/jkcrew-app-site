@@ -88,7 +88,7 @@ const names = [
       window.riderFeaturesDisabled = () => !qa.access;
       window.riderFeatureAccessUnknown = () => false;
       window.refreshRiderFeatureAccess = async () => qa.access;
-      window.getLeaderboard = async () => [{ athlete_id: state.user?.id, weekly_points: 3 }];
+      window.getAthleteHomeVerifiedLeaderboard = async () => [{ athlete_id: state.user?.id, weekly_points: 3 }];
       window.countryTimezones = { DE: 'Europe/Berlin' };
       window.dateForTimezone = () => '2026-09-15';
       window.venueIdentityKey = window.rawVenueIdentityKey = value => String(value || '').toLowerCase().replace(/\s+/g, '');

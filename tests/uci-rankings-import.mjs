@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fetchRankings, normalizeRows, normalizeEventResults, parseRankingDate, parseResultDate, updateSnapshot, loadPublishedPrevious } from '../tools/update-uci-rankings.mjs';
+import { fetchRankings, normalizeRows, normalizeEventResults, parseRankingDate, parseResultDate, updateSnapshot, loadPublishedPrevious, WORLD_CUP_CATEGORIES, validatedPreviousWorldCup } from '../tools/update-uci-rankings.mjs';
 
 const NOW = new Date('2026-10-23T00:00:00Z');
 function sourceRow(index, { moment = 206159, season = 452 } = {}) {
@@ -15,7 +15,7 @@ function sourceRow(index, { moment = 206159, season = 452 } = {}) {
   };
 }
 
-function source({ patchPage, noCurrentSeason = false, failWomen = false } = {}) {
+function source({ patchPage, noCurrentSeason = false, failWomen = false, failCupWomen = false, failCupMen = false } = {}) {
   const requests = [];
   const fetchImpl = async (url, options = {}) => {
     const parsed = new URL(url);
@@ -24,24 +24,27 @@ function source({ patchPage, noCurrentSeason = false, failWomen = false } = {}) 
     if (parsed.pathname.includes('GetDisciplineSeasons')) {
       result = [{ Id: 999, Year: 2027 }, { Id: 452, Year: 2026 }, { Id: 447, Year: 2025 }];
     } else if (parsed.pathname.includes('GetRankingMoments')) {
-      const isWomen = parsed.searchParams.get('rankingId') === '241';
+      const rankingId = parsed.searchParams.get('rankingId');
+      const cup = ['272', '273'].includes(rankingId);
+      const isWomen = ['241', '273'].includes(rankingId);
       if (noCurrentSeason && parsed.searchParams.get('disciplineSeasonId') === '452') result = [{ Id: 0, Name: 'Most Recent Ranking' }];
-      else result = [{ Id: 0, Name: 'Most Recent Ranking' }, { Id: isWomen ? 206160 : 206159, Name: noCurrentSeason ? '30/12/2025' : '20/10/2026' }];
+      else result = [{ Id: 0, Name: 'Most Recent Ranking' }, { Id: cup ? isWomen ? 206342 : 206341 : isWomen ? 206160 : 206159, Name: noCurrentSeason ? '30/12/2025' : cup ? isWomen ? '18/10/2026' : '17/10/2026' : '20/10/2026' }];
     } else if (parsed.pathname.includes('ObjectRankings')) {
       const body = new URLSearchParams(options.body);
-      const women = body.get('rankingId') === '241';
+      const cup = ['272', '273'].includes(body.get('rankingId'));
+      const women = ['241', '273'].includes(body.get('rankingId'));
       assert.equal(body.get('disciplineId'), '13');
       assert.equal(body.get('rankingTypeId'), '1');
       const filters = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [body.get(`filter[filters][${index}][field]`), body.get(`filter[filters][${index}][value]`)]));
       assert.equal(filters.RaceTypeId, '137', 'must fetch Park, not Flatland');
       assert.equal(filters.CategoryId, women ? '23' : '22');
       assert.equal(filters.SeasonId, noCurrentSeason ? '447' : '452');
-      assert.equal(filters.MomentId, women ? '206160' : '206159');
-      if (failWomen && women) return { ok: false, status: 503 };
-      const total = women ? 3 : 43;
+      assert.equal(filters.MomentId, cup ? women ? '206342' : '206341' : women ? '206160' : '206159');
+      if ((!cup && failWomen && women) || (cup && (women ? failCupWomen : failCupMen))) return { ok: false, status: 503 };
+      const total = cup ? women ? 2 : 42 : women ? 3 : 43;
       const skip = Number(body.get('skip'));
       result = { total, data: Array.from({ length: Math.min(total - skip, 40) }, (_, i) => sourceRow(skip + i, { moment: Number(filters.MomentId), season: Number(filters.SeasonId) })) };
-      if (patchPage) patchPage(result, { women, page: Number(body.get('page')) });
+      if (patchPage) patchPage(result, { women, cup, page: Number(body.get('page')) });
     } else throw new Error(`Unexpected source ${url}`);
     return { ok: true, status: 200, json: async () => result };
   };
@@ -60,13 +63,83 @@ test('imports every page, pins official publication and selects Park individual 
   assert.equal(result.categories.men.rankingDate, '2026-10-20');
   assert.match(result.categories.women.sourceUrl, /RankingDetails\/241\?/);
   assert.match(result.categories.women.sourceUrl, /momentId=206160/);
-  assert.equal(fixture.requests.filter(item => item.url.pathname.includes('ObjectRankings')).length, 3);
+  assert.equal(fixture.requests.filter(item => item.url.pathname.includes('ObjectRankings')).length, 6);
+  assert.equal(result.worldCup.men.rows.length, 42);
+  assert.equal(result.worldCup.women.rows.length, 2);
+  assert.equal(result.worldCup.men.rankingDate, '2026-10-17');
+  assert.equal(result.worldCup.women.rankingDate, '2026-10-18');
+  assert.match(result.worldCup.men.sourceUrl, /RankingDetails\/272\?.*groupId=171/);
+  assert.match(result.worldCup.women.sourceUrl, /RankingDetails\/273\?.*groupId=172/);
+  assert.deepEqual(result.worldCupMeta, { status: 'current', checkedAt: NOW.toISOString(), lastAttemptAt: NOW.toISOString() });
 });
 
 test('season rollover uses last published season until new rankings exist', async () => {
   const result = await fetchRankings({ ...source({ noCurrentSeason: true }), now: NOW, attempts: 1 });
   assert.equal(result.categories.men.rankingDate, '2025-12-30');
   assert.match(result.categories.men.sourceUrl, /disciplineSeasonId=447/);
+});
+
+test('World Cup pair uses its own official tables and both genders are complete before publication', async () => {
+  assert.deepEqual(WORLD_CUP_CATEGORIES, {
+    men: { rankingId: 272, categoryId: 22, groupId: 171 },
+    women: { rankingId: 273, categoryId: 23, groupId: 172 },
+  });
+  const snapshot = await fetchRankings({ ...source(), now: NOW, attempts: 1 });
+  assert.notEqual(snapshot.categories.men.sourceUrl, snapshot.worldCup.men.sourceUrl);
+  assert.equal(snapshot.worldCup.men.rows.at(-1).rank, 42);
+  assert.equal(snapshot.worldCup.women.rows.at(-1).rank, 2);
+  for (const failure of [{ failCupMen: true }, { failCupWomen: true }]) {
+    const next = await fetchRankings({ ...source(failure), now: NOW, attempts: 1 });
+    assert.equal(next.categories.men.rows.length, 43);
+    assert.equal(next.categories.women.rows.length, 3);
+    assert.equal(next.worldCup, undefined, 'Never publish only one World Cup gender');
+    assert.equal(next.worldCupMeta.status, 'unavailable');
+    assert.equal(next.worldCupMeta.checkedAt, null);
+  }
+});
+
+test('World Cup failure preserves validated last-good pair as stale while world rankings still refresh', async () => {
+  const previous = await fetchRankings({ ...source(), now: NOW, attempts: 1 });
+  const later = new Date('2026-10-24T06:00:00Z');
+  const result = await fetchRankings({ ...source({ failCupWomen: true }), previous, now: later, attempts: 1 });
+  assert.equal(result.checkedAt, later.toISOString());
+  assert.equal(result.categories.men.rows.length, 43);
+  assert.deepEqual(result.worldCup, previous.worldCup);
+  assert.equal(result.worldCupMeta.status, 'stale');
+  assert.equal(result.worldCupMeta.checkedAt, NOW.toISOString());
+  assert.equal(result.worldCupMeta.lastAttemptAt, later.toISOString());
+  assert.match(result.worldCupMeta.reason, /503/);
+  assert.equal(validatedPreviousWorldCup(result, later).checkedAt, NOW.toISOString());
+});
+
+test('World Cup date regression and invalid cached identity/source cannot appear as a fresh table', async () => {
+  const previous = await fetchRankings({ ...source(), now: NOW, attempts: 1 });
+  previous.worldCup.men.rankingDate = '2026-10-18';
+  const result = await fetchRankings({ ...source(), previous, now: NOW, attempts: 1 });
+  assert.equal(result.worldCupMeta.status, 'stale');
+  assert.equal(result.worldCup.men.rankingDate, '2026-10-18');
+  for (const corrupt of [
+    value => { value.worldCup.women.sourceUrl = value.categories.women.sourceUrl; },
+    value => { value.worldCup.women.rows[1].uciId = value.worldCup.women.rows[0].uciId; },
+    value => { value.worldCup.men.rows[0].points = -1; },
+    value => { value.worldCup.women.rows = []; },
+    value => { value.worldCupMeta.status = 'unavailable'; value.worldCupMeta.checkedAt = null; },
+  ]) {
+    const invalid = structuredClone(previous); corrupt(invalid);
+    assert.equal(validatedPreviousWorldCup(invalid, NOW), null);
+    const failed = await fetchRankings({ ...source({ failCupMen: true }), previous: invalid, now: NOW, attempts: 1 });
+    assert.equal(failed.worldCup, undefined);
+    assert.equal(failed.worldCupMeta.status, 'unavailable');
+  }
+});
+
+test('official mirror source is recorded and non-UCI transport origins are rejected before fetching', async () => {
+  const snapshot = await fetchRankings({ ...source(), baseUrl: 'https://dataride.uci.ch', now: NOW, attempts: 1 });
+  assert.match(snapshot.categories.men.sourceUrl, /^https:\/\/dataride\.uci\.ch\//);
+  assert.match(snapshot.worldCup.women.sourceUrl, /^https:\/\/dataride\.uci\.ch\//);
+  let calls = 0;
+  await assert.rejects(fetchRankings({ baseUrl: 'https://example.com', fetchImpl: async () => { calls++; }, now: NOW }), /Only official/);
+  assert.equal(calls, 0);
 });
 
 test('rejects incomplete, changing and duplicate pages rather than publishing partial rankings', async () => {

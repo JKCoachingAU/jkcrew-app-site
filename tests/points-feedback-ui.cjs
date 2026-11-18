@@ -39,7 +39,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.playNotificationSound = kind => sounds.push(kind);
       window.notify = (message, tone = 'ok') => notifications.push({ message, tone });
       window.messageFrom = error => error.message;
-      window.getLeaderboard = async options => {
+      window.getAthleteHomeVerifiedLeaderboard = async options => {
         leaderboardCalls++;
         leaderboardOptions.push(options);
         const viewerId = state.user.id, total = mode.total;
@@ -257,7 +257,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     eq(await page.locator('.score-popup-stack').count(), 0, 'Expired awards remove their empty stack');
     eq(errors, [], 'No browser errors');
     eq(requests, [], 'Synthetic feedback tests make no production requests');
-    ok(await page.evaluate(() => leaderboardOptions.every(options => options?.allowFallback === false)), 'Weekly totals only use verified leaderboard results without fallback');
+    ok(await page.evaluate(() => leaderboardOptions.every(options => options?.force === true)), 'Weekly totals force a fresh verified lean summary after a successful save');
     console.log(`Points feedback UI: ${checks} checks passed at 320/390/1024px in dark/light themes, including exact fractions, reduced motion and saved/failed/undo actions. No production writes.`);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

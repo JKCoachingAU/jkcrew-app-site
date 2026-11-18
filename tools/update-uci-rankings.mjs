@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BASE = 'https://dataride.uci.org';
+const OFFICIAL_BASES = new Set([BASE, 'https://dataride.uci.ch']);
 const PAGE_SIZE = 40;
 const MAX_TRACKED_RIDERS = 40;
 const MAX_EVENT_RESULTS = 200;
@@ -13,6 +14,10 @@ const PUBLISHED_SNAPSHOT = 'https://raw.githubusercontent.com/JKCoachingAU/jkcre
 export const CATEGORIES = Object.freeze({
   men: { rankingId: 239, categoryId: 22, groupId: 156 },
   women: { rankingId: 241, categoryId: 23, groupId: 157 },
+});
+export const WORLD_CUP_CATEGORIES = Object.freeze({
+  men: { rankingId: 272, categoryId: 22, groupId: 171 },
+  women: { rankingId: 273, categoryId: 23, groupId: 172 },
 });
 
 function requireValue(condition, message) {
@@ -28,11 +33,11 @@ export function parseRankingDate(value) {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === iso ? iso : null;
 }
 
-async function fetchJson(path, { fetchImpl = fetch, body, attempts = 3, timeoutMs = 30000 } = {}) {
+async function fetchJson(path, { fetchImpl = fetch, body, attempts = 3, timeoutMs = 30000, baseUrl = BASE } = {}) {
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const response = await fetchImpl(`${BASE}${path}`, {
+      const response = await fetchImpl(`${baseUrl}${path}`, {
         method: body ? 'POST' : 'GET',
         headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
         body: body?.toString(),
@@ -120,7 +125,7 @@ async function fetchCategory(category, seasons, options) {
   });
   const ranking = {
     rankingDate: moment.date,
-    sourceUrl: `${BASE}/iframe/RankingDetails/${category.rankingId}?${query}`,
+    sourceUrl: `${options.baseUrl}/iframe/RankingDetails/${category.rankingId}?${query}`,
     rows,
   };
   return { ranking, rawRows, season, moment };
@@ -169,11 +174,11 @@ export function normalizeEventResults(rawRows, { rankingId, rankingDate, totalPo
   return events.sort((a, b) => b.date.localeCompare(a.date) || a.resultId - b.resultId);
 }
 
-function riderSourceUrl(objectId, category, season, moment) {
+function riderSourceUrl(objectId, category, season, moment, baseUrl = BASE) {
   const query = new URLSearchParams({ rankingId: String(category.rankingId), groupId: String(category.groupId),
     momentId: String(moment.Id), baseRankingTypeId: '1', disciplineSeasonId: String(season.Id), disciplineId: '13',
     categoryId: String(category.categoryId), raceTypeId: '137', countryId: '0', teamId: '0' });
-  return `${BASE}/iframe/RiderRankingDetails/${objectId}?${query}`;
+  return `${baseUrl}/iframe/RiderRankingDetails/${objectId}?${query}`;
 }
 
 async function fetchEventBreakdown(uciId, categoryKey, source, options) {
@@ -201,7 +206,7 @@ async function fetchEventBreakdown(uciId, categoryKey, source, options) {
   }
   return { status: 'current', category: categoryKey, rankingDate: ranking.rankingDate,
     checkedAt: options.now.toISOString(), lastAttemptAt: options.now.toISOString(),
-    sourceUrl: riderSourceUrl(row.ObjectId, category, season, moment), totalPoints: row.Points,
+    sourceUrl: riderSourceUrl(row.ObjectId, category, season, moment, options.baseUrl), totalPoints: row.Points,
     events: normalizeEventResults(rawEvents, { rankingId: category.rankingId, rankingDate: ranking.rankingDate, totalPoints: row.Points }) };
 }
 
@@ -214,7 +219,7 @@ function previousBreakdown(value, now) {
     || !Array.isArray(value.events) || value.events.length > MAX_EVENT_RESULTS) return null;
   try {
     const url = new URL(value.sourceUrl);
-    requireValue(url.origin === BASE && /^\/iframe\/RiderRankingDetails\/\d+$/.test(url.pathname), 'Invalid cached rider source');
+    requireValue(OFFICIAL_BASES.has(url.origin) && /^\/iframe\/RiderRankingDetails\/\d+$/.test(url.pathname), 'Invalid cached rider source');
     for (const [key, expected] of Object.entries({ rankingId: CATEGORIES[value.category].rankingId,
       groupId: CATEGORIES[value.category].groupId, categoryId: CATEGORIES[value.category].categoryId,
       disciplineId: 13, raceTypeId: 137, baseRankingTypeId: 1 })) {
@@ -260,8 +265,67 @@ export function validateProgression(snapshot, previous) {
   }
 }
 
-export async function fetchRankings({ fetchImpl = fetch, now = new Date(), previous = null, attempts = 3, trackedUciIds = [] } = {}) {
-  const options = { fetchImpl, now, attempts };
+// World Cup overall is a different competition table from the weekly rolling
+// world ranking. Never manufacture it from world-rank positions or totals.
+export function validatedPreviousWorldCup(previous, now = new Date()) {
+  try {
+    requireValue(!previous?.worldCupMeta || ['current', 'stale'].includes(previous.worldCupMeta.status)
+      && Number.isFinite(Date.parse(previous.worldCupMeta.checkedAt)), 'No successful World Cup source check');
+    requireValue(previous?.worldCup && Number.isFinite(Date.parse(previous.worldCupMeta?.checkedAt || previous.checkedAt)), 'No verified World Cup snapshot');
+    const checkedAt = previous.worldCupMeta?.checkedAt || previous.checkedAt;
+    requireValue(Date.parse(checkedAt) <= now.getTime(), 'Future World Cup source check');
+    for (const [key, expected] of Object.entries(WORLD_CUP_CATEGORIES)) {
+      const ranking = previous.worldCup[key];
+      const date = String(ranking?.rankingDate || '');
+      requireValue(/^\d{4}-\d{2}-\d{2}$/.test(date)
+        && parseRankingDate(`${date.slice(8)}/${date.slice(5, 7)}/${date.slice(0, 4)}`) === date
+        && date <= now.toISOString().slice(0, 10), 'Invalid World Cup publication');
+      const url = new URL(ranking.sourceUrl);
+      requireValue(OFFICIAL_BASES.has(url.origin) && !url.username && !url.password
+        && url.pathname === `/iframe/RankingDetails/${expected.rankingId}`, 'Invalid World Cup source');
+      for (const [name, value] of Object.entries({ categoryId: expected.categoryId, groupId: expected.groupId, disciplineId: 13, raceTypeId: 137, rankingTypeId: 1 })) {
+        requireValue(url.searchParams.get(name) === String(value), 'World Cup source belongs to a different table');
+      }
+      requireValue(/^\d+$/.test(url.searchParams.get('momentId') || '') && Number(url.searchParams.get('momentId')) > 0
+        && /^\d+$/.test(url.searchParams.get('disciplineSeasonId') || '') && Number(url.searchParams.get('disciplineSeasonId')) > 0, 'Invalid World Cup source moment');
+      requireValue(Array.isArray(ranking.rows) && ranking.rows.length > 0 && ranking.rows.length <= 5000, 'Incomplete World Cup rows');
+      let rank = 0, points = Infinity;
+      const ids = new Set();
+      for (const [index, row] of ranking.rows.entries()) {
+        requireValue(Number.isSafeInteger(row.rank) && row.rank >= Math.max(1, rank) && (index !== 0 || row.rank === 1)
+          && Number.isFinite(row.points) && row.points >= 0 && row.points <= points, 'Invalid World Cup rank or points');
+        plainText(row.name, 160);
+        requireValue(/^[A-Z*]{3}$/.test(row.nation) && (row.uciId === null || /^\d{11}$/.test(row.uciId)), 'Invalid World Cup rider identity');
+        requireValue(row.uciId === null || !ids.has(row.uciId), 'Duplicate World Cup rider');
+        if (row.uciId) ids.add(row.uciId);
+        rank = row.rank; points = row.points;
+      }
+    }
+    return { worldCup: previous.worldCup, checkedAt };
+  } catch { return null; }
+}
+
+async function fetchWorldCup(seasons, options, previous) {
+  const cached = validatedPreviousWorldCup(previous, options.now);
+  try {
+    const worldCup = {};
+    for (const [key, category] of Object.entries(WORLD_CUP_CATEGORIES)) {
+      const source = await fetchCategory(category, seasons, { ...options, attempts: Math.min(options.attempts, 2), timeoutMs: 15000 });
+      requireValue(!cached || source.ranking.rankingDate >= cached.worldCup[key].rankingDate, `Refusing older ${key} World Cup standings`);
+      worldCup[key] = source.ranking;
+    }
+    return { worldCup, worldCupMeta: { status: 'current', checkedAt: options.now.toISOString(), lastAttemptAt: options.now.toISOString() } };
+  } catch (error) {
+    return { ...(cached ? { worldCup: cached.worldCup } : {}), worldCupMeta: {
+      status: cached ? 'stale' : 'unavailable', checkedAt: cached?.checkedAt || null,
+      lastAttemptAt: options.now.toISOString(), reason: String(error.message).slice(0, 240),
+    } };
+  }
+}
+
+export async function fetchRankings({ fetchImpl = fetch, now = new Date(), previous = null, attempts = 3, trackedUciIds = [], baseUrl = BASE } = {}) {
+  requireValue(OFFICIAL_BASES.has(baseUrl), 'Only official UCI DataRide sources are allowed');
+  const options = { fetchImpl, now, attempts, baseUrl };
   const response = await fetchJson('/iframe/GetDisciplineSeasons/?disciplineId=13', options);
   requireValue(Array.isArray(response), 'UCI season catalogue is invalid');
   const seasons = response.filter(season => Number.isSafeInteger(season.Id) && Number.isSafeInteger(season.Year) && season.Year <= now.getUTCFullYear())
@@ -276,6 +340,7 @@ export async function fetchRankings({ fetchImpl = fetch, now = new Date(), previ
   }
   const snapshot = { schemaVersion: 1, checkedAt: now.toISOString(), categories };
   validateProgression(snapshot, previous);
+  Object.assign(snapshot, await fetchWorldCup(seasons, options, previous));
   snapshot.eventBreakdowns = await fetchTrackedBreakdowns(sources, trackedUciIds, options, previous);
   return snapshot;
 }
@@ -326,6 +391,13 @@ export async function loadPublishedPrevious({ fetchImpl = fetch, fallbackPath = 
       if (!candidates[id]?.checkedAt || Date.parse(entry.checkedAt) > Date.parse(candidates[id].checkedAt)) candidates[id] = entry;
     }
     result.eventBreakdowns = candidates;
+    const seedCup = validatedPreviousWorldCup(seed);
+    const publishedCup = validatedPreviousWorldCup(result);
+    if (seedCup && (!publishedCup || ['men', 'women'].every(key => seedCup.worldCup[key].rankingDate >= publishedCup.worldCup[key].rankingDate)
+      && Date.parse(seedCup.checkedAt) > Date.parse(publishedCup.checkedAt))) {
+      result.worldCup = seedCup.worldCup;
+      result.worldCupMeta = { ...seed.worldCupMeta, checkedAt: seedCup.checkedAt };
+    }
     return result;
   } catch {
     return seed;
@@ -334,16 +406,18 @@ export async function loadPublishedPrevious({ fetchImpl = fetch, fallbackPath = 
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length !== 2 || args[0] !== '--output') {
-    console.error('Usage: node tools/update-uci-rankings.mjs --output data/uci-rankings.json');
+  if (![2, 4].includes(args.length) || args[0] !== '--output' || (args.length === 4 && args[2] !== '--base')) {
+    console.error('Usage: node tools/update-uci-rankings.mjs --output data/uci-rankings.json [--base https://dataride.uci.ch]');
     process.exitCode = 1;
   } else {
     try {
       const config = JSON.parse(await readFile(new URL('../data/uci-tracked-riders.json', import.meta.url), 'utf8'));
       requireValue(config.schemaVersion === 1, 'Unsupported tracked-rider config');
       const previous = await loadPublishedPrevious();
-      const snapshot = await updateSnapshot(resolve(args[1]), { previous, trackedUciIds: config.uciIds });
+      const snapshot = await updateSnapshot(resolve(args[1]), { previous, trackedUciIds: config.uciIds, ...(args[3] ? { baseUrl: args[3] } : {}) });
       for (const [key, category] of Object.entries(snapshot.categories)) console.log(`${key}: ${category.rows.length} riders, official ranking ${category.rankingDate}`);
+      console.log(`World Cup overall: ${snapshot.worldCupMeta.status}`);
+      for (const [key, category] of Object.entries(snapshot.worldCup || {})) console.log(`World Cup ${key}: ${category.rows.length} riders, official ranking ${category.rankingDate}`);
       const results = Object.values(snapshot.eventBreakdowns);
       console.log(`Official event breakdowns: ${results.filter(row => row.status === 'current').length} current, ${results.filter(row => row.status === 'stale').length} retained stale, ${results.filter(row => row.status === 'unavailable').length} unavailable`);
       console.log(`Verified snapshot written to ${args[1]}`);

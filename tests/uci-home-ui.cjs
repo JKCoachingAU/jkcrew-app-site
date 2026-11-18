@@ -44,9 +44,15 @@ const extract = name => {
             { uciId: '10000000003', name: 'NORRIS Alirah', nation: 'AUS', rank: 18, points: 1985, change: -1 },
           ] },
         },
+        worldCup: {
+          men: { rankingDate: '2026-10-17', sourceUrl: 'https://dataride.uci.ch/iframe/RankingDetails/272', rows: [{ uciId: '10000000001', name: 'KINDERMANN Lars', nation: 'GER', rank: 10, points: 1180 }] },
+          women: { rankingDate: '2026-10-18', sourceUrl: 'https://dataride.uci.ch/iframe/RankingDetails/273', rows: [{ uciId: '10000000003', name: 'NORRIS Alirah', nation: 'AUS', rank: 12, points: 400 }] },
+        },
+        worldCupMeta: { status: 'current', checkedAt: '2026-10-23T04:56:38.276Z', lastAttemptAt: '2026-10-23T04:56:38.276Z' },
       };
       const findRider = window.JKCUciRankings.findRider;
-      window.JKCUciRankings = { findRider, load: async options => {
+      const findWorldCupRider = window.JKCUciRankings.findWorldCupRider;
+      window.JKCUciRankings = { findRider, findWorldCupRider, load: async options => {
         qa.calls.push(options || {});
         const snapshot = { ...structuredClone(qaSnapshot), stale: qa.stale };
         if (qa.hold) await new Promise(resolve => qa.pending.push(resolve));
@@ -77,12 +83,17 @@ const extract = name => {
     ok(/2[,.]?610/.test(text), 'Home shows UCI points');
     ok(/Men/.test(text), 'Home identifies the official Men category');
     ok(text.includes('20 Oct 2026'), 'Official ranking date is visible');
+    eq(await page.locator('.home-uci-rank').textContent(), '#13', 'Primary Home rank remains the world ranking');
+    ok((await page.locator('.home-uci-world-cup').textContent()).includes('World Cup overall #10 · 1,180 points'), 'Home separately shows World Cup tenth and its own point total');
+    ok((await page.locator('.home-uci-world-cup').textContent()).includes('17 Oct 2026'), 'World Cup line has its own official publication date');
     ok(await page.locator('[data-home-uci-tracker]').isVisible(), 'Positive official points show Road to LA28 shortcut');
     ok(await page.locator('[data-la28-countdown] [role="timer"]').isVisible(), 'Positive official Men points show the live LA28 countdown');
     eq(await page.locator('[data-la28-value]').count(), 3, 'Home countdown displays days, hours and minutes');
     eq(await page.evaluate(() => qa.calls.length), 1, 'Countdown reuses the Home ranking result without another download');
+    await page.evaluate(() => { state.boardUciStandingMode = 'worldCup'; });
     await page.locator('[data-home-uci-board]').click();
     eq(await page.evaluate(() => [qa.navigations.at(-1), state.boardLeaderboardView, state.boardUciSearch]), ['board', 'uciMen', 'KINDERMANN Lars'], 'Ranking opens the matching leaderboard and rider');
+    eq(await page.evaluate(() => state.boardUciStandingMode), 'world', 'View world rankings cannot accidentally retain a prior World Cup mode');
 
     await page.evaluate(() => qaRender('10000000003', 'Ali'));
     text = await page.locator('.home-uci-card').innerText();

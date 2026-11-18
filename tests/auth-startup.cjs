@@ -9,7 +9,7 @@ const messageStart=source.indexOf('const messageFrom = '),messageRest=source.sli
 const actualMessage=messageRest.slice(0,messageRest.indexOf('\n};')+3);
 const fixture=String.raw`
 const app=document.querySelector('#app');
-const state={session:null,user:null,profile:null,view:'home',authEventVersion:0,sessionSetupVersion:0,sessionHandlePromise:null,sessionHandleUserId:'',sessionReadyUserId:'',cache:{},inFlight:new Map(),athleteHomeRenderVersion:0,sessionRenderVersion:0,sessionViewerRenderVersion:0,loadingOverlayToken:0};
+const state={session:null,user:null,profile:null,view:'home',authEventVersion:0,sessionSetupVersion:0,sessionHandlePromise:null,sessionHandleUserId:'',sessionReadyUserId:'',cache:{},inFlight:new Map(),athleteHomeRenderVersion:0,sessionRenderVersion:0,sessionViewerRenderVersion:0,sessionViewerDataVersion:0,boardRenderVersion:0,boardRankingsRenderVersion:0,loadingOverlayToken:0,pendingAssignmentProgress:new Map(),pendingPercentageAttempts:new Map(),notificationUnread:[]};
 const PROFILE_SELECT='id,display_name,role,app_theme',RILEY_TEST_ACCOUNT_ID='test-only';let runUndoStack=[],runRedoStack=[];
 window.calls=[];window.paints=[];window.notices=[];window.errors=[];window.profileQueue={};window.sessionQueue=[];window.passwordQueue=[];window.recoveryQueue=[];window.timeoutOverrides={};window.recoveryUrl=false;
 window.defer=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject};};
@@ -23,12 +23,13 @@ const withTimeout=(promise,label,ms)=>testRealTimeout(promise,label,timeoutOverr
 const cancelScreenLoading=()=>{state.loadingOverlayToken++;app.inert=false;},loadingScreenCopy=()=>({}),beginScreenLoading=()=>++state.loadingOverlayToken,finishScreenLoading=()=>{};
 const closeJkcYard=()=>{},teardownRealtimeSync=()=>{},dismissDailyFinishForNavigation=()=>{},closeTrainingProgressViews=()=>{},closeAthleteReviewViewer=()=>{},closeContestEventModal=()=>{},closeEventCourseViewer=()=>{},resetVideoReviewPrivateState=()=>{},clearDailyFeatureMounts=()=>{},applyTheme=()=>{},recordMyAppOpen=()=>{},startRiderFeatureAccessWatch=()=>{},setupRealtimeSync=async()=>{},isRileyTestRoute=()=>false;
 const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false,riderRecoveryActive=()=>false;
-const refreshRiderFeatureAccess=async()=>true,isCoachRole=role=>role==='coach',notify=message=>notices.push(message);
+const refreshRiderFeatureAccess=async()=>true,refreshCoachAccountAccess=async()=>null,coachAccountBlocked=()=>false,startCoachApprovalWatch=()=>{},isCoachRole=role=>role==='coach',notify=message=>notices.push(message);
 const navigate=async view=>{state.view=view;paints.push({kind:'navigate',view,user:state.user?.id});};
 function renderShell(){paints.push({kind:'shell',user:state.user?.id,profile:state.profile?.id});app.innerHTML='<main id="view" data-user="'+escapeHtml(state.user?.id)+'" data-profile="'+escapeHtml(state.profile?.id)+'">Rider dashboard</main>';}
 const authHeroMarkup=()=>'',isPasswordRecoveryUrl=()=>recoveryUrl,cleanPasswordRecoveryUrl=()=>{recoveryUrl=false;},renderForgotPassword=()=>{app.innerHTML='<section id="forgot">Reset link required</section>';};
 function renderPasswordRecovery(){paints.push({kind:'recovery',user:state.user?.id});app.innerHTML='<section id="password-recovery">Choose a new password</section>';}
 const clearLocalAuthSession=()=>{};
+const cacheClear=()=>{state.cache={};};
 window.settle=()=>new Promise(resolve=>setTimeout(resolve,0));
 `;
 (async()=>{

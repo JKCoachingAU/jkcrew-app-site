@@ -41,7 +41,7 @@ const names = ['selectedVenueFor', 'venueSelectorHtml', 'dailySessionHubHtml', '
       window.qaRows = [{ id: 'daily', category: 'daily', venue: 'Ramp Attack' }];
       window.qaActive = { id: 'village-1', athlete_id: 'rider', daily_venue: 'The Village', started_at: '2026-11-15T23:19:00Z', ended_at: null };
       window.getWeeklyAssignments = () => { qa.calls.push('assignments'); return new Promise(resolve => { qa.releaseAssignments = () => resolve({ assignments: qaRows, awards: [] }); }); };
-      window.getLeaderboard = async () => { qa.calls.push('leaderboard'); return []; };
+      window.getAthleteHomeVerifiedLeaderboard = async () => { qa.calls.push('leaderboard'); return []; };
       window.client = { from: () => {
         const query = { then: resolve => { qa.calls.push('recent-training'); return Promise.resolve({ data: [] }).then(resolve); } };
         for (const method of ['select', 'eq', 'gte', 'order', 'limit']) query[method] = () => query;
@@ -60,7 +60,7 @@ const names = ['selectedVenueFor', 'venueSelectorHtml', 'dailySessionHubHtml', '
     // list, and a navigation during either read cannot change venue state.
     await page.evaluate(() => { window.qaRender = renderSession(); });
     await page.waitForFunction(() => qa.releaseActive && qa.releaseAssignments);
-    assert.deepEqual(await page.evaluate(() => [...qa.calls].sort()), ['active-training', 'assignments', 'leaderboard', 'recent-training']);
+    assert.deepEqual(await page.evaluate(() => [...qa.calls].sort()), ['active-training', 'assignments'], 'Only the current sheet and active timer are essential; old history and rankings wait for the sheet to paint');
     await page.evaluate(async () => { state.view = 'home'; qa.releaseActive(); qa.releaseAssignments(); await qaRender; });
     assert.equal(await page.evaluate(() => state.selectedVenue), 'Ramp Attack', 'Obsolete render never adopts a venue');
 

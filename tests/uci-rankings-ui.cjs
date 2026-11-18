@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.JKCREW_PLAYWRIGHT_PATH || 'playwright');
 const root = path.resolve(__dirname, '..');
+if (process.env.JKCREW_SCREENSHOT_DIR) fs.mkdirSync(process.env.JKCREW_SCREENSHOT_DIR, { recursive: true });
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const extract = name => {
   const start = app.search(new RegExp('^(?:async )?function ' + name + '\\(', 'm'));
@@ -41,7 +42,11 @@ const functions = ['boardLeaderboardViews', 'boardRankingsShellHtml', 'boardUciS
       };
       qaSnapshot.categories.men.rows[0].name = 'Éli Park';
       qaSnapshot.categories.men.rows[1].name = '<img src=x onerror="window.injected=true">';
-      window.JKCUciRankings = { findRider: JKCUciRankings.findRider, load: async options => {
+      qaSnapshot.categories.men.rows[2].name = 'KINDERMANN Lars';
+      qaSnapshot.worldCup = Object.fromEntries(['men', 'women'].map((key, gender) => [key, { rankingDate: '2026-10-17', sourceUrl: `https://dataride.uci.org/iframe/RankingDetails/${272 + gender}?categoryId=${22 + gender}&disciplineId=13&groupId=${171 + gender}&raceTypeId=137&rankingTypeId=1`, rows: Array.from({ length: 10 }, (_, i) => ({ rank: i + 1, name: `${key} Cup rider ${i}`, nation: 'AUS', points: 2000 - i * 30, uciId: String((gender ? 20000000050 : 10000000050) + i) })) }]));
+      qaSnapshot.worldCup.men.rows[9] = { rank: 10, name: 'KINDERMANN Lars', nation: 'GER', points: 1180, uciId: '10000000002' };
+      qaSnapshot.worldCupMeta = { status: 'current', checkedAt: qaSnapshot.checkedAt, lastAttemptAt: qaSnapshot.checkedAt };
+      window.JKCUciRankings = { findRider: JKCUciRankings.findRider, findWorldCupRider: JKCUciRankings.findWorldCupRider, load: async options => {
         qa.uci.push(options); const snapshot = { ...structuredClone(qaSnapshot), stale: qa.stale };
         if (qa.delayNext) { qa.delayNext = false; await new Promise(resolve => { qa.release = resolve; }); }
         if (qa.fail) throw Error('Synthetic failure');
@@ -108,6 +113,51 @@ const functions = ['boardLeaderboardViews', 'boardRankingsShellHtml', 'boardUciS
     await choose('uciWomen'); await waitUci();
     eq(await page.locator('[data-uci-search]').inputValue(), '', 'Changing category clears the previous category search');
     ok((await page.locator('.uci-rider strong').first().textContent()).startsWith('women'), 'Women tab displays the correct official category');
+    eq(await page.locator('[data-uci-standing-mode]').inputValue(), 'world', 'World rankings remain the default ranking type');
+    await page.locator('[data-uci-standing-mode]').selectOption('worldCup'); await waitUci();
+    ok((await page.locator('.panel-title').first().textContent()).includes('Women’s World Cup Overall'), 'World Cup mode preserves the selected gender');
+    ok((await page.locator('.uci-rider strong').first().textContent()).startsWith('women Cup'), 'Women World Cup uses its own official category');
+    await choose('uciMen'); await waitUci();
+    eq(await page.locator('[data-uci-standing-mode]').inputValue(), 'worldCup', 'Switching gender keeps World Cup mode');
+    await page.locator('[data-uci-search]').fill('Kindermann');
+    eq(await page.locator('[data-uci-rows] .uci-rank').textContent(), '10', 'Lars is tenth in World Cup overall');
+    eq(await page.locator('[data-uci-rows] .uci-points').textContent(), '1,180', 'World Cup points are not world-ranking points');
+    eq(await page.locator('.uci-ranking-date time').textContent(), '17 Oct 2026', 'World Cup has its own publication date');
+    ok((await page.locator('.uci-source-link').getAttribute('href')).includes('/272?'), 'World Cup opens the World Cup source');
+    eq(await page.locator('.uci-standing-explanation').count(), 1, 'The two ranking types are explained clearly');
+    for (const theme of ['dark', 'light']) for (const width of [320, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      eq(await page.locator('[data-board-rankings]').evaluate(panel => panel.scrollWidth > panel.clientWidth + 1), false, `${theme} World Cup table and selector fit ${width}px`);
+      ok((await page.locator('[data-uci-standing-mode]').boundingBox()).height >= 44, 'Ranking type selector has a touch target');
+      if (process.env.JKCREW_SCREENSHOT_DIR && [390, 1440].includes(width)) await page.locator('[data-board-rankings]').screenshot({ path: path.join(process.env.JKCREW_SCREENSHOT_DIR, `uci-world-cup-${theme}-${width}.png`) });
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => { qaSnapshot.worldCupMeta.status = 'stale'; });
+    await page.locator('[data-uci-retry]').click(); await waitUci();
+    ok(await page.locator('.uci-refresh-status.is-stale').isVisible(), 'Failed World Cup refresh labels retained standings stale');
+    await page.locator('[data-uci-standing-mode]').selectOption('world'); await waitUci();
+    eq(await page.locator('.uci-refresh-status.is-stale').count(), 0, 'Fresh world rankings remain current during a World Cup-only source failure');
+    await page.evaluate(() => { qaSnapshot.worldCupMeta.status = 'current'; });
+    await page.locator('[data-uci-search]').fill('Kindermann');
+    eq(await page.locator('[data-uci-rows] .uci-rank').textContent(), '13', 'Switching back keeps the official world rank thirteen');
+    eq(await page.locator('.uci-ranking-date time').textContent(), '20 Oct 2026', 'World ranking keeps its separate date');
+    await page.evaluate(() => { qa.savedCup = qaSnapshot.worldCup; delete qaSnapshot.worldCup; });
+    await page.locator('[data-uci-standing-mode]').selectOption('worldCup');
+    await page.getByText('World Cup standings aren’t available yet').waitFor();
+    eq(await page.locator('[data-uci-rows]').count(), 0, 'Missing World Cup feed never substitutes world-ranking rows');
+    ok(await page.locator('[data-uci-standing-mode]').isVisible(), 'Selector remains available through a missing-source state');
+    await page.locator('[data-uci-standing-mode]').selectOption('world'); await waitUci();
+    await page.evaluate(() => { qaSnapshot.worldCup = qa.savedCup; });
+    await page.evaluate(() => { qa.delayNext = true; });
+    await page.locator('[data-uci-standing-mode]').selectOption('worldCup');
+    await page.waitForFunction(() => Boolean(qa.release));
+    await page.locator('[data-uci-standing-mode]').selectOption('world'); await waitUci();
+    await page.evaluate(() => { qa.release(); qa.release = null; });
+    await page.waitForTimeout(25);
+    ok((await page.locator('.panel-title').first().textContent()).includes('World Rankings'), 'A late World Cup response cannot replace a newer world-ranking selection');
+    await page.evaluate(() => { qaSnapshot.categories.men.rows[2].name = 'men Rider 2'; });
+    await choose('uciWomen'); await waitUci();
     eq(await page.locator('#board-message').inputValue(), 'Keep this unsent message', 'Switching leaderboard keeps typed chat');
     eq(await page.locator('#qa-clip').evaluate(input => input.files[0]?.name), 'riding.webm', 'Switching leaderboard keeps selected chat video');
     eq(await page.evaluate(() => qa.reads), initialReads, 'Switching tabs does not refetch JKC, chat or coach reports');
