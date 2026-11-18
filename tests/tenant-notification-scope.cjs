@@ -102,6 +102,7 @@ async function databaseChecks() {
     insert into push_notification_queue(id,recipient_id,notification_type,payload) values('${id(303)}','${id(6)}','park_king_changed','{"event_id":"${id(201)}","athlete_id":"${id(2)}"}');
   `);
   await db.exec(fragmentSource());
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261118220526_scope_rank_notification_refresh_work.sql'),'utf8'));
   const cases = [
     ['park_king_changed',{event_id:id(201),athlete_id:id(2)},3],
     ['crew_chat',{post_id:id(202),author_id:id(1)},2],
@@ -166,6 +167,28 @@ async function databaseChecks() {
   const before=await val('select count(*)::int from push_notification_queue');
   await q('select private.refresh_jkcrew_leaderboard_push_snapshots($1,$2)',[id(5),'foreign-change']);
   eq(await val('select count(*)::int from push_notification_queue'),before,'A foreign score change does not emit an own-team rank notification');
+  const foreignSnapshot=await val('select to_jsonb(s) from leaderboard_rank_snapshots s where athlete_id=$1',[id(5)]);
+  await q('select private.refresh_jkcrew_leaderboard_push_snapshots($1,$2)',[id(2),'own-change']);
+  eq(await val('select to_jsonb(s) from leaderboard_rank_snapshots s where athlete_id=$1',[id(5)]),foreignSnapshot,'Own scoring refresh never updates another team’s snapshot');
+  eq((await q('select athlete_id from private.jkcrew_push_rankings_for_team($1) order by athlete_id',[id(101)])).rows.map(r=>r.athlete_id),[id(2),id(3)],'Changed-team ranking computes only that team');
+  await db.exec(`
+    alter function private.refresh_jkcrew_leaderboard_push_snapshots(uuid,text) rename to fixture_real_rank_refresh;
+    create table private.fixture_refresh_calls(n integer);
+    create function private.refresh_jkcrew_leaderboard_push_snapshots(uuid,text) returns void language plpgsql as $$begin insert into private.fixture_refresh_calls values(1);perform private.fixture_real_rank_refresh($1,$2);end$$;
+    create trigger fixture_session_rank after insert or delete or update of total_points on training_sessions for each row execute function private.handle_jkcrew_leaderboard_push_change();
+    alter table assignment_point_awards add column id uuid default gen_random_uuid();
+    create trigger fixture_award_rank after insert or delete or update on assignment_point_awards for each row execute function private.handle_jkcrew_leaderboard_push_change();
+  `);
+  await q("insert into training_sessions values($1,$2,0,'2026-11-16')",[id(801),id(2)]);
+  eq(await val('select count(*)::int from private.fixture_refresh_calls'),0,'Starting a zero-point session does not rebuild ranks');
+  await q('delete from training_sessions where id=$1',[id(801)]);
+  eq(await val('select count(*)::int from private.fixture_refresh_calls'),0,'Deleting a zero-point session does not rebuild ranks');
+  await q("insert into training_sessions values($1,$2,3,'2026-11-16')",[id(802),id(2)]);
+  eq(await val('select count(*)::int from private.fixture_refresh_calls'),1,'Legacy session points still refresh ranks');
+  await q("insert into assignment_point_awards(session_id,athlete_id,points,created_at)values($1,$2,2,'2026-11-16')",[id(802),id(2)]);
+  eq(await val('select count(*)::int from private.fixture_refresh_calls'),2,'A positive trick receipt refreshes live ranks');
+  await q('update training_sessions set total_points=99 where id=$1',[id(802)]);
+  eq(await val('select count(*)::int from private.fixture_refresh_calls'),2,'Modern session totals do not repeat their award’s rank work');
   // Real sources are often inserted in an outer statement, with notifications
   // queued by an AFTER trigger. The scope guard must see that source immediately.
   await db.exec(`

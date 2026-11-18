@@ -193,12 +193,12 @@ class SharedBackend {
           check((await rider.page.locator('#view').textContent()).includes(rider.name + ' MANUAL'), 'Daily sheet uses the correct rider content');
         } catch (error) { rider.trainingError = String(error.message); }
       }));
-      // Record the outage result before releasing nonessential services. Baseline
-      // mode then continues so it can report eventual recovery as well.
+      // Keep optional services stalled through the timer and partial-tick actions.
+      // Baseline mode releases them early only to report eventual recovery.
       const beforeRelease = { homes: riders.filter(r => !r.homeError).length, training: riders.filter(r => !r.homeError && !r.trainingError).length };
       const trainingApiRequests = riders.reduce((sum, rider) => sum + rider.calls.length, 0);
-      backend.releaseOptional();
       if (baseline) {
+        backend.releaseOptional();
         await Promise.all(riders.filter(r => !r.homeError && r.trainingError).map(async rider => {
           try { await rider.page.locator('#create-session').waitFor({ timeout: 10000 }); delete rider.trainingError; } catch (_) {}
         }));
@@ -207,20 +207,30 @@ class SharedBackend {
       await Promise.all(riders.map(async rider => {
         if (rider.homeError || rider.trainingError) return;
         try {
+          rider.actionStage = 'start timer';
           await rider.page.locator('#create-session').click();
           await rider.page.locator('#trick-timer').waitFor();
+          rider.actionStage = 'open daily list';
           await rider.page.locator('[data-daily-venue] > summary').first().click();
           const button = rider.page.locator(`[data-assignment-id="${rider.assignments[0].id}"][data-assignment-action="landed"]`).first();
+          rider.actionStage = 'tap daily trick';
           await button.click();
+          rider.actionStage = 'render completed trick';
           await rider.page.waitForFunction(id => document.querySelector(`[data-assignment-id="${id}"]`)?.classList.contains('complete'), rider.assignments[0].id);
+          rider.actionStage = 'finish refresh';
           await rider.page.waitForFunction(() => !document.querySelector('#app').inert);
+          rider.actionStage = 'confirm saved status';
           await rider.page.waitForFunction(() => document.querySelector('#sync-status b')?.textContent === 'Saved');
           rider.actionMs = Date.now() - actionStart;
           eq(rider.tickSaves, 1, 'One real UI tap saves exactly one synthetic Daily tick');
           eq(rider.progress[0].athlete_id, rider.id, 'Saved progress belongs to the same rider');
           eq(rider.active.total_points, 0, 'One partial Daily trick does not mint a full-list point');
-        } catch (error) { rider.actionError = String(error.message); }
+        } catch (error) {
+          rider.actionError = `${rider.actionStage}: ${error.message}`;
+          rider.actionState = { tickSaves: rider.tickSaves, progress: rider.progress, dom: await rider.page.evaluate(() => ({ view: typeof state === 'undefined' ? null : state.view, inert: document.querySelector('#app')?.inert, sync: document.querySelector('#sync-status b')?.textContent, complete: document.querySelectorAll('.assignment-row.complete').length, status: document.querySelector('#view')?.getAttribute('aria-busy') })) };
+        }
       }));
+      if (!baseline) beforeRelease.actions = riders.filter(r => !r.homeError && !r.trainingError && !r.actionError).length;
       const report = {
         mode, riders: riderCount, optionalOutage: true, primaryConcurrencyLimit: backend.limit, maxPrimaryConcurrency: backend.maxActive, maxQueuedPrimary: backend.maxQueue,
         beforeOptionalRelease: beforeRelease, successes: riders.filter(r => !r.homeError && !r.trainingError && !r.actionError).length,
@@ -230,7 +240,7 @@ class SharedBackend {
         passwordGrants: riders.reduce((sum, rider) => sum + rider.calls.filter(call => call.endpoint === '/auth/v1/token').length, 0),
         maxProfileAttempts: Math.max(...riders.map(r => r.calls.filter(call => call.criticalProfile).length)),
         abortedApiRequests: riders.reduce((sum, rider) => sum + rider.failedRequests.filter(request => request.api).length, 0),
-        errors: riders.filter(r => r.homeError || r.trainingError || r.actionError || r.errors.length || r.failures.length).map(r => ({ rider: r.n, home: r.homeError, training: r.trainingError, action: r.actionError, errors: r.errors, scope: r.failures })),
+        errors: riders.filter(r => r.homeError || r.trainingError || r.actionError || r.errors.length || r.failures.length).map(r => ({ rider: r.n, home: r.homeError, training: r.trainingError, action: r.actionError, actionState: r.actionState, errors: r.errors, scope: r.failures })),
       };
       reports.push(report);
       console.log(JSON.stringify(report));
@@ -238,6 +248,7 @@ class SharedBackend {
       if (!baseline) {
         eq(beforeRelease.homes, riderCount, `${mode}: all ${riderCount} start screens work before optional services recover`);
         eq(beforeRelease.training, riderCount, `${mode}: all ${riderCount} Daily sheets work before optional services recover`);
+        eq(beforeRelease.actions, riderCount, `${mode}: all ${riderCount} timers start and partial ticks save before optional services recover`);
         eq(report.successes, riderCount, `${mode}: every rider can start and save a Daily trick`);
         eq(report.errors, [], `${mode}: no script, rendering, ownership or interaction errors`);
         check(report.homeMs.max < 12000, `${mode}: bounded Home startup`);

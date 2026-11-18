@@ -1,0 +1,663 @@
+{
+  "test": "15 independent hosted HTTPS clients",
+  "started_utc": "2026-11-18T22:48:28.248373+00:00",
+  "finished_utc": "2026-11-18T22:48:49.290477+00:00",
+  "fixture": {
+    "isolated_coaches": 1,
+    "riders": 15,
+    "current_daily_assignments": 150,
+    "weekly_one_bang_assignments": 15,
+    "initial_point_receipts": 15,
+    "new_positive_receipts": 15,
+    "training_sessions_created": 15,
+    "real_rider_writes": 0
+  },
+  "phases": [
+    {
+      "phase": "fresh-sign-in",
+      "passed": 15,
+      "failed": 0,
+      "p50_ms": 2352,
+      "p95_ms": 2477,
+      "max_ms": 2477,
+      "peak_overlapping_stage_requests": 15,
+      "optional_failures": 0
+    },
+    {
+      "phase": "refresh-token",
+      "passed": 15,
+      "failed": 0,
+      "p50_ms": 771,
+      "p95_ms": 792,
+      "max_ms": 792,
+      "peak_overlapping_stage_requests": 15,
+      "optional_failures": 0
+    },
+    {
+      "phase": "restored-session",
+      "passed": 15,
+      "failed": 0,
+      "p50_ms": 3847,
+      "p95_ms": 7897,
+      "max_ms": 7897,
+      "peak_overlapping_stage_requests": 15,
+      "optional_failures": 0
+    },
+    {
+      "phase": "start-daily",
+      "passed": 15,
+      "failed": 0,
+      "p50_ms": 742,
+      "p95_ms": 790,
+      "max_ms": 790,
+      "peak_overlapping_stage_requests": 15,
+      "optional_failures": 0
+    },
+    {
+      "phase": "positive-one-bang",
+      "passed": 15,
+      "failed": 0,
+      "p50_ms": 4074,
+      "p95_ms": 4202,
+      "max_ms": 4202,
+      "peak_overlapping_stage_requests": 15,
+      "optional_failures": 0
+    },
+    {
+      "phase": "idempotent-retick",
+      "passed": 15,
+      "failed": 0,
+      "p50_ms": 255,
+      "p95_ms": 306,
+      "max_ms": 306,
+      "peak_overlapping_stage_requests": 15,
+      "optional_failures": 0
+    }
+  ],
+  "total_requests": 376,
+  "http_failures": 0,
+  "verification": {
+    "final_points_each": 4,
+    "receipts_each": 2,
+    "positive_attempts_each_after_retick": 1,
+    "synthetic_auth_users_deleted": 16,
+    "synthetic_auth_users_remaining": 0,
+    "original_edge_restored": true
+  },
+  "limitations": [
+    "Synthetic training lists have 11 assignments per rider and limited history. Separate full-result parity checks verify unchanged results for the existing 35-rider dataset; they do not simulate simultaneous full-history loads.",
+    "Hosted requests do not simulate shared skatepark Wi-Fi or every possible network condition. Startup timing varies under load."
+  ],
+  "clients": [
+    {
+      "rider": 1,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2472,
+      "total_ms": 3313,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 2,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2422,
+      "total_ms": 3160,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 3,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2383,
+      "total_ms": 3297,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 4,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2290,
+      "total_ms": 2931,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 5,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2320,
+      "total_ms": 3245,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 6,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2477,
+      "total_ms": 3315,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 7,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2352,
+      "total_ms": 3033,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 8,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2361,
+      "total_ms": 3048,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 9,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2332,
+      "total_ms": 2867,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 10,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2267,
+      "total_ms": 3091,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 11,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2350,
+      "total_ms": 3296,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 12,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2439,
+      "total_ms": 3227,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 13,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2330,
+      "total_ms": 3235,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 14,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2354,
+      "total_ms": 3265,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 15,
+      "round": "fresh-sign-in",
+      "training_ready_ms": 2238,
+      "total_ms": 2587,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 1,
+      "stage": "refresh-token",
+      "elapsed_ms": 744
+    },
+    {
+      "rider": 2,
+      "stage": "refresh-token",
+      "elapsed_ms": 787
+    },
+    {
+      "rider": 3,
+      "stage": "refresh-token",
+      "elapsed_ms": 784
+    },
+    {
+      "rider": 4,
+      "stage": "refresh-token",
+      "elapsed_ms": 755
+    },
+    {
+      "rider": 5,
+      "stage": "refresh-token",
+      "elapsed_ms": 792
+    },
+    {
+      "rider": 6,
+      "stage": "refresh-token",
+      "elapsed_ms": 775
+    },
+    {
+      "rider": 7,
+      "stage": "refresh-token",
+      "elapsed_ms": 789
+    },
+    {
+      "rider": 8,
+      "stage": "refresh-token",
+      "elapsed_ms": 751
+    },
+    {
+      "rider": 9,
+      "stage": "refresh-token",
+      "elapsed_ms": 778
+    },
+    {
+      "rider": 10,
+      "stage": "refresh-token",
+      "elapsed_ms": 749
+    },
+    {
+      "rider": 11,
+      "stage": "refresh-token",
+      "elapsed_ms": 754
+    },
+    {
+      "rider": 12,
+      "stage": "refresh-token",
+      "elapsed_ms": 766
+    },
+    {
+      "rider": 13,
+      "stage": "refresh-token",
+      "elapsed_ms": 738
+    },
+    {
+      "rider": 14,
+      "stage": "refresh-token",
+      "elapsed_ms": 771
+    },
+    {
+      "rider": 15,
+      "stage": "refresh-token",
+      "elapsed_ms": 782
+    },
+    {
+      "rider": 1,
+      "round": "restored-session",
+      "training_ready_ms": 6743,
+      "total_ms": 8164,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 2,
+      "round": "restored-session",
+      "training_ready_ms": 4357,
+      "total_ms": 8588,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 3,
+      "round": "restored-session",
+      "training_ready_ms": 4332,
+      "total_ms": 8369,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 4,
+      "round": "restored-session",
+      "training_ready_ms": 5413,
+      "total_ms": 8459,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 5,
+      "round": "restored-session",
+      "training_ready_ms": 5442,
+      "total_ms": 8384,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 6,
+      "round": "restored-session",
+      "training_ready_ms": 3114,
+      "total_ms": 6749,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 7,
+      "round": "restored-session",
+      "training_ready_ms": 3249,
+      "total_ms": 8287,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 8,
+      "round": "restored-session",
+      "training_ready_ms": 3847,
+      "total_ms": 7983,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 9,
+      "round": "restored-session",
+      "training_ready_ms": 3181,
+      "total_ms": 7603,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 10,
+      "round": "restored-session",
+      "training_ready_ms": 3236,
+      "total_ms": 7653,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 11,
+      "round": "restored-session",
+      "training_ready_ms": 5379,
+      "total_ms": 8370,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 12,
+      "round": "restored-session",
+      "training_ready_ms": 3791,
+      "total_ms": 8109,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 13,
+      "round": "restored-session",
+      "training_ready_ms": 7897,
+      "total_ms": 8382,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 14,
+      "round": "restored-session",
+      "training_ready_ms": 3196,
+      "total_ms": 7949,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 15,
+      "round": "restored-session",
+      "training_ready_ms": 3189,
+      "total_ms": 8012,
+      "daily_count": 10,
+      "board_count": 15,
+      "optional_errors": []
+    },
+    {
+      "rider": 1,
+      "stage": "start-daily",
+      "elapsed_ms": 763
+    },
+    {
+      "rider": 2,
+      "stage": "start-daily",
+      "elapsed_ms": 787
+    },
+    {
+      "rider": 3,
+      "stage": "start-daily",
+      "elapsed_ms": 766
+    },
+    {
+      "rider": 4,
+      "stage": "start-daily",
+      "elapsed_ms": 696
+    },
+    {
+      "rider": 5,
+      "stage": "start-daily",
+      "elapsed_ms": 778
+    },
+    {
+      "rider": 6,
+      "stage": "start-daily",
+      "elapsed_ms": 721
+    },
+    {
+      "rider": 7,
+      "stage": "start-daily",
+      "elapsed_ms": 713
+    },
+    {
+      "rider": 8,
+      "stage": "start-daily",
+      "elapsed_ms": 756
+    },
+    {
+      "rider": 9,
+      "stage": "start-daily",
+      "elapsed_ms": 672
+    },
+    {
+      "rider": 10,
+      "stage": "start-daily",
+      "elapsed_ms": 759
+    },
+    {
+      "rider": 11,
+      "stage": "start-daily",
+      "elapsed_ms": 690
+    },
+    {
+      "rider": 12,
+      "stage": "start-daily",
+      "elapsed_ms": 733
+    },
+    {
+      "rider": 13,
+      "stage": "start-daily",
+      "elapsed_ms": 709
+    },
+    {
+      "rider": 14,
+      "stage": "start-daily",
+      "elapsed_ms": 742
+    },
+    {
+      "rider": 15,
+      "stage": "start-daily",
+      "elapsed_ms": 790
+    },
+    {
+      "rider": 1,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4202
+    },
+    {
+      "rider": 2,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4080
+    },
+    {
+      "rider": 3,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4087
+    },
+    {
+      "rider": 4,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4056
+    },
+    {
+      "rider": 5,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4053
+    },
+    {
+      "rider": 6,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4070
+    },
+    {
+      "rider": 7,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4077
+    },
+    {
+      "rider": 8,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4056
+    },
+    {
+      "rider": 9,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4072
+    },
+    {
+      "rider": 10,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4081
+    },
+    {
+      "rider": 11,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4059
+    },
+    {
+      "rider": 12,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4092
+    },
+    {
+      "rider": 13,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4127
+    },
+    {
+      "rider": 14,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4074
+    },
+    {
+      "rider": 15,
+      "stage": "positive-one-bang",
+      "elapsed_ms": 4058
+    },
+    {
+      "rider": 1,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 265
+    },
+    {
+      "rider": 2,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 276
+    },
+    {
+      "rider": 3,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 306
+    },
+    {
+      "rider": 4,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 186
+    },
+    {
+      "rider": 5,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 184
+    },
+    {
+      "rider": 6,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 303
+    },
+    {
+      "rider": 7,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 255
+    },
+    {
+      "rider": 8,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 221
+    },
+    {
+      "rider": 9,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 256
+    },
+    {
+      "rider": 10,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 226
+    },
+    {
+      "rider": 11,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 171
+    },
+    {
+      "rider": 12,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 245
+    },
+    {
+      "rider": 13,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 203
+    },
+    {
+      "rider": 14,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 290
+    },
+    {
+      "rider": 15,
+      "stage": "idempotent-retick",
+      "elapsed_ms": 269
+    }
+  ]
+}
