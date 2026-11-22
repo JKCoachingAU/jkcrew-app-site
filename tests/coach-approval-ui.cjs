@@ -8,7 +8,7 @@ const extract = name => {
   assert(start >= 0, `Actual ${name} exists`);
   const tail = app.slice(start); return tail.slice(0, tail.indexOf('\n}') + 2);
 };
-const functions = ['authHeroMarkup', 'renderAuth', 'handleAuth', 'beginAuthFormRequest', 'showAuthFormMessage', 'setButtonBusy', 'coachAccountBlocked', 'refreshCoachAccountAccess', 'renderCoachApprovalScreen', 'startCoachApprovalWatch', 'handleSession', 'renderShell', 'navigate', 'renderTeams', 'setCoachAccountAccess'];
+const functions = ['authHeroMarkup', 'renderAuth', 'handleAuth', 'beginAuthFormRequest', 'showAuthFormMessage', 'signupInviteMessage', 'signupErrorMessage', 'isTransientRequestError', 'setButtonBusy', 'coachAccountBlocked', 'refreshCoachAccountAccess', 'renderCoachApprovalScreen', 'startCoachApprovalWatch', 'handleSession', 'renderShell', 'navigate', 'renderTeams', 'setCoachAccountAccess'];
 const screenshots = process.env.JKCREW_SCREENSHOT_DIR;
 if (screenshots) fs.mkdirSync(screenshots, { recursive: true });
 (async () => {
@@ -122,25 +122,27 @@ if (screenshots) fs.mkdirSync(screenshots, { recursive: true });
     await page.locator('#role').selectOption('coach');
     ok(await page.locator('#coach-signup-fields').isVisible(), 'Coach signup exposes explicit team setup');
     ok((await page.locator('#coach-signup-fields').textContent()).includes('platform-owner approval'), 'Signup explains approval before access');
+    const coachSignupCode = 'AB12'.repeat(8);
     for (const role of ['head_coach', 'coach', 'assistant_coach']) {
       await page.locator('#coach-team-role').selectOption(role);
       eq(await page.locator('#coach-team-name').isVisible(), role === 'head_coach', 'Only a head coach creates a named team');
       eq(await page.locator('#coach-invite-code').isVisible(), role !== 'head_coach', 'Other coaches require an explicit invitation');
       await page.locator('#display-name').fill('Signup Coach'); await page.locator('#email').fill('coach@example.test'); await page.locator('#password').fill('fixture-password'); await page.locator('#coach-country').selectOption('DE');
-      if (role === 'head_coach') await page.locator('#coach-team-name').fill('Team Germany'); else await page.locator('#coach-invite-code').fill('EXPLICIT-INVITE');
+      if (role === 'head_coach') await page.locator('#coach-team-name').fill('Team Germany'); else await page.locator('#coach-invite-code').fill(coachSignupCode);
       await page.evaluate(async () => { await handleAuth({ preventDefault() {}, currentTarget: document.querySelector('#auth-form') }, 'signup'); });
       const body = await page.evaluate(() => qa.calls.filter(call => call.edge).at(-1).body);
-      eq([body.role, body.countryCode, body.countryName, body.teamRole, body.teamName, body.inviteCode], ['coach', 'DE', 'Germany', role, role === 'head_coach' ? 'Team Germany' : '', role === 'head_coach' ? '' : 'EXPLICIT-INVITE'], 'Coach signup sends explicit role/team/invite fields to the Edge function');
+      eq([body.role, body.countryCode, body.countryName, body.teamRole, body.teamName, body.inviteCode], ['coach', 'DE', 'Germany', role, role === 'head_coach' ? 'Team Germany' : '', role === 'head_coach' ? '' : coachSignupCode], 'Coach signup sends explicit role/team/invite fields to the Edge function');
     }
     await page.locator('#role').selectOption('athlete');
     eq(await page.locator('#coach-signup-fields input, #coach-signup-fields select').evaluateAll(inputs => inputs.every(input => input.disabled)), true, 'Hidden coach fields cannot affect athlete signup');
+    const memberSignupCode = 'EF34'.repeat(8);
     for (const role of ['athlete', 'parent']) {
       await page.locator('#role').selectOption(role);
       ok(await page.locator('#member-team-code').isVisible(), `${role}: signup offers a private team invite code`);
-      await page.locator('#member-team-code').fill('ROLE-SCOPED-MEMBER-INVITE');
+      await page.locator('#member-team-code').fill(memberSignupCode);
       await page.evaluate(async () => { await handleAuth({ preventDefault() {}, currentTarget: document.querySelector('#auth-form') }, 'signup'); });
       const body = await page.evaluate(() => qa.calls.filter(call => call.edge).at(-1).body);
-      eq([body.role, body.inviteCode, body.teamRole], [role, 'ROLE-SCOPED-MEMBER-INVITE', undefined], 'Family signup sends the invitation without self-selecting a coaching role');
+      eq([body.role, body.inviteCode, body.teamRole], [role, memberSignupCode, undefined], 'Family signup sends the invitation without self-selecting a coaching role');
     }
 
     await page.evaluate(async () => {
