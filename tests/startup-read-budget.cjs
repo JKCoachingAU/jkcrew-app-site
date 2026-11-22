@@ -52,7 +52,7 @@ async function summaryChecks() {
   const first = context.getAthleteHomeVerifiedLeaderboard(), second = context.getAthleteHomeVerifiedLeaderboard();
   await Promise.all([first, second]);
   eq(calls.length, 1, 'Home and training share one pending summary request');
-  eq(calls[0], { name: 'get_weekly_leaderboard_with_half_points', fields: 'athlete_id,weekly_points' }, 'Only IDs and verified scores are requested; photos are excluded');
+  eq(calls[0], { name: 'get_team_weekly_points' }, 'Only IDs and verified scores are requested; photos are excluded');
   await context.getAthleteHomeVerifiedLeaderboard();
   eq(calls.length, 1, 'Recently verified scores are reused');
   await context.getAthleteHomeVerifiedLeaderboard({ force: true });

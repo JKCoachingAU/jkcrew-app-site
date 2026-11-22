@@ -16,7 +16,7 @@ const names = [
   'cacheGet', 'cacheSet', 'cacheClear', 'getWeeklyAssignments',
   'canRefreshRiderSession', 'requestRiderSessionRefresh',
   'bindRiderSessionRefreshEvents', 'riderSessionRefreshButtonHtml', 'bindRiderSessionRefreshButton',
-  'renderSession', 'loadActiveSession', 'loadDailyFinishResults', 'dailyTrainingWithFinish', 'dailyVenues', 'newestDailyListForVenue', 'selectedVenueFor',
+  'waitForSessionGesture', 'renderSession', 'loadActiveSession', 'loadDailyFinishResults', 'dailyTrainingWithFinish', 'dailyVenues', 'newestDailyListForVenue', 'selectedVenueFor',
   'assignmentsForVenue', 'dailyVenueGroups', 'assignmentGroups',
   'extraTricks', 'extraTricksSection', 'bindExtraTrickActions',
   'rememberSessionExpansions', 'bindDailyVenueAccordions', 'bindSessionAssignmentAccordions',
@@ -57,8 +57,8 @@ const names = [
           qa.calls.push({ name, args });
           if (name === 'ensure_current_week_assignments') return { error: null };
           if (name === 'get_daily_finish_results') return { data: [] };
-          if (name !== 'get_effective_weekly_assignments') throw Error(`Unexpected RPC ${name}`);
-          const result = qa.fail ? { error: Error('List fetch unavailable') } : { data: qaRows() };
+          if (name !== 'get_current_training_snapshot') throw Error(`Unexpected RPC ${name}`);
+          const result = qa.fail ? { error: Error('List fetch unavailable') } : { data: { assignments: qaRows(), progress: [], percentage_attempts: [], awards: [], assignment_attempts: [] } };
           return qa.hold ? new Promise(resolve => qa.held.push({ resolve, result })) : result;
         },
         from: table => {
@@ -136,7 +136,7 @@ const names = [
       bindRiderSessionRefreshEvents();
     }, names.map(extract).join('\n'));
 
-    const readCount = () => page.evaluate(() => qa.calls.filter(call => call.name === 'get_effective_weekly_assignments').length);
+    const readCount = () => page.evaluate(() => qa.calls.filter(call => call.name === 'get_current_training_snapshot').length);
     const waitIdle = () => page.waitForFunction(() => !state.riderSessionRefresh);
     const assertRevision = async revision => {
       await page.waitForFunction(revision => document.querySelector('[data-trick-id]')?.textContent.includes(`revision ${revision} `), revision);

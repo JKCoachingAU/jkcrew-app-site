@@ -5,12 +5,50 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   // Keep one bounded retry policy for safe reads. SDK retries combined with
   // application timeouts otherwise leave several copies competing for a pool.
   db: { retry: false },
+  global: { fetch: createBoundedAuthFetch() },
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
   },
 });
+
+function createBoundedAuthFetch(fetchImpl = (...args) => fetch(...args), timeoutMs = 8000) {
+  return async (input, options = {}) => {
+    const address = typeof input === "string" ? input : input?.url || input?.href;
+    const url = new URL(address, SUPABASE_URL);
+    // Leave Data API writes, uploads and their caller-owned cancellation alone.
+    if (url.origin !== new URL(SUPABASE_URL).origin || !url.pathname.startsWith("/auth/v1/")) return fetchImpl(input, options);
+    const callerSignal = options.signal || input?.signal;
+    if (callerSignal?.aborted) throw callerSignal.reason || new DOMException("Request cancelled", "AbortError");
+    const controller = new AbortController();
+    const cancel = () => controller.abort(callerSignal.reason);
+    callerSignal?.addEventListener("abort", cancel, { once: true });
+    let rejectAbort;
+    const onAbort = () => rejectAbort(controller.signal.reason || new DOMException("Request cancelled", "AbortError"));
+    const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+    controller.signal.addEventListener("abort", onAbort, { once: true });
+    const timer = setTimeout(() => controller.abort(new DOMException("Sign-in connection timed out. Please retry.", "AbortError")), timeoutMs);
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await fetchImpl(input, { ...options, signal: controller.signal });
+          // A fetch can receive headers then hang while Auth waits for JSON.
+          // Keep the same deadline through the body; the SDK owns all retries.
+          const body = await response.arrayBuffer();
+          return new Response(body.byteLength ? body : null, {
+            status: response.status, statusText: response.statusText, headers: response.headers,
+          });
+        })(),
+        aborted,
+      ]);
+    } finally {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", cancel);
+      controller.signal.removeEventListener("abort", onAbort);
+    }
+  };
+}
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
@@ -30,7 +68,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.208";
+const RELEASE_VERSION = "2.14.209";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -67,7 +105,6 @@ const state = {
   sessionViewerClock: null,
   sessionViewerRosterCache: [],
   sessionViewerActiveSessionCache: null,
-  sessionViewerVerifiedNullSession: null,
   runBuilder: null,
   runPlaybackTimer: null,
   runPlayback: null,
@@ -425,6 +462,11 @@ function cacheClear(prefix = "") {
   Object.keys(state.cache || {}).forEach((key) => {
     if (!prefix || key.startsWith(prefix)) delete state.cache[key];
   });
+  if (!prefix || prefix.startsWith("schedule:")) {
+    for (const [key, request] of state.inFlight || []) {
+      if (key.startsWith("schedule:") && (!prefix || key.startsWith(prefix)) && request.weeklyAssignmentScope) request.weeklyAssignmentScope.invalidated = true;
+    }
+  }
 }
 
 async function getCoachTeamScopeIds() {
@@ -461,7 +503,6 @@ function canManageCoachTeamRecord(coachId) {
 }
 
 function invalidateSessionViewerData() {
-  state.sessionViewerVerifiedNullSession = null;
   state.sessionViewerDataVersion += 1;
   cacheClear("coach-live:");
 }
@@ -1341,13 +1382,16 @@ async function showUpdatedWeeklyScore(pointsChange = 0, trickName = "") {
   const awardedPoints = Number(pointsChange);
   if (!Number.isFinite(awardedPoints) || awardedPoints === 0) return;
   const viewerId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
+  const navigationToken = state.loadingOverlayToken;
   const popup = showProgressPopup({
     kind: "score",
     pointsChange: awardedPoints,
     trickName,
   });
   void getAthleteHomeVerifiedLeaderboard({ force: true }).then((leaderboard) => {
-    if (!popup?.isConnected || state.user?.id !== viewerId) return;
+    if (!popup?.isConnected || state.user?.id !== viewerId || state.sessionSetupVersion !== setupVersion
+      || state.loadingOverlayToken !== navigationToken || state.riderAccess?.features_disabled || state.riderAccess?.recovery_mode) return;
     const row = leaderboard.find((entry) => entry.athlete_id === viewerId);
     if (row?.weekly_points === null || row?.weekly_points === undefined || row.weekly_points === "" || !Number.isFinite(Number(row.weekly_points))) return;
     const total = Number(row.weekly_points).toLocaleString("en", { maximumFractionDigits: 20 });
@@ -1408,6 +1452,7 @@ function loadingScreenCopy(view = state.view) {
 function beginScreenLoading(copy = loadingScreenCopy(), delayMs = 320) {
   const token = state.loadingOverlayToken + 1;
   state.loadingOverlayToken = token;
+  state.trainingViewGesture?.cancel?.();
   app.inert = true;
   if (state.loadingOverlayTimer) window.clearTimeout(state.loadingOverlayTimer);
   if (state.loadingOverlaySlowTimer) window.clearTimeout(state.loadingOverlaySlowTimer);
@@ -1455,6 +1500,7 @@ function finishScreenLoading(token) {
 
 function cancelScreenLoading() {
   state.loadingOverlayToken += 1;
+  state.trainingViewGesture?.cancel?.();
   if (state.loadingOverlayTimer) window.clearTimeout(state.loadingOverlayTimer);
   if (state.loadingOverlaySlowTimer) window.clearTimeout(state.loadingOverlaySlowTimer);
   state.loadingOverlayTimer = null;
@@ -1692,6 +1738,7 @@ function renderBootRecovery(message = "The app could not finish loading.") {
 
 async function handleSession(session) {
   const setupVersion = state.sessionSetupVersion = (state.sessionSetupVersion || 0) + 1;
+  state.trainingViewGesture?.cancel?.();
   const nextUserId = session?.user?.id || "";
   const isCurrent = () => setupVersion === state.sessionSetupVersion && (state.user?.id || "") === nextUserId;
   state.athleteHomeRenderVersion += 1;
@@ -1713,7 +1760,6 @@ async function handleSession(session) {
     state.coachRosterIds = null;
     state.sessionViewerRosterCache = null;
     state.sessionViewerActiveSessionCache = null;
-    state.sessionViewerVerifiedNullSession = null;
     state.sessionViewerDataCache = null;
     state.sessionViewerDataVersion += 1;
     state.commandParkKingRows = [];
@@ -1954,6 +2000,7 @@ function startCoachApprovalWatch() {
     if (wasBlocked && !coachAccountBlocked()) await handleSession(state.session);
     else if (!wasBlocked && coachAccountBlocked()) {
       state.sessionSetupVersion += 1;
+      state.trainingViewGesture?.cancel?.();
       state.sessionRenderVersion += 1;
       state.athleteHomeRenderVersion += 1;
       state.view = "coachApproval";
@@ -2537,8 +2584,12 @@ function setSyncStatus(status = state.lastSyncStatus || "saved") {
   element.title = effective === "offline" ? "Changes cannot be saved offline. Reconnect before recording attempts." : effective === "error" ? "Check the latest session before trying again. Your last save was not confirmed." : labels[effective];
 }
 
+function progressSaveKey(userId, name, args) {
+  return `${userId}:${name}:${args.p_assignment_id}:${args.p_attempt_number || ""}`;
+}
+
 async function saveProgressRpc(name, args) {
-  const key = `${state.user?.id}:${name}:${args.p_assignment_id}:${args.p_attempt_number || ""}`;
+  const key = progressSaveKey(state.user?.id, name, args);
   if (!navigator.onLine) {
     progressSaveStates.set(key, "error");
     setSyncStatus("offline");
@@ -3303,9 +3354,22 @@ async function setupRealtimeSync() {
     });
   });
   state.realtimeChannel = channel;
+  let subscribedOnce = false;
   channel.subscribe((status) => {
-    // Realtime does not replay changes missed while the app was asleep/offline.
-    if (status === "SUBSCRIBED" && state.realtimeChannel === channel) void requestRiderSessionRefresh({ force: true });
+    // A join before SQL starts shares the fresh cold sheet. If SQL already
+    // started, one serial catch-up closes the pre-join gap without parallel
+    // requests. Later joins refresh changes missed while offline.
+    if (status === "SUBSCRIBED" && state.realtimeChannel === channel) {
+      const force = subscribedOnce; subscribedOnce = true;
+      let catchUp = false;
+      if (!force && state.profile?.role === "athlete" && state.view === "session") {
+        const key = `schedule:${userId}:${weekStartDateForCountry(state.profile.country_code || "AU")}:full`;
+        const read = state.inFlight.get(key)?.weeklyAssignmentScope;
+        catchUp = Boolean(read?.snapshotStarted && read.userId === userId && read.generation === setupVersion
+          && !read.invalidated && read.dataVersion === (state.sessionViewerDataVersion || 0));
+      }
+      void requestRiderSessionRefresh({ force, catchUp });
+    }
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime progress sync status:", status);
   });
 }
@@ -3347,6 +3411,7 @@ function invalidateCachesForRealtime(table) {
   if (table === "coach_broadcast_recipients") cacheClear("coach-messages:");
   if (table === "coach_group_session_participants") {
     state.sessionViewerActiveSessionCache = null;
+    state.sessionViewerActiveSessionRevision = (state.sessionViewerActiveSessionRevision || 0) + 1;
     // A saved finish on another device must replace the participant snapshot,
     // including any older read that was already in flight.
     state.sessionViewerRenderVersion += 1;
@@ -3417,9 +3482,9 @@ function scheduleRealtimeRefresh(reason = "sync") {
   }, 1200);
 }
 
-async function getLeaderboard({ allowFallback = true } = {}) {
+async function getLeaderboard({ allowFallback = true, summary = false } = {}) {
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
-  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}${allowFallback ? "" : ":verified"}`;
+  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}${allowFallback ? "" : ":verified"}${summary ? ":summary" : ""}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
   const existingRequest = state.inFlight.get(cacheKey);
@@ -3428,7 +3493,8 @@ async function getLeaderboard({ allowFallback = true } = {}) {
   const request = (async () => {
     const { data, error } = await retryNetworkRequest(
       (signal) => {
-        const query = client.rpc("get_weekly_leaderboard_with_half_points");
+        let query = client.rpc("get_weekly_leaderboard_with_half_points");
+        if (summary && query.select) query = query.select("athlete_id,display_name,weekly_points,rank_number,ghost_mode");
         return signal && query.abortSignal ? query.abortSignal(signal) : query;
       },
       "Leaderboard load",
@@ -3441,6 +3507,7 @@ async function getLeaderboard({ allowFallback = true } = {}) {
     }
     state.leaderboardFallbackNotified = false;
     const rows = data || [];
+    if (summary) return cacheSet(cacheKey, rows, cacheScope);
     const ids = rows.map((row) => row.athlete_id).filter(Boolean);
     if (!ids.length) return cacheSet(cacheKey, rows, cacheScope);
     const { data: profiles, error: profileError } = await client.from("profiles").select("id, daily_pb_seconds, ghost_mode").in("id", ids);
@@ -3707,74 +3774,116 @@ async function getPublicRiderBattleRecord(athleteId) {
 }
 
 async function getWeeklyAssignments(athleteId, { includeAssignmentAttempts = true, force = false } = {}) {
-  const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
-  const athleteCountryCode = await getAthleteCountryCode(athleteId);
-  const weekStart = weekStartDateForCountry(athleteCountryCode);
-  const cacheKey = `schedule:${athleteId}:${weekStart}:${includeAssignmentAttempts ? "full" : "summary"}`;
-  const cached = force || state.view === "session" ? null : cacheGet(cacheKey, 6500);
-  if (cached) return cached;
-  const existingRequest = state.inFlight.get(cacheKey);
-  if (existingRequest && !force) return existingRequest;
-  const request = (async () => {
-    if (state.user?.id) {
-      const { error: rolloverError } = await client.rpc("ensure_current_week_assignments", {
+  const deadlineAt = Date.now() + 10000;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const remaining = () => {
+    const ms = deadlineAt - Date.now();
+    if (ms <= 0) throw new Error("Load weekly trick sheet timed out. Retry your trick sheet.");
+    return ms;
+  };
+  try {
+    const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
+    const currentAccount = () => cacheScope.userId === (state.user?.id || null)
+      && cacheScope.generation === (state.sessionSetupVersion || 0);
+    const requireCurrent = () => { if (!currentAccount()) throw new Error("Your account access changed. Reopen your trick sheet."); };
+    const athleteCountryCode = await withTimeout(getAthleteCountryCode(athleteId, { signal: controller?.signal }), "Load rider training country", remaining());
+    requireCurrent();
+    remaining();
+    const weekStart = weekStartDateForCountry(athleteCountryCode);
+    const cacheKey = `schedule:${athleteId}:${weekStart}:${includeAssignmentAttempts ? "full" : "summary"}`;
+    const requireCurrentSheet = () => {
+      requireCurrent();
+      if (weekStartDateForCountry(athleteCountryCode) !== weekStart
+        || (athleteId === state.user?.id && String(state.profile?.country_code || "AU").toUpperCase() !== String(athleteCountryCode || "AU").toUpperCase())) throw new Error("Your training week or country changed. Reopen your trick sheet.");
+    };
+    const cached = force || state.view === "session" ? null : cacheGet(cacheKey, 6500);
+    if (cached) return cached;
+    const existingRequest = state.inFlight.get(cacheKey);
+    if (!force && existingRequest?.weeklyAssignmentScope?.userId === cacheScope.userId
+      && existingRequest.weeklyAssignmentScope.generation === cacheScope.generation
+      && !existingRequest.weeklyAssignmentScope.invalidated
+      && existingRequest.weeklyAssignmentScope.dataVersion === (state.sessionViewerDataVersion || 0)) {
+      const shared = await withTimeout(existingRequest, "Load weekly trick sheet", remaining());
+      requireCurrentSheet(); remaining();
+      return shared;
+    }
+    const readScope = { ...cacheScope, invalidated: false, dataVersion: state.sessionViewerDataVersion || 0, snapshotStarted: false };
+    const request = (async () => {
+      requireCurrentSheet();
+      if (state.user?.id) {
+        let rollover = client.rpc("ensure_current_week_assignments", {
+          p_athlete_id: athleteId,
+          p_week_start: weekStart,
+        });
+        if (controller && rollover.abortSignal) rollover = rollover.abortSignal(controller.signal);
+        const { error: rolloverError } = await withTimeout(rollover, "Prepare current training week", remaining());
+        if (rolloverError && !/not allowed/i.test(rolloverError.message || "")) throw rolloverError;
+      }
+      requireCurrentSheet();
+      // Country, the separate rollover operation and any coalesced wait all
+      // consume this call's original absolute 10s budget.
+      // The server preserves the effective per-venue sheet and current-ID history
+      // filters in one RLS-protected snapshot. Rollover above remains a separate
+      // existing operation; a failed snapshot never falls back to broad reads.
+      readScope.snapshotStarted = true;
+      let query = client.rpc("get_current_training_snapshot", {
         p_athlete_id: athleteId,
         p_week_start: weekStart,
+        p_awards_since: new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString(),
+        p_include_assignment_attempts: includeAssignmentAttempts,
       });
-      if (rolloverError && !/not allowed/i.test(rolloverError.message || "")) throw rolloverError;
-    }
-    const assignmentAttemptsRequest = includeAssignmentAttempts
-      ? client.from("assignment_attempts").select("*").eq("athlete_id", athleteId).eq("week_start", weekStart).order("attempted_at", { ascending: false })
-      : Promise.resolve({ data: [], error: null });
-    const [{ data, error }, { data: progress, error: progressError }, { data: awards, error: awardsError }, { data: percentageAttempts, error: percentageError }, { data: assignmentAttempts, error: attemptError }] = await Promise.all([
-      client.rpc("get_effective_weekly_assignments", { p_athlete_id: athleteId, p_week_start: weekStart }),
-      client.from("assignment_progress").select("assignment_id,athlete_id,progress_date,streak_count,completed_at,updated_at").eq("athlete_id", athleteId),
-      client.from("assignment_point_awards").select("id,athlete_id,session_id,assignment_id,award_key,points,created_at,venue").eq("athlete_id", athleteId).gte("created_at", new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString()),
-      client.from("percentage_attempts").select("id,assignment_id,athlete_id,attempt_number,landed,created_at").eq("athlete_id", athleteId).order("attempt_number", { ascending: true }),
-      assignmentAttemptsRequest,
-    ]);
-    if (error) throw error;
-    if (progressError) throw progressError;
-    if (awardsError) throw awardsError;
-    if (percentageError) throw percentageError;
-    if (attemptError) throw attemptError;
-    const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
-    const awardsByAssignmentId = new Map();
-    (awards || []).forEach((award) => {
-      if (!award.assignment_id || Number(award.points || 0) <= 0) return;
-      const entries = awardsByAssignmentId.get(award.assignment_id) || [];
-      entries.push(award);
-      awardsByAssignmentId.set(award.assignment_id, entries);
-    });
-    const attemptsById = new Map();
-    (percentageAttempts || []).forEach((attempt) => {
-      const entries = attemptsById.get(attempt.assignment_id) || [];
-      entries.push(attempt);
-      attemptsById.set(attempt.assignment_id, entries);
-    });
-    const assignmentAttemptsById = new Map();
-    (assignmentAttempts || []).forEach((attempt) => {
-      const entries = assignmentAttemptsById.get(attempt.assignment_id) || [];
-      entries.push(attempt);
-      assignmentAttemptsById.set(attempt.assignment_id, entries);
-    });
-    const result = {
-      assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => {
-        const contextualAssignment = { ...assignment, athlete_country_code: athleteCountryCode };
-        const normalizedProgress = normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id));
-        return { ...contextualAssignment, progress: reconcileAwardedProgress(contextualAssignment, normalizedProgress, awardsByAssignmentId.get(assignment.id) || []), percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] };
-      }),
-      awards: awards || [],
-      percentageAttempts: percentageAttempts || [],
-      assignmentAttempts: assignmentAttempts || [],
-    };
-    // An older request must not overwrite a newer, explicitly refreshed sheet.
-    if (cacheScope.userId !== (state.user?.id || null) || cacheScope.generation !== (state.sessionSetupVersion || 0)) cacheSet(cacheKey, null, cacheScope);
-    if (state.inFlight.get(cacheKey) === request) cacheSet(cacheKey, result, cacheScope);
-    return result;
-  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
-  state.inFlight.set(cacheKey, request);
-  return request;
+      if (controller && query.abortSignal) query = query.abortSignal(controller.signal);
+      const { data: snapshot, error } = await withTimeout(query, "Load weekly trick sheet", remaining());
+      if (error) throw error;
+      requireCurrentSheet();
+      if (Date.now() >= deadlineAt) throw new Error("Load weekly trick sheet timed out. Retry your trick sheet.");
+      if (!snapshot || !["assignments", "progress", "percentage_attempts", "awards", "assignment_attempts"].every(key => Array.isArray(snapshot[key]))) throw new Error("Your trick sheet could not be verified. Refresh and try again.");
+      const { assignments: data, progress, percentage_attempts: percentageAttempts, awards, assignment_attempts: assignmentAttempts } = snapshot;
+      const currentIds = new Set(data.map(assignment => assignment?.id));
+      if (data.some(assignment => !assignment?.id || assignment.athlete_id !== athleteId)
+        || [...progress, ...percentageAttempts].some(row => row?.athlete_id !== athleteId || !currentIds.has(row.assignment_id))
+        || [...awards, ...assignmentAttempts].some(row => row?.athlete_id !== athleteId)) throw new Error("The trick sheet response did not match the requested rider.");
+      const progressById = new Map((progress || []).map((entry) => [entry.assignment_id, entry]));
+      const awardsByAssignmentId = new Map();
+      (awards || []).forEach((award) => {
+        if (!award.assignment_id || Number(award.points || 0) <= 0) return;
+        const entries = awardsByAssignmentId.get(award.assignment_id) || [];
+        entries.push(award);
+        awardsByAssignmentId.set(award.assignment_id, entries);
+      });
+      const attemptsById = new Map();
+      (percentageAttempts || []).forEach((attempt) => {
+        const entries = attemptsById.get(attempt.assignment_id) || [];
+        entries.push(attempt);
+        attemptsById.set(attempt.assignment_id, entries);
+      });
+      const assignmentAttemptsById = new Map();
+      (assignmentAttempts || []).forEach((attempt) => {
+        const entries = assignmentAttemptsById.get(attempt.assignment_id) || [];
+        entries.push(attempt);
+        assignmentAttemptsById.set(attempt.assignment_id, entries);
+      });
+      const result = {
+        assignments: (data || []).filter((assignment) => categoryInfo[assignment.category]).map((assignment) => {
+          const contextualAssignment = { ...assignment, athlete_country_code: athleteCountryCode };
+          const normalizedProgress = normalizeAssignmentProgress(contextualAssignment, progressById.get(assignment.id));
+          return { ...contextualAssignment, progress: reconcileAwardedProgress(contextualAssignment, normalizedProgress, awardsByAssignmentId.get(assignment.id) || []), percentageAttempts: attemptsById.get(assignment.id) || [], assignmentAttempts: assignmentAttemptsById.get(assignment.id) || [] };
+        }),
+        awards: awards || [],
+        percentageAttempts: percentageAttempts || [],
+        assignmentAttempts: assignmentAttempts || [],
+      };
+      // An older request must not overwrite a newer, explicitly refreshed sheet.
+      requireCurrentSheet();
+      remaining();
+      if (state.inFlight.get(cacheKey) === request && !readScope.invalidated
+        && readScope.dataVersion === (state.sessionViewerDataVersion || 0)) cacheSet(cacheKey, result, cacheScope);
+      return result;
+    })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
+    request.weeklyAssignmentScope = readScope;
+    state.inFlight.set(cacheKey, request);
+    return await request;
+  } finally { controller?.abort(); }
 }
 
 function invalidateHelpRequestData() {
@@ -3979,10 +4088,13 @@ async function getEventCoursePhoto(eventId = "") {
   return request;
 }
 
-async function getCoachVenues() {
+async function getCoachVenues({ signal = null } = {}) {
   const userId = state.user?.id, generation = state.sessionSetupVersion;
   const coachIds = await getCoachTeamScopeIds();
-  const { data, error } = await client.from("coach_venues").select("*").in("coach_id", coachIds).order("sort_order", { ascending: true }).order("name");
+  if (state.user?.id !== userId || state.sessionSetupVersion !== generation) throw new Error("Your account access changed. Reopen locations.");
+  let query = client.from("coach_venues").select("*").in("coach_id", coachIds).order("sort_order", { ascending: true }).order("name");
+  if (signal && query.abortSignal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (error) throw error;
   if (state.user?.id !== userId || state.sessionSetupVersion !== generation) throw new Error("Your account access changed. Reopen locations.");
   const seen = new Set();
@@ -3994,6 +4106,8 @@ async function getCoachVenues() {
   });
 }
 
+// Limit optional HQ fan-out so a coach opening the dashboard does not occupy
+// the database pool while the riders beside them are signing in or saving.
 async function readCoachDashboardQueries(factories, { concurrency = 3, timeoutMs = 12000, isCurrent = () => true } = {}) {
   const results = new Array(factories.length), controllers = new Set();
   let next = 0, failure = null;
@@ -4334,13 +4448,17 @@ function weekStartDateForCountry(countryCode = "", date = new Date()) {
   localCalendarDate.setUTCDate(localCalendarDate.getUTCDate() - localCalendarDate.getUTCDay());
   return localCalendarDate.toISOString().slice(0, 10);
 }
-async function getAthleteCountryCode(athleteId) {
+async function getAthleteCountryCode(athleteId, { signal = null } = {}) {
+  if (signal?.aborted) throw new Error("Load rider training country timed out. Retry your trick sheet.");
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   if (athleteId === state.profile?.id || athleteId === state.user?.id) return state.profile?.country_code || "AU";
   const cacheKey = `athlete-country:${athleteId}`;
   const cached = cacheGet(cacheKey, 5 * 60 * 1000);
   if (cached) return cached;
-  const { data, error } = await client.from("profiles").select("country_code").eq("id", athleteId).maybeSingle();
+  let query = client.from("profiles").select("country_code").eq("id", athleteId).maybeSingle();
+  if (signal && query.abortSignal) query = query.abortSignal(signal);
+  const { data, error } = await query;
+  if (signal?.aborted) throw new Error("Load rider training country timed out. Retry your trick sheet.");
   if (error) throw error;
   return cacheSet(cacheKey, data?.country_code || "AU", cacheScope);
 }
@@ -4359,25 +4477,43 @@ function countryBadge(profile = {}) {
   return `<span class="country-flag" title="${escapeHtml(label)}">${flag}</span>`;
 }
 
-async function getActiveCoachGroupSession() {
-  const { data, error } = await client.from("coach_group_sessions")
+async function getActiveCoachGroupSession({ signal = null } = {}) {
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  let query = client.from("coach_group_sessions")
     .select("id,coach_id,group_name,venue,status,started_at,paused_at,total_paused_seconds,ended_at,coach_group_session_participants(group_session_id,athlete_id,training_session_id,joined_at,last_activity_at,daily_finished_at,daily_finish_seconds)")
     .eq("coach_id", state.user.id)
     .in("status", ["running", "paused"])
     .order("started_at", { ascending: false })
     .limit(1);
+  if (signal && query.abortSignal) query = query.abortSignal(signal);
+  const { data, error } = await query;
+  if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) throw new Error("Your account access changed. Reopen your group session.");
   if (error) throw error;
   const session = data?.[0] || null;
   if (!session) return null;
-  const results = await loadDailyFinishResults((session.coach_group_session_participants || []).map(participant => participant.training_session_id));
+  const sessionIds = (session.coach_group_session_participants || []).map(participant => participant.training_session_id).filter(Boolean);
+  let results;
+  if (signal && sessionIds.length) {
+    let finishQuery = client.rpc("get_daily_finish_results", { p_session_ids: [...new Set(sessionIds)] });
+    if (finishQuery.abortSignal) finishQuery = finishQuery.abortSignal(signal);
+    const result = await finishQuery;
+    if (result.error) throw result.error;
+    results = new Map((Array.isArray(result.data) ? result.data : []).map(row => [row.session_id, row]));
+  } else results = await loadDailyFinishResults(sessionIds);
+  if (state.user?.id !== userId || state.sessionSetupVersion !== setupVersion) throw new Error("Your account access changed. Reopen your group session.");
   return { ...session, coach_group_session_participants: (session.coach_group_session_participants || []).map(participant => {
     const result = results.get(participant.training_session_id);
     return result ? { ...participant, daily_result: result, daily_finish_seconds: result.seconds, daily_finished_at: result.completed_at } : participant;
   }) };
 }
 
-async function getSessionViewerPlanData(athletes = [], { force = false, detailAthleteIds = [] } = {}) {
+async function getSessionViewerPlanData(athletes = [], { force = false, detailAthleteIds = [], includeSummary = true, onSummaryBatch = null, deadlineAt = null } = {}) {
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
+  const dataVersion = state.sessionViewerDataVersion;
+  const current = () => cacheScope.userId === (state.user?.id || null)
+    && cacheScope.generation === (state.sessionSetupVersion || 0)
+    && dataVersion === state.sessionViewerDataVersion;
+  const requireCurrent = () => { if (!current()) throw new Error("Your account access or session list changed. Reopen the rider list."); };
   if (!athletes.length) return { assignmentsByAthlete: new Map(), runsByAthlete: new Map(), runProgressByPlan: new Map() };
   const athleteRows = athletes.map((athlete) => typeof athlete === "string" ? { id: athlete, country_code: "AU" } : athlete).filter((athlete) => athlete?.id);
   const safeAthleteIds = [...new Set(athleteRows.map((athlete) => athlete.id))];
@@ -4404,22 +4540,72 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
     });
     return assignmentsByAthlete;
   };
-  const requestRpc = async (key, rpcName, ids, { detailed = false } = {}) => {
+  const requestRpc = async (key, rpcName, ids, { detailed = false, onBatch = null } = {}) => {
+    const subscribe = pending => {
+      if (onBatch && pending.summaryProgress) {
+        pending.summaryProgress.listeners.add(onBatch);
+        if (pending.summaryProgress.completedIds.length) onBatch(pending.summaryProgress.latest);
+      }
+      return pending;
+    };
     if (!force) {
       const cached = cacheGet(key, 12000);
-      if (cached) return cached;
-      if (state.inFlight.has(key)) return state.inFlight.get(key);
+      if (cached) {
+        if (onBatch) onBatch({ assignmentsByAthlete: cached, completedAthleteIds: ids });
+        return cached;
+      }
+      if (state.inFlight.has(key)) return subscribe(state.inFlight.get(key));
     }
     const requestKey = force ? `${key}:force` : key;
-    if (state.inFlight.has(requestKey)) return state.inFlight.get(requestKey);
+    if (state.inFlight.has(requestKey)) return subscribe(state.inFlight.get(requestKey));
+    const progress = { listeners: new Set(onBatch ? [onBatch] : []), completedIds: [], latest: null };
     const request = (async () => {
-      const { data, error } = await client.rpc(rpcName, {
-        p_athlete_ids: ids,
-        p_week_starts: ids.map((athleteId) => weekStartByAthlete.get(athleteId)),
-      });
-      if (error) throw error;
-      return cacheSet(key, rowsToMap(data || [], detailed), cacheScope);
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      const deadline = Math.min(Date.now() + 10000, Number.isFinite(deadlineAt) ? deadlineAt : Infinity), rows = [], seen = new Set();
+      try {
+        // PostgREST caps an unpaginated RPC response. Keep roster batches small,
+        // and page even a single rider with an unusually large saved sheet.
+        // Each logical summary/detail read remains sequential and shares one
+        // deadline; opening a rider still adds at most one concurrent detail read.
+        for (let batchStart = 0; batchStart < ids.length; batchStart += 8) {
+          const batchIds = ids.slice(batchStart, batchStart + 8), allowed = new Set(batchIds);
+          for (let offset = 0; ; offset += 500) {
+            requireCurrent();
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) throw new Error("Load rider trick list timed out. Check your connection and try again.");
+            let query = client.rpc(rpcName, {
+              p_athlete_ids: batchIds,
+              p_week_starts: batchIds.map((athleteId) => weekStartByAthlete.get(athleteId)),
+            }).order("athlete_id", { ascending: true }).order("sort_order", { ascending: true }).order("id", { ascending: true }).range(offset, offset + 499);
+            if (controller && query.abortSignal) query = query.abortSignal(controller.signal);
+            const { data, error } = await withTimeout(query, "Load rider trick list", remaining);
+            if (error) throw error;
+            requireCurrent();
+            if (Date.now() >= deadline) throw new Error("Load rider trick list timed out. Check your connection and try again.");
+            const page = data || [];
+            if (!Array.isArray(page) || page.length > 500) throw new Error("The rider list response was incomplete. Refresh and try again.");
+            for (const row of page) {
+              if (!row?.id || !allowed.has(row.athlete_id)) throw new Error("The rider list response did not match the requested team.");
+              const identity = `${row.athlete_id}:${row.id}`;
+              if (seen.has(identity)) throw new Error("The rider list changed while loading. Refresh and try again.");
+              seen.add(identity);
+              rows.push(row);
+            }
+            if (page.length < 500) break;
+          }
+          if (!detailed) {
+            progress.completedIds.push(...batchIds);
+            progress.latest = { assignmentsByAthlete: rowsToMap(rows, false), completedAthleteIds: [...progress.completedIds] };
+            for (const listener of progress.listeners) listener(progress.latest);
+          }
+        }
+        requireCurrent();
+        return cacheSet(key, rowsToMap(rows, detailed), cacheScope);
+      } finally {
+        controller?.abort();
+      }
     })();
+    request.summaryProgress = progress;
     state.inFlight.set(requestKey, request);
     try {
       return await request;
@@ -4427,12 +4613,13 @@ async function getSessionViewerPlanData(athletes = [], { force = false, detailAt
       if (state.inFlight.get(requestKey) === request) state.inFlight.delete(requestKey);
     }
   };
-  const summaryPromise = requestRpc(summaryKey, "get_coach_session_viewer_plan_summary", safeAthleteIds);
+  const summaryPromise = includeSummary ? requestRpc(summaryKey, "get_coach_session_viewer_plan_summary", safeAthleteIds, { onBatch: onSummaryBatch }) : Promise.resolve(new Map());
   const detailPromise = detailIds.length ? requestRpc(detailRowsKey, "get_coach_session_viewer_plan_data", detailIds, { detailed: true }) : null;
   const [summaryAssignments, detailAssignments] = await Promise.all([summaryPromise, detailPromise]);
+  requireCurrent();
   const assignmentsByAthlete = new Map(summaryAssignments || []);
   if (detailAssignments) detailIds.forEach((athleteId) => assignmentsByAthlete.set(athleteId, detailAssignments.get(athleteId) || []));
-  const resultKey = detailIds.length ? detailKey : `${summaryKey}:result`;
+  const resultKey = includeSummary ? (detailIds.length ? detailKey : `${summaryKey}:result`) : `${detailKey}:detail-only-result`;
   return cacheSet(resultKey, { assignmentsByAthlete, runsByAthlete: new Map(), runProgressByPlan: new Map() }, cacheScope);
 }
 
@@ -4900,14 +5087,19 @@ function parkKingCardHtml(king, venue = "", { id = "", compact = false, loading 
 async function refreshParkKingCard(id, venue = "", compact = true, force = false) {
   const element = document.getElementById(id);
   if (!element || !venueKey(venue)) return;
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion, view = state.view, navigationToken = state.loadingOverlayToken;
+  const currentScope = () => state.user?.id === userId && state.sessionSetupVersion === setupVersion && state.view === view && state.loadingOverlayToken === navigationToken;
+  const firstGesture = waitForSessionGesture(); if (firstGesture) await firstGesture;
+  if (!currentScope() || document.getElementById(id) !== element) return;
   const expectedVenueKey = venueIdentityKey(venue);
   const requestId = String(++state.parkKingRequestSerial);
   const loadingWrapper = document.createElement("div");
   loadingWrapper.innerHTML = parkKingCardHtml(null, venue, { id, compact, loading: true, requestId });
   element.replaceWith(loadingWrapper.firstElementChild);
   const king = await getParkKing(venue, { force });
+  const finalGesture = waitForSessionGesture(); if (finalGesture) await finalGesture;
   const current = document.getElementById(id);
-  if (!current || current.dataset.parkRequestId !== requestId || current.dataset.parkVenueKey !== expectedVenueKey) return;
+  if (!currentScope() || !current || current.dataset.parkRequestId !== requestId || current.dataset.parkVenueKey !== expectedVenueKey) return;
   const wrapper = document.createElement("div");
   wrapper.innerHTML = parkKingCardHtml(king, venue, { id, compact, requestId });
   current.replaceWith(wrapper.firstElementChild);
@@ -4938,20 +5130,27 @@ function dailySessionHubHtml(assignments = [], selectedVenue = "", activeTrainin
   const selectedDaily = assignmentsForVenue(assignments.filter((assignment) => assignment.category === "daily"), selectedVenue);
   const dailyDone = selectedDaily.filter(isAssignmentComplete).length;
   const dailySaved = activeTraining?.daily_completed_seconds != null;
+  const timerVenue = !dailySaved && activeTraining?.daily_venue != null ? dailyRpcVenue(activeTraining.daily_venue) : null;
+  const timerVenueDiffers = timerVenue !== null && venueIdentityKey(timerVenue) !== venueIdentityKey(selectedVenue);
+  const timerDaily = timerVenueDiffers
+    ? assignmentsForVenue(assignments.filter(assignment => assignment.category === "daily"), timerVenue)
+    : selectedDaily;
+  const timerLabel = dailySaved ? "Daily time saved" : timerVenueDiffers ? `Daily timer · ${venueLabel(timerVenue)}` : "Daily timer";
   const timerHtml = activeTraining
-    ? `<div class="hub-timer"><span>${dailySaved ? "Daily time saved" : "Daily timer"}</span><strong id="trick-timer">${formatTime(activeTraining.daily_completed_seconds ?? Math.max(0, Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000)))}</strong></div>`
+    ? `<div class="hub-timer"><span>${escapeHtml(timerLabel)}</span><strong id="trick-timer">${formatTime(activeTraining.daily_completed_seconds ?? Math.max(0, Math.floor((Date.now() - new Date(activeTraining.started_at).getTime()) / 1000)))}</strong></div>`
     : `<div class="hub-timer ready"><span>Ready to start</span><strong>00:00</strong></div>`;
   const actionHtml = activeTraining
-    ? `<button class="secondary-btn start-session-btn" id="finish-daily-tricks" type="button" ${!dailySaved && !selectedDaily.length ? "disabled" : ""}>${dailySaved ? "View Daily result" : "Finish Daily Tricks"}</button>`
+    ? `<button class="secondary-btn start-session-btn" id="finish-daily-tricks" type="button" data-daily-timer-session="${escapeHtml(activeTraining.id)}" ${!dailySaved && timerVenue !== null && !timerDaily.length ? "disabled" : ""}>${dailySaved ? "View Daily result" : "Finish Daily Tricks"}</button>`
     : `<button class="primary-btn start-session-btn" id="create-session" type="button">Start Daily Tricks</button>`;
-  const todayTime = historyLoading && activeTraining?.daily_completed_seconds == null ? "Checking saved time…" : latestDailyTime(activeTraining, latestTraining);
+  const checkingTime = historyLoading && activeTraining?.daily_completed_seconds == null;
+  const todayTime = checkingTime ? "Checking…" : latestDailyTime(activeTraining, latestTraining);
   return `<section class="panel daily-session-hub">
     <div class="daily-hub-heading"><div class="panel-title">Daily Tricks timer</div><div class="panel-meta">${dailyDone}/${selectedDaily.length} landed today · full list earns 1 point</div></div>
     <div class="field daily-hub-venue"><label for="session-venue">Venue</label><select id="session-venue">${options}</select></div>
     <div class="daily-hub-main">${timerHtml}</div>
     <div class="daily-hub-grid">
       <div class="session-pb-chip"><span>Daily PB</span><strong>${formatPbTime(state.profile?.daily_pb_seconds)}</strong></div>
-      <div class="session-pb-chip session-time-chip ${todayTime === "Not finished today" ? "is-pending" : ""}"><span>Today's time</span><strong>${todayTime}</strong></div>
+      <div class="session-pb-chip session-time-chip ${checkingTime || todayTime === "Not finished today" ? "is-pending" : ""}"><span>Today's time</span><strong>${todayTime}</strong></div>
     </div>
     <div class="daily-hub-actions">${actionHtml}${trainingProgressButtonHtml(state.user.id, state.profile?.display_name || "Rider")}</div>
   </section>`;
@@ -8012,8 +8211,7 @@ async function getAthleteHomeVerifiedLeaderboard({ force = false } = {}) {
   if (existing) return existing;
   const request = (async () => {
     const { data, error } = await retryNetworkRequest((signal) => {
-      let query = client.rpc("get_weekly_leaderboard_with_half_points");
-      if (query.select) query = query.select("athlete_id,weekly_points");
+      const query = client.rpc("get_team_weekly_points");
       return signal && query.abortSignal ? query.abortSignal(signal) : query;
     }, "Score summary", { attempts: 1, timeoutMs: 8000 });
     if (error) throw error;
@@ -8243,7 +8441,15 @@ async function renderAthleteHome() {
   section("active-session", "Current session", getActiveSession, (activeSession) => {
     state.activeTraining = activeSession;
     state.trickStartedAt = activeSession ? new Date(activeSession.started_at).getTime() : null;
-    view.querySelector("#athlete-home-active-session").innerHTML = activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Daily Tricks timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${escapeHtml(activeSession.total_points)} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span></div></section>` : "";
+    const sessionCard = view.querySelector("#athlete-home-active-session");
+    const timerRunning = activeSession && activeSession.daily_completed_seconds == null;
+    const timerShortcut = timerRunning
+      ? '<button class="secondary-btn compact-btn" type="button" data-open-home-daily-timer>Open Daily timer</button>'
+      : "";
+    sessionCard.innerHTML = activeSession ? `<section class="session-hero compact-session-hero"><div><div class="timer-label">Daily Tricks timer · Daily PB ${formatPbTime(state.profile.daily_pb_seconds)}</div><div class="timer compact-timer" id="trick-timer">00:00</div></div><div class="score-guide"><span>Session total: ${escapeHtml(activeSession.total_points)} pts</span><span>PB: ${formatPbTime(state.profile.daily_pb_seconds)}</span>${timerShortcut}</div></section>` : "";
+    sessionCard.querySelector("[data-open-home-daily-timer]")?.addEventListener("click", () => {
+      if (isCurrent()) void navigate("session");
+    });
     clearInterval(state.timer); state.timer = null;
     if (activeSession) {
       updateTimer();
@@ -8930,23 +9136,27 @@ function canRefreshRiderSession(userId = state.user?.id, navigationToken = state
     && !riderFeaturesDisabled() && !riderFeatureAccessUnknown());
 }
 
-async function requestRiderSessionRefresh({ force = false } = {}) {
+async function requestRiderSessionRefresh({ force = false, catchUp = false } = {}) {
   const userId = state.user?.id;
   const navigationToken = state.loadingOverlayToken;
   if (!canRefreshRiderSession(userId, navigationToken)) return false;
   const pending = state.riderSessionRefresh;
   if (pending?.userId === userId && pending.navigationToken === navigationToken) {
     // A save/reconnect during a read needs one more read after it finishes.
-    if (force) pending.repeat = true;
+    if (force || catchUp) { pending.repeat = true; pending.forceAssignments = true; }
     return pending.promise;
   }
-  const refresh = { userId, navigationToken, repeat: false, promise: null };
+  const refresh = { userId, navigationToken, repeat: false, forceAssignments: force, catchUp, promise: null };
   refresh.promise = (async () => {
     let rendered = false;
     do {
-      refresh.repeat = false;
+      const forceAssignments = refresh.forceAssignments, catchUpAfterRead = refresh.catchUp;
+      refresh.repeat = false; refresh.forceAssignments = false; refresh.catchUp = false;
       if (!canRefreshRiderSession(userId, navigationToken)) return false;
-      rendered = await renderSession({ forceAssignments: true, preserveScroll: true });
+      rendered = await renderSession({ forceAssignments, preserveScroll: true });
+      if (catchUpAfterRead && canRefreshRiderSession(userId, navigationToken)) {
+        refresh.repeat = true; refresh.forceAssignments = true;
+      }
     } while (refresh.repeat && canRefreshRiderSession(userId, navigationToken));
     return Boolean(rendered && canRefreshRiderSession(userId, navigationToken));
   })().catch((error) => {
@@ -8959,7 +9169,59 @@ async function requestRiderSessionRefresh({ force = false } = {}) {
   return refresh.promise;
 }
 
+function waitForSessionGesture() {
+  const gesture = state.trainingViewGesture;
+  if (!gesture) return null;
+  let discarded = false;
+  for (const [id, pointer] of gesture.pointers) {
+    if (pointer.userId !== state.user?.id || pointer.setupVersion !== state.sessionSetupVersion || pointer.navigationToken !== state.loadingOverlayToken || pointer.view !== state.view) {
+      gesture.pointers.delete(id);
+      discarded = true;
+    }
+  }
+  if (discarded && !gesture.pointers.size) {
+    gesture.cancel();
+    return null;
+  }
+  // A renderer arriving between pointerup and its native click must wait for
+  // the same next-task release as a renderer already waiting on pointerdown.
+  if (!gesture.pointers.size && gesture.releaseTask == null) return null;
+  return new Promise(resolve => gesture.waiters.add(resolve));
+}
+
 function bindRiderSessionRefreshEvents() {
+  if (!state.trainingViewGesture) {
+    const gesture = state.trainingViewGesture = { pointers: new Map(), waiters: new Set(), releaseTask: null };
+    gesture.cancel = () => {
+      gesture.pointers.clear();
+      clearTimeout(gesture.releaseTask);
+      gesture.releaseTask = null;
+      for (const resolve of gesture.waiters) resolve();
+      gesture.waiters.clear();
+    };
+    const release = event => {
+      if (event?.type === "blur" || event?.type === "visibilitychange") gesture.pointers.clear();
+      else gesture.pointers.delete(event.pointerId);
+      clearTimeout(gesture.releaseTask);
+      // Native click follows pointerup. Keep its original button connected until
+      // that click has run; a read finishing mid-tap must not swallow the save.
+      gesture.releaseTask = setTimeout(() => {
+        gesture.releaseTask = null;
+        if (gesture.pointers.size) return;
+        for (const resolve of gesture.waiters) resolve();
+        gesture.waiters.clear();
+      }, 0);
+    };
+    document.addEventListener("pointerdown", event => {
+      if (!["session", "sessionViewer"].includes(state.view)) return;
+      const control = event.target.closest?.("#view button, #view input, #view select, #view textarea, #view a, #view summary, #view [contenteditable]");
+      if (!control || control.disabled) return;
+      gesture.pointers.set(event.pointerId, { userId: state.user?.id, setupVersion: state.sessionSetupVersion, navigationToken: state.loadingOverlayToken, view: state.view });
+    }, true);
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) document.addEventListener(type, release, true);
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", event => { if (document.visibilityState === "hidden") release(event); });
+  }
   // A pre-sleep request may still be pending; queue a fresh read after it too.
   const refresh = () => { void requestRiderSessionRefresh({ force: true }); };
   window.addEventListener("focus", refresh);
@@ -9072,9 +9334,11 @@ dailyFeatureObserver.observe(document.body,{childList:true,subtree:true});
 
 async function renderSession({ forceParkKing = false, forceAssignments = false, preserveScroll = false } = {}) {
   const userId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
   const navigationToken = state.loadingOverlayToken;
   const renderVersion = ++state.sessionRenderVersion;
   const canApply = () => state.user?.id === userId && state.view === "session"
+    && state.sessionSetupVersion === setupVersion
     && state.loadingOverlayToken === navigationToken && renderVersion === state.sessionRenderVersion
     && !riderFeaturesDisabled() && !riderFeatureAccessUnknown()
     && (!preserveScroll || canRefreshRiderSession(userId, navigationToken));
@@ -9113,14 +9377,17 @@ async function renderSession({ forceParkKing = false, forceAssignments = false, 
         crown.outerHTML = parkKingCardHtml(king, selectedVenue, { id: "session-park-king", compact: true });
       }).catch(error => console.warn("Training park record unavailable; the trick sheet is ready.", error));
       const timeChip = document.querySelector("#view .session-time-chip");
-      if (!timeChip || state.activeTraining?.daily_completed_seconds != null) return;
+      const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
+      const savedForSelectedVenueToday = session => session?.daily_completed_seconds != null && session.daily_completed_at
+        && session.daily_venue != null && venueIdentityKey(dailyRpcVenue(session.daily_venue)) === venueIdentityKey(dailyRpcVenue(selectedVenue))
+        && dateForTimezone(riderTimeZone, new Date(session.daily_completed_at)) === dateForTimezone(riderTimeZone);
+      if (!timeChip || savedForSelectedVenueToday(state.activeTraining)) return;
       const recentStartIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
       void Promise.resolve(client.from("training_sessions").select("daily_completed_seconds,daily_completed_at,started_at,daily_venue").eq("athlete_id", userId).gte("started_at", recentStartIso).order("started_at", { ascending: false }).limit(8)).then(({ data, error }) => {
         if (!current() || !timeChip.isConnected) return;
         if (error) throw error;
-        const riderTimeZone = countryTimezones[state.profile?.country_code || "AU"] || "Australia/Brisbane";
-        const latest = (data || []).find(session => session.daily_completed_seconds != null && session.daily_completed_at && session.daily_venue != null && venueIdentityKey(dailyRpcVenue(session.daily_venue)) === requestedVenueKey && dateForTimezone(riderTimeZone, new Date(session.daily_completed_at)) === dateForTimezone(riderTimeZone)) || null;
-        const label = latestDailyTime(state.activeTraining, latest);
+        const latest = (data || []).find(savedForSelectedVenueToday) || null;
+        const label = latestDailyTime(savedForSelectedVenueToday(state.activeTraining) ? state.activeTraining : null, latest);
         timeChip.querySelector("strong").textContent = label;
         timeChip.classList.toggle("is-pending", label === "Not finished today");
       }).catch(error => {
@@ -9129,6 +9396,9 @@ async function renderSession({ forceParkKing = false, forceAssignments = false, 
       });
     }, 250 + Math.floor(Math.random() * 350));
   };
+  const activeGesture = waitForSessionGesture();
+  if (activeGesture) await activeGesture;
+  if (!canApply() || venueIdentityKey(state.selectedVenue) !== requestedVenueKey) return;
   rememberSessionExpansions();
   const scrollPosition = { left: window.scrollX, top: window.scrollY, behavior: "instant" };
   const extraForm = preserveScroll ? document.querySelector("#extra-trick-form") : null;
@@ -9263,66 +9533,108 @@ async function startSession() {
 }
 
 async function recordAssignmentAction(event) {
-  if (event.currentTarget.dataset.assignmentCategory === "daily") return recordDailyTrainingAction(event, false);
-  const actorId = state.user?.id;
-  const setupVersion = state.sessionSetupVersion;
+  const button = event.currentTarget;
+  if (button.dataset.assignmentCategory === "daily") return recordDailyTrainingAction(event, false);
   event.preventDefault();
   event.stopPropagation();
-  const button = event.currentTarget;
+  const actorId = state.user?.id;
+  const setupVersion = state.sessionSetupVersion;
+  const view = state.view;
+  const navigationToken = state.loadingOverlayToken;
+  const isSameAccount = () => state.user?.id === actorId && state.sessionSetupVersion === setupVersion;
+  const canPaint = () => isSameAccount() && state.view === view && state.loadingOverlayToken === navigationToken
+    && !state.riderAccess?.features_disabled && !state.riderAccess?.recovery_mode;
+  const assignmentId = button.dataset.assignmentId;
+  const action = button.dataset.assignmentAction;
+  if (!actorId || !assignmentId || button.disabled || !["landed", "unlanded"].includes(action)) return;
+  const isOther = button.dataset.assignmentCategory === "other";
+  const isLine = button.dataset.assignmentCategory === "lines";
+  const rpcName = isOther ? "record_other_try_action" : isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue";
+  const rpcArgs = {
+    p_assignment_id: assignmentId,
+    p_action: action,
+    ...(!isOther ? { p_venue: state.selectedVenue || "" } : {}),
+  };
+  const saveKey = progressSaveKey(actorId, rpcName, rpcArgs);
+  if (progressSaveStates.get(saveKey) === "syncing") return;
+
   const openSection = button.closest(".session-assignment-accordion[data-assignment-section]")?.dataset.assignmentSection;
   if (openSection) state.sessionOpenAssignmentSections.add(openSection);
   const row = button.closest(".assignment-row");
   const trickName = row?.querySelector("strong")?.textContent?.trim() || "Trick";
-  const wasComplete = row?.classList.contains("complete");
-  const tickingComplete = button.dataset.assignmentAction === "landed";
-  setSyncStatus("syncing");
-  button.disabled = true;
-  row?.classList.toggle("complete", !wasComplete);
-  button.classList.toggle("complete", !wasComplete);
-  button.textContent = wasComplete ? "" : "✓";
-  setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.assignmentAction === "landed");
-  const isOther = button.dataset.assignmentCategory === "other";
-  const isLine = button.dataset.assignmentCategory === "lines";
-  const rpcName = isOther ? "record_other_try_action" : isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue";
-  const rpcArgs = isOther ? {
-    p_assignment_id: button.dataset.assignmentId,
-    p_action: button.dataset.assignmentAction,
-  } : isLine ? {
-    p_assignment_id: button.dataset.assignmentId,
-    p_action: button.dataset.assignmentAction,
-    p_venue: state.selectedVenue || "",
-  } : {
-    p_assignment_id: button.dataset.assignmentId,
-    p_action: button.dataset.assignmentAction,
-    p_venue: state.selectedVenue || "",
+  const wasComplete = Boolean(row?.classList.contains("complete"));
+  const tickingComplete = action === "landed";
+  const paintCompletion = (complete) => {
+    row?.classList.toggle("complete", complete);
+    button.classList.toggle("complete", complete);
+    button.textContent = complete ? "✓" : "";
   };
-  const { data, error } = await saveProgressRpc(rpcName, rpcArgs);
-  if (state.user?.id !== actorId || state.sessionSetupVersion !== setupVersion) return;
-  if (error) {
-    setSyncStatus("error");
-    clearPendingAssignmentProgress(button.dataset.assignmentId);
+  const enableForCompletion = (complete) => {
+    if (!button.isConnected) return;
+    paintCompletion(complete);
+    const status = row?.querySelector(".assignment-actions + div > small");
+    if (status) status.textContent = status.textContent.replace(/^(Done|To do) this week/, complete ? "Done this week" : "To do this week");
+    button.dataset.assignmentAction = complete ? "unlanded" : "landed";
+    const label = complete ? "Untick trick" : "Tick trick complete";
+    button.setAttribute("aria-label", label);
+    button.title = label;
     button.disabled = false;
-    row?.classList.toggle("complete", Boolean(wasComplete));
-    button.classList.toggle("complete", Boolean(wasComplete));
-    button.textContent = wasComplete ? "✓" : "";
+  };
+  const refreshAfterSave = () => {
+    const refresh = Promise.resolve().then(() => {
+      if (!canPaint()) return;
+      return view === "home" ? renderAthleteHome() : requestRiderSessionRefresh({ force: true });
+    });
+    void withTimeout(refresh, "Refresh training after save", 12000).catch(error => console.warn("Couldn't refresh saved training", error));
+  };
+
+  button.disabled = true;
+  paintCompletion(tickingComplete);
+  setPendingAssignmentProgress(assignmentId, tickingComplete);
+  const { data, error } = await saveProgressRpc(rpcName, rpcArgs);
+  if (!isSameAccount()) return;
+  if (error) {
+    clearPendingAssignmentProgress(assignmentId);
+    if (!canPaint()) return;
+    enableForCompletion(wasComplete);
     return notify(messageFrom(error), "error");
   }
-  const result = Array.isArray(data) ? data[0] : data;
-  setSyncStatus("saved");
-  cacheClear(`schedule:${state.user.id}:`);
+  cacheClear(`schedule:${actorId}:`);
   cacheClear("leaderboard");
   cacheClear("park-king:");
+  const result = Array.isArray(data) ? data[0] : data;
+  const confirmedComplete = typeof result?.completed_at === "string" && Number.isFinite(Date.parse(result.completed_at));
+  const hasCompletionReceipt = result?.assignment_id === assignmentId
+    && (confirmedComplete || result.completed_at === null) && confirmedComplete === tickingComplete;
+  // The Lines endpoint confirms its award or removal but doesn't return completion timestamps.
+  const hasLineReceipt = isLine && result?.assignment_id === assignmentId && result.category === "lines"
+    && result.message === (tickingComplete ? "Line complete" : "Line unticked");
+  if (!hasCompletionReceipt && !hasLineReceipt) {
+    clearPendingAssignmentProgress(assignmentId);
+    progressSaveStates.set(saveKey, "error");
+    setSyncStatus("error");
+    if (!canPaint()) return;
+    if (button.isConnected) paintCompletion(wasComplete);
+    notify("This save couldn’t be confirmed. Refresh your list to check.", "error");
+    refreshAfterSave();
+    return;
+  }
+  if (!canPaint()) return;
+  if (hasCompletionReceipt) enableForCompletion(confirmedComplete);
   const awardedPoints = Number(result.points_awarded || 0) + Number(result.half_points_awarded || 0);
   const removedPoints = Number(result.points_removed || 0) + Number(result.half_points_removed || 0);
   const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
   const resultMessage = isOther ? (tickingComplete ? "Fundamental skill landed" : "Fundamental skill unticked") : result.message;
-  const message = `${resultMessage}${pointsNote}.`;
-  if (!(tickingComplete && awardedPoints > 0)) notify(message);
-  await refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
-  if (tickingComplete && awardedPoints > 0) await showUpdatedWeeklyScore(awardedPoints, trickName);
-  refreshOpenTrainingProgress(state.user.id);
-  if (state.view === "home") await renderAthleteHome();
-  else await renderSession();
+  if (tickingComplete && awardedPoints > 0) {
+    void showUpdatedWeeklyScore(awardedPoints, trickName).catch(error => console.warn("Couldn't show saved points", error));
+  } else {
+    notify(`${resultMessage}${pointsNote}.`);
+  }
+  void refreshOwnXpAfterAction({ announceXp: tickingComplete, trickName });
+  void Promise.resolve().then(() => {
+    if (canPaint()) return refreshOpenTrainingProgress(actorId);
+  }).catch(error => console.warn("Couldn't refresh training progress", error));
+  refreshAfterSave();
 }
 
 async function recordAssignmentAttempt(event) {
@@ -13553,12 +13865,335 @@ async function renderCoachCommand() {
   defer(loadEvents, 1600);
 }
 
+function sessionViewerWorkspaceCurrent(workspace, { ignoreSearch = false } = {}) {
+  return Boolean(workspace && state.sessionViewerWorkspace === workspace && state.view === "sessionViewer"
+    && state.user?.id === workspace.userId && state.sessionSetupVersion === workspace.setupVersion
+    && state.loadingOverlayToken === workspace.navigationToken && state.sessionViewerGroup === workspace.group
+    && state.sessionViewerVenue === workspace.venue && (ignoreSearch || state.sessionViewerSearch === workspace.search)
+    && isCoachRole(state.profile?.role));
+}
+
+async function sessionViewerRead(factory, label, timeoutMs = 10000) {
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  try {
+    const result = await withTimeout(Promise.resolve().then(() => factory(controller?.signal)), label, timeoutMs);
+    if (result?.error) throw result.error;
+    return result;
+  } finally { controller?.abort(); }
+}
+
+function sessionViewerWeekSignature(workspace) {
+  return workspace.groupRoster.map(athlete => `${athlete.id}:${weekStartDateForCountry(athlete.country_code || "AU")}`).sort().join(",");
+}
+
+function sessionViewerEntry(athlete, assignments, workspace, { ready = false, detailed = false } = {}) {
+  const normalized = (assignments || []).map(assignment => {
+    const contextual = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
+    return { ...contextual, progress: normalizeAssignmentProgress(contextual, assignment.progress) };
+  });
+  const allDaily = normalized.filter(assignment => assignment.category === "daily");
+  return { athlete, assignments: normalized, allDaily, daily: assignmentsForVenue(allDaily, workspace.venue), venue: workspace.venue,
+    participant: workspace.activeGroupSession?.coach_group_session_participants?.find(row => row.athlete_id === athlete.id),
+    runs: [], runProgressByPlan: new Map(), summaryStatus: ready ? "ready" : "loading", detailReady: detailed,
+    dataVersion: state.sessionViewerDataVersion, weekStart: weekStartDateForCountry(athlete.country_code || "AU"), detailStamp: 0 };
+}
+
+function sessionViewerLoadingPlanHtml(athleteId, { error = false } = {}) {
+  return `<div class="viewer-inline-list" id="viewer-plan-${escapeHtml(athleteId)}" data-viewer-plan="${escapeHtml(athleteId)}"><div class="empty compact-empty" role="${error ? "alert" : "status"}">${error ? 'This rider list could not load. <button class="secondary-btn compact-btn" type="button" data-viewer-load="detail">Retry rider list</button>' : "Loading this rider’s list…"}</div></div>`;
+}
+
+async function paintSessionViewerCounts(workspace) {
+  const gesture = waitForSessionGesture();
+  if (gesture) await gesture;
+  if (!sessionViewerWorkspaceCurrent(workspace) || workspace.dataVersion !== state.sessionViewerDataVersion
+    || workspace.weekSignature !== sessionViewerWeekSignature(workspace)) return false;
+  const grid = document.querySelector(".viewer-rider-grid");
+  if (!grid) return false;
+  for (const card of grid.querySelectorAll("[data-viewer-rider-id]")) workspace.cards.set(card.dataset.viewerRiderId, card);
+  const cards = workspace.filteredRoster.map(athlete => {
+    const entry = workspace.entries.get(athlete.id);
+    let card = workspace.cards.get(athlete.id);
+    const shell = document.createElement("div"); shell.innerHTML = sessionViewerRiderCardHtml(entry, workspace.activeGroupSession);
+    const fresh = shell.firstElementChild;
+    if (!card) { card = fresh; workspace.cards.set(athlete.id, card); }
+    else {
+      // Counts and status may change independently. The open plan and its
+      // forms remain the same DOM nodes while background summaries finish.
+      for (const selector of ["[data-viewer-card-counts]", ".viewer-card-head", ".viewer-card-footer", ".viewer-progress"]) {
+        const target = card.querySelector(selector), source = fresh.querySelector(selector);
+        if (target && source) { target.innerHTML = source.innerHTML; target.setAttribute("aria-label", source.getAttribute("aria-label") || ""); }
+      }
+      const finish = card.querySelector("[data-finish-daily-athlete]"), nextFinish = fresh.querySelector("[data-finish-daily-athlete]");
+      if (finish && nextFinish) { finish.disabled = nextFinish.disabled; finish.textContent = nextFinish.textContent; }
+      card.classList.toggle("open", athlete.id === state.sessionViewerOpenAthleteId);
+      for (const status of ["ready", "progress", "complete"]) card.classList.toggle(`status-${status}`, fresh.classList.contains(`status-${status}`));
+      card.querySelector(".viewer-rider-card")?.classList.toggle("active", athlete.id === state.sessionViewerOpenAthleteId);
+      const caret = card.querySelector(".accordion-caret"), nextCaret = fresh.querySelector(".accordion-caret");
+      if (caret && nextCaret) caret.innerHTML = nextCaret.innerHTML;
+      const toggle = card.querySelector("[data-viewer-athlete]");
+      toggle?.setAttribute("aria-expanded", String(athlete.id === state.sessionViewerOpenAthleteId));
+    }
+    return card;
+  });
+  const actual = [...grid.children];
+  if (actual.length !== cards.length || actual.some((card, index) => card !== cards[index])) {
+    for (const card of actual) if (!cards.includes(card)) card.remove();
+    cards.forEach(card => grid.append(card));
+  }
+  if (!cards.length) grid.innerHTML = '<div class="empty compact-empty">No riders match this group/search.</div>';
+  paintSessionViewerSnapshot(workspace.filteredRoster.map(athlete => workspace.entries.get(athlete.id)));
+  const clockVenue = document.querySelector(".group-timer-block .timer-label > span");
+  if (clockVenue) clockVenue.textContent = venueLabel(workspace.venue);
+  const setupLabel = document.querySelector(".session-setup-copy small");
+  if (setupLabel) setupLabel.textContent = `${coachGroupLabel(workspace.group)} · ${venueLabel(workspace.venue)}`;
+  const status = document.querySelector("[data-viewer-summary-status]");
+  if (status) {
+    status.hidden = workspace.summaryStatus === "ready";
+    status.innerHTML = workspace.summaryStatus === "error"
+      ? 'Crew counts could not load. Your open rider list still works. <button class="secondary-btn compact-btn" type="button" data-viewer-load="summary">Retry crew counts</button>'
+      : workspace.primaryStatus === "error" ? 'Load a rider list to update crew progress.' : 'Checking crew progress…';
+  }
+  bindSessionViewerFastActions();
+  return true;
+}
+
+function sessionViewerFormDirty(form) {
+  return [...(form.elements || [])].some(control => {
+    if (["checkbox", "radio"].includes(control.type)) return control.checked !== control.defaultChecked;
+    if (control.tagName === "SELECT") return [...control.options].some(option => option.selected !== option.defaultSelected);
+    return "defaultValue" in control && control.value !== control.defaultValue;
+  });
+}
+
+function rememberSessionViewerDrafts(workspace, plan) {
+  if (!plan) return;
+  for (const form of plan.querySelectorAll(".viewer-assignment-editor")) {
+    const key = `${form.dataset.athleteId}:${form.dataset.viewerAssignmentEditor}:${form.dataset.venue || ""}:${form.dataset.weekStart || ""}`;
+    if (sessionViewerFormDirty(form)) workspace.drafts.set(key, { form, open: Boolean(form.closest("details")?.open) });
+    else workspace.drafts.delete(key);
+  }
+}
+
+async function paintSessionViewerSelection(workspace) {
+  const gesture = waitForSessionGesture(); if (gesture) await gesture;
+  if (!sessionViewerWorkspaceCurrent(workspace) || workspace.dataVersion !== state.sessionViewerDataVersion
+    || workspace.weekSignature !== sessionViewerWeekSignature(workspace)) return;
+  for (const [athleteId, card] of workspace.cards) {
+    const previous = card.querySelector("[data-viewer-plan]");
+    if (athleteId !== state.sessionViewerOpenAthleteId) {
+      rememberSessionViewerDrafts(workspace, previous); previous?.remove(); continue;
+    }
+    const entry = workspace.entries.get(athleteId);
+    if (!entry) continue;
+    const list = activeSessionViewerList();
+    if (!entry.detailReady) {
+      if (previous?.dataset.viewerDetailStamp) {
+        let notice = previous.querySelector("[data-viewer-primary-status]");
+        if (!notice) { notice = document.createElement("div"); notice.dataset.viewerPrimaryStatus = ""; previous.prepend(notice); }
+        notice.innerHTML = workspace.primaryStatus === "error" ? 'The saved list is shown. Refresh unavailable. <button class="secondary-btn compact-btn" type="button" data-viewer-load="detail">Retry</button>' : 'Updating this rider’s list…';
+      } else {
+        previous?.remove(); card.insertAdjacentHTML("beforeend", sessionViewerLoadingPlanHtml(athleteId, { error: workspace.primaryStatus === "error" }));
+      }
+      continue;
+    }
+    if (previous?.dataset.viewerDetailStamp === String(entry.detailStamp) && previous.dataset.viewerActiveList === list) continue;
+    rememberSessionViewerDrafts(workspace, previous);
+    const wrapper = document.createElement("div"); wrapper.innerHTML = sessionViewerPlanList(entry, workspace.activeGroupSession);
+    const next = wrapper.firstElementChild; next.dataset.viewerDetailStamp = String(entry.detailStamp); next.dataset.viewerActiveList = list;
+    for (const form of next.querySelectorAll(".viewer-assignment-editor")) {
+      const key = `${form.dataset.athleteId}:${form.dataset.viewerAssignmentEditor}:${form.dataset.venue || ""}:${form.dataset.weekStart || ""}`;
+      const saved = workspace.drafts.get(key);
+      if (saved) { const disclosure = form.closest("details"); if (disclosure) disclosure.open = saved.open; form.replaceWith(saved.form); }
+    }
+    if (previous) previous.replaceWith(next); else card.append(next);
+  }
+  bindSessionViewerFastActions();
+}
+
+async function loadSessionViewerSummary(workspace, { force = false } = {}) {
+  if (!sessionViewerWorkspaceCurrent(workspace)) return false;
+  const version = state.sessionViewerDataVersion, weekSignature = sessionViewerWeekSignature(workspace);
+  if (workspace.summaryRequest?.version === version && workspace.summaryRequest.weekSignature === weekSignature) return workspace.summaryRequest.promise;
+  if (!force && workspace.summaryVersion === version && workspace.summaryWeekSignature === weekSignature && ["ready", "error"].includes(workspace.summaryStatus)) return workspace.summaryStatus === "ready";
+  workspace.summaryVersion = version; workspace.summaryWeekSignature = weekSignature;
+  workspace.summaryStatus = "loading";
+  const current = () => sessionViewerWorkspaceCurrent(workspace) && state.sessionViewerDataVersion === version && sessionViewerWeekSignature(workspace) === weekSignature;
+  const request = { version, weekSignature, promise: null };
+  request.promise = (async () => {
+    try {
+      const summary = await getSessionViewerPlanData(workspace.groupRoster, { force, onSummaryBatch: batch => {
+        if (!current()) return;
+        for (const athleteId of batch.completedAthleteIds) {
+          const athlete = workspace.groupRoster.find(rider => rider.id === athleteId);
+          if (!athlete || workspace.entries.get(athleteId)?.detailReady) continue;
+          workspace.entries.set(athleteId, sessionViewerEntry(athlete, batch.assignmentsByAthlete.get(athleteId) || [], workspace, { ready: true }));
+        }
+        void paintSessionViewerCounts(workspace);
+      } });
+      if (!current()) return false;
+      for (const athlete of workspace.groupRoster) {
+        if (workspace.entries.get(athlete.id)?.detailReady) continue;
+        workspace.entries.set(athlete.id, sessionViewerEntry(athlete, summary.assignmentsByAthlete.get(athlete.id) || [], workspace, { ready: true }));
+      }
+      workspace.summaryStatus = "ready"; await paintSessionViewerCounts(workspace); return true;
+    } catch (error) {
+      if (current()) {
+        workspace.summaryStatus = "error";
+        for (const entry of workspace.entries.values()) if (entry.summaryStatus !== "ready") entry.summaryStatus = "error";
+        await paintSessionViewerCounts(workspace); console.warn("Crew progress unavailable; rider list remains usable", error);
+      }
+      return false;
+    } finally { if (workspace.summaryRequest === request) workspace.summaryRequest = null; }
+  })();
+  workspace.summaryRequest = request; return request.promise;
+}
+
+async function getSessionViewerSelectedDetail(workspace, athlete, { force = false, current = () => sessionViewerWorkspaceCurrent(workspace), deadlineAt = Date.now() + 10000 } = {}) {
+  let queue = state.sessionViewerDetailQueue;
+  if (!queue || queue.userId !== workspace.userId || queue.setupVersion !== workspace.setupVersion) {
+    queue = state.sessionViewerDetailQueue = { userId: workspace.userId, setupVersion: workspace.setupVersion, pending: null };
+  }
+  const remaining = () => {
+    const budget = deadlineAt - Date.now();
+    if (budget <= 0) throw new Error("Load selected rider timed out. Retry this rider list.");
+    return budget;
+  };
+  // Retain shared reads already in flight. Only the newest still-visible
+  // selection may start the next request; queue time uses the same 10s budget.
+  while (queue.pending) {
+    await withTimeout(queue.pending.catch(() => null), "Load selected rider", remaining());
+    if (!current()) return null;
+  }
+  if (!current()) return null;
+  const budget = remaining();
+  const pending = getSessionViewerPlanData([athlete], { force, includeSummary: false, detailAthleteIds: [athlete.id], deadlineAt });
+  queue.pending = pending;
+  const settled = () => { if (queue.pending === pending) queue.pending = null; };
+  // A shorter-lived consumer never cancels a shared reader or frees its slot.
+  pending.then(settled, settled);
+  return withTimeout(pending, "Load selected rider", budget);
+}
+
+function refreshSessionViewerGroupSession(workspace, { force = false } = {}) {
+  if (!sessionViewerWorkspaceCurrent(workspace, { ignoreSearch: true })) return Promise.resolve(false);
+  const revision = state.sessionViewerActiveSessionRevision || 0;
+  const receiptAge = Date.now() - workspace.activeSessionVerifiedAt;
+  const nullReceiptIsFresh = receiptAge >= 0 && receiptAge < 12000;
+  if (workspace.activeSessionRevision === revision
+    && (workspace.activeGroupSession || nullReceiptIsFresh)) return Promise.resolve(true);
+  if (workspace.activeSessionRequest) return workspace.activeSessionRequest.promise;
+  if (!force && workspace.activeSessionErrorRevision === revision) return Promise.resolve(false);
+  const current = () => sessionViewerWorkspaceCurrent(workspace, { ignoreSearch: true })
+    && (state.sessionViewerActiveSessionRevision || 0) === revision;
+  const request = { revision, promise: null };
+  request.promise = (async () => {
+    try {
+      const session = await sessionViewerRead(signal => getActiveCoachGroupSession({ signal }), "Refresh live session");
+      const verifiedAt = Date.now();
+      const gesture = waitForSessionGesture(); if (gesture) await gesture;
+      if (!current()) return false;
+      const previous = workspace.activeGroupSession;
+      const participants = group => (group?.coach_group_session_participants || []).map(row => row.athlete_id).sort().join(",");
+      const changedContext = previous?.id !== session?.id || previous?.group_name !== session?.group_name
+        || venueIdentityKey(previous?.venue) !== venueIdentityKey(session?.venue) || previous?.status !== session?.status
+        || participants(previous) !== participants(session);
+      state.sessionViewerActiveSessionCache = session;
+      workspace.activeGroupSession = session;
+      workspace.activeSessionRevision = revision;
+      workspace.activeSessionVerifiedAt = verifiedAt;
+      workspace.activeSessionErrorRevision = null;
+      const status = document.querySelector("[data-viewer-active-session-status]"); if (status) status.innerHTML = "";
+      if (changedContext) {
+        // A new/ended session needs matching clock and controls. Reuse only this
+        // freshly verified primary result; no second roster/session request.
+        await renderSessionViewer({ reusePrimary: true });
+        return true;
+      }
+      if (workspace.dataVersion !== state.sessionViewerDataVersion || workspace.weekSignature !== sessionViewerWeekSignature(workspace)) {
+        void refreshSessionViewerLight().catch(error => console.warn("Remote session saved; rider progress refresh unavailable", error));
+        return true;
+      }
+      for (const entry of workspace.entries.values()) {
+        entry.participant = session?.coach_group_session_participants?.find(row => row.athlete_id === entry.athlete.id);
+        if (entry.detailReady) entry.detailStamp = ++workspace.detailSerial;
+      }
+      await paintSessionViewerCounts(workspace);
+      await paintSessionViewerSelection(workspace);
+      return true;
+    } catch (error) {
+      const gesture = waitForSessionGesture(); if (gesture) await gesture;
+      if (current()) {
+        workspace.activeSessionErrorRevision = revision;
+        const status = document.querySelector("[data-viewer-active-session-status]");
+        if (status) status.innerHTML = 'Live session status could not update. Your rider list still works. <button class="secondary-btn compact-btn" type="button" data-viewer-load="active-session">Retry live status</button>';
+        console.warn("Live session refresh unavailable; rider list remains usable", error);
+      }
+      return false;
+    } finally {
+      if (workspace.activeSessionRequest === request) workspace.activeSessionRequest = null;
+      // A second remote finish supersedes the old receipt, then gets one
+      // coalesced trailing read. Failed same-revision reads require Retry.
+      if (sessionViewerWorkspaceCurrent(workspace, { ignoreSearch: true })
+        && (state.sessionViewerActiveSessionRevision || 0) !== revision) void refreshSessionViewerGroupSession(workspace);
+    }
+  })();
+  workspace.activeSessionRequest = request;
+  return request.promise;
+}
+
+function sessionViewerOptionalStatus(label, key, error = false) {
+  return `<section class="panel compact-panel" role="${error ? "alert" : "status"}"><div class="panel-title">${label}</div><p>${error ? 'Could not load. Your rider list still works.' : 'Checking the latest information…'}</p>${error ? `<button class="secondary-btn compact-btn" type="button" data-viewer-load="${key}">Retry</button>` : ""}</section>`;
+}
+
+function loadSessionViewerOptionals(workspace, { force = false, forceParkKing = false, only = null } = {}) {
+  if (!sessionViewerWorkspaceCurrent(workspace, { ignoreSearch: true })) return;
+  const run = (key, label, read, paint) => {
+    if ((only && key !== only) || workspace.optional[key] === "loading" || (!force && ["ready", "error"].includes(workspace.optional[key]))) return;
+    workspace.optional[key] = "loading";
+    void read().then(result => {
+      if (!sessionViewerWorkspaceCurrent(workspace, { ignoreSearch: true })) return;
+      workspace.optional[key] = "ready"; paint(result);
+    }).catch(error => {
+      if (!sessionViewerWorkspaceCurrent(workspace, { ignoreSearch: true })) return;
+      workspace.optional[key] = "error";
+      if (key === "battles") { const host = document.querySelector("[data-viewer-battles]"); if (host) host.innerHTML = sessionViewerOptionalStatus(label, key, true); }
+      else {
+        const status = document.querySelector("[data-viewer-locations-status]");
+        if (status) status.innerHTML = 'Saved locations unavailable. <button class="secondary-btn compact-btn" type="button" data-viewer-load="venues">Retry</button>';
+      }
+      console.warn(`${label} unavailable; rider list remains usable`, error);
+    });
+  };
+  run("battles", "Group battles", () => sessionViewerRead(signal => {
+    const query = client.rpc("get_coach_rider_battles_v2", { p_limit: 100 });
+    return signal && query.abortSignal ? query.abortSignal(signal) : query;
+  }, "Load group battles"), result => {
+    const ids = new Set(workspace.groupRoster.map(rider => rider.id));
+    const rows = (Array.isArray(result.data) ? result.data : []).filter(battle => ["pending", "accepted"].includes(battle.status) && (battle.participants || []).some(participant => ids.has(participant.athlete_id)));
+    const host = document.querySelector("[data-viewer-battles]"); if (!host) return;
+    host.innerHTML = sessionGroupBattlesHtml(rows, coachGroupLabel(workspace.group));
+    document.querySelector("#session-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(workspace.groupRoster, () => renderSessionViewer()));
+    bindCoachBattleControls();
+  });
+  run("venues", "Saved locations", () => sessionViewerRead(signal => getCoachVenues({ signal }), "Load daily locations"), rows => {
+    workspace.coachVenues = rows;
+    const select = document.querySelector("#viewer-venue-filter");
+    if (select) select.innerHTML = sessionViewerVenueOptions(workspace.groupRoster, [...workspace.entries.values()], rows);
+    const status = document.querySelector("[data-viewer-locations-status]"); if (status) status.textContent = "";
+  });
+  if (workspace.group !== contestPrepGroupId && workspace.venue && (!workspace.optional.crown || forceParkKing)) {
+    workspace.optional.crown = "loading";
+    void refreshParkKingCard("session-viewer-park-king", workspace.venue, true, forceParkKing).catch(error => console.warn("Park record unavailable", error));
+  }
+}
+
 function sessionViewerSnapshotHtml(schedules = []) {
+  const pending = schedules.some(entry => entry.summaryStatus && entry.summaryStatus !== "ready");
   const assigned = schedules.filter((entry) => entry.daily.length);
   const finished = assigned.filter((entry) => entry.daily.every(isAssignmentComplete)).length;
   const tricks = schedules.flatMap((entry) => entry.daily);
   const landed = tricks.filter(isAssignmentComplete).length;
-  return `<div><strong>${schedules.length}</strong><span>Riders shown</span></div><div><strong>${finished}<small>/${assigned.length}</small></strong><span>Daily lists done</span></div><div><strong>${landed}<small>/${tricks.length}</small></strong><span>Tricks landed</span></div>`;
+  return `<div><strong>${schedules.length}</strong><span>Riders shown</span></div><div><strong>${pending ? "—" : finished}<small>/${pending ? "—" : assigned.length}</small></strong><span>Daily lists done</span></div><div><strong>${pending ? "—" : landed}<small>/${pending ? "—" : tricks.length}</small></strong><span>Tricks landed</span></div>`;
 }
 
 function paintSessionViewerSnapshot(schedules = []) {
@@ -13567,6 +14202,7 @@ function paintSessionViewerSnapshot(schedules = []) {
 }
 
 function sessionViewerRiderCountersHtml(entry) {
+  const pending = entry.summaryStatus && entry.summaryStatus !== "ready";
   const categories = [
     ["daily", "Daily Tricks"],
     ["one_bang", "One Bangs"],
@@ -13584,59 +14220,53 @@ function sessionViewerRiderCountersHtml(entry) {
     const assignments = sessionViewerAssignmentsForList(entry, category);
     const complete = assignments.filter(isAssignmentComplete).length;
     const label = contestPrep ? categoryDisplayInfo(category, true).label : defaultLabel;
-    const description = `${label}: ${complete} of ${assignments.length} complete${category === "percentage" ? " · 10 attempts per set" : ""}`;
+    const description = pending ? `${label}: progress not yet verified` : `${label}: ${complete} of ${assignments.length} complete${category === "percentage" ? " · 10 attempts per set" : ""}`;
     const isOpen = state.sessionViewerOpenAthleteId === entry.athlete.id && state.sessionViewerActiveList === category;
-    return `<button class="viewer-category-counter viewer-list-tone-${category}" type="button" data-viewer-counter="${category}" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open ${label} for ${entry.athlete.display_name}. ${description}`)}" title="${escapeHtml(description)}"><strong>${complete}<small>/${assignments.length}</small></strong><span>${escapeHtml(label)}</span></button>`;
+    return `<button class="viewer-category-counter viewer-list-tone-${category}" type="button" data-viewer-counter="${category}" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open ${label} for ${entry.athlete.display_name}. ${description}`)}" title="${escapeHtml(description)}"><strong>${pending ? "—" : complete}<small>/${pending ? "—" : assignments.length}</small></strong><span>${escapeHtml(label)}</span></button>`;
   }).join("")}</div>
-    <button class="viewer-fundamental-button viewer-list-tone-other" type="button" data-viewer-counter="other" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${fundamentalsOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open Fundamental Skills for ${entry.athlete.display_name}. ${fundamentalsComplete} of ${fundamentals.length} complete. 0.5 point each.`)}">
-      <span>Fundamental Skills</span><span class="viewer-fundamental-meta"><small>0.5 pt each</small><strong>${fundamentalsComplete}<small>/${fundamentals.length}</small></strong><b aria-hidden="true">${fundamentalsOpen ? "−" : "+"}</b></span>
+    <button class="viewer-fundamental-button viewer-list-tone-other" type="button" data-viewer-counter="other" data-viewer-counter-athlete="${escapeHtml(entry.athlete.id)}" aria-expanded="${fundamentalsOpen}" aria-controls="viewer-plan-${escapeHtml(entry.athlete.id)}" aria-label="${escapeHtml(`Open Fundamental Skills for ${entry.athlete.display_name}. ${pending ? "Progress not yet verified" : `${fundamentalsComplete} of ${fundamentals.length} complete`}. 0.5 point each.`)}">
+      <span>Fundamental Skills</span><span class="viewer-fundamental-meta"><small>0.5 pt each</small><strong>${pending ? "—" : fundamentalsComplete}<small>/${pending ? "—" : fundamentals.length}</small></strong><b aria-hidden="true">${fundamentalsOpen ? "−" : "+"}</b></span>
     </button>`;
 }
 
 function sessionViewerRiderCardHtml(entry, activeGroupSession) {
   const { athlete, daily, venue, participant } = entry;
+  const pending = entry.summaryStatus && entry.summaryStatus !== "ready";
   const complete = daily.filter(isAssignmentComplete).length;
   const percent = daily.length ? Math.round((complete / daily.length) * 100) : 0;
   const isOpen = athlete.id === state.sessionViewerOpenAthleteId;
   const status = daily.length && complete === daily.length ? "complete" : complete > 0 ? "progress" : "ready";
-  const statusLabel = participant?.daily_finish_seconds != null ? participant.daily_result?.all_completed === false ? "Practice finished" : "Daily result saved" : status === "complete" ? "Ready to confirm" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
+  const statusLabel = pending ? (entry.summaryStatus === "error" ? "Progress unavailable" : "Checking progress") : participant?.daily_finish_seconds != null ? participant.daily_result?.all_completed === false ? "Practice finished" : "Daily result saved" : status === "complete" ? "Ready to confirm" : status === "progress" ? "In progress" : daily.length ? "Ready to start" : "No daily list";
   const finish = participant?.daily_finish_seconds != null ? ` · Timer finished ${formatTime(participant.daily_finish_seconds)}` : "";
-  const finishButton = activeGroupSession ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}" data-rider-name="${escapeHtml(athlete.display_name)}" ${participant?.daily_finish_seconds == null && !daily.length ? "disabled" : ""}>${participant?.daily_finish_seconds != null ? "View Daily result" : "Finish Daily Tricks"}</button>` : "";
-  return `<article class="viewer-rider-accordion status-${status} ${isOpen ? "open" : ""}">
+  const finishButton = activeGroupSession ? `<button class="secondary-btn compact-btn finish-daily-btn" type="button" data-finish-daily-athlete="${athlete.id}" data-rider-name="${escapeHtml(athlete.display_name)}" ${participant?.daily_finish_seconds == null && (pending || !daily.length) ? "disabled" : ""}>${participant?.daily_finish_seconds != null ? "View Daily result" : "Finish Daily Tricks"}</button>` : "";
+  return `<article data-viewer-rider-id="${escapeHtml(athlete.id)}" class="viewer-rider-accordion status-${status} ${isOpen ? "open" : ""}">
     <div class="viewer-rider-card ${isOpen ? "active" : ""}">
       <button class="viewer-rider-toggle" type="button" data-viewer-athlete="${athlete.id}" aria-expanded="${isOpen}" aria-controls="viewer-plan-${escapeHtml(athlete.id)}">
         <span class="viewer-card-head">${avatarHtml(athlete, "student-chip-avatar")}<span><strong>${escapeHtml(athlete.display_name)}</strong><small>${escapeHtml(venueLabel(venue))}${finish}</small></span></span>
         <span class="accordion-caret">${isOpen ? "Close" : "Open"}<b aria-hidden="true">${isOpen ? "−" : "+"}</b></span>
       </button>
-      ${sessionViewerRiderCountersHtml(entry)}
+      <div data-viewer-card-counts style="display:contents">${sessionViewerRiderCountersHtml(entry)}</div>
       <span class="viewer-card-footer"><span class="viewer-rider-status"><i aria-hidden="true"></i>Daily · ${statusLabel}</span></span>
-      <span class="viewer-progress"><span style="width:${percent}%"></span></span>
+      <span class="viewer-progress" aria-label="${pending ? "Progress not yet verified" : `${percent}% complete`}"><span style="width:${pending ? 0 : percent}%"></span></span>
     </div>
     ${finishButton ? `<div class="viewer-training-actions">${finishButton}</div>` : ""}
-    ${isOpen ? sessionViewerPlanList(entry, activeGroupSession) : ""}
+    ${isOpen ? (entry.detailReady === false ? sessionViewerLoadingPlanHtml(athlete.id) : sessionViewerPlanList(entry, activeGroupSession)) : ""}
   </article>`;
 }
 
-function rememberSessionViewerVerifiedNullSession(checkedAt, scope) {
-  if (!Number.isFinite(checkedAt) || state.user?.id !== scope.userId || state.sessionSetupVersion !== scope.setupVersion
-    || state.loadingOverlayToken !== scope.navigationToken || state.sessionViewerDataVersion !== scope.dataVersion) return;
-  state.sessionViewerVerifiedNullSession = { ...scope, checkedAt, group: state.sessionViewerGroup, venue: state.sessionViewerVenue };
-}
-
-function canReuseSessionViewerVerifiedNullSession() {
-  const verified = state.sessionViewerVerifiedNullSession;
-  const age = verified ? Date.now() - verified.checkedAt : Infinity;
-  return Boolean(verified && state.sessionViewerActiveSessionCache === null && age >= 0 && age < 12000
-    && state.user?.id === verified.userId && state.sessionSetupVersion === verified.setupVersion
-    && state.loadingOverlayToken === verified.navigationToken && state.sessionViewerDataVersion === verified.dataVersion
-    && state.sessionViewerGroup === verified.group && state.sessionViewerVenue === verified.venue);
-}
-
-async function renderSessionViewer({ forceParkKing = false } = {}) {
+async function renderSessionViewer({ forceParkKing = false, reusePrimary = false } = {}) {
   const renderVersion = ++state.sessionViewerRenderVersion;
-  const activeReadScope = { userId: state.user?.id, setupVersion: state.sessionSetupVersion,
-    navigationToken: state.loadingOverlayToken, dataVersion: state.sessionViewerDataVersion };
-  let activeReadCheckedAt = null;
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion, navigationToken = state.loadingOverlayToken;
+  const previousWorkspace = state.sessionViewerWorkspace;
+  const activeSessionRevision = state.sessionViewerActiveSessionRevision || 0;
+  if (reusePrimary && previousWorkspace?.userId === userId && previousWorkspace.setupVersion === setupVersion
+    && previousWorkspace.navigationToken === navigationToken) {
+    document.querySelectorAll("[data-viewer-plan]").forEach(plan => rememberSessionViewerDrafts(previousWorkspace, plan));
+  }
+  state.sessionViewerWorkspace = null;
+  const current = () => state.view === "sessionViewer" && state.user?.id === userId
+    && state.sessionSetupVersion === setupVersion && state.loadingOverlayToken === navigationToken
+    && renderVersion === state.sessionViewerRenderVersion;
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
@@ -13645,17 +14275,23 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
     clearInterval(state.sessionViewerClock);
     state.sessionViewerClock = null;
   }
-  const [roster, activeGroupSession, battleResult, coachVenues] = await Promise.all([
+  const reusable = reusePrimary && previousWorkspace?.userId === userId && previousWorkspace.setupVersion === setupVersion
+    && previousWorkspace.navigationToken === navigationToken;
+  let activeSessionVerifiedAt = reusable ? previousWorkspace.activeSessionVerifiedAt : null;
+  const [roster, activeGroupSession] = reusable ? [previousWorkspace.roster, previousWorkspace.activeGroupSession] : await Promise.all([
     getSessionViewerRoster(),
-    getActiveCoachGroupSession().then(session => { activeReadCheckedAt = Date.now(); return session; }),
-    client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
-    // Saved locations can be empty while the coach builds their first daily list.
-    // A location read failure must not prevent access to existing rider lists.
-    withTimeout(getCoachVenues(), "Load daily locations", 12000).catch(() => []),
+    sessionViewerRead(signal => getActiveCoachGroupSession({ signal }), "Load group session").then(session => {
+      activeSessionVerifiedAt = Date.now();
+      return session;
+    }),
   ]);
-  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
+  const coachVenues = [];
+  if (!current()) return;
   if (!isCoachRole(state.profile?.role)) return navigate("home");
   if (!roster.length) {
+    const activeGesture = waitForSessionGesture();
+    if (activeGesture) await activeGesture;
+    if (!current()) return;
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach tool</div><h1>Session <span>Viewer</span></h1><p>Add students first, then you can manage group Daily Tricks from here.</p></div></div><div class="empty">No students linked yet.</div>`;
     return;
   }
@@ -13669,42 +14305,29 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   const search = state.sessionViewerSearch.toLowerCase().trim();
   const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
   const groupRoster = roster.filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id));
-  const groupRiderIds = new Set(groupRoster.map((athlete) => athlete.id));
-  const groupBattles = (Array.isArray(battleResult.data) ? battleResult.data : []).filter((battle) => ["pending", "accepted"].includes(battle.status) && (battle.participants || []).some((participant) => groupRiderIds.has(participant.athlete_id)));
   const filteredRoster = groupRoster.filter((athlete) => !search || String(athlete.display_name || "").toLowerCase().includes(search));
   if (!state.sessionViewerOpenAthleteId || !filteredRoster.some((athlete) => athlete.id === state.sessionViewerOpenAthleteId)) {
     state.sessionViewerOpenAthleteId = "";
   }
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, {
-    detailAthleteIds: state.sessionViewerOpenAthleteId ? [state.sessionViewerOpenAthleteId] : [],
-  });
-  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion) return;
-  const schedules = filteredRoster.map((athlete) => {
-    const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
-      const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
-      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, assignment.progress) };
-    });
-    const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
-    const selectedVenue = state.sessionViewerVenue || dailyVenues(allDaily)[0] || "";
-    const visibleDaily = assignmentsForVenue(allDaily, selectedVenue);
-    const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
-    return { athlete, assignments: allAssignments, allDaily, daily: visibleDaily, venue: selectedVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
-  });
-  if (state.view !== "sessionViewer") return;
-  if (!state.sessionViewerVenue) {
-    const firstVenue = schedules.flatMap((entry) => dailyVenues(entry.allDaily)).find((venue) => venue !== undefined);
-    state.sessionViewerVenue = firstVenue || "";
-    schedules.forEach((entry) => {
-      entry.venue = state.sessionViewerVenue;
-      entry.daily = assignmentsForVenue(entry.allDaily, state.sessionViewerVenue);
-    });
-  }
+  const workspace = {
+    userId, setupVersion, navigationToken, group: state.sessionViewerGroup, venue: state.sessionViewerVenue,
+    search: state.sessionViewerSearch, roster, groupRoster, filteredRoster, activeGroupSession,
+    dataVersion: state.sessionViewerDataVersion, entries: new Map(), cards: new Map(), drafts: reusable ? previousWorkspace.drafts : new Map(),
+    activeSessionRevision: reusable ? previousWorkspace.activeSessionRevision : activeSessionRevision,
+    activeSessionVerifiedAt,
+    optional: {}, summaryStatus: "loading", primaryStatus: "loading", detailSerial: 0,
+  };
+  workspace.weekSignature = sessionViewerWeekSignature(workspace);
+  groupRoster.forEach(athlete => workspace.entries.set(athlete.id, sessionViewerEntry(athlete, [], workspace)));
+  const schedules = filteredRoster.map(athlete => workspace.entries.get(athlete.id));
+  const activeGesture = waitForSessionGesture();
+  if (activeGesture) await activeGesture;
+  if (!current()) return;
+  state.sessionViewerWorkspace = workspace;
   const venueOptions = sessionViewerVenueOptions(groupRoster, schedules, coachVenues);
   const requestedVenue = state.sessionViewerVenue;
   const requestedVenueKey = venueIdentityKey(requestedVenue);
-  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
-  if (activeGroupSession === null) rememberSessionViewerVerifiedNullSession(activeReadCheckedAt, activeReadScope);
-  else state.sessionViewerVerifiedNullSession = null;
+  if (!current() || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map((entry) => sessionViewerRiderCardHtml(entry, activeGroupSession)).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   const availableExtras = started ? roster.filter((athlete) => !activeParticipantIds.has(athlete.id)) : [];
@@ -13739,21 +14362,34 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
       <div class="session-setup-fields">
         <div class="field viewer-group-filter"><label for="viewer-group-filter">Group</label><div class="viewer-select-wrap"><svg class="viewer-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v2"/></svg><select id="viewer-group-filter" ${started ? "disabled" : ""}>${sessionViewerGroupOptions()}</select><svg class="viewer-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></div></div>
         <div class="field viewer-location-filter"><label for="viewer-venue-filter">Location</label><div class="viewer-location-controls"><div class="viewer-select-wrap"><svg class="viewer-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg><select id="viewer-venue-filter" ${started ? "disabled" : ""}>${venueOptions || `<option value="">Add a location</option>`}</select><svg class="viewer-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></div><button id="add-daily-location" class="daily-location-add" type="button" aria-label="Add daily location" title="Add daily location" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
+        <small class="session-setup-note" data-viewer-locations-status>Checking saved locations…</small>
         ${started ? `<small class="session-setup-note">Group and location stay fixed until this session ends.</small>` : ""}
       </div>
     </details>
-    ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: Boolean(state.sessionViewerVenue) })}
+    ${contestPrepViewer ? "" : parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: true })}
     ${extraRiderForm}
     <section class="session-viewer-layout">
       <div class="viewer-accordion-panel"><div class="viewer-roster-head"><div><div class="eyebrow">The crew</div><h2>Riders in session</h2><div class="panel-meta">Tap a number to open that list, or a rider to see all lists.</div></div><div class="field viewer-search-filter"><label for="viewer-search">Find rider</label><input id="viewer-search" value="${escapeHtml(state.sessionViewerSearch)}" placeholder="Search rider name"></div></div><div class="viewer-rider-grid viewer-accordion-list">${cards}</div></div>
     </section>
-    ${sessionGroupBattlesHtml(groupBattles, coachGroupLabel(state.sessionViewerGroup))}`;
+    <p class="panel-meta" role="status" data-viewer-summary-status>Checking crew progress…</p>
+    <div data-viewer-active-session-status role="status"></div>
+    <div data-viewer-battles>${sessionViewerOptionalStatus("Group battles", "battles")}</div>`;
   bindSessionViewerActions();
-  document.querySelector("#session-create-battle")?.addEventListener("click", () => showCoachBattleBuilder(groupRoster, () => renderSessionViewer()));
-  bindCoachBattleControls();
   updateGroupSessionTimerDom();
   state.sessionViewerClock = setInterval(updateGroupSessionTimerDom, 1000);
-  if (!contestPrepViewer && requestedVenue) refreshParkKingCard("session-viewer-park-king", requestedVenue, true, forceParkKing);
+  const view = document.querySelector("#view");
+  if (view.sessionViewerRetryHandler) view.removeEventListener("click", view.sessionViewerRetryHandler);
+  view.sessionViewerRetryHandler = event => {
+    const button = event.target.closest?.("[data-viewer-load]"); if (!button) return;
+    event.preventDefault();
+    if (button.dataset.viewerLoad === "detail") void refreshSessionViewerLight({ force: true }).catch(error => console.warn("Rider list refresh unavailable", error));
+    else if (button.dataset.viewerLoad === "summary") void loadSessionViewerSummary(workspace, { force: true });
+    else if (button.dataset.viewerLoad === "active-session") void refreshSessionViewerGroupSession(workspace, { force: true });
+    else loadSessionViewerOptionals(workspace, { force: true, only: button.dataset.viewerLoad });
+  };
+  view.addEventListener("click", view.sessionViewerRetryHandler);
+  void refreshSessionViewerLight({ forceParkKing }).catch(error => console.warn("Rider list unavailable", error));
+  return true;
 }
 
 function sessionViewerVenueOptions(groupRoster = [], schedules = [], coachVenues = []) {
@@ -13965,7 +14601,7 @@ function sessionViewerAssignmentEditor(entry, listId, assignments = []) {
         : listId === "trick_links" ? "Keep each two-trick link in its own numbered box. Example: Barspin - Tailwhip. Land both back to back for 2 points." : "One trick per line. Add notes after a dash.";
   return `<details class="viewer-edit-panel">
     <summary>Edit ${escapeHtml(editLabel)}</summary>
-    <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}">
+    <form class="viewer-assignment-editor" data-viewer-assignment-editor="${escapeHtml(listId)}" data-athlete-id="${escapeHtml(entry.athlete.id)}" data-venue="${escapeHtml(entry.venue || "")}" data-week-start="${escapeHtml(weekStartDateForCountry(entry.athlete.country_code || "AU"))}">
       ${["lines", "trick_links"].includes(listId) ? `<p class="panel-meta">${escapeHtml(helper)}</p><div class="viewer-numbered-lines">${Array.from({ length: Math.max(3, assignments.length) }, (_, index) => `<label class="field viewer-line-field"><span>${listId === "trick_links" ? "Link" : "Line"} ${index + 1}</span><textarea name="${listId === "trick_links" ? "numberedLink" : "numberedLine"}" rows="3" placeholder="${listId === "trick_links" ? "Barspin - Tailwhip" : `Enter the full run for Line ${index + 1}`}">${escapeHtml(assignments[index] ? assignmentLinesForEditor([assignments[index]]) : "")}</textarea></label>`).join("")}</div>` : `<div class="field">
         <label>${escapeHtml(helper)}</label>
         <textarea name="assignmentLines" rows="${listId === "daily" ? 7 : 5}" placeholder="${listId === "trick_links" ? "Barspin → Tailwhip" : "Add tricks here..."}">${escapeHtml(assignmentLinesForEditor(assignments))}</textarea>
@@ -14033,9 +14669,10 @@ function bindSessionViewerActions() {
   setup?.addEventListener("toggle", () => {
     if (setupIsCurrent()) state.sessionViewerSetupOpen = setup.open;
   });
-  document.querySelector("#viewer-refresh")?.addEventListener("click", () => {
+  document.querySelector("#viewer-refresh")?.addEventListener("click", event => {
     window.JKPreviousWeekLandings?.clear();
-    renderSessionViewer();
+    const restore = setButtonBusy(event.currentTarget, "Refreshing…");
+    void renderSessionViewer().catch(error => notify(messageFrom(error), "error")).finally(restore);
   });
   document.querySelector("#viewer-group-filter")?.addEventListener("change", (event) => {
     const select = event.currentTarget;
@@ -14045,7 +14682,7 @@ function bindSessionViewerActions() {
     state.sessionViewerVenue = "";
     state.sessionViewerOpenAthleteId = "";
     state.sessionViewerActiveList = "";
-    renderSessionViewer();
+    void renderSessionViewer({ reusePrimary: true }).catch(error => notify(messageFrom(error), "error"));
   });
   document.querySelector("#viewer-venue-filter")?.addEventListener("change", (event) => {
     const select = event.currentTarget;
@@ -14059,31 +14696,18 @@ function bindSessionViewerActions() {
       wrapper.innerHTML = parkKingCardHtml(null, state.sessionViewerVenue, { id: "session-viewer-park-king", compact: true, loading: true });
       currentCard.replaceWith(wrapper.firstElementChild);
     }
-    renderSessionViewer();
+    void renderSessionViewer({ reusePrimary: true }).catch(error => notify(messageFrom(error), "error"));
   });
   document.querySelector("#viewer-search")?.addEventListener("input", (event) => {
     state.sessionViewerSearch = event.target.value;
     clearTimeout(state.sessionViewerSearchTimer);
-    state.sessionViewerSearchTimer = setTimeout(() => refreshSessionViewerLight(), 200);
+    state.sessionViewerSearchTimer = setTimeout(() => { void refreshSessionViewerLight().catch(error => console.warn("Rider search refresh unavailable", error)); }, 200);
   });
-  document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
-    state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
-    state.sessionViewerActiveList = "";
-    refreshSessionViewerLight();
-  }));
   document.querySelector("#start-group-session")?.addEventListener("click", startViewerGroupSession);
   document.querySelector("#pause-group-session")?.addEventListener("click", toggleViewerGroupSessionPause);
   document.querySelector("#end-group-session")?.addEventListener("click", endViewerGroupSession);
   document.querySelector("#add-session-rider-form")?.addEventListener("submit", addExtraRiderToGroupSession);
-  document.querySelectorAll("[data-viewer-counter]").forEach((button) => button.addEventListener("click", openSessionViewerCounter));
-  document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
-  document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
-  document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
-  document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
-  document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
-  document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
-  document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
+  bindSessionViewerFastActions();
 }
 
 async function startViewerGroupSession(event) {
@@ -14182,31 +14806,40 @@ async function recordViewerAssignmentAction(event) {
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
+  if (button.disabled) return;
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const sameAccount = () => state.user?.id === userId && state.sessionSetupVersion === setupVersion;
+  const action = button.dataset.viewerAssignmentAction;
   const row = button.closest(".viewer-trick-row");
   const wasComplete = row?.classList.contains("complete");
   const restoreButton = setButtonBusy(button);
-  row?.classList.toggle("complete", !wasComplete);
-  button.textContent = wasComplete ? "" : "✓";
-  setPendingAssignmentProgress(button.dataset.assignmentId, button.dataset.viewerAssignmentAction === "landed");
+  row?.classList.toggle("complete", action === "landed");
+  button.textContent = action === "landed" ? "✓" : "";
+  setPendingAssignmentProgress(button.dataset.assignmentId, action === "landed");
+  let saved = false;
   try {
     const isOther = button.dataset.assignmentCategory === "other";
     const isLine = button.dataset.assignmentCategory === "lines";
     const rpcName = isOther ? "record_other_try_action" : isLine ? "record_line_action_at_venue" : "record_assignment_action_at_venue";
     const rpcArgs = isOther ? {
       p_assignment_id: button.dataset.assignmentId,
-      p_action: button.dataset.viewerAssignmentAction,
+      p_action: action,
     } : isLine ? {
       p_assignment_id: button.dataset.assignmentId,
-      p_action: button.dataset.viewerAssignmentAction,
+      p_action: action,
       p_venue: state.sessionViewerVenue || "",
     } : {
       p_assignment_id: button.dataset.assignmentId,
-      p_action: button.dataset.viewerAssignmentAction,
+      p_action: action,
       p_venue: state.sessionViewerVenue || "",
     };
     const { data, error } = await withTimeout(saveProgressRpc(rpcName, rpcArgs), "Update trick progress", 15000);
     if (error) throw error;
+    saved = true;
+    if (!sameAccount()) return;
     const result = Array.isArray(data) ? data[0] : data;
+    button.dataset.viewerAssignmentAction = action === "landed" ? "unlanded" : "landed";
+    button.setAttribute("aria-label", action === "landed" ? "Untick landed" : "Mark landed");
     const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
     if (athleteId) cacheClear(`schedule:${athleteId}:`);
     invalidateSessionViewerData();
@@ -14215,27 +14848,34 @@ async function recordViewerAssignmentAction(event) {
     const awardedPoints = Number(result?.points_awarded || 0) + Number(result?.half_points_awarded || 0);
     const removedPoints = Number(result?.points_removed || 0) + Number(result?.half_points_removed || 0);
     const pointsNote = awardedPoints ? ` · +${awardedPoints} points` : removedPoints ? ` · -${removedPoints} points` : "";
-    const resultMessage = isOther ? (button.dataset.viewerAssignmentAction === "landed" ? "Fundamental skill landed" : "Fundamental skill unticked") : result?.message || "Trick progress updated";
+    const resultMessage = isOther ? (action === "landed" ? "Fundamental skill landed" : "Fundamental skill unticked") : result?.message || "Trick progress updated";
     notify(`${resultMessage}${pointsNote}.`);
-    refreshOpenTrainingProgress(athleteId);
-    await refreshSessionViewerLight({ force: true });
+    void Promise.resolve().then(() => sameAccount() && refreshOpenTrainingProgress(athleteId)).catch(error => console.warn("Trick saved; progress summary unavailable", error));
   } catch (error) {
-    clearPendingAssignmentProgress(button.dataset.assignmentId);
-    row?.classList.toggle("complete", Boolean(wasComplete));
-    button.textContent = wasComplete ? "✓" : "";
-    notify(messageFrom(error), "error");
+    if (!sameAccount()) return;
+    if (!saved) {
+      clearPendingAssignmentProgress(button.dataset.assignmentId);
+      row?.classList.toggle("complete", Boolean(wasComplete));
+      button.textContent = wasComplete ? "✓" : "";
+      notify(messageFrom(error), "error");
+    } else console.warn("Trick saved; session display update pending", error);
   } finally {
     restoreButton();
+    if (saved && sameAccount()) void queueSessionViewerRefresh();
   }
 }
 
 async function recordViewerAssignmentAttempt(event) {
   const button = event.currentTarget;
+  if (button.disabled) return;
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const sameAccount = () => state.user?.id === userId && state.sessionSetupVersion === setupVersion;
   const currentCount = Number(button.querySelector(".attempt-pill")?.textContent || 0);
   const previousHtml = button.innerHTML;
   const restoreButton = setButtonBusy(button);
   button.classList.add("attempted");
   button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${currentCount + 1}</span>`;
+  let saved = false;
   try {
     const session = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
     const { data, error } = await withTimeout(saveProgressRpc("record_assignment_attempt", {
@@ -14243,18 +14883,25 @@ async function recordViewerAssignmentAttempt(event) {
       p_group_session_id: session?.id || null,
     }), "Save trick attempt", 15000);
     if (error) throw error;
+    saved = true;
+    if (!sameAccount()) return;
     const result = Array.isArray(data) ? data[0] : data;
+    const confirmedCount = Number(result?.attempt_count);
+    if (Number.isFinite(confirmedCount)) button.innerHTML = `<span>Attempt</span><span class="attempt-pill">${confirmedCount}</span>`;
     const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
     if (athleteId) cacheClear(`schedule:${athleteId}:`);
     invalidateSessionViewerData();
     notify(`${result?.trick_name || "Trick"} attempt saved · ${result?.attempt_count || 1} total.`);
-    await refreshSessionViewerLight({ force: true });
   } catch (error) {
-    button.innerHTML = previousHtml;
-    button.classList.toggle("attempted", currentCount > 0);
-    notify(messageFrom(error), "error");
+    if (!sameAccount()) return;
+    if (!saved) {
+      button.innerHTML = previousHtml;
+      button.classList.toggle("attempted", currentCount > 0);
+      notify(messageFrom(error), "error");
+    } else console.warn("Attempt saved; session display update pending", error);
   } finally {
     restoreButton();
+    if (saved && sameAccount()) void queueSessionViewerRefresh();
   }
 }
 
@@ -14262,6 +14909,9 @@ async function recordViewerPercentageAttempt(event) {
   event.preventDefault();
   event.stopPropagation();
   const button = event.currentTarget;
+  if (button.disabled) return;
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const sameAccount = () => state.user?.id === userId && state.sessionSetupVersion === setupVersion;
   const restoreButton = setButtonBusy(button);
   const cycleState = button.dataset.percentageCycle || "";
   const clearAttempt = button.dataset.percentageClear === "true" || cycleState === "missed";
@@ -14270,6 +14920,7 @@ async function recordViewerPercentageAttempt(event) {
     : button.dataset.percentageAction === "true";
   const attemptNumber = Number(button.dataset.percentageAttemptNumber || 1);
   setPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber, clearAttempt ? null : landed);
+  let saved = false;
   try {
     const { data, error } = await withTimeout(saveProgressRpc("set_percentage_attempt_at_venue", {
       p_assignment_id: button.dataset.assignmentId,
@@ -14278,7 +14929,18 @@ async function recordViewerPercentageAttempt(event) {
       p_venue: state.sessionViewerVenue || "",
     }), "Save percentage attempt", 15000);
     if (error) throw error;
+    saved = true;
+    if (!sameAccount()) return;
     const result = Array.isArray(data) ? data[0] : data;
+    if (cycleState) {
+      button.dataset.percentageCycle = clearAttempt ? "empty" : landed ? "landed" : "missed";
+      button.classList.toggle("landed", !clearAttempt && landed);
+      button.classList.toggle("missed", !clearAttempt && !landed);
+      button.textContent = clearAttempt ? String(attemptNumber) : landed ? "✓" : "×";
+      const label = clearAttempt ? `Tap to mark attempt ${attemptNumber} landed` : `Tap to change attempt ${attemptNumber}`;
+      button.setAttribute("title", label);
+      button.setAttribute("aria-label", label);
+    }
     const athleteId = button.dataset.athleteId || button.closest("[data-viewer-athlete-card]")?.dataset.viewerAthleteCard;
     if (athleteId) cacheClear(`schedule:${athleteId}:`);
     invalidateSessionViewerData();
@@ -14286,12 +14948,15 @@ async function recordViewerPercentageAttempt(event) {
     cacheClear("park-king:");
     const actionText = clearAttempt ? "cleared" : landed ? "landed" : "missed";
     notify(clearAttempt ? `Attempt cleared. New result: ${result?.percentage || 0}%.` : (result?.complete ? `Percentage complete: ${result.percentage}% · +${result.points_awarded || 0} points.` : `Attempt ${result?.attempt_number || attemptNumber} ${actionText}. ${result?.attempts || 0}/10 saved.`));
-    await refreshSessionViewerLight({ force: true });
   } catch (error) {
-    clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
-    notify(messageFrom(error), "error");
+    if (!sameAccount()) return;
+    if (!saved) {
+      clearPendingPercentageAttempt(button.dataset.assignmentId, attemptNumber);
+      notify(messageFrom(error), "error");
+    } else console.warn("Percentage saved; session display update pending", error);
   } finally {
     restoreButton();
+    if (saved && sameAccount()) void queueSessionViewerRefresh();
   }
 }
 
@@ -14307,7 +14972,7 @@ async function openSessionViewerCounter(event) {
   const search = state.sessionViewerSearch;
   state.sessionViewerOpenAthleteId = athleteId;
   state.sessionViewerActiveList = listId;
-  const refresh = refreshSessionViewerLight({ displayOnly: true });
+  const refresh = refreshSessionViewerLight();
   const renderVersion = state.sessionViewerRenderVersion;
   const selectionIsCurrent = () => state.view === "sessionViewer" && state.sessionViewerRenderVersion === renderVersion
     && state.sessionViewerOpenAthleteId === athleteId && state.sessionViewerActiveList === listId
@@ -14331,21 +14996,23 @@ async function openSessionViewerCounter(event) {
 function selectViewerListTab(event) {
   const selectedList = event.currentTarget.dataset.viewerListTab || "";
   state.sessionViewerActiveList = state.sessionViewerActiveList === selectedList ? "" : selectedList;
-  refreshSessionViewerLight({ displayOnly: true });
+  return refreshSessionViewerLight().catch(error => notify(messageFrom(error), "error"));
 }
 
 async function saveSessionViewerAssignments(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
   const athleteId = formElement.dataset.athleteId;
-  const userId = state.user?.id, view = state.view;
-  const isCurrent = () => formElement.isConnected && state.user?.id === userId && state.view === view && formElement.dataset.athleteId === athleteId;
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion || 0, view = state.view;
+  const sameAccount = () => state.user?.id === userId && (state.sessionSetupVersion || 0) === setupVersion;
+  const isCurrent = () => formElement.isConnected && sameAccount() && state.view === view && formElement.dataset.athleteId === athleteId;
   const listId = formElement.dataset.viewerAssignmentEditor;
   const venue = formElement.dataset.venue || "";
   if (!athleteId || !categoryInfo[listId]) return notify("Could not save that list.", "error");
   const button = formElement.querySelector("button");
   const restoreButton = setButtonBusy(button, "Saving...");
-
+  const submitted = [...(formElement.elements || [])].map(control => ({ control, value: control.value, checked: control.checked, selected: control.tagName === "SELECT" ? [...control.options].map(option => option.selected) : null }));
+  let saved = false;
   try {
     const formData = new FormData(formElement);
     const rows = listId === "lines" ? formData.getAll("numberedLine").map(line => String(line).replace(/\s*\r?\n\s*/g, " "))
@@ -14359,6 +15026,7 @@ async function saveSessionViewerAssignments(event) {
     const athlete = state.sessionViewerRosterCache.find((entry) => entry.id === athleteId);
     const info = categoryDisplayInfo(listId, athlete);
     const athleteWeekStart = weekStartDateForCountry(athlete?.country_code || "AU");
+    if (formElement.dataset.weekStart && formElement.dataset.weekStart !== athleteWeekStart) throw new Error("A new training week has started. Refresh this list before saving; your draft is kept here.");
     const { error } = await withTimeout(client.rpc("save_weekly_assignment_list", {
       p_athlete_id: athleteId,
       p_week_start: athleteWeekStart,
@@ -14366,14 +15034,25 @@ async function saveSessionViewerAssignments(event) {
       p_venue: listId === "daily" ? venue : "",
       p_assignments: editedLines,
     }), `Save ${info.label}`, 20000);
-    if (!isCurrent()) return;
     if (error) throw error;
+    saved = true;
+    if (!sameAccount()) return;
+    // The submitted values are now the baseline, even if newer unsaved edits
+    // were typed during the write. Never mark those newer values pristine.
+    for (const entry of submitted) {
+      if (["checkbox", "radio"].includes(entry.control.type)) entry.control.defaultChecked = entry.checked;
+      else if (entry.selected) [...entry.control.options].forEach((option, index) => { option.defaultSelected = entry.selected[index]; });
+      else if ("defaultValue" in entry.control) entry.control.defaultValue = entry.value;
+    }
+    const workspace = state.sessionViewerWorkspace;
+    if (workspace?.userId === userId && workspace.setupVersion === setupVersion) rememberSessionViewerDrafts(workspace, formElement.closest("[data-viewer-plan]"));
     clearCoachCaches({ roster: false, command: true, sessionViewer: true, leaderboard: false });
-    notify(`${info.label} saved for this rider.`);
-    await refreshSessionViewerLight({ force: true });
+    if (isCurrent()) notify(`${info.label} saved for this rider.`);
+    if (state.view === "sessionViewer") void queueSessionViewerRefresh();
   } catch (error) {
-    if (!isCurrent()) return;
-    notify(messageFrom(error), "error");
+    if (!sameAccount()) return;
+    if (saved) console.warn("Rider list saved; display refresh unavailable", error);
+    else if (state.view === view) notify(messageFrom(error), "error");
   } finally {
     restoreButton();
   }
@@ -14418,68 +15097,148 @@ async function toggleViewerRunPoint(event) {
   await refreshSessionViewerLight();
 }
 
-async function refreshSessionViewerLight({ force = false, forceParkKing = false, displayOnly = false } = {}) {
-  if (state.view !== "sessionViewer") return;
-  const rosterGrid = document.querySelector(".viewer-rider-grid");
-  if (!rosterGrid) return renderSessionViewer();
+function queueSessionViewerRefresh() {
+  const userId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const current = () => Boolean(userId) && state.user?.id === userId
+    && state.sessionSetupVersion === setupVersion && state.view === "sessionViewer";
+  if (!current()) return Promise.resolve(false);
+  const existing = state.sessionViewerRefreshRequest;
+  if (existing?.userId === userId && existing.setupVersion === setupVersion) {
+    existing.again = true;
+    return existing.promise;
+  }
+  const request = { userId, setupVersion, again: false, promise: null };
+  state.sessionViewerRefreshRequest = request;
+  request.promise = (async () => {
+    do {
+      request.again = false;
+      if (!current()) return false;
+      const previousRender = state.sessionViewerRenderVersion;
+      try {
+        await withTimeout(refreshSessionViewerLight({ force: true }), "Refresh rider list", 12000);
+      } catch (error) {
+        if (!current()) return false;
+        // An old, timed-out read must not repaint after another tap or navigation.
+        if (state.sessionViewerRenderVersion === previousRender + 1) state.sessionViewerRenderVersion += 1;
+        console.warn("Training saved; session list refresh unavailable", error);
+        notify("Saved. The latest list couldn’t load. Tap Refresh to sync it.", "error");
+        return false;
+      }
+    } while (request.again && current());
+    return true;
+  })().finally(() => {
+    if (state.sessionViewerRefreshRequest === request) state.sessionViewerRefreshRequest = null;
+  });
+  return request.promise;
+}
+
+async function refreshSessionViewerLight({ force = false, forceParkKing = false } = {}) {
+  if (state.view !== "sessionViewer") return false;
+  const workspace = state.sessionViewerWorkspace;
+  if (!workspace || state.user?.id !== workspace.userId || state.sessionSetupVersion !== workspace.setupVersion
+    || state.loadingOverlayToken !== workspace.navigationToken || state.sessionViewerGroup !== workspace.group
+    || state.sessionViewerVenue !== workspace.venue || !document.querySelector(".viewer-rider-grid")) return renderSessionViewer({ forceParkKing });
   const renderVersion = ++state.sessionViewerRenderVersion;
-  const requestedGroup = state.sessionViewerGroup;
-  const requestedVenue = state.sessionViewerVenue;
-  const requestedSearch = state.sessionViewerSearch;
-  const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
-  const activeReadScope = { userId: state.user?.id, setupVersion: state.sessionSetupVersion,
-    navigationToken: state.loadingOverlayToken, dataVersion: state.sessionViewerDataVersion };
-  const reuseVerifiedNull = displayOnly && !force && !forceParkKing && canReuseSessionViewerVerifiedNullSession();
-  let activeReadCheckedAt = null;
-  const activeGroupSession = state.sessionViewerActiveSessionCache || (reuseVerifiedNull ? null : await getActiveCoachGroupSession().then(session => { activeReadCheckedAt = Date.now(); return session; }));
-  const search = state.sessionViewerSearch.toLowerCase().trim();
-  const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
-  const filteredRoster = roster
-    .filter((athlete) => (athlete.groupNames || [athlete.groupName]).includes(state.sessionViewerGroup) || activeParticipantIds.has(athlete.id))
-    .filter((athlete) => !search || String(athlete.display_name || "").toLowerCase().includes(search));
-  const { assignmentsByAthlete, runsByAthlete, runProgressByPlan } = await getSessionViewerPlanData(filteredRoster, {
-    force,
-    detailAthleteIds: state.sessionViewerOpenAthleteId ? [state.sessionViewerOpenAthleteId] : [],
-  });
-  if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || !rosterGrid.isConnected
-    || state.sessionViewerGroup !== requestedGroup || state.sessionViewerVenue !== requestedVenue || state.sessionViewerSearch !== requestedSearch) return;
-  state.sessionViewerActiveSessionCache = activeGroupSession;
-  if (activeGroupSession === null && activeReadCheckedAt !== null) rememberSessionViewerVerifiedNullSession(activeReadCheckedAt, activeReadScope);
-  else if (activeGroupSession) state.sessionViewerVerifiedNullSession = null;
-  const schedules = filteredRoster.map((athlete) => {
-    const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
-      const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
-      return { ...contextualAssignment, progress: normalizeAssignmentProgress(contextualAssignment, assignment.progress) };
-    });
-    const allDaily = allAssignments.filter((assignment) => assignment.category === "daily");
-    const daily = assignmentsForVenue(allDaily, state.sessionViewerVenue);
-    const participant = activeGroupSession?.coach_group_session_participants?.find((row) => row.athlete_id === athlete.id);
-    return { athlete, assignments: allAssignments, allDaily, daily, venue: state.sessionViewerVenue, participant, runs: runsByAthlete.get(athlete.id) || [], runProgressByPlan };
-  });
-  rosterGrid.innerHTML = schedules.length ? schedules.map((entry) => sessionViewerRiderCardHtml(entry, activeGroupSession)).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
-  paintSessionViewerSnapshot(schedules);
-  bindSessionViewerFastActions();
-  if (forceParkKing && state.sessionViewerGroup !== contestPrepGroupId) refreshParkKingCard("session-viewer-park-king", state.sessionViewerVenue, true, true);
+  const selectionDeadline = Date.now() + 10000;
+  const dataVersion = state.sessionViewerDataVersion, weekSignature = sessionViewerWeekSignature(workspace);
+  workspace.search = state.sessionViewerSearch;
+  const search = workspace.search.toLowerCase().trim();
+  workspace.filteredRoster = workspace.groupRoster.filter(athlete => !search || String(athlete.display_name || "").toLowerCase().includes(search));
+  if (!workspace.filteredRoster.some(athlete => athlete.id === state.sessionViewerOpenAthleteId)) {
+    state.sessionViewerOpenAthleteId = ""; state.sessionViewerActiveList = "";
+  }
+  if (workspace.dataVersion !== dataVersion || workspace.weekSignature !== weekSignature) {
+    const changedData = workspace.dataVersion !== dataVersion;
+    workspace.dataVersion = dataVersion; workspace.weekSignature = weekSignature; workspace.summaryStatus = "loading";
+    for (const entry of workspace.entries.values()) {
+      if (changedData || entry.weekStart !== weekStartDateForCountry(entry.athlete.country_code || "AU")) { entry.summaryStatus = "loading"; entry.detailReady = false; }
+    }
+  }
+  if (state.sessionViewerActiveSessionCache) workspace.activeGroupSession = state.sessionViewerActiveSessionCache;
+  const selectedId = state.sessionViewerOpenAthleteId;
+  const selectedList = state.sessionViewerActiveList;
+  const athlete = workspace.filteredRoster.find(rider => rider.id === selectedId) || workspace.filteredRoster[0];
+  const current = () => sessionViewerWorkspaceCurrent(workspace) && state.sessionViewerRenderVersion === renderVersion
+    && state.sessionViewerDataVersion === dataVersion && sessionViewerWeekSignature(workspace) === weekSignature
+    && state.sessionViewerOpenAthleteId === selectedId
+    && state.sessionViewerActiveList === selectedList;
+  workspace.primaryStatus = "loading";
+  if (force && athlete) {
+    const entry = workspace.entries.get(athlete.id);
+    entry.detailReady = false; entry.summaryStatus = "loading";
+  }
+  await paintSessionViewerCounts(workspace); await paintSessionViewerSelection(workspace);
+  if (!current()) return false;
+  try {
+    const previous = athlete && workspace.entries.get(athlete.id);
+    if (athlete && (force || !previous?.detailReady || previous.dataVersion !== dataVersion)) {
+      // Fetch exactly one rider before starting the whole-crew summary or any
+      // optional battle/location reads. Category tabs reuse this full detail.
+      const detail = await getSessionViewerSelectedDetail(workspace, athlete, { force, current, deadlineAt: selectionDeadline });
+      if (!current() || !detail) return false;
+      const entry = sessionViewerEntry(athlete, detail.assignmentsByAthlete.get(athlete.id) || [], workspace, { ready: true, detailed: true });
+      entry.detailStamp = ++workspace.detailSerial;
+      workspace.entries.set(athlete.id, entry);
+      if (!workspace.activeGroupSession && !workspace.venue) {
+        const venue = dailyVenues(entry.allDaily)[0];
+        if (venue !== undefined) {
+          workspace.venue = venue; state.sessionViewerVenue = venue;
+          for (const row of workspace.entries.values()) { row.venue = venue; row.daily = assignmentsForVenue(row.allDaily, venue); }
+        }
+      }
+      const venueSelect = document.querySelector("#viewer-venue-filter");
+      if (venueSelect) venueSelect.innerHTML = sessionViewerVenueOptions(workspace.groupRoster, [...workspace.entries.values()], workspace.coachVenues || []);
+    }
+    if (!current()) return false;
+    workspace.primaryStatus = "ready";
+    await paintSessionViewerCounts(workspace); await paintSessionViewerSelection(workspace);
+    if (!current()) return false;
+    // These reads update only their own sections. A failure cannot remove the
+    // verified roster, active clock, selected list or a confirmed landing.
+    void refreshSessionViewerGroupSession(workspace);
+    void loadSessionViewerSummary(workspace, { force });
+    loadSessionViewerOptionals(workspace, { forceParkKing });
+    return true;
+  } catch (error) {
+    if (current()) {
+      workspace.primaryStatus = "error";
+      if (athlete && !workspace.entries.get(athlete.id)?.detailReady) workspace.entries.get(athlete.id).summaryStatus = "error";
+      await paintSessionViewerCounts(workspace); await paintSessionViewerSelection(workspace);
+    }
+    throw error;
+  }
 }
 
 function bindSessionViewerFastActions() {
-  if (window.JKPreviousWeekLandings) mountViewerPreviousWeekLandings();
-  mountDailyFeatures();
-  bindTrainingProgressActions();
-  document.querySelectorAll("[data-viewer-athlete]").forEach((button) => button.addEventListener("click", () => {
+  const plan = document.querySelector("[data-viewer-plan][data-viewer-detail-stamp]");
+  if (plan && state.sessionViewerMountedPlan !== plan) {
+    state.sessionViewerMountedPlan = plan;
+    if (window.JKPreviousWeekLandings) mountViewerPreviousWeekLandings();
+    mountDailyFeatures(); bindTrainingProgressActions();
+  }
+  const bindings = state.sessionViewerFastBindings || (state.sessionViewerFastBindings = new WeakMap());
+  const bind = (selector, handler) => document.querySelectorAll(selector).forEach(button => {
+    let keys = bindings.get(button); if (!keys) { keys = new Set(); bindings.set(button, keys); }
+    if (keys.has(selector)) return; keys.add(selector); button.addEventListener("click", handler);
+  });
+  bind("[data-viewer-athlete]", event => {
+    const button = event.currentTarget;
     state.sessionViewerOpenAthleteId = state.sessionViewerOpenAthleteId === button.dataset.viewerAthlete ? "" : button.dataset.viewerAthlete;
     state.sessionViewerActiveList = "";
-    refreshSessionViewerLight();
-  }));
-  document.querySelectorAll("[data-viewer-counter]").forEach((button) => button.addEventListener("click", openSessionViewerCounter));
-  document.querySelectorAll("[data-finish-daily-athlete]").forEach((button) => button.addEventListener("click", finishViewerDailyTimer));
-  document.querySelectorAll("[data-viewer-assignment-action]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAction));
-  document.querySelectorAll("[data-viewer-assignment-attempt]").forEach((button) => button.addEventListener("click", recordViewerAssignmentAttempt));
-  document.querySelectorAll("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]").forEach((button) => button.addEventListener("click", recordViewerPercentageAttempt));
-  document.querySelectorAll("[data-viewer-list-tab]").forEach((button) => button.addEventListener("click", selectViewerListTab));
-  document.querySelectorAll("[data-viewer-goal-toggle]").forEach((button) => button.addEventListener("click", toggleViewerGoal));
-  document.querySelectorAll("[data-viewer-run-toggle]").forEach((button) => button.addEventListener("click", toggleViewerRunPoint));
-  document.querySelectorAll("[data-viewer-assignment-editor]").forEach((form) => form.addEventListener("submit", saveSessionViewerAssignments));
+    void refreshSessionViewerLight().catch(error => notify(messageFrom(error), "error"));
+  });
+  bind("[data-viewer-counter]", openSessionViewerCounter);
+  bind("[data-finish-daily-athlete]", finishViewerDailyTimer);
+  bind("[data-viewer-assignment-action]", recordViewerAssignmentAction);
+  bind("[data-viewer-assignment-attempt]", recordViewerAssignmentAttempt);
+  bind("[data-percentage-action], [data-percentage-clear], [data-percentage-cycle]", recordViewerPercentageAttempt);
+  bind("[data-viewer-list-tab]", selectViewerListTab);
+  bind("[data-viewer-goal-toggle]", toggleViewerGoal);
+  bind("[data-viewer-run-toggle]", toggleViewerRunPoint);
+  document.querySelectorAll("[data-viewer-assignment-editor]").forEach(form => {
+    let keys = bindings.get(form); if (!keys) { keys = new Set(); bindings.set(form, keys); }
+    if (keys.has("submit")) return; keys.add("submit"); form.addEventListener("submit", saveSessionViewerAssignments);
+  });
 }
 
 async function saveCoachCalendarEvent(event) {
@@ -15530,45 +16289,53 @@ function runBuilderPanel(runs = [], options = {}) {
 
 async function getSessionViewerRoster() {
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
-  const cacheKey = `session-viewer-roster:${state.user.id}`;
+  if (!cacheScope.userId) throw new Error("Sign in to load your session riders.");
+  const cacheKey = `session-viewer-roster:${cacheScope.userId}`;
+  const current = () => state.user?.id === cacheScope.userId && (state.sessionSetupVersion || 0) === cacheScope.generation;
+  const requireCurrent = () => { if (!current()) throw new Error("Your account access changed. Reopen your session riders."); };
   const cached = cacheGet(cacheKey, 30000);
   if (cached) {
+    requireCurrent();
     state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
     return cached;
   }
-
-  const { data: links, error } = await client.from("coach_athletes")
-    .select("athlete_id,group_name")
-    .eq("coach_id", state.user.id);
-  if (error) throw error;
-  const ids = [...new Set((links || []).map((link) => link.athlete_id).filter(Boolean))];
-  if (!ids.length) {
-    const roster = cacheSet(cacheKey, [], cacheScope);
-    state.coachRosterIds = new Set();
-    return roster;
-  }
-
-  const [{ data: athletes, error: athleteError }, { data: groupLinks, error: groupError }] = await Promise.all([
-    client.from("profiles").select("id,display_name,avatar,country_code").in("id", ids).order("display_name"),
-    client.from("coach_athlete_groups").select("athlete_id,group_name,membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
-  ]);
-  if (athleteError) throw athleteError;
-  if (groupError) throw groupError;
-
-  const primaryGroupByAthlete = new Map((links || []).map((link) => [link.athlete_id, link.group_name || "monday"]));
-  const groupsByAthlete = (groupLinks || []).reduce((map, link) => {
-    const groups = map.get(link.athlete_id) || [];
-    if (!groups.includes(link.group_name)) groups.push(link.group_name);
-    map.set(link.athlete_id, groups);
-    return map;
-  }, new Map());
-  const roster = (athletes || []).map((athlete) => {
-    const groupNames = groupsByAthlete.get(athlete.id) || [primaryGroupByAthlete.get(athlete.id) || "monday"];
-    return { ...athlete, groupName: groupNames[0] || "monday", groupNames };
-  });
-  cacheSet(cacheKey, roster, cacheScope);
-  state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
-  return roster;
+  // A new Auth generation must never share the previous generation's promise.
+  const requestKey = `${cacheKey}:generation:${cacheScope.generation}`;
+  const pending = state.inFlight.get(requestKey);
+  if (pending) return pending;
+  const request = (async () => {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    try {
+      requireCurrent();
+      let query = client.rpc("get_my_session_viewer_roster");
+      if (controller && query.abortSignal) query = query.abortSignal(controller.signal);
+      const { data, error } = await withTimeout(query, "Load session riders", 10000);
+      if (error) throw error;
+      requireCurrent();
+      if (!data || !Array.isArray(data.links) || !Array.isArray(data.athletes) || !Array.isArray(data.group_links)) throw new Error("Your session riders could not be verified. Refresh and try again.");
+      const links = data.links, athletes = data.athletes, groupLinks = data.group_links;
+      if (links.some(link => !link?.athlete_id)) throw new Error("Your session riders could not be verified. Refresh and try again.");
+      const ids = new Set(links.map(link => link.athlete_id));
+      if (athletes.some(athlete => !athlete?.id || !ids.has(athlete.id)) || groupLinks.some(link => !link?.athlete_id || !ids.has(link.athlete_id))) throw new Error("The session roster did not match your linked riders.");
+      const primaryGroupByAthlete = new Map(links.map(link => [link.athlete_id, link.group_name || "monday"]));
+      const groupsByAthlete = groupLinks.reduce((map, link) => {
+        const groups = map.get(link.athlete_id) || [];
+        if (!groups.includes(link.group_name)) groups.push(link.group_name);
+        map.set(link.athlete_id, groups);
+        return map;
+      }, new Map());
+      const roster = athletes.map(athlete => {
+        const groupNames = groupsByAthlete.get(athlete.id) || [primaryGroupByAthlete.get(athlete.id) || "monday"];
+        return { id: athlete.id, display_name: athlete.display_name, avatar: athlete.avatar, country_code: athlete.country_code, groupName: groupNames[0] || "monday", groupNames };
+      });
+      requireCurrent();
+      cacheSet(cacheKey, roster, cacheScope);
+      state.coachRosterIds = new Set(roster.map(athlete => athlete.id));
+      return roster;
+    } finally { controller?.abort(); }
+  })().finally(() => { if (state.inFlight.get(requestKey) === request) state.inFlight.delete(requestKey); });
+  state.inFlight.set(requestKey, request);
+  return request;
 }
 
 async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {

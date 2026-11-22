@@ -13,7 +13,7 @@ const extract = name => {
   return tail.slice(0, tail.indexOf('\n}') + 2);
 };
 const names = ['selectedVenueFor', 'venueSelectorHtml', 'dailySessionHubHtml', 'latestDailyTime',
-  'bindVenueSelector', 'renderSession', 'recordAssignmentAction', 'recordPercentageAttempt'];
+  'bindVenueSelector', 'waitForSessionGesture', 'renderSession', 'progressSaveKey', 'recordAssignmentAction', 'recordPercentageAttempt'];
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH });
@@ -50,7 +50,16 @@ const names = ['selectedVenueFor', 'venueSelectorHtml', 'dailySessionHubHtml', '
       window.loadActiveSession = () => { qa.calls.push('active-training'); return new Promise(resolve => { qa.releaseActive = resolve; }); };
       window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = () => false;
       window.canRefreshRiderSession = () => true;
-      window.saveProgressRpc = async (name, args) => { qa.saves.push({ name, args }); return { data: { message: 'Saved', points_awarded: 2 } }; };
+      window.progressSaveStates = new Map();
+      window.withTimeout = promise => promise;
+      window.requestRiderSessionRefresh = async () => {};
+      window.saveProgressRpc = async (name, args) => {
+        qa.saves.push({ name, args });
+        const result = name === 'record_line_action_at_venue'
+          ? { category: 'lines', message: 'Line complete' }
+          : { completed_at: '2026-11-22T01:00:00Z', message: 'Saved' };
+        return { data: { assignment_id: args.p_assignment_id, points_awarded: 2, ...result } };
+      };
       for (const name of ['setSyncStatus', 'setPendingAssignmentProgress', 'clearPendingAssignmentProgress', 'cacheClear', 'notify',
         'refreshOwnXpAfterAction', 'showUpdatedWeeklyScore', 'refreshOpenTrainingProgress', 'setPendingPercentageAttempt', 'clearPendingPercentageAttempt']) window[name] = async () => {};
     });

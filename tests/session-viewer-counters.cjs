@@ -10,6 +10,8 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
+const progressiveHelpers = app.slice(app.indexOf('function sessionViewerWorkspaceCurrent('), app.indexOf('function sessionViewerSnapshotHtml('));
+
 const categories = ['daily', 'one_bang', 'dialled', 'percentage', 'trick_links', 'lines', 'bonus'];
 const labels = ['Daily Tricks', 'One Bangs', 'Dialled', 'Percentage', 'Trick Links', 'Lines', 'Bonus'];
 const names = [
@@ -21,7 +23,7 @@ const names = [
   'sessionViewerAssignmentsForList', 'sessionViewerRiderCountersHtml', 'sessionViewerRiderCardHtml',
   'activeSessionViewerList', 'sessionViewerTabsForEntry', 'sessionViewerPlanList', 'sessionViewerListCount',
   'openSessionViewerCounter', 'selectViewerListTab',
-  'sessionViewerSnapshotHtml', 'paintSessionViewerSnapshot', 'renderSessionViewer', 'refreshSessionViewerLight',
+  'sessionViewerSnapshotHtml', 'paintSessionViewerSnapshot', 'waitForSessionGesture', 'renderSessionViewer', 'refreshSessionViewerLight',
   'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml',
   'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom',
   'bindSessionViewerActions', 'bindSessionViewerFastActions', 'dailySessionHubHtml',
@@ -34,7 +36,7 @@ const categoryConstants = ['categoryInfo', 'categoryRewardLabels', 'contestPrepC
 const tabsStart = app.indexOf('const sessionViewerListTabs = [');
 assert(tabsStart >= 0, 'Actual Session Viewer tabs exist');
 const tabsConstant = app.slice(tabsStart, app.indexOf('\n];', tabsStart) + 3);
-const code = `const PENDING_PROGRESS_TTL_MS = 2 * 60 * 1000;\n${categoryConstants}\n${tabsConstant}\n${names.map(extract).join('\n')}`;
+const code = `const PENDING_PROGRESS_TTL_MS = 2 * 60 * 1000;\n${categoryConstants}\n${tabsConstant}\n${progressiveHelpers}\n${names.map(extract).join('\n')}`;
 assert(!extract('sessionViewerRiderCardHtml').includes('trainingProgressButtonHtml'), 'Coach card no longer calls the Today\'s Progress helper');
 assert(extract('dailySessionHubHtml').includes('trainingProgressButtonHtml'), 'The student training hub retains its Today\'s Progress hook');
 const screenshotDir = process.env.JKCREW_SCREENSHOT_DIR;
@@ -44,8 +46,9 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
   const browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 1100 } });
+    page.setDefaultTimeout(10000);
     const errors = [], requests = [];
-    page.on('pageerror', error => errors.push(error.message));
+    page.on('pageerror', error => { errors.push(error.message); console.error(`Session fixture: ${error.message}`); });
     page.on('request', request => requests.push(request.url()));
     await page.route('**/*', route => route.abort());
     await page.setContent('<!doctype html><html data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"><div class="app-shell coach-shell" style="display:block"><main id="view" class="content" data-view="sessionViewer"></main></div></div></body></html>');
@@ -57,7 +60,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.state = {
         view: 'sessionViewer', user: { id: 'coach' }, profile: { role: 'coach' },
         sessionViewerGroup: 'tuesday', sessionViewerVenue: 'Park A', sessionViewerSearch: '',
-        sessionViewerSetupOpen: false, sessionViewerRenderVersion: 0, sessionViewerOpenAthleteId: '',
+        sessionViewerSetupOpen: false, sessionViewerRenderVersion: 0, sessionSetupVersion: 0, sessionViewerDataVersion: 0, loadingOverlayToken: 0, sessionViewerOpenAthleteId: '',
         sessionViewerActiveList: '', sessionViewerRosterCache: [], sessionViewerActiveSessionCache: null,
         pendingAssignmentProgress: new Map(), pendingPercentageAttempts: new Map(),
       };
@@ -95,6 +98,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.getActiveCoachGroupSession = async () => qaSession;
       window.getCoachVenues = async () => [];
       window.withTimeout = promise => promise;
+      window.weekStartDateForCountry = () => '2026-09-07';
       window.showAddDailyLocation = () => {};
       window.getSessionViewerPlanData = async () => qaHoldPlan ? new Promise(resolve => qaPendingPlans.push({ resolve, data: qaPlan() })) : qaPlan();
       window.client = { rpc: async name => {
@@ -123,6 +127,8 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
         'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments',
         'mountDailyFeatures',
       ]) window[name] = () => {};
+      window.setButtonBusy = button => { const disabled = button.disabled; button.disabled = true; return () => { button.disabled = disabled; }; };
+      window.refreshParkKingCard = async () => {};
       (0, eval)(code);
       const actualCounterAction = openSessionViewerCounter;
       window.openSessionViewerCounter = event => { const task = actualCounterAction(event); qaCounterTasks.push(task); return task; };
@@ -139,6 +145,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     const counters = async rider => card(rider).locator('.viewer-rider-counters [data-viewer-counter]').evaluateAll(elements =>
       elements.map(el => ({ category: el.dataset.viewerCounter, value: el.querySelector('strong').textContent.trim(), label: el.querySelector(':scope > span').textContent.trim() })));
     const expectCounters = async (values, rider = 'rider') => {
+      await page.waitForFunction(() => state.sessionViewerWorkspace?.primaryStatus === 'ready' && state.sessionViewerWorkspace.summaryStatus === 'ready');
       assert.deepEqual(await counters(rider), categories.map((category, index) => ({ category, value: values[index], label: labels[index] })));
       assert.equal(await card(rider).locator('.viewer-rider-counters > .viewer-category-counter').count(), 7);
       assert.equal(await card(rider).locator('.viewer-rider-counters [data-viewer-counter="other"]').count(), 0, 'Fundamental Skills is not a square counter');
@@ -274,37 +281,45 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     assert.equal(await page.evaluate(() => qaScrolls.at(-1).options.behavior), 'smooth', 'Normal motion preference uses smooth scrolling');
     await page.emulateMedia({ reducedMotion: 'reduce' });
 
-    // Resolve the latest counter read first, then deliver its obsolete predecessor.
+    // A changed data version requires a read; newest selection queues behind it.
     await page.evaluate(() => {
-      qaHoldPlan = true; qaCounterTasks = []; qaScrolls = [];
+      qaHoldPlan = true; qaCounterTasks = []; qaScrolls = []; state.sessionViewerDataVersion += 1;
       document.querySelector('[data-viewer-counter-athlete="rider"][data-viewer-counter="one_bang"]').click();
     });
     await page.waitForFunction(() => qaPendingPlans.length === 1);
     await page.evaluate(() => document.querySelector('[data-viewer-counter-athlete="empty"][data-viewer-counter="bonus"]').click());
-    await page.waitForFunction(() => qaPendingPlans.length === 2);
-    await page.evaluate(async () => { const latest = qaPendingPlans.pop(); latest.resolve(latest.data); await qaCounterTasks[1]; });
+    assert.equal(await page.evaluate(() => qaPendingPlans.length), 1, 'Only one detail read runs while a newer selection waits');
+    await page.evaluate(() => { const older = qaPendingPlans.shift(); older.resolve(older.data); });
+    await page.waitForFunction(() => qaPendingPlans.length === 1);
+    await page.evaluate(async () => { qaHoldPlan = false; const latest = qaPendingPlans.shift(); latest.resolve(latest.data); await qaCounterTasks[1]; });
     await expectOpen('empty', 'bonus');
     assert.equal(await page.evaluate(() => qaScrolls.length), 1);
-    await page.evaluate(async () => { const older = qaPendingPlans.shift(); older.resolve(older.data); await Promise.all(qaCounterTasks); qaHoldPlan = false; });
+    await page.evaluate(() => Promise.all(qaCounterTasks));
     await expectOpen('empty', 'bonus');
     assert.equal(await page.evaluate(() => qaScrolls.length), 1, 'An older click cannot scroll or refocus after the latest selection wins');
 
     // An older request for the exact same rider/category is stale as well.
     await page.evaluate(() => {
-      qaHoldPlan = true; qaCounterTasks = []; qaScrolls = [];
+      qaHoldPlan = true; qaCounterTasks = []; qaScrolls = []; state.sessionViewerDataVersion += 1;
       const button = document.querySelector('[data-viewer-counter-athlete="rider"][data-viewer-counter="percentage"]');
-      button.click(); button.click();
+      button.click();
     });
-    await page.waitForFunction(() => qaPendingPlans.length === 2);
-    await page.evaluate(async () => { const latest = qaPendingPlans.pop(); latest.resolve(latest.data); await qaCounterTasks[1]; });
+    // Let the first read actually start. A superseded same-task click now
+    // exits before issuing any plan request, rather than creating stale work.
+    await page.waitForFunction(() => qaPendingPlans.length === 1);
+    await page.evaluate(() => document.querySelector('[data-viewer-counter-athlete="rider"][data-viewer-counter="percentage"]').click());
+    assert.equal(await page.evaluate(() => qaPendingPlans.length), 1, 'Only one detail read runs while a newer selection waits');
+    await page.evaluate(() => { const older = qaPendingPlans.shift(); older.resolve(older.data); });
+    await page.waitForFunction(() => qaPendingPlans.length === 1);
+    await page.evaluate(async () => { qaHoldPlan = false; const latest = qaPendingPlans.shift(); latest.resolve(latest.data); await qaCounterTasks[1]; });
     await expectOpen('rider', 'percentage');
-    await page.evaluate(async () => { const older = qaPendingPlans.shift(); older.resolve(older.data); await Promise.all(qaCounterTasks); qaHoldPlan = false; });
+    await page.evaluate(() => Promise.all(qaCounterTasks));
     assert.equal(await page.evaluate(() => qaScrolls.length), 1, 'Repeated identical selection still discards the older refresh before scrolling');
 
     // Neither navigation nor a changed filter may be pulled back by a delayed counter read.
     for (const changed of ['view', 'sessionViewerGroup', 'sessionViewerVenue', 'sessionViewerSearch']) {
       await page.evaluate(() => {
-        qaHoldPlan = true; qaCounterTasks = []; qaScrolls = [];
+        qaHoldPlan = true; qaCounterTasks = []; qaScrolls = []; state.sessionViewerDataVersion += 1;
         document.querySelector('[data-viewer-counter-athlete="rider"][data-viewer-counter="lines"]').click();
       });
       await page.waitForFunction(() => qaPendingPlans.length === 1);
@@ -355,7 +370,7 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
     const finish = page.locator('[data-finish-daily-athlete="rider"]');
     assert.equal(await finish.isDisabled(), false, 'Daily finish supports a partial practice result before every trick is complete');
     assert.equal(await page.locator('[data-finish-daily-athlete="empty"]').isDisabled(), true, 'Daily finish remains disabled for riders without a venue list');
-    await page.evaluate(async () => { qaRows.find(row => row.id === 'daily-b').progress = { progress_date: qaToday }; await refreshSessionViewerLight(); });
+    await page.evaluate(async () => { qaRows.find(row => row.id === 'daily-b').progress = { progress_date: qaToday }; state.sessionViewerDataVersion += 1; await refreshSessionViewerLight(); });
     assert.equal(await finish.isDisabled(), false);
     await page.evaluate(async () => { qaSession.coach_group_session_participants[0].daily_finish_seconds = 90; await refreshSessionViewerLight(); });
     assert.equal(await finish.textContent(), 'View Daily result', 'Saved Daily results remain reachable');

@@ -13152,6 +13152,8 @@ html[data-theme="light"] .coach-shell #view[data-view="teams"] :is(h1, h2, h3, .
 .rider-shell #view[data-view="session"] .session-pb-chip strong { margin-top: 8px; color: var(--text); font: 650 20px/1.2 var(--body); }
 .rider-shell #view[data-view="session"] .session-pb-chip:first-child strong { color: color-mix(in srgb, #7da7cf 65%, var(--text)); }
 .rider-shell #view[data-view="session"] .session-time-chip.is-pending strong { color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.4; }
+/* Reserve two compact status lines so an optional reply cannot move a tap target. */
+.rider-shell #view[data-view="session"] .session-time-chip strong { min-height: 38px; }
 .rider-shell #view[data-view="session"] .daily-hub-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; margin: 0; }
 #app .rider-shell #view[data-view="session"] .daily-hub-actions > button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: 12px; border-radius: 9px; font: 650 13px/1.3 var(--body); text-transform: none; letter-spacing: 0; box-shadow: none; }
 #app .rider-shell #view[data-view="session"] .daily-hub-actions > .primary-btn { border: 1px solid var(--rider-aqua); background: var(--rider-aqua); color: #02110f; }

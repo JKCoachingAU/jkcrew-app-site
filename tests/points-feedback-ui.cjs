@@ -13,7 +13,7 @@ const extract = name => {
 };
 const code = [
   app.match(/^const XP_PROGRESSION_ENABLED = .*;$/m)[0],
-  ...['showProgressPopup', 'showUpdatedWeeklyScore', 'refreshOwnXpAfterAction', 'recordAssignmentAction'].map(extract),
+  ...['showProgressPopup', 'showUpdatedWeeklyScore', 'refreshOwnXpAfterAction', 'progressSaveKey', 'recordAssignmentAction'].map(extract),
 ].join('\n');
 const screenshotDir = process.env.JKCREW_SCREENSHOT_DIR;
 if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
@@ -53,12 +53,14 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       window.setSyncStatus = window.cacheClear = window.refreshOpenTrainingProgress = () => {};
       window.setPendingAssignmentProgress = (id, complete) => pendingProgress.set(id, complete);
       window.clearPendingAssignmentProgress = id => pendingProgress.delete(id);
-      window.renderSession = window.renderAthleteHome = async () => { renderCalls++; };
+      window.progressSaveStates = new Map();
+      window.withTimeout = promise => promise;
+      window.requestRiderSessionRefresh = window.renderAthleteHome = async () => { renderCalls++; };
       window.saveProgressRpc = async (name, args) => {
         rpcCalls.push({ name, args });
         if (mode.saveHold) await new Promise(resolve => { window.releaseSave = resolve; });
         if (mode.error) return { error: { message: mode.error } };
-        return { data: { message: args.p_action === 'landed' ? 'Trick completed' : 'Completion removed', points_awarded: args.p_action === 'landed' ? mode.points : 0, half_points_awarded: args.p_action === 'landed' ? mode.halfPoints : 0, points_removed: args.p_action === 'unlanded' ? mode.points : 0 } };
+        return { data: { assignment_id: args.p_assignment_id, completed_at: args.p_action === 'landed' ? '2026-11-22T01:00:00Z' : null, message: args.p_action === 'landed' ? 'Trick completed' : 'Completion removed', points_awarded: args.p_action === 'landed' ? mode.points : 0, half_points_awarded: args.p_action === 'landed' ? mode.halfPoints : 0, points_removed: args.p_action === 'unlanded' ? mode.points : 0 } };
       };
       window.underClicks = 0;
       document.querySelector('#under-popup').addEventListener('click', () => underClicks++);
@@ -187,6 +189,15 @@ if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
       state.user.id = 'different-account'; mode.leaderboardHold = false; releaseLeaderboard(); await Promise.resolve();
     });
     eq(await page.locator('.score-popup-total').textContent(), 'Points saved', 'A late total cannot paint after an account switch');
+    for (const changed of ['sessionSetupVersion', 'loadingOverlayToken']) {
+      await page.evaluate(async changed => {
+        clearPopups(); state.user.id = 'points-rider'; mode.leaderboardHold = true; mode.total = 99;
+        await showUpdatedWeeklyScore(0.5, 'Saved on an earlier screen');
+        state[changed] = (state[changed] || 0) + 1;
+        mode.leaderboardHold = false; releaseLeaderboard(); await Promise.resolve();
+      }, changed);
+      eq(await page.locator('.score-popup-total').textContent(), 'Points saved', `A late total cannot paint after changing ${changed}`);
+    }
     await page.evaluate(async () => {
       clearPopups(); state.user.id = 'points-rider'; mode.leaderboardHold = true;
       await showUpdatedWeeklyScore(2, 'Expired card');

@@ -25,8 +25,8 @@ const names = [
   'weeklyCompletionPercent', 'assignmentList', 'assignmentGroups', 'percentageAssignmentList',
   'sessionViewerAssignmentsForList', 'sessionViewerAssignmentEditor', 'sessionViewerListContent',
   'sessionViewerRiderCountersHtml', 'activeSessionViewerList', 'sessionViewerTabsForEntry',
-  'sessionViewerListCount', 'sessionViewerPlanList', 'saveSessionViewerAssignments',
-  'recordAssignmentAction', 'setButtonBusy',
+  'sessionViewerListCount', 'sessionViewerPlanList', 'saveSessionViewerAssignments', 'queueSessionViewerRefresh',
+  'progressSaveKey', 'recordAssignmentAction', 'setButtonBusy',
   'trickLinksProposalEditorHtml', 'optionalTrickLinksFromForm', 'riderProposalItemFromLine',
   'riderProposalItemInputValue', 'coachProposalEditorFields', 'editedCoachProposalPayload',
   'submitTrickRequest', 'generateWeeklyNotificationPreviews',
@@ -76,6 +76,7 @@ const code = [
       window.mode = { error: null, hold: false };
       window.notify = (message, tone) => messages.push({ message, tone });
       window.messageFrom = error => error.message;
+      window.progressSaveStates = new Map();
       window.withTimeout = promise => promise;
       window.clearCoachCaches = window.cacheClear = window.setSyncStatus = window.refreshOpenTrainingProgress = () => {};
       window.refreshOwnXpAfterAction = async () => {};
@@ -92,7 +93,7 @@ const code = [
         if (mode.error) return { error: mode.error };
         const item = rows.find(row => row.id === args.p_assignment_id);
         item.progress = args.p_action === 'landed' ? { completed_at: '2026-10-29T12:00:00Z' } : {};
-        return { data: { message: args.p_action === 'landed' ? 'Trick Link completed' : 'Completion removed', points_awarded: args.p_action === 'landed' ? 2 : 0, points_removed: args.p_action === 'unlanded' ? 2 : 0 } };
+        return { data: { assignment_id: item.id, completed_at: item.progress.completed_at ?? null, message: args.p_action === 'landed' ? 'Trick Link completed' : 'Completion removed', points_awarded: args.p_action === 'landed' ? 2 : 0, points_removed: args.p_action === 'unlanded' ? 2 : 0 } };
       };
     });
     await page.addScriptTag({ content: code + `
@@ -103,7 +104,7 @@ const code = [
         document.querySelector('#view').innerHTML = assignmentGroups(rows, true, state.profile, 'Park');
         document.querySelectorAll('[data-assignment-action]').forEach(button => button.addEventListener('click', event => { window.pending = recordAssignmentAction(event); }));
       };
-      window.renderSession = window.renderAthleteHome = async () => mountRider();
+      window.requestRiderSessionRefresh = window.renderSession = window.renderAthleteHome = async () => mountRider();
       window.mountCoach = () => {
         state.view = 'sessionViewer'; state.profile = {role: 'coach'}; state.user = {id: 'coach'};
         document.querySelector('#view').dataset.view = 'sessionViewer';

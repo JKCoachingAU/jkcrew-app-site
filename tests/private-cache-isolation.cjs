@@ -77,23 +77,16 @@ const flush = async () => { await new Promise(resolve => setImmediate(resolve));
   newAllRequest.resolve({data:[{display_name:'Private A'}]});
   eq((await newAll)[0].display_name,'Private A','Global list resolves for the current account only');
 
-  // A late roster response must not overwrite the realtime authorization set.
-  const profileRead=deferred();
-  const deferredFrom=context.client.from;
-  context.client.from=table=>{
-    const query={};
-    for(const method of ['select','eq','in','order'])query[method]=()=>query;
-    query.then=(done,fail)=>(table==='profiles'?profileRead.promise:Promise.resolve({data:table==='coach_athletes'?[{athlete_id:'a-rider',group_name:'monday'}]:[]})).then(done,fail);
-    return query;
-  };
+  // A late implicit-scope roster RPC must not overwrite realtime authorization.
   const roster=context.getSessionViewerRoster();
   const rosterRejected=assert.rejects(roster,/account access changed/);
+  const rosterRead=rpcRequests.at(-1);
+  eq(rosterRead.name,'get_my_session_viewer_roster','Session roster uses the implicit coach-scoped RPC');
   await flush();
   switchTo('coach-b');state.coachRosterIds=new Set(['b-rider']);
-  profileRead.resolve({data:[{id:'a-rider',display_name:'Private A rider'}]});
+  rosterRead.resolve({data:{links:[{athlete_id:'a-rider',group_name:'monday'}],athletes:[{id:'a-rider',display_name:'Private A rider'}],group_links:[]}});
   await rosterRejected;checks++;
   eq([...state.coachRosterIds],['b-rider'],'Old roster cannot replace the next coach’s realtime identity set');
-  context.client.from=deferredFrom;
 
   state.profile={role:'coach'};
   const oldRealtime=context.realtimeVisibleAthleteIds(), oldRealtimeRequest=rpcRequests.at(-1);

@@ -4,9 +4,10 @@ const screenshotDir=process.env.JKCREW_SCREENSHOT_DIR;
 if(screenshotDir)fs.mkdirSync(screenshotDir,{recursive:true});
 const capture=async(page,name)=>{if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,name+'.png'),animations:'disabled'});};
 const root = path.resolve(__dirname, '..'), app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-const names = ['otherLandedHost','dailyFeatureHosts','sessionStatBarHtml','latestDailyTime','dailySessionHubHtml','assignmentList','dailyVenueGroups','assignmentGroups','loadActiveSession','renderSession','rememberSessionExpansions','riderSessionRefreshButtonHtml','updateTimer','startSession','recordAssignmentAction','getActiveCoachGroupSession','invalidateSessionViewerData','invalidateCachesForRealtime','refreshSessionViewerLight','sessionViewerRiderCountersHtml','sessionViewerRiderCardHtml','sessionViewerAssignmentsForList','sessionViewerListContent','finishViewerDailyTimer','recordViewerAssignmentAction'];
+const names = ['otherLandedHost','dailyFeatureHosts','sessionStatBarHtml','latestDailyTime','dailySessionHubHtml','assignmentList','dailyVenueGroups','assignmentGroups','loadActiveSession','waitForSessionGesture', 'renderSession','rememberSessionExpansions','riderSessionRefreshButtonHtml','updateTimer','startSession','progressSaveKey','recordAssignmentAction','getActiveCoachGroupSession','invalidateSessionViewerData','invalidateCachesForRealtime','refreshSessionViewerLight','queueSessionViewerRefresh','sessionViewerRiderCountersHtml','sessionViewerRiderCardHtml','sessionViewerAssignmentsForList','sessionViewerListContent','finishViewerDailyTimer','recordViewerAssignmentAction'];
 assert(!/showDailyTierTwoAfterFinish|refreshDailyTierTwoAfterProgress|data-view-tier-two|Tier 2/.test(fs.readFileSync(path.join(root, 'daily-completion.js'), 'utf8')), 'Daily completion no longer offers or loads Tier 2');
-const actual = names.map(name => {
+const progressiveHelpers=[...app.slice(app.indexOf('function sessionViewerWorkspaceCurrent('),app.indexOf('function sessionViewerSnapshotHtml(')).matchAll(/^(?:async )?function (\w+)\(/gm)].map(match=>match[1]);
+const actual = [...new Set([...names,...progressiveHelpers])].map(name => {
   const start = app.search(new RegExp('^(?:async )?function ' + name + '\\(', 'm'));
   assert(start >= 0, name);
   const rest = app.slice(start); return rest.slice(0, rest.indexOf('\n}') + 2).replace(/^async function refreshSessionViewerLight\(/, 'async function testRefreshSessionViewerLight(');
@@ -53,24 +54,27 @@ const client={from(table){const query={select(){return query;},eq(){return query
     }
     return {data:results[c.athlete_id]};
   }
-  if(name==='record_assignment_action_at_venue'){const row=assignments.find(a=>a.id===args.p_assignment_id);if(row)row.completed=true;return {data:{category:row?.category,message:'Training saved',points_awarded:0}};}
+  if(name==='record_assignment_action_at_venue'){const row=assignments.find(a=>a.id===args.p_assignment_id);if(row)row.completed=true;return {data:{assignment_id:row?.id,category:row?.category,completed_at:new Date(clockNow).toISOString(),message:'Training saved',points_awarded:0}};}
   throw new Error('Unexpected RPC '+name);
 }};
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const s=Math.max(0,Math.floor(Number(value)||0));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');},formatPbTime=value=>Number.isFinite(Number(value))&&Number(value)>0?formatTime(value):'-';
 const notify=message=>notices.push(message),messageFrom=error=>error.message||String(error),setSyncStatus=status=>syncStatuses.push(status),cacheClear=()=>{},clearCoachCaches=()=>{},withTimeout=promise=>promise,saveProgressRpc=(name,args)=>client.rpc(name,args);
+const progressSaveStates=new Map(),requestRiderSessionRefresh=()=>renderSession();
 const setButtonBusy=(button,label)=>{const text=button.textContent;button.disabled=true;button.textContent=label;return()=>{button.disabled=false;button.textContent=text;};};
-const dailyVenues=rows=>[...new Set(rows.filter(a=>a.category==='daily').map(a=>a.venue))],assignmentsForVenue=(rows,venue)=>rows.filter(a=>a.venue===venue),venueLabel=v=>v,venueIdentityKey=v=>v;
+const dailyVenues=rows=>[...new Set(rows.filter(a=>a.category==='daily').map(a=>a.venue))],assignmentsForVenue=(rows,venue)=>rows.filter(a=>dailyRpcVenue(a.venue)===dailyRpcVenue(venue)),venueLabel=v=>v,venueIdentityKey=dailyRpcVenue;
 const isAssignmentComplete=row=>Boolean(row.completed),orderedAssignments=rows=>rows,assignmentPresentation=row=>({title:row.trick_name,notes:''}),assignmentStatus=row=>row.completed?'Done':'To do',selectedVenueFor=()=>state.selectedVenue;
-const categoryDisplayInfo=category=>({label:({daily:'Daily Tricks',one_bang:'One Bangs',dialled:'Dialled',trick_links:'Trick Links',lines:'Lines',percentage:'Percentage',foam_pit:'Foam Pit',bonus:'Bonus'})[category],description:'Assigned training'}),categoryRewardLabels={};
+const categoryDisplayInfo=category=>({label:({daily:'Daily Tricks',one_bang:'One Bangs',dialled:'Dialled',trick_links:'Trick Links',lines:'Lines',percentage:'Percentage',foam_pit:'Foam Pit',other:'Fundamental Skills',bonus:'Bonus'})[category],description:'Assigned training'}),categoryRewardLabels={};
 const percentageAssignmentList=rows=>rows.map(row=>'<button type="button" data-percentage-action="true" data-assignment-id="'+row.id+'">Percentage attempt</button>').join('');
 const isContestPrepProfile=()=>true,weeklyCompletionPercent=()=>25,getWeeklyAssignments=async id=>({assignments:assignments.filter(a=>a.athlete_id===id),awards:[]}),getLeaderboard=async()=>[{athlete_id:'r1',weekly_points:47},{athlete_id:'r2',weekly_points:23}],localDate=()=>new Date().toISOString().slice(0,10),countryTimezones={AU:'Australia/Brisbane'},dateForTimezone=(_,date=new Date())=>date.toISOString().slice(0,10);
+const getAthleteHomeVerifiedLeaderboard=getLeaderboard;
 const riderFeaturesDisabled=()=>false,riderFeatureAccessUnknown=()=>false,bindRiderSessionRefreshButton=()=>{};
 const clearHelpVideoPreview=()=>{},extraTricksSection=()=>'',sheetRulesButtonHtml=()=>'',bindVenueSelector=()=>{},bindDailyVenueAccordions=()=>{},bindSessionAssignmentAccordions=()=>{},bindExtraTrickActions=()=>{},bindDailyReorder=()=>{},bindSessionQuickJumps=()=>{},bindSheetRulesButton=()=>{};
 const bindTrainingProgressActions=()=>{},refreshOpenTrainingProgress=id=>progressRefreshes.push(id),showTrainingSharePreview=payload=>shares.push(payload);
 const setPendingAssignmentProgress=(id,complete)=>state.pendingAssignmentProgress.set(id,{complete}),clearPendingAssignmentProgress=id=>state.pendingAssignmentProgress.delete(id),refreshOwnXpAfterAction=async()=>{},showUpdatedWeeklyScore=async()=>{},showProgressPopup=()=>{throw new Error('Legacy automatic popup must not run');};
 const recordPercentageAttempt=()=>notices.push('Percentage stays untimed'),isCoachRole=role=>['coach','admin'].includes(role),sessionViewerAssignmentEditor=()=>'',avatarHtml=athlete=>'<span class="avatar">'+athlete.display_name.slice(-3)+'</span>';
-function sessionViewerPlanList(entry,group){return sessionViewerListContent(entry,group,'daily');}
+const activeSessionViewerList=()=>state.sessionViewerActiveList||'daily',weekStartDateForCountry=()=> '2026-09-07';
+function sessionViewerPlanList(entry,group){return '<div data-viewer-plan="'+entry.athlete.id+'" id="viewer-plan-'+entry.athlete.id+'">'+sessionViewerListContent(entry,group,'daily')+'</div>';}
 function renderAthleteHome(){return renderSession();}
 async function renderSessionViewer(){refreshCount++;state.sessionViewerActiveSessionCache=await getActiveCoachGroupSession();const view=document.querySelector('#view');view.dataset.view='sessionViewer';view.className='content';view.innerHTML='<div class="viewer-rider-grid viewer-accordion-list">'+riders.map(athlete=>{const participant=state.sessionViewerActiveSessionCache?.coach_group_session_participants.find(p=>p.athlete_id===athlete.id);return sessionViewerRiderCardHtml({athlete,daily:daily(athlete.id),venue:'Test Park',participant,assignments:assignments.filter(a=>a.athlete_id===athlete.id)},state.sessionViewerActiveSessionCache);}).join('')+'</div>';view.querySelectorAll('[data-viewer-athlete]').forEach(button=>button.onclick=()=>{state.sessionViewerOpenAthleteId=button.dataset.viewerAthlete;renderSessionViewer();});view.querySelectorAll('[data-viewer-assignment-action]').forEach(button=>button.onclick=recordViewerAssignmentAction);view.querySelectorAll('[data-finish-daily-athlete]').forEach(button=>button.onclick=finishViewerDailyTimer);}
 const refreshSessionViewerLight=()=>renderSessionViewer();
@@ -181,6 +185,7 @@ function partialRiderMode(completedCount){dismissDailyFinishForNavigation();stat
     // A different venue gets a fresh Daily timer while the previous result stays saved.
     await page.evaluate(()=>{state.selectedVenue='Second Park';assignments.push(...[0,1].map(index=>({id:'r1-b'+index,athlete_id:'r1',category:'daily',venue:'Second Park',trick_name:'Second Park trick '+index,completed:false})));return renderSession();});
     assert.equal(await page.locator('#create-session').textContent(),'Start Daily Tricks','A new venue offers its own Daily timer');
+    await page.waitForFunction(()=>Array.from(document.querySelectorAll('.session-pb-chip strong')).at(-1)?.textContent==='Not finished today');
     assert.equal(await page.locator('.session-pb-chip').last().locator('strong').textContent(),'Not finished today','New venue does not reuse another park’s time');
     await page.locator('#create-session').click();await page.waitForSelector('#finish-daily-tricks');
     assert.equal(await page.evaluate(()=>rpcCalls.filter(row=>row.name==='start_daily_tricks').at(-1).args.p_venue),'Second Park');
@@ -302,7 +307,7 @@ function partialRiderMode(completedCount){dismissDailyFinishForNavigation();stat
     assert.equal(await page.evaluate(()=>shares.length),0,'Rider and coach results leave sharing unavailable');
     // A finish saved on another device invalidates the old group snapshot,
     // rejects its in-flight render, then hydrates and caches the new result.
-    await page.evaluate(()=>{state.sessionViewerActiveSessionCache=structuredClone(persistedGroup);holdPlanData=true;window.oldCoachRefresh=testRefreshSessionViewerLight();});
+    await page.evaluate(()=>{state.sessionViewerActiveSessionCache=structuredClone(persistedGroup);loadSessionViewerSummary=async()=>false;loadSessionViewerOptionals=()=>{};const workspace=state.sessionViewerWorkspace={userId:state.user.id,setupVersion:state.sessionSetupVersion,navigationToken:state.loadingOverlayToken,group:state.sessionViewerGroup,venue:state.sessionViewerVenue,search:state.sessionViewerSearch,roster:riders,groupRoster:riders,filteredRoster:riders,activeGroupSession:state.sessionViewerActiveSessionCache,activeSessionRevision:state.sessionViewerActiveSessionRevision||0,dataVersion:state.sessionViewerDataVersion,entries:new Map(),cards:new Map(),drafts:new Map(),optional:{},summaryStatus:'ready',detailSerial:0};workspace.weekSignature=sessionViewerWeekSignature(workspace);riders.forEach(rider=>workspace.entries.set(rider.id,sessionViewerEntry(rider,assignments.filter(a=>a.athlete_id===rider.id),workspace,{ready:true})));holdPlanData=true;window.oldCoachRefresh=testRefreshSessionViewerLight();});
     await page.waitForFunction(()=>planDataReleases.length===1);
     const oldVersion=await page.evaluate(()=>state.sessionViewerRenderVersion);
     await page.evaluate(()=>invalidateCachesForRealtime('coach_group_session_participants'));
@@ -310,7 +315,7 @@ function partialRiderMode(completedCount){dismissDailyFinishForNavigation();stat
     assert.equal(await page.evaluate(()=>state.sessionViewerRenderVersion),oldVersion+1,'Participant event invalidates earlier render');
     await page.evaluate(async()=>{holdPlanData=false;planDataReleases.splice(0).forEach(release=>release());await oldCoachRefresh;});
     assert.equal(await page.evaluate(()=>state.sessionViewerActiveSessionCache),null,'Older in-flight refresh cannot restore stale snapshot');
-    await page.evaluate(()=>testRefreshSessionViewerLight());
+    await page.evaluate(()=>testRefreshSessionViewerLight());await page.waitForFunction(()=>state.sessionViewerActiveSessionCache?.coach_group_session_participants[0]?.daily_result?.all_completed===false&&document.querySelector('[data-finish-daily-athlete="r1"]')?.textContent==='View Daily result');
     assert.equal(await page.evaluate(()=>state.sessionViewerActiveSessionCache.coach_group_session_participants[0].daily_result.all_completed),false,'Light refresh caches the authoritative partial result');
     assert.equal(await page.locator('[data-finish-daily-athlete="r1"]').textContent(),'View Daily result','Light refresh paints remote saved partial finish');
     assert.equal(await page.locator('[data-finish-daily-athlete="r2"]').textContent(),'View Daily result','Light refresh preserves the other rider’s automatic full finish');

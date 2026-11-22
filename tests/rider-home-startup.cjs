@@ -67,7 +67,7 @@ function session() {
       if (name === 'rpc/get_rider_feature_access') return json([{ athlete_id: riderId, features_disabled: false }]);
       if (name === 'rpc/ensure_current_profile') return json(scenarioProfile);
       if (name === 'profiles') return json([scenarioProfile]);
-      const keys = { 'rpc/get_weekly_leaderboard_with_half_points': 'rankings', 'rpc/get_weekly_leaderboard': 'rankings', 'rpc/get_my_rider_battles': 'battles', 'rpc/get_effective_weekly_assignments': 'week', 'rpc/get_my_progress_milestones': 'milestones' };
+      const keys = { 'rpc/get_team_weekly_points': 'rankings', 'rpc/get_weekly_leaderboard_with_half_points': 'rankings', 'rpc/get_weekly_leaderboard': 'rankings', 'rpc/get_my_rider_battles': 'battles', 'rpc/get_current_training_snapshot': 'week', 'rpc/get_effective_weekly_assignments': 'week', 'rpc/get_my_progress_milestones': 'milestones' };
       const key = keys[name] || (name === 'training_sessions' && url.searchParams.get('ended_at') === 'is.null' ? 'active' : '');
       if (key) {
         counts[key] = (counts[key] || 0) + 1;
@@ -78,6 +78,7 @@ function session() {
         if (key === 'battles') return json([{ id: 'test-battle', status: 'completed', participants: [{ athlete_id: riderId, is_winner: true }] }]);
         if (key === 'active') return json(mode === 'session' ? [activeSession] : mode === 'completed' ? [{ ...activeSession, daily_completed_seconds: 60 }] : []);
         if (key === 'milestones') return json({});
+        if (name === 'rpc/get_current_training_snapshot') return json({assignments:[],progress:[],percentage_attempts:[],awards:[],assignment_attempts:[]});
       }
       return json([]);
     });

@@ -232,6 +232,16 @@ async function requestDailyFinish(button, viewer = false) {
   if (button?.disabled) return;
   const context = { ...dailyFinishContext(button, viewer), manual: true };
   if (!context.athleteId) return;
+  if (!viewer) {
+    const timer = state.activeTraining;
+    const clickedSession = button?.dataset.dailyTimerSession;
+    if (!timer?.id || timer.id !== context.sessionId
+      || (timer.athlete_id != null && timer.athlete_id !== context.athleteId)
+      || (clickedSession && clickedSession !== timer.id)) return;
+    // Binding belongs to the running timer, not the displayed checklist.
+    // With no persisted venue, the finish RPC resolves the linked group venue.
+    context.venue = timer.daily_venue == null ? null : dailyRpcVenue(timer.daily_venue);
+  }
   const key = context.athleteId;
   if (dailyFinishUi.requests.has(key)) return;
   dailyFinishUi.requests.add(key);
@@ -240,13 +250,18 @@ async function requestDailyFinish(button, viewer = false) {
     const { data, error } = await withTimeout(client.rpc("prepare_daily_finish", {
       p_athlete_id: context.athleteId, p_session_id: context.sessionId || null, p_venue: context.venue, p_tapped_at: context.tappedAt,
     }), "Prepare Daily finish", 15000);
+    if (!dailyFinishContextIsCurrent(context)) return;
     if (error) throw error;
     const response = Array.isArray(data) ? data[0] : data;
     if (response?.result) showSavedDailyResult(response.result, context);
     else if (response?.completion_candidate) await showDailyFinishConfirmation(normalizedDailyCandidate(response.completion_candidate), context);
     else notify(response?.message || "Couldn't prepare your Daily finish. Please try again.", "error");
-  } catch (error) { notify(messageFrom(error), "error"); }
-  finally { dailyFinishUi.requests.delete(key); restore(); }
+  } catch (error) {
+    if (dailyFinishContextIsCurrent(context)) notify(messageFrom(error), "error");
+  } finally {
+    dailyFinishUi.requests.delete(key);
+    restore();
+  }
 }
 
 function handleDailyCompletionAction(result, context, action, wasComplete) {
@@ -270,6 +285,8 @@ async function recordDailyTrainingAction(event, viewer = false) {
   if (button.disabled) return;
   // Capture before the network request or any optimistic rendering.
   const context = dailyFinishContext(button, viewer);
+  const setupVersion = state.sessionSetupVersion;
+  const sameAccount = () => state.user?.id === context.userId && state.sessionSetupVersion === setupVersion;
   const actionKey = viewer ? "viewerAssignmentAction" : "assignmentAction";
   const action = button.dataset[actionKey];
   const row = button.closest(viewer ? ".viewer-trick-row" : ".assignment-row");
@@ -288,6 +305,7 @@ async function recordDailyTrainingAction(event, viewer = false) {
     }), "Save Daily Trick", 15000);
     if (error) throw error;
     saved = true;
+    if (!sameAccount()) return;
     const result = Array.isArray(data) ? data[0] : data;
     button.dataset[actionKey] = landed ? "unlanded" : "landed";
     setSyncStatus("saved");
@@ -299,12 +317,17 @@ async function recordDailyTrainingAction(event, viewer = false) {
     if (dailyFinished) return;
     if (!result?.completion_candidate) notify(result?.message || (landed ? "Daily Trick saved." : "Daily Trick corrected."));
     if (dailyFinishContextIsCurrent(context)) {
-      if (viewer) await refreshSessionViewerLight({ force: true });
-      else if (state.view === "home") await renderAthleteHome();
-      else await renderSession();
+      if (viewer) void queueSessionViewerRefresh();
+      else void withTimeout(Promise.resolve().then(() => {
+        if (!dailyFinishContextIsCurrent(context) || !sameAccount()) return;
+        if (state.view === "home") return renderAthleteHome();
+        return typeof requestRiderSessionRefresh === "function"
+          ? requestRiderSessionRefresh({ force: true }) : renderSession();
+      }), "Refresh Daily list", 12000).catch(error => console.warn("Daily Trick saved; list refresh pending", error));
     }
-    if (typeof refreshOpenTrainingProgress === "function") void refreshOpenTrainingProgress(context.athleteId);
+    if (typeof refreshOpenTrainingProgress === "function") void Promise.resolve().then(() => sameAccount() && refreshOpenTrainingProgress(context.athleteId)).catch(error => console.warn("Daily Trick saved; progress summary unavailable", error));
   } catch (error) {
+    if (!sameAccount()) return;
     if (!saved) {
       clearPendingAssignmentProgress(button.dataset.assignmentId);
       row?.classList.toggle("complete", wasComplete);

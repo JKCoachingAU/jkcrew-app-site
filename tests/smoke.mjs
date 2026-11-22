@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.208";
+const version = "2.14.209";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -452,7 +452,7 @@ assert(functionBody("parentRecentActivityHtml").includes("assignmentPresentation
 assert(functionBody("plannerCompletedStrip").includes("assignmentPresentation(assignment).title"), "Planner completion chips must use the full Line label");
 assert(functionBody("sessionViewerAssignmentEditor").includes("Example: Manual - Barspin - 180"), "Coach Line editor must show the exact 3–4 trick run format");
 assert(css.includes(".viewer-trick-row.viewer-attempt-row {\n  grid-template-columns: auto minmax(0, 1fr);"), "Coach Session Line labels must have a wrapping text column");
-assert(functionBody("getWeeklyAssignments").includes('rpc("get_effective_weekly_assignments"'), "Rider schedules must load each location's latest saved Daily list");
+assert(functionBody("getWeeklyAssignments").includes('rpc("get_current_training_snapshot"'), "Rider schedules must load the protected effective per-location training snapshot");
 const venueKeyForTest = (venue = "") => String(venue || "").trim();
 const rawVenueIdentityKeyForTest = (venue = "") => venueKeyForTest(venue).normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 const venueAliasesForTest = Object.freeze({ beenleighskatepark: "beenleigh", hotbox: "hotboxausnationaltrainingfacility" });
@@ -908,7 +908,8 @@ assert(planLoader.includes('"get_coach_session_viewer_plan_data"'), "Session Vie
 assert(!planLoader.includes('.from("assignment_progress")'), "Session Viewer progress should not need another database round trip");
 
 const sessionViewerRoster = functionBody("getSessionViewerRoster");
-assert(sessionViewerRoster.includes('select("id,display_name,avatar,country_code")'), "Session Viewer should load compact rider profiles");
+assert(sessionViewerRoster.includes('client.rpc("get_my_session_viewer_roster")'), "Session Viewer should load the compact approved own-coach roster in one request");
+assert(!sessionViewerRoster.includes('.from("profiles")'), "Session Viewer roster should avoid repeated profile-policy reads");
 assert(!sessionViewerRoster.includes('.from("training_sessions")'), "Session Viewer roster should not load session history");
 
 const activeGroupSession = functionBody("getActiveCoachGroupSession");
@@ -918,7 +919,14 @@ assert(activeGroupSession.includes("training_session_id,joined_at"), "Session Vi
 
 const sessionViewerRender = functionBody("renderSessionViewer");
 assert(sessionViewerRender.includes("Promise.all(["), "Session Viewer should load roster and active session in parallel");
-assert(sessionViewerRender.indexOf("document.querySelector(\"#view\").innerHTML") < sessionViewerRender.indexOf("refreshParkKingCard("), "Park King must not block the Session Viewer render");
+assert(!sessionViewerRender.includes("refreshParkKingCard("), "Park King must remain outside the primary Session Viewer render");
+assert(sessionViewerRender.lastIndexOf("document.querySelector(\"#view\").innerHTML") < sessionViewerRender.indexOf("void refreshSessionViewerLight("), "The roster frame must paint before selected-detail loading begins");
+const sessionViewerLight = functionBody("refreshSessionViewerLight");
+const selectedReady = sessionViewerLight.indexOf('workspace.primaryStatus = "ready";');
+const selectedPaint = sessionViewerLight.indexOf("await paintSessionViewerSelection(", selectedReady);
+assert(selectedReady > sessionViewerLight.indexOf("getSessionViewerSelectedDetail(") && selectedPaint > selectedReady, "The selected rider must paint its verified detail");
+assert(selectedPaint < sessionViewerLight.indexOf("loadSessionViewerOptionals("), "The selected rider must paint before optional group reads begin");
+assert(functionBody("loadSessionViewerOptionals").includes("void refreshParkKingCard("), "The deferred park crown must not block the selected rider");
 
 const sessionViewerMigration = read("supabase/migrations/202607190345_combine_session_viewer_plan_reads.sql");
 assert(sessionViewerMigration.includes("security definer"), "Combined Session Viewer read must enforce coach authorization");
@@ -971,7 +979,7 @@ assert(functionBody("finishViewerDailyTimer").includes("requestDailyFinish(event
 const dailyCompletion = read("daily-completion.js");
 assert(dailyCompletion.includes('withTimeout(client.rpc("prepare_daily_finish"'), "Preparing a Daily finish must use a bounded request");
 assert(dailyCompletion.includes('withTimeout(client.rpc("confirm_daily_finish"'), "Saving a Daily finish must use a bounded request");
-assert(dailyCompletion.includes("finally { dailyFinishUi.requests.delete(key); restore(); }"), "Manual finish must restore its busy state");
+assert(/finally\s*\{\s*dailyFinishUi\.requests\.delete\(key\);\s*restore\(\);\s*\}/.test(dailyCompletion), "Manual finish must restore its busy state");
 assert.equal(read("riley-test/tricktionary-auto.js"), read("tricktionary-auto.js"), "Auto-sorting must match on the Riley path");
 assert(html.includes(`tricktionary-auto.js?v=${version}`) && serviceWorker.includes(`tricktionary-auto.js?v=${version}`), "Auto-sorting must be versioned and cached");
 for (const asset of ["daily-completion", "progress-sharing", "battle-rematches", "active-battles", "tricktionary-tools", "bike-garage", "bike-preview"]) {
@@ -1171,8 +1179,9 @@ assert(sessionViewerBindings.includes('sessionViewerActiveSessionCache'), "Live 
 assert(css.includes('.session-setup-fields'), "Group and location selectors must retain responsive setup styling");
 assert(functionBody('sessionViewerClockFaceHtml').includes('data-clock-minutes') && functionBody('sessionViewerClockFaceHtml').includes('data-clock-seconds'), "Coach clock must keep separate readable minute and second fields");
 assert(sessionViewerRender.includes('role="timer"'), "Coach clock must expose its timer role");
-assert(functionBody("renderSessionViewer").includes("session-create-battle"), "Coach Session must create battles for the selected group");
-assert(functionBody("renderSessionViewer").includes("sessionGroupBattlesHtml(groupBattles"), "Coach Session must show the compact group battle tab at the bottom");
+const sessionViewerDeferred = functionBody("loadSessionViewerOptionals");
+assert(sessionViewerDeferred.includes("session-create-battle") && sessionViewerDeferred.includes("showCoachBattleBuilder(workspace.groupRoster"), "Coach Session must create battles for the selected group");
+assert(sessionViewerRender.includes("data-viewer-battles") && sessionViewerDeferred.includes("sessionGroupBattlesHtml(rows, coachGroupLabel(workspace.group))"), "Coach Session must independently load the compact group battle tab at the bottom");
 const sessionGroupBattlesMarkup = functionBody("sessionGroupBattlesHtml");
 assert(sessionGroupBattlesMarkup.includes('<details class="panel session-group-battles'), "Coach Session battles must stay minimised until the coach opens them");
 assert(!sessionGroupBattlesMarkup.includes('<details open'), "Coach Session battles must be closed by default");
@@ -1561,7 +1570,7 @@ assert(homeLeaderboardBody.includes('client.rpc("get_weekly_leaderboard_with_hal
 assert(!homeLeaderboardBody.includes('client.from("profiles")'), "The Home leaderboard must not perform a second profile-hydration query");
 const weeklyAssignmentsBody = functionBody("getWeeklyAssignments");
 assert(weeklyAssignmentsBody.includes("includeAssignmentAttempts = true"), "Detailed weekly assignment history must remain the default away from Home");
-assert(weeklyAssignmentsBody.includes("Promise.resolve({ data: [], error: null })"), "The Home summary must be able to omit detailed assignment attempts safely");
+assert(weeklyAssignmentsBody.includes("p_include_assignment_attempts: includeAssignmentAttempts"), "Summary reads must request omission of detailed assignment attempts explicitly");
 const coachingCtaMarkup = functionBody("athleteCoachingCtaHtml");
 assert(coachingCtaMarkup.includes("GET HELP — SEND VIDEO"), "Athlete Home must use the requested Coaching button label");
 assert(coachingCtaMarkup.includes("unreadCoachingReplyCount(requests)"), "The Home Coaching button must calculate unseen replies");

@@ -42,17 +42,22 @@ const context = {
     const award = awards.find(row => Number(row.points || 0) > 0);
     return award ? { ...(progress || {}), completed_at: award.created_at || new Date().toISOString() } : progress;
   },
-  client: { rpc: async (name, args) => {
-    calls.push({ name, args });
-    return { data: name.endsWith('_summary') ? rows.summary : rows.detail, error: null };
+  client: { rpc: (name, args) => {
+    const call = { name, args, orders: [], from: 0, to: 499 }; calls.push(call);
+    const query = { order(column) { call.orders.push(column); return query; }, range(from, to) { call.from = from; call.to = to; return query; } };
+    query.then = (resolve, reject) => Promise.resolve({ data: (name.endsWith('_summary') ? rows.summary : rows.detail).filter(row => args.p_athlete_ids.includes(row.athlete_id)).slice(call.from, call.to + 1), error: null }).then(resolve, reject);
+    return query;
   } },
   Date,
   Map,
   Set,
   Promise,
+  AbortController,
+  setTimeout,
+  clearTimeout,
 };
 vm.createContext(context);
-vm.runInContext(extract('getSessionViewerPlanData'), context);
+vm.runInContext(extract('withTimeout') + '\n' + extract('getSessionViewerPlanData'), context);
 
 (async () => {
   const roster = [{ id: 'r1', country_code: 'AU' }, { id: 'r2', country_code: 'AU' }];

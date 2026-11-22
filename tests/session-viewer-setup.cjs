@@ -10,15 +10,19 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const names = ['renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml', 'sessionViewerSnapshotHtml', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'resetPageExpansions', 'navigate'];
+const progressiveHelpers = app.slice(app.indexOf('function sessionViewerWorkspaceCurrent('), app.indexOf('function sessionViewerSnapshotHtml('));
+
+const names = ['waitForSessionGesture', 'paintSessionViewerSnapshot', 'refreshSessionViewerLight', 'renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml', 'sessionViewerSnapshotHtml', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'resetPageExpansions', 'navigate'];
 const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.JKCREW_BROWSER_PATH });
   try {
     for (const width of [390, 1024]) {
       const page = await browser.newPage({ viewport: { width, height: 1100 }, hasTouch: width < 500, isMobile: width < 500 });
+      page.setDefaultTimeout(10000);
       const errors = [];
-      page.on('pageerror', error => errors.push(error.message));
+      page.on('pageerror', error => { errors.push(error.message); console.error(`Session fixture: ${error.message}`); });
+      page.on('console', message => { if (['warning', 'error'].includes(message.type())) console.log(`Session fixture: ${message.text()}`); });
       await page.route('**/*', route => route.abort());
       await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"><div class="app-shell coach-shell" style="display:block"><main id="view" class="content" data-view="sessionViewer"></main></div></div></body></html>');
       await page.addStyleTag({ content: css });
@@ -26,7 +30,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         window.state = {
           view: 'sessionViewer', user: { id: 'coach' }, profile: { role: 'coach' },
           sessionViewerGroup: 'tuesday', sessionViewerVenue: 'Park A', sessionViewerSearch: '',
-          sessionViewerSetupOpen: false, sessionViewerRenderVersion: 0, sessionViewerOpenAthleteId: '', sessionViewerActiveList: '',
+          sessionViewerSetupOpen: false, sessionViewerRenderVersion: 0, sessionSetupVersion: 0, sessionViewerDataVersion: 0, loadingOverlayToken: 0, sessionViewerOpenAthleteId: '', sessionViewerActiveList: '',
           sessionViewerRosterCache: [], sessionViewerActiveSessionCache: null,
           sessionOpenDailyVenues: new Set(), sessionOpenAssignmentSections: new Set(), loadingOverlayToken: 0,
           videoReviewRecordedReplies: new Map(), videoReviewMedia: new Map(),
@@ -41,10 +45,15 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         window.getActiveCoachGroupSession = async () => qaSession;
         window.getCoachVenues = async () => [];
         window.withTimeout = promise => promise;
+        window.weekStartDateForCountry = () => '2026-09-07';
         window.showAddDailyLocation = () => {};
         window.getSessionViewerPlanData = async roster => qaHoldPlan ? new Promise(resolve => qaPendingPlans.push({ resolve, data: qaPlan(), riders: roster.map(row => row.id) })) : qaPlan();
         window.client = { rpc: async name => { if (name !== 'get_coach_rider_battles_v2') throw Error(`Unexpected RPC: ${name}`); return { data: [] }; } };
         window.isCoachRole = role => role === 'coach' || role === 'admin';
+        // This disclosure test uses an approved coach; approval denials have
+        // their own dedicated account-access regression.
+        window.refreshCoachAccountAccess = async () => ({ status: 'approved' });
+        window.coachAccountBlocked = () => false;
         window.riderFeaturesDisabled = window.riderFeatureAccessUnknown = window.riderRecoveryActive = () => false;
         window.escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
         window.normalizeAssignmentProgress = (_assignment, progress) => progress;
@@ -56,11 +65,13 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         window.coachGroupLabel = group => coachGroups.find(row => row[0] === group)?.[1] || group;
         window.groupLabelList = groups => groups.join(', ');
         window.formatTime = seconds => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
-        window.sessionViewerRiderCardHtml = entry => `<article data-test-rider="${entry.athlete.id}">${entry.athlete.display_name} · ${entry.venue}</article>`;
+        window.sessionViewerRiderCardHtml = entry => `<article data-viewer-rider-id="${entry.athlete.id}" data-test-rider="${entry.athlete.id}"><div class="viewer-card-head">${entry.athlete.display_name}</div><div class="viewer-card-footer">${entry.venue}</div></article>`;
+        window.activeSessionViewerList = () => 'daily';
+        window.sessionViewerPlanList = entry => `<div data-viewer-plan="${entry.athlete.id}"></div>`;
         window.parkKingCardHtml = (_data, venue, options) => `<section id="${options.id}">${venue}</section>`;
         window.sessionGroupBattlesHtml = () => '';
         for (const name of [
-          'refreshParkKingCard', 'bindCoachBattleControls', 'refreshSessionViewerLight', 'showCoachBattleBuilder',
+          'refreshParkKingCard', 'bindCoachBattleControls', 'bindSessionViewerFastActions', 'showCoachBattleBuilder',
           'startViewerGroupSession', 'toggleViewerGroupSessionPause', 'endViewerGroupSession', 'addExtraRiderToGroupSession',
           'finishViewerDailyTimer', 'recordViewerAssignmentAction', 'recordViewerAssignmentAttempt', 'recordViewerPercentageAttempt',
           'selectViewerListTab', 'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments',
@@ -74,11 +85,14 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         window.notify = message => { throw Error(message); };
         window.messageFrom = error => error.message;
         for (const renderer of renderers) window[renderer] = async () => { document.querySelector('#view').innerHTML = '<p>Other page</p>'; };
+        window.setButtonBusy = button => { const disabled = button.disabled; button.disabled = true; return () => { button.disabled = disabled; }; };
+        window.refreshParkKingCard = async () => {};
         (0, eval)(code);
         const actualRender = renderSessionViewer;
         window.renderSessionViewer = options => { const task = actualRender(options); qaRenderTasks.push(task); return task; };
-      }, { code: names.map(extract).join('\n'), renderers });
+      }, { code: progressiveHelpers + names.map(extract).join('\n'), renderers });
       const setup = () => page.locator('#session-viewer-setup');
+      const ready = () => page.waitForFunction(() => state.sessionViewerWorkspace?.primaryStatus === 'ready' && state.sessionViewerWorkspace.summaryStatus === 'ready');
       const summary = () => setup().locator(':scope > summary');
       const assertOpen = async (expected, message) => {
         await page.waitForFunction(expected => document.querySelector('#session-viewer-setup')?.open === expected && state.sessionViewerSetupOpen === expected, expected);
@@ -89,7 +103,7 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
         await page.locator('#viewer-refresh').click();
         await page.waitForFunction(() => qaOldSetup && !qaOldSetup.isConnected && Boolean(document.querySelector('#session-viewer-setup')));
       };
-      await page.evaluate(() => renderSessionViewer());
+      await page.evaluate(() => renderSessionViewer()); await ready();
       await assertOpen(false, 'Fresh Session view starts closed');
       await summary().click(); await assertOpen(true, 'Native summary opens setup');
       await page.locator('#viewer-group-filter').selectOption('monday');
@@ -107,29 +121,34 @@ const renderers = [...new Set(extract('navigate').match(/\brender[A-Z]\w+/g))];
       await page.evaluate(async () => { document.querySelector('#session-viewer-setup > summary').click(); await renderSessionViewer(); });
       await assertOpen(true, 'An immediate render reads a native open before its queued toggle event');
 
-      // Close the current disclosure while a group render waits for its plans.
-      await page.evaluate(() => { qaHoldPlan = true; });
+      // Keep the new group's disclosure interactive while its selected list waits.
+      await ready();
+      await page.evaluate(() => { qaHoldPlan = true; window.qaDetachedSetup = document.querySelector('#session-viewer-setup'); });
       await page.locator('#viewer-group-filter').selectOption('tuesday');
       await page.waitForFunction(() => qaPendingPlans.length === 1);
-      await page.evaluate(() => { window.qaDetachedSetup = document.querySelector('#session-viewer-setup'); });
       await summary().click(); await assertOpen(false, 'Close takes effect during a pending render');
-      await page.evaluate(async () => { const read = qaPendingPlans.shift(); read.resolve(read.data); await Promise.all(qaRenderTasks); });
+      await page.evaluate(async () => { qaHoldPlan = false; const read = qaPendingPlans.shift(); read.resolve(read.data); await Promise.all(qaRenderTasks); });
+      await ready();
       await assertOpen(false, 'Completing an in-flight render respects the latest close');
       assert.equal(await page.locator('[data-test-rider="tuesday"]').count(), 1);
       await page.evaluate(() => { qaDetachedSetup.open = true; qaDetachedSetup.dispatchEvent(new Event('toggle')); });
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       await assertOpen(false, 'A detached disclosure cannot overwrite current state');
 
-      // Resolve the latest group first, then deliver its older response last.
+      // The latest group paints immediately, while only one detail read runs.
       await summary().click(); await assertOpen(true, 'Setup can reopen after a delayed close');
+      await page.evaluate(() => { qaHoldPlan = true; });
       await page.locator('#viewer-group-filter').selectOption('monday');
       await page.waitForFunction(() => qaPendingPlans.length === 1);
       await page.locator('#viewer-group-filter').selectOption('wednesday');
-      await page.waitForFunction(() => qaPendingPlans.length === 2);
-      await page.evaluate(() => { const newest = qaPendingPlans.pop(); newest.resolve(newest.data); });
+      assert.equal(await page.evaluate(() => qaPendingPlans.length), 1, 'Changing groups does not launch overlapping detail reads');
+      await page.evaluate(() => { const older = qaPendingPlans.shift(); older.resolve(older.data); });
+      await page.waitForFunction(() => qaPendingPlans.length === 1);
+      await page.evaluate(() => { qaHoldPlan = false; const newest = qaPendingPlans.shift(); newest.resolve(newest.data); });
+      await ready();
       await page.waitForFunction(() => Boolean(document.querySelector('[data-test-rider="wednesday"]')));
       await assertOpen(true, 'The latest group render preserves setup state');
-      await page.evaluate(async () => { const older = qaPendingPlans.shift(); older.resolve(older.data); await Promise.all(qaRenderTasks); qaHoldPlan = false; });
+      await page.evaluate(() => Promise.all(qaRenderTasks));
       assert.equal(await page.locator('[data-test-rider="wednesday"]').count(), 1, 'An older response cannot restore a stale group');
       assert.equal(await page.locator('[data-test-rider="monday"]').count(), 0);
       await assertOpen(true, 'An older response cannot collapse setup');

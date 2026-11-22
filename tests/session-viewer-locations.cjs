@@ -11,7 +11,9 @@ const extract = name => {
   const rest = app.slice(start);
   return rest.slice(0, rest.indexOf('\n}') + 2);
 };
-const functions = ['renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml', 'sessionViewerSnapshotHtml', 'showAddDailyLocation', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'getCoachVenues'];
+const progressiveHelpers = app.slice(app.indexOf('function sessionViewerWorkspaceCurrent('), app.indexOf('function sessionViewerSnapshotHtml('));
+
+const functions = ['waitForSessionGesture', 'paintSessionViewerSnapshot', 'refreshSessionViewerLight', 'renderSessionViewer', 'bindSessionViewerActions', 'sessionViewerVenueOptions', 'sessionViewerGroupOptions', 'sessionViewerClockFaceHtml', 'sessionViewerSnapshotHtml', 'showAddDailyLocation', 'groupSessionElapsedSeconds', 'updateGroupSessionTimerDom', 'getCoachVenues'];
 const constants = app.slice(app.indexOf('const venueKey ='), app.indexOf('\n\nfunction avatarHtml', app.indexOf('const venueKey =')));
 const screenshotDir = process.env.JKCREW_SCREENSHOT_DIR || '/tmp/jkcrew-daily-location-qa';
 fs.mkdirSync(screenshotDir, { recursive: true });
@@ -22,13 +24,14 @@ const check = (value, message) => { assert(value, message); checks++; };
   try {
     for (const width of [390, 1440]) for (const theme of ['dark', 'light']) {
       const page = await browser.newPage({ viewport: { width, height: 1000 }, hasTouch: width < 500, isMobile: width < 500 });
+      page.setDefaultTimeout(10000);
       const errors = [];
-      page.on('pageerror', error => errors.push(error.message));
+      page.on('pageerror', error => { errors.push(error.message); console.error(`Session fixture: ${error.message}`); });
       await page.route('**/*', route => route.abort());
       await page.setContent(`<!doctype html><html data-theme="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"><div class="app-shell coach-shell" style="display:block"><main id="view" class="content" data-view="sessionViewer"></main></div></div></body></html>`);
       await page.addStyleTag({ content: css });
       await page.evaluate(code => {
-        window.state = { view: 'sessionViewer', user: { id: 'coach' }, profile: { role: 'coach' }, sessionViewerGroup: 'monday', sessionViewerVenue: 'LOGANLAND', sessionViewerSearch: '', sessionViewerSetupOpen: true, sessionViewerRenderVersion: 0, sessionViewerOpenAthleteId: '', sessionViewerActiveList: '', sessionViewerRosterCache: [], sessionViewerActiveSessionCache: null };
+        window.state = { view: 'sessionViewer', user: { id: 'coach' }, profile: { role: 'coach' }, sessionViewerGroup: 'monday', sessionViewerVenue: 'LOGANLAND', sessionViewerSearch: '', sessionViewerSetupOpen: true, sessionViewerRenderVersion: 0, sessionSetupVersion: 0, sessionViewerDataVersion: 0, loadingOverlayToken: 0, sessionViewerOpenAthleteId: '', sessionViewerActiveList: '', sessionViewerRosterCache: [], sessionViewerActiveSessionCache: null };
         window.coachGroups = [['monday', 'Monday Team'], ['tuesday', 'Tuesday Team']];
         window.contestPrepGroupId = 'contest_prep';
         window.qaRoster = coachGroups.map(([group, label]) => ({ id: group, display_name: `${label} rider`, country_code: 'AU', groupNames: [group] }));
@@ -40,6 +43,7 @@ const check = (value, message) => { assert(value, message); checks++; };
         window.getActiveCoachGroupSession = async () => qaSession;
         window.getSessionViewerPlanData = async () => ({ assignmentsByAthlete: qaRows, runsByAthlete: new Map(), runProgressByPlan: new Map() });
         window.withTimeout = promise => promise;
+        window.weekStartDateForCountry = () => '2026-09-07';
         window.client = {
           rpc: async name => { if (name !== 'get_coach_rider_battles_v2') throw Error(`Unexpected RPC ${name}`); return { data: [] }; },
           from: table => {
@@ -72,20 +76,24 @@ const check = (value, message) => { assert(value, message); checks++; };
         window.coachGroupLabel = group => coachGroups.find(row => row[0] === group)?.[1] || group;
         window.groupLabelList = groups => groups.join(', ');
         window.formatTime = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-        window.sessionViewerRiderCardHtml = entry => `<article class="panel" data-test-rider="${entry.athlete.id}">${entry.athlete.display_name} · ${escapeHtml(entry.venue)} · ${entry.daily.length} daily tricks</article>`;
+        window.sessionViewerRiderCardHtml = entry => `<article class="panel" data-viewer-rider-id="${entry.athlete.id}" data-test-rider="${entry.athlete.id}"><div class="viewer-card-head">${entry.athlete.display_name}</div><div class="viewer-card-footer">${escapeHtml(entry.venue)} · ${entry.daily.length} daily tricks</div></article>`;
+        window.activeSessionViewerList = () => 'daily';
+        window.sessionViewerPlanList = entry => `<div data-viewer-plan="${entry.athlete.id}"></div>`;
         window.parkKingCardHtml = (_data, venue, options) => `<section id="${options.id}" class="panel">${escapeHtml(venue)}</section>`;
         window.sessionGroupBattlesHtml = () => '';
         window.notify = message => qaNotices.push(message);
         window.messageFrom = error => error.message;
-        for (const name of ['refreshParkKingCard', 'bindCoachBattleControls', 'refreshSessionViewerLight', 'showCoachBattleBuilder', 'startViewerGroupSession', 'toggleViewerGroupSessionPause', 'endViewerGroupSession', 'addExtraRiderToGroupSession', 'finishViewerDailyTimer', 'recordViewerAssignmentAction', 'recordViewerAssignmentAttempt', 'recordViewerPercentageAttempt', 'selectViewerListTab', 'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments', 'bindTrainingProgressActions', 'mountDailyFeatures', 'navigate']) window[name] = () => {};
+        for (const name of ['refreshParkKingCard', 'bindCoachBattleControls', 'bindSessionViewerFastActions', 'showCoachBattleBuilder', 'startViewerGroupSession', 'toggleViewerGroupSessionPause', 'endViewerGroupSession', 'addExtraRiderToGroupSession', 'finishViewerDailyTimer', 'recordViewerAssignmentAction', 'recordViewerAssignmentAttempt', 'recordViewerPercentageAttempt', 'selectViewerListTab', 'toggleViewerGoal', 'toggleViewerRunPoint', 'saveSessionViewerAssignments', 'bindTrainingProgressActions', 'mountDailyFeatures', 'navigate']) window[name] = () => {};
+        window.setButtonBusy = button => { const disabled = button.disabled; button.disabled = true; return () => { button.disabled = disabled; }; };
+        window.refreshParkKingCard = async () => {};
         (0, eval)(code);
-      }, `${constants}\n${functions.map(extract).join('\n')}`);
+      }, `${constants}\n${progressiveHelpers}\n${functions.map(extract).join('\n')}`);
       const open = async () => { await page.locator('#add-daily-location').click(); await page.waitForSelector('.daily-location-dialog[open]'); };
       const fill = name => page.locator('#new-daily-location').fill(name);
       const save = () => page.locator('.daily-location-dialog [type="submit"]').click();
       const closed = () => page.waitForFunction(() => !document.querySelector('.daily-location-dialog'));
-      const ready = name => page.waitForFunction(name => Boolean([...document.querySelectorAll('#viewer-venue-filter option')].find(el => el.value === name)), name);
-      await page.evaluate(() => renderSessionViewer());
+      const ready = name => page.waitForFunction(name => state.sessionViewerWorkspace?.primaryStatus === 'ready' && state.sessionViewerWorkspace.summaryStatus === 'ready' && ['ready', 'error'].includes(state.sessionViewerWorkspace.optional.venues) && Boolean([...document.querySelectorAll('#viewer-venue-filter option')].find(el => el.value === name)), name);
+      await page.evaluate(() => renderSessionViewer()); await ready('LOGANLAND');
       const add = page.locator('#add-daily-location');
       await add.scrollIntoViewIfNeeded();
       const box = await add.boundingBox();

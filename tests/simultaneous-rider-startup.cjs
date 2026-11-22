@@ -12,8 +12,9 @@ const appSource = revision ? execFileSync('git', ['show', revision + ':app.js'],
 const profileSelect = appSource.match(/^const PROFILE_SELECT = "([^"]+)";/m)[1];
 const whatsNew = appSource.match(/^const WHATS_NEW_RELEASE_ID = "([^"]+)";/m)[1];
 const baseline = process.env.JKCREW_BURST_BASELINE === '1';
+const diagnostic = process.env.JKCREW_BURST_DIAGNOSTIC === '1';
 const riderCount = Number(process.env.JKCREW_BURST_RIDERS || 15);
-assert(riderCount >= 15 && riderCount <= 30, 'Exercise at least 15 clients, with a bounded maximum');
+assert(riderCount >= (diagnostic ? 1 : 15) && riderCount <= 30, 'Exercise at least 15 clients, with a bounded maximum (smaller isolated diagnostics must be explicit)');
 const uuid = (group, n) => `${String(group).padStart(8, '0')}-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -32,7 +33,7 @@ function fixture(n) {
     const token = encode({ alg: 'HS256', typ: 'JWT' }) + '.' + encode({ sub: id, aud: 'authenticated', role: 'authenticated', email, iat: now, exp: now + 3600, iss: 'https://soanwttlorlgdfrzbvtp.supabase.co/auth/v1', session_id: uuid(8, n) }) + '.isolated-burst-fixture';
     return { access_token: token, refresh_token: 'isolated-burst-refresh-' + n, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, user };
   };
-  return { n, id, email, name, profile, user, assignments, session, progress: [], active: null, calls: [], failures: [], errors: [], failedRequests: [], tickSaves: 0 };
+  return { n, id, email, name, profile, user, assignments, session, progress: [], active: null, calls: [], failures: [], errors: [], failedRequests: [], tickSaves: 0, startArrived: deferred(), startGate: deferred(), savedTimeArrived: deferred(), savedTimeGate: deferred() };
 }
 
 class SharedBackend {
@@ -64,18 +65,23 @@ class SharedBackend {
   const reports = [];
   const check = (condition, why) => { assert(condition, why); checks++; };
   const eq = (actual, expected, why) => { assert.deepEqual(actual, expected, why); checks++; };
-  async function burst(mode) {
+  async function burst(mode, viewportWidth = 390) {
     const backend = new SharedBackend(), riders = Array.from({ length: riderCount }, (_, index) => fixture(index + 1));
     const contexts = [];
     let started = 0;
     try {
       await Promise.all(riders.map(async rider => {
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }); contexts.push(context); rider.context = context;
+        const context = await browser.newContext({ viewport: { width: viewportWidth, height: 844 }, serviceWorkers: 'block' }); contexts.push(context); rider.context = context;
         await context.addInitScript(({ saved, session, id, whatsNew }) => {
           if (saved) localStorage.setItem('sb-soanwttlorlgdfrzbvtp-auth-token', JSON.stringify(session));
           localStorage.setItem(`jkcrew-whats-new:${id}:${whatsNew}`, '1');
           localStorage.setItem(`jkcrew-battle-intro:${id}:v3`, '1');
           localStorage.setItem(`jkcrew-push-setup-shown:${id}:v2`, '1');
+          window.__burstInteractions = [];
+          for (const type of ['pointerdown', 'pointerup', 'click']) document.addEventListener(type, event => {
+            const target = event.target.closest('button, summary');
+            window.__burstInteractions.push({ type, tag: event.target.tagName, classes: String(event.target.className || ''), text: event.target.textContent?.slice(0,80), x:event.clientX,y:event.clientY,id: target?.id, assignment: target?.dataset.assignmentId, action: target?.dataset.assignmentAction, activeId: typeof state === 'undefined' ? null : state.activeTraining?.id, render: typeof state === 'undefined' ? null : state.sessionRenderVersion, refreshing: typeof state === 'undefined' ? null : Boolean(state.riderSessionRefresh), toast: document.querySelector('#toast')?.textContent, at: Date.now() });
+          }, true);
         }, { saved: mode === 'saved-session', session: rider.session(), id: rider.id, whatsNew });
         context.on('requestfailed', request => { backend.aborted.add(request); const url = new URL(request.url()); rider.failedRequests.push({ api: url.hostname === 'soanwttlorlgdfrzbvtp.supabase.co', url: url.pathname, error: request.failure()?.errorText }); });
         await context.route('**/*', async route => {
@@ -104,14 +110,15 @@ class SharedBackend {
           if (url.pathname === '/auth/v1/user') { await backend.slot(request); return json(rider.user); }
           if (url.pathname === '/auth/v1/logout') return json({});
           const isProfile = endpoint === 'profiles' && url.searchParams.get('select') === profileSelect;
-          if (mode === 'saved-session' && isProfile) await backend.arrive(rider);
+          // Saved-session pages navigate together below. Let each reach the bounded
+          // pool as soon as it loads rather than holding all profiles behind a slow tab.
           // Optional services have their own simulated outage. They do not consume
           // the primary read pool; the screen must not wait for their replies.
-          const optional = /leaderboard|park_king|rider_battles|app_notifications|board_chat|crew_posts|app_unread|health-whoop|milestones|coach_messages|broadcast|help_requests|progress_milestones/.test(endpoint + url.pathname);
+          const optional = /leaderboard|team_weekly_points|park_king|rider_battles|app_notifications|board_chat|crew_posts|app_unread|health-whoop|milestones|coach_messages|broadcast|help_requests|progress_milestones/.test(endpoint + url.pathname);
           if (optional) {
             await backend.optional.promise;
             if (/health-whoop/.test(url.pathname)) return json({ provider: 'whoop', availability: 'not_configured', connection: 'disconnected', summary: null });
-            if (/leaderboard/.test(endpoint)) return json([{ athlete_id: rider.id, display_name: rider.name, weekly_points: 7 }]);
+            if (/leaderboard|team_weekly_points/.test(endpoint)) return json([{ athlete_id: rider.id, display_name: rider.name, weekly_points: 7 }]);
             if (/park_king/.test(endpoint)) return json([]);
             if (/unread/.test(endpoint)) return json({});
             return json([]);
@@ -129,14 +136,23 @@ class SharedBackend {
           if (endpoint === 'rpc/ensure_current_profile') return json(rider.profile);
           if (endpoint === 'rpc/get_rider_feature_access') return json([{ athlete_id: rider.id, features_disabled: false }]);
           if (endpoint === 'rpc/ensure_current_week_assignments') return json(0);
+          if (endpoint === 'rpc/get_current_training_snapshot') {
+            if (body.p_athlete_id !== rider.id) rider.failures.push('Snapshot used foreign rider ID');
+            return json({ assignments: rider.assignments, progress: rider.progress, percentage_attempts: [], awards: [], assignment_attempts: [] });
+          }
           if (endpoint === 'rpc/get_effective_weekly_assignments') {
             if (body.p_athlete_id !== rider.id) rider.failures.push('Assignment read used foreign ID');
             return json(rider.assignments);
           }
           if (endpoint === 'assignment_progress') return json(rider.progress);
-          if (endpoint === 'training_sessions') return json(rider.active ? [rider.active] : []);
+          if (endpoint === 'training_sessions') {
+            if (diagnostic && process.env.JKCREW_BURST_LAYOUT_PROBE === '1' && url.searchParams.get('select')?.startsWith('daily_completed_seconds')) { rider.savedTimeArrived.resolve(); await rider.savedTimeGate.promise; }
+            return json(rider.active ? [rider.active] : []);
+          }
           if (endpoint === 'coach_athletes') return json([{ athlete_id: rider.id, coach_id: uuid(9, 1) }]);
           if (endpoint === 'rpc/start_daily_tricks') {
+            rider.startArrived.resolve();
+            if (diagnostic) await rider.startGate.promise;
             rider.active = { id: uuid(7, rider.n), athlete_id: rider.id, daily_venue: body.p_venue, started_at: new Date().toISOString(), ended_at: null, total_points: 0, daily_completed_seconds: null, daily_completed_at: null };
             return json(rider.active);
           }
@@ -209,12 +225,46 @@ class SharedBackend {
         try {
           rider.actionStage = 'start timer';
           await rider.page.locator('#create-session').click();
+          if (diagnostic) {
+            await rider.startArrived.promise;
+            eq(await rider.page.locator('#trick-timer').count(), 0, 'Pending start RPC must not display a confirmed live timer');
+            eq(await rider.page.evaluate(() => state.activeTraining?.id || null), null, 'Pending start RPC has no active session');
+            rider.startGate.resolve();
+          }
           await rider.page.locator('#trick-timer').waitFor();
+          rider.afterTimer = await rider.page.evaluate(() => ({ activeId: state.activeTraining?.id, render: state.sessionRenderVersion, refreshing: Boolean(state.riderSessionRefresh), finish: Boolean(document.querySelector('#finish-daily-tricks')), toast: document.querySelector('#toast')?.textContent }));
           rider.actionStage = 'open daily list';
           await rider.page.locator('[data-daily-venue] > summary').first().click();
           const button = rider.page.locator(`[data-assignment-id="${rider.assignments[0].id}"][data-assignment-action="landed"]`).first();
+          if (diagnostic && process.env.JKCREW_BURST_LAYOUT_PROBE === '1') {
+            await rider.savedTimeArrived.promise;
+            const before = await button.boundingBox();
+            const beforeText = await rider.page.locator('.session-time-chip strong').textContent();
+            rider.savedTimeGate.resolve();
+            await rider.page.waitForFunction(() => document.querySelector('.session-time-chip strong')?.textContent === 'Not finished today');
+            const after = await button.boundingBox();
+            console.log(JSON.stringify({layoutProbe:{viewportWidth,before,beforeText,after,afterText:await rider.page.locator('.session-time-chip strong').textContent()}}));
+            check(Math.abs(before.y-after.y)<0.5, 'Optional saved-time completion must not shift the Daily tick target');
+          }
           rider.actionStage = 'tap daily trick';
-          await button.click();
+          if (diagnostic && process.env.JKCREW_BURST_POINTER_RACE === '1') {
+            await button.scrollIntoViewIfNeeded();
+            const bounds = await button.boundingBox();
+            await rider.page.evaluate(id => {
+              document.addEventListener('pointerdown', event => {
+                if (event.target.closest(`[data-assignment-id="${id}"]`)) { window.__burstPointerTarget = event.target.closest('button'); window.__burstPointerRefresh = requestRiderSessionRefresh({ force: true }); }
+              }, { once: true, capture: true });
+            }, rider.assignments[0].id);
+            await rider.page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+            await rider.page.mouse.down();
+            await rider.page.waitForFunction(() => Boolean(window.__burstPointerRefresh));
+            await rider.page.waitForFunction(() => state.trainingViewGesture?.waiters.size > 0);
+            check(await rider.page.evaluate(() => window.__burstPointerTarget.isConnected), 'A read completing during pointerdown keeps the original button connected');
+            eq(rider.tickSaves, 0, 'Pointerdown alone never saves a trick');
+            await rider.page.mouse.up();
+            await rider.page.evaluate(() => window.__burstPointerRefresh);
+          } else await button.click();
+          rider.afterTick = await rider.page.evaluate(() => ({activeId:state.activeTraining?.id,render:state.sessionRenderVersion,events:window.__burstInteractions.slice(-6)}));
           rider.actionStage = 'render completed trick';
           await rider.page.waitForFunction(id => document.querySelector(`[data-assignment-id="${id}"]`)?.classList.contains('complete'), rider.assignments[0].id);
           rider.actionStage = 'finish refresh';
@@ -227,12 +277,12 @@ class SharedBackend {
           eq(rider.active.total_points, 0, 'One partial Daily trick does not mint a full-list point');
         } catch (error) {
           rider.actionError = `${rider.actionStage}: ${error.message}`;
-          rider.actionState = { tickSaves: rider.tickSaves, progress: rider.progress, dom: await rider.page.evaluate(() => ({ view: typeof state === 'undefined' ? null : state.view, inert: document.querySelector('#app')?.inert, sync: document.querySelector('#sync-status b')?.textContent, complete: document.querySelectorAll('.assignment-row.complete').length, status: document.querySelector('#view')?.getAttribute('aria-busy') })) };
+          rider.actionState = { tickSaves: rider.tickSaves, progress: rider.progress, dom: await rider.page.evaluate(() => ({ view: typeof state === 'undefined' ? null : state.view, inert: document.querySelector('#app')?.inert, sync: document.querySelector('#sync-status b')?.textContent, complete: document.querySelectorAll('.assignment-row.complete').length, status: document.querySelector('#view')?.getAttribute('aria-busy'), activeId: state.activeTraining?.id, render: state.sessionRenderVersion, refreshing: Boolean(state.riderSessionRefresh), toast: document.querySelector('#toast')?.textContent, interactions: window.__burstInteractions })) };
         }
       }));
       if (!baseline) beforeRelease.actions = riders.filter(r => !r.homeError && !r.trainingError && !r.actionError).length;
       const report = {
-        mode, riders: riderCount, optionalOutage: true, primaryConcurrencyLimit: backend.limit, maxPrimaryConcurrency: backend.maxActive, maxQueuedPrimary: backend.maxQueue,
+        mode, viewportWidth, riders: riderCount, optionalOutage: true, primaryConcurrencyLimit: backend.limit, maxPrimaryConcurrency: backend.maxActive, maxQueuedPrimary: backend.maxQueue,
         beforeOptionalRelease: beforeRelease, successes: riders.filter(r => !r.homeError && !r.trainingError && !r.actionError).length,
         homeMs: timing(riders.map(r => r.homeMs).filter(Number.isFinite)), trainingMs: timing(riders.map(r => r.trainingMs).filter(Number.isFinite)), actionMs: timing(riders.map(r => r.actionMs).filter(Number.isFinite)),
         primaryRequests: backend.total, homeApiRequests, trainingApiRequests, totalApiRequests: riders.reduce((sum, rider) => sum + rider.calls.length, 0),
@@ -240,7 +290,7 @@ class SharedBackend {
         passwordGrants: riders.reduce((sum, rider) => sum + rider.calls.filter(call => call.endpoint === '/auth/v1/token').length, 0),
         maxProfileAttempts: Math.max(...riders.map(r => r.calls.filter(call => call.criticalProfile).length)),
         abortedApiRequests: riders.reduce((sum, rider) => sum + rider.failedRequests.filter(request => request.api).length, 0),
-        errors: riders.filter(r => r.homeError || r.trainingError || r.actionError || r.errors.length || r.failures.length).map(r => ({ rider: r.n, home: r.homeError, training: r.trainingError, action: r.actionError, actionState: r.actionState, errors: r.errors, scope: r.failures })),
+        errors: riders.filter(r => r.homeError || r.trainingError || r.actionError || r.errors.length || r.failures.length).map(r => ({ rider: r.n, home: r.homeError, training: r.trainingError, action: r.actionError, actionState: r.actionState, afterTimer: r.afterTimer, afterTick:r.afterTick, errors: r.errors, scope: r.failures })),
       };
       reports.push(report);
       console.log(JSON.stringify(report));
@@ -254,13 +304,15 @@ class SharedBackend {
         check(report.homeMs.max < 12000, `${mode}: bounded Home startup`);
         check(report.trainingMs.max < 10000, `${mode}: bounded Daily startup`);
         eq(report.passwordGrants, mode === 'sign-in' ? riderCount : 0, 'No duplicate password grants under load');
+        check(riders.every(rider => rider.calls.some(call => call.criticalProfile)), 'Every isolated session verified its own profile');
         check(backend.maxActive <= backend.limit, 'The shared backend simulator never exceeds its configured capacity');
         check(report.maxProfileAttempts <= 2, 'Critical profile retries remain bounded during a synchronized transient failure');
       }
     } finally { backend.barrier.resolve(); backend.releaseOptional(); await Promise.all(contexts.map(context => context.close())); }
   }
   try {
-    for (const mode of ['sign-in', 'saved-session']) await burst(mode);
+    if (diagnostic && process.env.JKCREW_BURST_LAYOUT_PROBE === '1') { for (const width of [320,390,430]) await burst('sign-in',width); }
+    else for (const mode of diagnostic ? ['sign-in'] : ['sign-in', 'saved-session']) await burst(mode);
     const output = { status: baseline ? 'BASELINE' : 'PASS', checks, productionRequests: 0, description: 'Actual shipped browser app; synthetic shared backend, not a production capacity benchmark', reports };
     if (process.env.JKCREW_BURST_REPORT) fs.writeFileSync(process.env.JKCREW_BURST_REPORT, JSON.stringify(output, null, 2));
     console.log(JSON.stringify(output));
