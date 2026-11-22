@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const extract=name=>{const start=source.search(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(start>=0,name);const rest=source.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
-const names=['init','handleSessionOnce','handleSession','handleAuth','renderAuth','renderBootRecovery','isTransientRequestError','retryNetworkRequest','setButtonBusy','beginAuthFormRequest','showAuthFormMessage','authErrorMessage'];
+const names=['init','handleSessionOnce','handleSession','handleAuth','renderAuth','renderBootRecovery','isTransientRequestError','retryNetworkRequest','setButtonBusy','beginAuthFormRequest','showAuthFormMessage','authErrorMessage','signupInviteMessage','signupErrorMessage'];
 const messageStart=source.indexOf('const messageFrom = '),messageRest=source.slice(messageStart);assert(messageStart>=0);
 const actualMessage=messageRest.slice(0,messageRest.indexOf('\n};')+3);
 const fixture=String.raw`

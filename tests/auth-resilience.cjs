@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require(process.env.JKCREW_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const extract=name=>{const start=source.search(new RegExp('^(?:async )?function '+name+'\\(','m'));if(start<0)return '';const rest=source.slice(start);return rest.slice(0,rest.indexOf('\n}')+2);};
-const names=['authHeroMarkup','renderAuth','renderForgotPassword','renderPasswordRecovery','handleAuth','requestPasswordReset','updateRecoveredPassword','signOutCurrentDevice','beginAuthFormRequest','showAuthFormMessage','authErrorMessage','isTransientRequestError','retryNetworkRequest','setButtonBusy'];
+const names=['authHeroMarkup','renderAuth','renderForgotPassword','renderPasswordRecovery','handleAuth','requestPasswordReset','updateRecoveredPassword','signOutCurrentDevice','beginAuthFormRequest','showAuthFormMessage','authErrorMessage','signupInviteMessage','signupErrorMessage','isTransientRequestError','retryNetworkRequest','setButtonBusy'];
 const start=source.indexOf('const messageFrom = '),rest=source.slice(start),messageFrom=rest.slice(0,rest.indexOf('\n};')+3);
 const fixture=String.raw`
 const app=document.querySelector('#app'),state={authEventVersion:0,user:null,session:null};let liveRun=null;
@@ -38,6 +38,56 @@ window.settle=()=>new Promise(resolve=>setTimeout(resolve,0));
   {
    const p=await fresh();await p.evaluate(()=>{queue.signup=[{data:{error:'An account already exists'}}];renderAuth('signup');});await p.locator('#display-name').fill('Rider Parent');await p.locator('#role').selectOption('parent');await p.locator('#email').fill('parent@example.test');await p.locator('#password').fill('fixture-password');await p.locator('#auth-form').evaluate(form=>form.requestSubmit());await p.waitForFunction(()=>document.querySelector('.auth-message')?.textContent.includes('already'));
    eq(await p.locator('#display-name').inputValue(),'Rider Parent','Signup failure preserves display name');eq(await p.locator('#email').inputValue(),'parent@example.test','Signup failure preserves email');eq(await p.locator('#role').inputValue(),'parent','Signup failure preserves parent account type');eq(await p.locator('#password').inputValue(),'fixture-password','Signup failure preserves password');await p.close();
+  }
+  {
+   const p=await fresh();await p.evaluate(()=>renderAuth('signup'));
+   const code='ab12'.repeat(8);
+   await p.locator('#display-name').fill('Test Rider');
+   await p.locator('#email').fill('rider@example.test');
+   await p.locator('#password').fill('fixture-password');
+   await p.locator('#member-team-code').fill(code.slice(1));
+   await p.getByRole('button',{name:'Create my account'}).click();
+   ok((await p.locator('.auth-message').textContent()).includes('all 32 characters'),'Truncated invite gets format guidance');
+   eq(await p.evaluate(()=>calls.length),0,'Malformed code does not start account creation');
+   await p.evaluate(()=>{
+     const detail={error:'The team registration could not be verified. Check the team name or invitation code and try again.'};
+     const context=new Response(JSON.stringify(detail),{status:400,headers:{'Content-Type':'application/json'}});
+     queue.signup=[{error:{name:'FunctionsHttpError',message:'Edge Function returned a non-2xx status code',context}}];
+   });
+   await p.locator('#member-team-code').fill(' '+code+' ');
+   await p.getByRole('button',{name:'Create my account'}).click();
+   await p.waitForFunction(()=>document.querySelector('.auth-message').textContent.includes('fresh Rider code'));
+   eq(await p.evaluate(()=>calls.map(call=>call.name)),['signup'],'Rejected team code triggers no repeat POST or sign-in');
+   eq(await p.evaluate(()=>calls[0].body.body.inviteCode),code,'Only surrounding whitespace is removed from a complete code');
+   eq(await p.locator('#member-team-code').inputValue(),' '+code+' ','Invite can be edited after rejection');
+   eq(await p.locator('#password').inputValue(),'fixture-password','Rejected invite preserves password for explicit retry');
+   ok(await p.getByRole('button',{name:'Create my account'}).isEnabled(),'Rejected invite unlocks signup');
+   await p.close();
+  }
+  {
+   const p=await fresh();
+   const messages=await p.evaluate(async()=>{
+     const signupError=(detail,status=400)=>({name:'FunctionsHttpError',context:new Response(JSON.stringify({error:detail}),{status})});
+     const rejected='The team registration could not be verified. Check the team name or invitation code and try again.';
+     const hung=signupError('Private raw text');
+     hung.context.json=()=>new Promise(()=>{});
+     timeoutOverrides['Read signup error']=20;
+     return Promise.all([
+       signupErrorMessage(null,signupError(rejected),'parent',''),
+       signupErrorMessage(null,signupError(rejected),'coach','assistant_coach'),
+       signupErrorMessage(null,signupError('Private raw text'),'athlete',''),
+       signupErrorMessage(null,hung,'athlete',''),
+       signupErrorMessage(null,signupError('Private raw text',429),'athlete',''),
+       signupErrorMessage(null,signupError('Private raw text',503),'athlete',''),
+     ]);
+   });
+   ok(messages[0].includes('Parent viewer code'),'Wrong parent invite guides to the correct role');
+   ok(messages[1].includes('Assistant coach code'),'Wrong coach invite guides to the correct role');
+   eq(messages[2],'Unable to create your account right now. Please try again.','Unknown error body never reaches signup text');
+   eq(messages[3],messages[2],'Hung error details release the UI with safe fallback');
+   ok(messages[4].includes('Too many attempts'),'Rate-limited signup retains wait guidance');
+   ok(messages[5].includes('couldn’t reach'),'Unavailable backend retains network guidance');
+   await p.close();
   }
   {
    const p=await fresh();await p.evaluate(()=>{window.pending=defer();queue.signup=[pending.promise];renderAuth('signup');const f=document.querySelector('#auth-form');f.displayName.value='Rider';f.email.value='rider@example.test';f.password.value='fixture-password';window.job=handleAuth({preventDefault(){},currentTarget:f},'signup');renderForgotPassword();});await p.evaluate(async()=>{pending.resolve({data:{ok:true}});await job;});

@@ -30,7 +30,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.204";
+const RELEASE_VERSION = "2.14.206";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -1995,7 +1995,7 @@ function renderAuth(mode = "login", message = "") {
             </div>
             <div class="field ${mode === "signup" ? "" : "hidden"}">
               <label for="role">Account type</label>
-              <select id="role" name="role"><option value="athlete">Athlete</option><option value="parent">Parent viewer</option><option value="coach">Coach</option></select>
+              <select id="role" name="role"><option value="athlete">Rider</option><option value="parent">Parent viewer</option><option value="coach">Coach</option></select>
             </div>
             <div class="coach-signup-fields hidden" id="coach-signup-fields" hidden>
               <div class="field" id="coach-country-field"><label for="coach-country">Coach country</label><select id="coach-country" name="countryCode"><option value="">Choose country</option>${mode === "signup" ? countryOptionsHtml() : ""}</select></div>
@@ -2004,7 +2004,7 @@ function renderAuth(mode = "login", message = "") {
               <div class="field hidden" id="coach-invite-field" hidden><label for="coach-invite-code">Team invite code</label><input id="coach-invite-code" name="inviteCode" maxlength="100" autocomplete="off" autocapitalize="characters" placeholder="Code from your head coach"></div>
               <p class="form-note">All coach accounts need platform-owner approval before app access. Your country does not join you to a team.</p>
             </div>
-            <div class="field ${mode === "signup" ? "" : "hidden"}" id="member-team-code-field"><label for="member-team-code">Team invite code <small>(optional)</small></label><input id="member-team-code" name="registrationInviteCode" maxlength="100" autocomplete="off" autocapitalize="characters" placeholder="Code from your coach"><small class="field-hint">Use your coach’s code so they can link you to their private team.</small></div>
+            <div class="field ${mode === "signup" ? "" : "hidden"}" id="member-team-code-field"><label for="member-team-code">Team invite code <small>(optional)</small></label><input id="member-team-code" name="registrationInviteCode" maxlength="100" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code from your coach"><small class="field-hint">Paste all 32 characters from your coach’s code for your account type.</small></div>
             <div class="field">
               <label for="email">Email</label>
               <input id="email" name="email" type="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="next" required autocomplete="email" placeholder="you@example.com">
@@ -2120,6 +2120,60 @@ function authErrorMessage(error, fallback) {
   if (/email_not_confirmed/.test(code)) return "Please confirm your email using the link in your inbox, then sign in.";
   if (/session_not_found|refresh_token_not_found|refresh_token_already_used|otp_expired/.test(code)) return "Your session or reset link has expired. Sign in again or request a new reset link.";
   return messageFrom(error, fallback);
+}
+
+function signupInviteMessage(role, teamRole, rejected = false) {
+  const inviter = role === "coach" ? "your head coach" : "your coach";
+  const type = role === "athlete" ? "Rider" : role === "parent" ? "Parent viewer" : teamRole === "assistant_coach" ? "Assistant coach" : "Coach";
+  const intro = rejected ? "This invite code couldn’t be used. " : "The invite code needs all 32 characters. ";
+  return `${intro}Ask ${inviter} for a fresh ${type} code and paste it here.`;
+}
+
+async function signupErrorMessage(data, error, role, teamRole) {
+  const fallback = "Unable to create your account right now. Please try again.";
+  const response = error?.context;
+  const status = Number(response?.status || error?.status || error?.statusCode || 0);
+  if (navigator.onLine === false || status === 402 || status === 429 || status >= 500 || isTransientRequestError(error)) {
+    return authErrorMessage(error, fallback);
+  }
+  if (error?.name === "FunctionsFetchError" || error?.name === "FunctionsRelayError") {
+    return "We couldn’t reach JKCREW just now. Please try again in a moment.";
+  }
+
+  let detail = data?.error;
+  if (error?.name === "FunctionsHttpError" && [400, 401, 403].includes(status) && response instanceof Response) {
+    try {
+      const body = await withTimeout(response.json(), "Read signup error", 1000);
+      detail = body?.error;
+    } catch (_) {
+      return fallback;
+    }
+  }
+  switch (detail) {
+    case "Enter a valid team invitation code.":
+      return signupInviteMessage(role, teamRole);
+    case "The team registration could not be verified. Check the team name or invitation code and try again.":
+      return role === "coach" && teamRole === "head_coach"
+        ? "We couldn’t set up your team. Check your team name and try again."
+        : signupInviteMessage(role, teamRole, true);
+    case "An account with that email already exists.":
+    case "An account already exists":
+      return "An account with that email already exists. Try signing in.";
+    case "Sign in again before registering a team account.":
+    case "Approved team coach access is required to register students.":
+      return "If you’re creating your own account, sign out of any other account on this device first.";
+    case "Enter a valid email address.":
+    case "Password must be between 8 and 72 characters.":
+    case "Display name must be between 1 and 60 characters.":
+    case "Choose an athlete, parent or coach account.":
+    case "Choose a valid two-letter country code.":
+    case "Country name is too long.":
+    case "Choose a valid team role.":
+    case "Add a team name between 1 and 80 characters.":
+      return detail;
+    default:
+      return fallback;
+  }
 }
 
 async function requestPasswordReset(event) {
@@ -2279,6 +2333,7 @@ async function handleAuth(event, mode) {
     if (role === "coach" && !["head_coach", "coach", "assistant_coach"].includes(teamRole)) return showAuthFormMessage(authForm, "Choose your team role.");
     if (role === "coach" && teamRole === "head_coach" && !teamName) return showAuthFormMessage(authForm, "Add your team name.");
     if (role === "coach" && teamRole !== "head_coach" && !inviteCode) return showAuthFormMessage(authForm, "Add the invite code from your head coach.");
+    if (inviteCode && !/^[0-9a-f]{32}$/i.test(inviteCode)) return showAuthFormMessage(authForm, signupInviteMessage(role, teamRole));
     const { data: signupData, error: signupError } = await withTimeout(
       client.functions.invoke("create-jkcrew-account", {
         body: { email, password, displayName, role, countryCode, countryName, ...(role === "coach" ? { teamRole, teamName, inviteCode } : inviteCode ? { inviteCode } : {}), website: "" },
@@ -2287,8 +2342,8 @@ async function handleAuth(event, mode) {
     );
     if (!authForm.isConnected) return;
     if (signupError || signupData?.error) {
-      const signupMessage = signupData?.error ? authErrorMessage(signupData.error) : authErrorMessage(signupError, "Unable to create your account right now. Please try again.");
-      showAuthFormMessage(authForm, signupMessage.includes("already") ? "An account with that email already exists. Try signing in." : signupMessage);
+      const signupMessage = await signupErrorMessage(signupData, signupError, role, teamRole);
+      showAuthFormMessage(authForm, signupMessage);
       return;
     }
 

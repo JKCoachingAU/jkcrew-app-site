@@ -77,7 +77,7 @@
               try { await navigator.clipboard.writeText(String(result.code)); if (active()) feedback.textContent = 'Invite code copied.'; }
               catch (_) { if (active()) feedback.textContent = 'Select the invite code above to copy it.'; }
             };
-            feedback.textContent = 'Invite created. Share the code directly with the person signing up.';
+            feedback.textContent = 'Invite created. Use Copy code to send the full code to the person signing up.';
           } catch (error) { if (active() && version === generation) feedback.textContent = error.message || 'Could not create the invite. Try again.'; }
           finally { if (active() && version === generation) button.disabled = false; }
         }));
