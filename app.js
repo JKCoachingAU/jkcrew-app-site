@@ -68,7 +68,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.209";
+const RELEASE_VERSION = "2.14.210";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -20833,6 +20833,7 @@ function urlBase64ToUint8Array(value = "") {
 async function getPushNotificationState() {
   const defaults = {
     leaderboard_overtaken: true,
+    coach_rank_updates: true,
     parent_weekly_summary: true,
     coach_messages: true,
     daily_hype: true,
@@ -20853,7 +20854,7 @@ async function getPushNotificationState() {
   }
 
   const { data: preferences, error } = await client.from("push_preferences")
-    .select("leaderboard_overtaken,parent_weekly_summary,coach_messages,daily_hype,trick_completed,list_requests,battle_updates,challenge_updates,event_updates,sheet_updates,coaching_updates,achievement_updates,quiet_hours_enabled,quiet_hours_start,quiet_hours_end")
+    .select("leaderboard_overtaken,coach_rank_updates,parent_weekly_summary,coach_messages,daily_hype,trick_completed,list_requests,battle_updates,challenge_updates,event_updates,sheet_updates,coaching_updates,achievement_updates,quiet_hours_enabled,quiet_hours_start,quiet_hours_end")
     .eq("user_id", state.user.id)
     .maybeSingle();
   if (error) throw error;
@@ -20892,7 +20893,7 @@ function pushNotificationSettingsHtml(pushState) {
         <label><input type="checkbox" id="notification-sound-toggle" ${notificationSoundEnabled() ? "checked" : ""}> Play the JKCREW sound for in-app notification pop-ups</label>
         <label><input type="checkbox" data-push-preference="battle_updates" ${preference.battle_updates ? "checked" : ""}> Battle requests, starts and results</label>
         <label><input type="checkbox" data-push-preference="challenge_updates" ${preference.challenge_updates ? "checked" : ""}> Weekly challenge updates</label>
-        <label><input type="checkbox" data-push-preference="event_updates" ${preference.event_updates ? "checked" : ""}> Event changes, runs and reminders</label>
+        <label><input type="checkbox" data-push-preference="event_updates" ${preference.event_updates ? "checked" : ""}> ${isCoachRole(role) ? "Event changes, runs, reminders and weekly UCI rankings" : "Event changes, runs and reminders"}</label>
         <label><input type="checkbox" data-push-preference="sheet_updates" ${preference.sheet_updates ? "checked" : ""}> Sheet and list updates</label>
         <label><input type="checkbox" data-push-preference="coaching_updates" ${preference.coaching_updates ? "checked" : ""}> Private video coaching updates</label>
         <label><input type="checkbox" data-push-preference="achievement_updates" ${preference.achievement_updates ? "checked" : ""}> Park crowns and milestones</label>
@@ -20902,12 +20903,16 @@ function pushNotificationSettingsHtml(pushState) {
           <label><input type="checkbox" data-push-preference="daily_hype" ${preference.daily_hype ? "checked" : ""}> 9am daily coach hype message</label>
           <label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> My list request is approved</label>
         ` : ""}
-        ${isCoachRole(role) ? `<label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label><label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>` : ""}
+        ${isCoachRole(role) ? `
+          <label><input type="checkbox" data-push-preference="trick_completed" ${preference.trick_completed ? "checked" : ""}> A student completes a sheet trick</label>
+          <label><input type="checkbox" data-push-preference="list_requests" ${preference.list_requests ? "checked" : ""}> A student sends a list request</label>
+          <label><input type="checkbox" data-push-preference="coach_rank_updates" ${preference.coach_rank_updates ? "checked" : ""}> Riders overtake each other on my team leaderboard</label>
+        ` : ""}
         ${role === "parent" ? `<label><input type="checkbox" data-push-preference="parent_weekly_summary" ${preference.parent_weekly_summary ? "checked" : ""}> End-of-week points and completion summary</label><label><input type="checkbox" data-push-preference="coach_messages" ${preference.coach_messages ? "checked" : ""}> Messages from my child's coach</label>` : ""}
       </div>
       <div class="quiet-hours-settings"><label><input type="checkbox" data-push-preference="quiet_hours_enabled" ${preference.quiet_hours_enabled ? "checked" : ""}> Quiet hours for background push</label><div><label>From <input type="time" id="quiet-hours-start" value="${escapeHtml(String(preference.quiet_hours_start || "20:00").slice(0, 5))}"></label><label>Until <input type="time" id="quiet-hours-end" value="${escapeHtml(String(preference.quiet_hours_end || "08:00").slice(0, 5))}"></label></div></div>
       <button class="secondary-btn compact-btn notification-test-button" type="button" id="send-test-notification">Send a test notification</button>
-      <p>Notifications are set separately on each phone, tablet, or computer. In-app sounds work after you interact with the app; background push alerts use the device's own sound, mute and Focus settings. On iPhone or iPad, install JK Coaching to the Home Screen first.</p>
+      <p>Notifications are set up separately on each device. In-app sounds play after you interact with JKCREW. Your device controls background alert sounds and vibration through its notification, mute and Focus settings. On iPhone or iPad, add JK Coaching to your Home Screen first.</p>
     </section>`;
 }
 
@@ -20919,6 +20924,7 @@ function currentPushPreferences() {
   return {
     user_id: state.user.id,
     leaderboard_overtaken: checkboxValue("leaderboard_overtaken"),
+    ...(isCoachRole(state.profile?.role) ? { coach_rank_updates: checkboxValue("coach_rank_updates") } : {}),
     parent_weekly_summary: checkboxValue("parent_weekly_summary"),
     coach_messages: checkboxValue("coach_messages"),
     daily_hype: checkboxValue("daily_hype"),
@@ -21090,7 +21096,7 @@ async function renderProfile() {
       supported: supportsPushNotifications(),
       enabled: false,
       permission: supportsPushNotifications() ? Notification.permission : "unsupported",
-      preferences: { leaderboard_overtaken: true, parent_weekly_summary: true, coach_messages: true, daily_hype: true, trick_completed: true, list_requests: true, battle_updates: true, challenge_updates: true, event_updates: true, sheet_updates: true, coaching_updates: true, achievement_updates: true, quiet_hours_enabled: false, quiet_hours_start: "20:00", quiet_hours_end: "08:00" },
+      preferences: { leaderboard_overtaken: true, coach_rank_updates: true, parent_weekly_summary: true, coach_messages: true, daily_hype: true, trick_completed: true, list_requests: true, battle_updates: true, challenge_updates: true, event_updates: true, sheet_updates: true, coaching_updates: true, achievement_updates: true, quiet_hours_enabled: false, quiet_hours_start: "20:00", quiet_hours_end: "08:00" },
     };
   });
   try {
