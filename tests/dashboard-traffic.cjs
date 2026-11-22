@@ -58,7 +58,7 @@ class Query {
   }
 }
 const context = {
-  Map, Set, console, Date: class extends Date { static now() { return now; } },
+  Map, Set, console, setTimeout, clearTimeout, Date: class extends Date { static now() { return now; } },
   state: { user: { id: 'coach' }, profile: { role: 'coach' }, cache: {}, inFlight: new Map(), videoReviewMedia: new Map() },
   client: { from: table => new Query(table) },
   PROFILE_SELECT: app.match(/^const PROFILE_SELECT = "([^"]+)";/m)[1],
@@ -72,7 +72,7 @@ const context = {
   })),
 };
 vm.createContext(context);
-vm.runInContext(['cacheGet', 'cacheSet', 'cacheClear', 'invalidateHelpRequestData', 'getHelpRequests', 'getCoachRoster', 'fetchHelpVideoMedia', 'athleteHelpHasReply'].map(extract).join('\n'), context);
+vm.runInContext(['cacheGet', 'cacheSet', 'cacheClear', 'invalidateHelpRequestData', 'getHelpRequests', 'readCoachDashboardQueries', 'withTimeout', 'getCoachRoster', 'fetchHelpVideoMedia', 'athleteHelpHasReply'].map(extract).join('\n'), context);
 (async () => {
   let release;
   hold = new Promise(resolve => { release = resolve; });

@@ -30,7 +30,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.206";
+const RELEASE_VERSION = "2.14.207";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -3922,20 +3922,27 @@ function contestEventDay(value = "") {
 }
 
 async function getSharedUpcomingEventData() {
-  const { data: eventRows, error: eventError } = await client.from("dashboard_items")
+  const scope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
+  const key = "shared-events:upcoming";
+  const pending = state.inFlight.get(key);
+  if (pending) return pending;
+  const request = (async () => {
+  const [{ data: eventRows, error: eventError }] = await readCoachDashboardQueries([() => client.from("dashboard_items")
     .select("id,owner_id,created_by,item_type,title,details,due_at,end_at,completed,created_at,updated_at,uci_schedule_date_only,uci_schedule_status")
     .eq("item_type", "event")
     .eq("completed", false)
     .order("due_at", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })]);
   if (eventError) throw eventError;
+  if (state.user?.id !== scope.userId || (state.sessionSetupVersion || 0) !== scope.generation) throw new Error("Your account access changed. Reopen events.");
   const activeEvents = (eventRows || []).filter((item) => contestEventIsUpcoming(item));
   const eventIds = activeEvents.map((item) => item.id);
   if (!eventIds.length) return { events: activeEvents, attendance: [] };
-  const [{ data: attendanceRows, error: attendanceError }, { data: courseRows, error: courseError }] = await Promise.all([
-    client.rpc("get_active_event_attendees", { p_event_ids: eventIds }),
-    client.from("event_course_photos").select("event_id").in("event_id", eventIds),
+  const [{ data: attendanceRows, error: attendanceError }, { data: courseRows, error: courseError }] = await readCoachDashboardQueries([
+    () => client.rpc("get_active_event_attendees", { p_event_ids: eventIds }),
+    () => client.from("event_course_photos").select("event_id").in("event_id", eventIds),
   ]);
+  if (state.user?.id !== scope.userId || (state.sessionSetupVersion || 0) !== scope.generation) throw new Error("Your account access changed. Reopen events.");
   if (attendanceError) throw attendanceError;
   if (courseError) throw courseError;
   const eventsWithCourses = new Set((courseRows || []).map((row) => row.event_id));
@@ -3943,6 +3950,9 @@ async function getSharedUpcomingEventData() {
     events: activeEvents.map((item) => ({ ...item, course_photo_available: eventsWithCourses.has(item.id) })),
     attendance: (attendanceRows || []).map((row) => ({ ...row, profile: { id: row.athlete_id, display_name: row.display_name || "JKCREW rider", avatar: row.avatar || "" } })),
   };
+  })().finally(() => { if (state.inFlight.get(key) === request) state.inFlight.delete(key); });
+  state.inFlight.set(key, request);
+  return request;
 }
 
 let recentEventCoursePhoto = null;
@@ -3981,6 +3991,36 @@ async function getCoachVenues() {
   });
 }
 
+async function readCoachDashboardQueries(factories, { concurrency = 3, timeoutMs = 12000, isCurrent = () => true } = {}) {
+  const results = new Array(factories.length), controllers = new Set();
+  let next = 0, failure = null;
+  const deadline = Date.now() + timeoutMs;
+  const worker = async () => {
+    while (!failure && next < factories.length) {
+      const index = next++;
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      if (controller) controllers.add(controller);
+      try {
+        if (!isCurrent()) throw new Error("This dashboard is no longer active.");
+        let query = factories[index]();
+        if (controller && query?.abortSignal) query = query.abortSignal(controller.signal);
+        const result = await withTimeout(Promise.resolve(query), "Coach dashboard details", Math.max(1, deadline - Date.now()));
+        if (result?.error) throw result.error;
+        results[index] = result;
+      } catch (error) {
+        failure ||= error;
+        controllers.forEach(active => active.abort());
+      } finally {
+        controller?.abort();
+        controllers.delete(controller);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, factories.length) }, worker));
+  if (failure) throw failure;
+  return results;
+}
+
 async function getCoachCommandData(roster = [], { overview = false } = {}) {
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
   const ids = roster.map((athlete) => athlete.id);
@@ -3989,29 +4029,33 @@ async function getCoachCommandData(roster = [], { overview = false } = {}) {
   const cacheKey = `coach-command:${ids.slice().sort().join(",")}:${rosterWeekStarts.slice().sort().join(",")}${overview ? ":overview" : ""}`;
   const cached = cacheGet(cacheKey, 8000);
   if (cached) return cached;
+  const pending = state.inFlight.get(cacheKey);
+  if (pending) return pending;
+  const request = (async () => {
   const coachIds = await getCoachTeamScopeIds();
   const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString();
-  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans] = await Promise.all([
-    client.from("coach_calendar_events").select("*").in("coach_id", coachIds).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
-    ids.length ? client.from("athlete_coach_status").select("*").in("coach_id", coachIds).in("athlete_id", ids).order("updated_at", { ascending: false }).order("coach_id") : { data: [], error: null },
-    ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
-    ids.length && !overview ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
-    ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category, venue, week_start").in("athlete_id", ids).in("week_start", rosterWeekStarts) : { data: [], error: null },
-    ids.length && !overview ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
-    ids.length && !overview ? client.from("assignment_attempts").select("*").in("athlete_id", ids).in("week_start", rosterWeekStarts).order("attempted_at", { ascending: false }) : { data: [], error: null },
-    overview ? { data: [], error: null } : client.from("attendance_sessions").select("*, attendance_records(*)").in("coach_id", coachIds).order("session_date", { ascending: false }).limit(8),
-    ids.length ? client.from("parent_athletes").select("*").in("coach_id", coachIds).in("athlete_id", ids) : { data: [], error: null },
-    client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
-    ids.length ? client.from("weekly_progress_notifications").select("*").in("coach_id", coachIds).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
-    client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
-    ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
-    client.from("rider_sheet_proposals").select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, created_at").in("coach_id", coachIds).eq("status", "pending").order("created_at", { ascending: true }),
-    ids.length ? client.from("trick_help_requests").select("id, athlete_id, coach_id, question, status, created_at, video_file_name, video_storage_path").in("coach_id", coachIds).in("athlete_id", ids).eq("status", "open").order("created_at", { ascending: true }).limit(60) : { data: [], error: null },
-    ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, contest_item_id, created_at, updated_at").in("athlete_id", ids).not("contest_item_id", "is", null).is("archived_at", null).order("created_at", { ascending: false }).limit(40) : { data: [], error: null },
-    client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
-    ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, updated_at").in("coach_id", coachIds).in("athlete_id", ids).eq("run_status", "ready_for_review").is("archived_at", null).order("updated_at", { ascending: true }) : { data: [], error: null },
-  ]);
+  const [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans] = await readCoachDashboardQueries([
+    () => client.from("coach_calendar_events").select("*").in("coach_id", coachIds).gte("starts_at", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString()).order("starts_at").limit(30),
+    () => ids.length ? client.from("athlete_coach_status").select("*").in("coach_id", coachIds).in("athlete_id", ids).order("updated_at", { ascending: false }).order("coach_id") : { data: [], error: null },
+    () => ids.length ? client.from("dashboard_items").select("*").in("owner_id", ids).gte("due_at", new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()).order("due_at", { ascending: true, nullsFirst: false }).limit(40) : { data: [], error: null },
+    () => ids.length && !overview ? client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", since).order("started_at", { ascending: false }) : { data: [], error: null },
+    () => ids.length ? client.from("weekly_trick_assignments").select("id, athlete_id, category, venue, week_start").in("athlete_id", ids).in("week_start", rosterWeekStarts) : { data: [], error: null },
+    () => ids.length && !overview ? client.from("assignment_point_awards").select("*").in("athlete_id", ids).gte("created_at", weekStartIso()) : { data: [], error: null },
+    () => ids.length && !overview ? client.from("assignment_attempts").select("*").in("athlete_id", ids).in("week_start", rosterWeekStarts).order("attempted_at", { ascending: false }) : { data: [], error: null },
+    () => overview ? { data: [], error: null } : client.from("attendance_sessions").select("*, attendance_records(*)").in("coach_id", coachIds).order("session_date", { ascending: false }).limit(8),
+    () => ids.length ? client.from("parent_athletes").select("*").in("coach_id", coachIds).in("athlete_id", ids) : { data: [], error: null },
+    () => client.from("weekly_progress_notification_settings").select("*").eq("coach_id", state.user.id).maybeSingle(),
+    () => ids.length ? client.from("weekly_progress_notifications").select("*").in("coach_id", coachIds).in("athlete_id", ids).eq("week_start", weekStartDate()).order("created_at", { ascending: false }) : { data: [], error: null },
+    () => client.from("dismissed_coach_tasks").select("*").eq("coach_id", state.user.id).eq("week_start", weekStartDate()),
+    () => ids.length ? client.from("trick_requests").select("*").in("athlete_id", ids).eq("status", "pending").order("created_at", { ascending: false }).limit(60) : { data: [], error: null },
+    () => client.from("rider_sheet_proposals").select("id, athlete_id, coach_id, week_start, title, venue, rider_note, items, status, created_at").in("coach_id", coachIds).eq("status", "pending").order("created_at", { ascending: true }),
+    () => ids.length ? client.from("trick_help_requests").select("id, athlete_id, coach_id, question, status, created_at, video_file_name, video_storage_path").in("coach_id", coachIds).in("athlete_id", ids).eq("status", "open").order("created_at", { ascending: true }).limit(60) : { data: [], error: null },
+    () => ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, contest_item_id, created_at, updated_at").in("athlete_id", ids).not("contest_item_id", "is", null).is("archived_at", null).order("created_at", { ascending: false }).limit(40) : { data: [], error: null },
+    () => client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
+    () => ids.length ? client.from("run_plans").select("id, athlete_id, title, venue, updated_at").in("coach_id", coachIds).in("athlete_id", ids).eq("run_status", "ready_for_review").is("archived_at", null).order("updated_at", { ascending: true }) : { data: [], error: null },
+  ], { isCurrent: () => state.user?.id === cacheScope.userId && (state.sessionSetupVersion || 0) === cacheScope.generation && (!overview || state.view === "command") });
   [calendar, statusRows, dashboardItems, sessions, scheduleRows, awards, assignmentAttempts, attendanceSessions, parentLinks, weeklySettings, weeklyNotifications, dismissedTasks, trickRequests, sheetProposals, helpRequests, eventRunPlans, battleRows, reviewRunPlans].forEach((result) => { if (result.error) throw result.error; });
+  if (state.user?.id !== cacheScope.userId || (state.sessionSetupVersion || 0) !== cacheScope.generation) throw new Error("Your account access changed. Reopen Coach HQ.");
   return cacheSet(cacheKey, {
     calendar: calendar.data || [],
     statuses: (statusRows.data || []).filter((row, index, rows) => rows.findIndex(other => other.athlete_id === row.athlete_id) === index),
@@ -4032,6 +4076,9 @@ async function getCoachCommandData(roster = [], { overview = false } = {}) {
     reviewRunPlans: reviewRunPlans.data || [],
     battles: Array.isArray(battleRows.data) ? battleRows.data : [],
   }, cacheScope);
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
+  state.inFlight.set(cacheKey, request);
+  return request;
 }
 
 async function getStudentPrivateData(athleteId) {
@@ -4752,12 +4799,14 @@ async function getAllParkKings({ force = false } = {}) {
   const existingRequest = !force ? state.inFlight.get(cacheKey) : null;
   if (existingRequest) return existingRequest;
   const request = (async () => {
-    const { data, error } = await client.rpc("get_team_park_kings");
-    if (error) {
-      console.warn("Park Kings list could not load", error);
-      return [];
-    }
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    try {
+    let query = client.rpc("get_team_park_kings");
+    if (controller && query.abortSignal) query = query.abortSignal(controller.signal);
+    const { data, error } = await withTimeout(query, "Park crowns", 10000);
+    if (error) throw error;
     return cacheSet(cacheKey, data || [], cacheScope);
+    } finally { controller?.abort(); }
   })();
   if (!force) state.inFlight.set(cacheKey, request);
   try {
@@ -4810,7 +4859,7 @@ function renderCommandParkKingSelection() {
 
 async function refreshCommandParkKings() {
   const accordion = document.querySelector("#command-park-kings");
-  if (!accordion) return;
+  if (!accordion?.open) return;
   try {
     const parkKings = await getAllParkKings({ force: true });
     const venues = commandParkKingVenueList(state.commandParkKingVenues.map((venue) => ({ category: "daily", venue })), parkKings);
@@ -13294,164 +13343,211 @@ async function loadCommandUciLeaderboard(panel, roster, isCurrent, { force = fal
 
 async function renderCoachCommand() {
   const renderVersion = state.commandRenderVersion = (state.commandRenderVersion || 0) + 1;
-  const viewerId = state.user?.id;
-  const setupVersion = state.sessionSetupVersion;
-  const isCurrent = () => state.view === "command" && state.user?.id === viewerId && state.sessionSetupVersion === setupVersion && state.commandRenderVersion === renderVersion;
-  // Start independent requests together; ranking never blocks the dashboard.
-  const rosterRequest = getCoachRoster({ summary: true });
-  const leaderboardRequest = getLeaderboard().then(data => ({ data }), error => ({ error }));
-  const [roster, commandData, broadcastHistory, parkKings, sharedEventData] = await withTimeout(Promise.all([
-    rosterRequest,
-    rosterRequest.then(roster => getCoachCommandData(roster, { overview: true })),
-    client.from("coach_broadcasts").select("id, target_label, message, recipient_count, push_count, sent_at").eq("coach_id", state.user.id).order("sent_at", { ascending: false }).limit(5).then((result) => {
-      if (result.error) throw result.error;
-      return result.data || [];
-    }),
-    getAllParkKings(),
-    getSharedUpcomingEventData(),
-  ]), "Coach dashboard", 15000);
+  const viewerId = state.user?.id, setupVersion = state.sessionSetupVersion;
+  const view = document.querySelector("#view");
+  const isCurrent = () => Boolean(view) && state.view === "command" && state.user?.id === viewerId
+    && state.sessionSetupVersion === setupVersion && state.commandRenderVersion === renderVersion
+    && document.querySelector("#view") === view;
   if (!isCurrent()) return;
   state.la28CountdownMount?.destroy();
   state.la28CountdownMount = null;
-  if (!roster.length) {
-    state.coachOtherLandedQueue?.destroy();
-    state.coachOtherLandedQueue = null;
-    document.querySelector("#view").innerHTML = `<div class="page-head"><div><div class="eyebrow">Coach command centre</div><h1>No <span>riders</span></h1><p>Add students first, then this becomes your calendar, attendance, and parent-update hub.</p></div></div><div class="empty">No students linked yet.</div>`;
-    return;
-  }
-  const calendarFeed = combinedCoachCalendarItems(commandData);
-  const groupedCalendar = groupCoachCalendarItems(calendarFeed, roster);
-  const upcoming = sharedEventData.events.length;
-  const priorityTasks = highPriorityTasks(roster, commandData, groupedCalendar);
-  const pendingRequests = commandData.trickRequests?.length || 0;
-  const listRequestCount = commandData.sheetProposals?.length || 0;
-  const videoReplyCount = commandData.helpRequests?.length || 0;
-  const recentEventRuns = (commandData.eventRunPlans || []).filter((run) => new Date(run.created_at) >= new Date(weekStartIso()));
-  const activeBattleCount = (commandData.battles || []).filter((battle) => battle.status === "accepted").length;
-  const teamSections = [
-    commandAccordionSection("run-reviews-section", "Run Reviews", "Competition runs ready for your review", coachRunReviewQueueHtml(commandData.reviewRunPlans, roster)),
-    commandAccordionSection("list-requests-section", "List Requests", "Complete weekly lists waiting for your approval", coachListRequestsHtml(commandData.sheetProposals, roster)),
-    commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(commandData, roster)),
-    commandAccordionSection("event-runs-section", "New Event Run Plans", "Private rider runs created this week", coachEventRunPlansHtml(recentEventRuns, roster)),
-    commandAccordionSection("coach-calendar-note-section", "Coach Calendar Note", "Add a private session or reminder note", coachCalendarForm(roster)),
-    commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(commandData)}<div class="settings-divider"></div><div class="empty compact-empty">Parent accounts and links are managed under More → Parents.</div>`),
-  ].join("");
-  document.querySelector("#view").innerHTML = `
-    <section class="command-page-hero">
-      <div><div class="eyebrow">Coach command centre</div><h1>Coach <span>HQ</span></h1><p>Your riders, priorities and weekly operations at a glance.</p></div>
-      <button class="command-start-button" data-view="sessionViewer" type="button"><span>Start Coaching</span><small>Open live Session Viewer</small><b aria-hidden="true">→</b></button>
-    </section>
-    <section class="command-metrics" aria-label="Coach overview">
-      ${commandMetricCard("Students", roster.length, "In your crew", { view: "crew" })}
-      ${commandMetricCard("Videos to Reply", videoReplyCount, "Coach Help queue", { view: "videoReviews" })}
-      ${commandData.reviewRunPlans?.length ? commandMetricCard("Runs to Review", commandData.reviewRunPlans.length, "Ready for your feedback", { target: "run-reviews-section" }) : commandMetricCard("New Event Runs", recentEventRuns.length, "Planned this week", { target: "event-runs-section" })}
-      ${commandMetricCard("Active Battles", activeBattleCount, "Live rider battles", { view: "battleViewer" })}
-      ${commandMetricCard("Upcoming", upcoming, "Events to manage", { view: "contests" })}
-      ${commandMetricCard("List Requests", listRequestCount, "Student lists", { target: "list-requests-section" })}
-    </section>
-    <div id="other-landed-reviews-section" data-command-other-landed></div>
-    ${highPriorityTodoHtml(priorityTasks)}
-    <details class="command-message-accordion coach-tone-purple">
-      <summary><span><strong>Message the Crew</strong><small>Send a rider, group or parent update</small></span><span class="command-message-count">${broadcastHistory.length ? `${broadcastHistory.length} recent` : "Compose"}</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary>
-      <div class="command-message-body">${coachBroadcastComposerHtml(roster, broadcastHistory)}</div>
-    </details>
-    <section class="panel command-leaderboard-panel coach-tone-gold">
-      <div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top 5 riders this week</div></div></div>
-      <div data-command-leaderboard role="status">Loading weekly rankings…</div>
-    </section>
-    <section id="upcoming-events-section" class="panel shared-events-panel athlete-event-palette command-upcoming-events-panel coach-tone-gold">
-      <div class="shared-events-head"><div><div class="eyebrow">Events & private planning</div><h2>Upcoming events</h2><p>The same event list riders see. Open Events & Runs to manage attendance, course photos, private runs and duplicates.</p></div><span class="command-event-count">${upcoming} upcoming</span></div>
-      ${coachSharedEventsSummaryHtml(sharedEventData.events, sharedEventData.attendance)}
-    </section>
-    <section class="panel command-uci-panel coach-tone-blue" data-command-uci aria-labelledby="command-uci-title">
-      <div class="panel-head"><div><div class="eyebrow">BMX Freestyle Park · Your crew</div><h2 id="command-uci-title">UCI rider leaderboard</h2></div><span class="uci-jkc-mark" aria-label="JKC riders"><img src="icons/jkc-logo.png?v=2.11.77" width="22" height="22" alt="">JKC</span></div>
-      <div data-command-uci-content></div>
-      <div class="command-la28-summary"><div data-la28-countdown></div><button class="secondary-btn compact-btn" type="button" data-view="uciTracker">Open Road to LA28 <span aria-hidden="true">→</span></button></div>
-    </section>
-    ${commandParkKingsAccordionHtml(commandData.scheduleRows, parkKings)}
-    <section class="command-management-stack">
-      ${commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events and parent updates", `${listRequestCount + pendingRequests} request${listRequestCount + pendingRequests === 1 ? "" : "s"} · ${upcoming} event${upcoming === 1 ? "" : "s"}`, teamSections)}
-    </section>`;
-  let rankingRevision = 0;
-  const showRanking = request => {
-    const revision = ++rankingRevision;
-    void request.then(result => {
-      if (!isCurrent() || revision !== rankingRevision) return;
-      const target = document.querySelector("[data-command-leaderboard]");
-      if (!target) return;
-      if (result.error) {
-        target.innerHTML = `<p>Rankings are taking longer to load.</p><button class="secondary-btn" type="button" data-retry-command-ranking>Retry rankings</button>`;
-        target.querySelector("button").onclick = () => navigate("command");
-      } else target.innerHTML = commandLeaderboardPreviewHtml(leaderboardWithBenchmark(result.data, "weekly_points"), "weekly_points");
-      target.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.view)));
-      target.querySelectorAll("[data-public-athlete]").forEach(button => button.addEventListener("click", () => { state.publicAthleteId = button.dataset.publicAthlete; navigate("publicProfile"); }));
-    });
-  };
-  showRanking(leaderboardRequest);
-  state.la28CountdownMount = mountLa28Countdown(document.querySelector("[data-command-uci] [data-la28-countdown]"), isCurrent);
-  void loadCommandUciLeaderboard(document.querySelector("[data-command-uci]"), roster, isCurrent);
   state.coachOtherLandedQueue?.destroy();
-  const landedHost = document.querySelector("[data-command-other-landed]");
-  state.coachOtherLandedQueue = window.JKCrewOtherThingsLanded?.mountCoachQueue?.({
-    element:landedHost, client, roster, isCurrent,
-    onChanged: result => {
-      if (!isCurrent() || result?.kind !== "review") return;
-      ["leaderboard", "tricktionary:", "coach-command:", "points-receipt:"].forEach(cacheClear);
-      // Let older ranking requests settle before fetching the score saved by this review.
-      rankingRevision++;
-      const pending = [...(state.inFlight?.entries() || [])].filter(([key]) => key.startsWith("leaderboard")).map(([,request]) => request);
-      void Promise.allSettled(pending).then(() => {
-        if (!isCurrent()) return;
-        cacheClear("leaderboard");
-        showRanking(getLeaderboard().then(data => ({data}), error => ({error})));
+  state.coachOtherLandedQueue = null;
+  let roster = null, commandData = null, sharedEventData = null, parkKings = null, rankingRevision = 0;
+  const requests = new Map();
+  const pendingHtml = label => `<section class="panel compact-panel" role="status"><p>${label} is loading. You can start coaching now.</p></section>`;
+  const metricsHtml = () => {
+    const recent = commandData ? (commandData.eventRunPlans || []).filter(run => new Date(run.created_at) >= new Date(weekStartIso())) : null;
+    return commandMetricCard("Students", roster ? roster.length : "—", roster ? "In your crew" : "Loading riders…", { view: "crew" })
+      + commandMetricCard("Videos to Reply", commandData ? commandData.helpRequests?.length || 0 : "—", commandData ? "Coach Help queue" : "Loading…", { view: "videoReviews" })
+      + (commandData?.reviewRunPlans?.length ? commandMetricCard("Runs to Review", commandData.reviewRunPlans.length, "Ready for your feedback", { target: "run-reviews-section" })
+        : commandMetricCard("New Event Runs", recent ? recent.length : "—", recent ? "Planned this week" : "Loading…", recent ? { target: "event-runs-section" } : {}))
+      + commandMetricCard("Active Battles", commandData ? (commandData.battles || []).filter(battle => battle.status === "accepted").length : "—", commandData ? "Live rider battles" : "Loading…", { view: "battleViewer" })
+      + commandMetricCard("Upcoming", sharedEventData ? sharedEventData.events.length : "—", sharedEventData ? "Events to manage" : "Loading…", { view: "contests" })
+      + commandMetricCard("List Requests", commandData ? commandData.sheetProposals?.length || 0 : "—", commandData ? "Student lists" : "Loading…", commandData ? { target: "list-requests-section" } : {});
+  };
+  const bindControls = root => {
+    root.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
+    root.querySelector("#coach-broadcast-form")?.addEventListener("submit", sendCoachBroadcast);
+    root.querySelector("#coach-broadcast-target")?.addEventListener("change", event => {
+      const individual = event.currentTarget.value === "athlete";
+      const field = root.querySelector("#coach-broadcast-rider-field"), select = root.querySelector("#coach-broadcast-rider");
+      if (field) field.hidden = !individual;
+      if (select) select.disabled = !individual;
+    });
+    root.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
+    root.querySelector("#command-park-king-filter")?.addEventListener("change", renderCommandParkKingSelection);
+    root.querySelector("#generate-weekly-previews")?.addEventListener("click", async event => {
+      const restore = setButtonBusy(event.currentTarget, "Loading weekly progress…");
+      try {
+        const fullRoster = await getCoachRoster();
+        const fullData = await getCoachCommandData(fullRoster);
+        if (isCurrent()) await generateWeeklyNotificationPreviews(fullRoster, fullData);
+      } catch (error) { if (isCurrent()) notify(messageFrom(error), "error"); }
+      finally { restore(); }
+    });
+    [["[data-dismiss-task]", dismissCoachTask], ["[data-request-accept]", acceptTrickRequest], ["[data-request-decline]", declineTrickRequest], ["[data-proposal-edit], [data-proposal-edit-cancel]", setCoachProposalEditMode]].forEach(([selector, handler]) => root.querySelectorAll(selector).forEach(button => button.addEventListener("click", handler)));
+    root.querySelectorAll("[data-proposal-review]").forEach(form => form.addEventListener("submit", reviewRiderSheetProposal));
+    root.querySelectorAll('[data-proposal-editor] input[name^="proposalItems."]').forEach(input => input.addEventListener("input", event => updateCoachProposalCounts(event.currentTarget.closest("[data-proposal-review]"))));
+    root.querySelectorAll("[data-view]").forEach(button => { button.onclick = () => { if (isCurrent()) navigate(button.dataset.view); }; });
+    root.querySelectorAll("[data-public-athlete]").forEach(button => { button.onclick = () => { if (isCurrent()) { state.publicAthleteId = button.dataset.publicAthlete; navigate("publicProfile"); } }; });
+    root.querySelectorAll("[data-open-student]").forEach(button => { button.onclick = () => { if (isCurrent()) { state.selectedAthleteId = button.dataset.openStudent; navigate("student"); } }; });
+    root.querySelectorAll("[data-command-scroll]").forEach(button => { button.onclick = () => {
+      if (!isCurrent()) return;
+      const target = view.querySelector(`#${button.dataset.commandScroll}`);
+      if (!target) return notify("This section is still loading. Please try again shortly.");
+      const hub = target.closest(".command-hub-accordion");
+      if (hub) hub.open = true;
+      target.open = true; target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }; });
+  };
+  const paintMetrics = () => {
+    if (!isCurrent()) return;
+    const target = view.querySelector("[data-command-metrics]");
+    target.innerHTML = metricsHtml(); bindControls(target);
+  };
+  const runPanel = (key, target, label, load, apply, onFailure = () => {}) => {
+    const run = async () => {
+      if (!isCurrent() || !target?.isConnected) return;
+      if (requests.has(key)) return requests.get(key);
+      const request = (async () => {
+        try {
+          const data = await Promise.resolve().then(() => {
+            if (!isCurrent()) throw new Error("This dashboard is no longer active.");
+            return load();
+          });
+          if (isCurrent() && target.isConnected) apply(data);
+        } catch (error) {
+          if (!isCurrent() || !target.isConnected) return;
+          onFailure(error);
+          target.innerHTML = `<section class="panel compact-panel" role="status"><p>${label} could not load. Your coaching tools are still available.</p><button class="secondary-btn compact-btn" type="button" data-retry-command-panel>Retry</button></section>`;
+          target.querySelector("[data-retry-command-panel]").onclick = () => { target.innerHTML = pendingHtml(label); void run(); };
+          console.warn(label + " unavailable", error);
+        } finally { if (requests.get(key) === request) requests.delete(key); }
+      })();
+      requests.set(key, request); return request;
+    };
+    return run;
+  };
+  const defer = (run, delay) => window.setTimeout(() => { if (isCurrent()) void run(); }, delay);
+  // Approval is already verified by navigation. Paint the usable coach entry
+  // before any roster, overview, event or crown request can hold a screen lock.
+  view.innerHTML = `
+    <section class="command-page-hero"><div><div class="eyebrow">Coach command centre</div><h1>Coach <span>HQ</span></h1><p>Your riders, priorities and weekly operations at a glance.</p></div><button class="command-start-button" data-view="sessionViewer" type="button"><span>Start Coaching</span><small>Open live Session Viewer</small><b aria-hidden="true">→</b></button></section>
+    <section class="command-metrics" aria-label="Coach overview" data-command-metrics>${metricsHtml()}</section>
+    <div data-command-roster-status role="status">Loading your riders…</div>
+    <div id="other-landed-reviews-section" data-command-other-landed></div>
+    <div data-command-tasks>${pendingHtml("Priority tasks")}</div>
+    <details class="command-message-accordion coach-tone-purple" data-command-messages><summary><span><strong>Message the Crew</strong><small>Send a rider, group or parent update</small></span><span class="command-message-count" data-command-message-count>Open to load</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary><div class="command-message-body" data-command-message-body>${pendingHtml("Messages")}</div></details>
+    <section class="panel command-leaderboard-panel coach-tone-gold"><div class="panel-head"><div><div class="panel-title">Leaderboard preview</div><div class="panel-meta">Top 5 riders this week</div></div></div><div data-command-leaderboard role="status">Loading weekly rankings…</div></section>
+    <section id="upcoming-events-section" class="panel shared-events-panel athlete-event-palette command-upcoming-events-panel coach-tone-gold"><div class="shared-events-head"><div><div class="eyebrow">Events & private planning</div><h2>Upcoming events</h2><p>Open Events & Runs to manage your crew’s events.</p></div><span class="command-event-count" data-command-event-count>Loading…</span></div><div data-command-events>${pendingHtml("Events")}</div></section>
+    <section class="panel command-uci-panel coach-tone-blue" data-command-uci aria-labelledby="command-uci-title"><div class="panel-head"><div><div class="eyebrow">BMX Freestyle Park · Your crew</div><h2 id="command-uci-title">UCI rider leaderboard</h2></div><span class="uci-jkc-mark" aria-label="JKC riders"><img src="icons/jkc-logo.png?v=2.11.77" width="22" height="22" alt="">JKC</span></div><div data-command-uci-content></div><div class="command-la28-summary"><div data-la28-countdown></div><button class="secondary-btn compact-btn" type="button" data-view="uciTracker">Open Road to LA28 <span aria-hidden="true">→</span></button></div></section>
+    <div data-command-crowns><details id="command-park-kings" class="command-park-kings-accordion"><summary><span><strong>Park Kings &amp; Queens</strong><small>Open to check your crew’s park records</small></span><span class="command-message-count">Open to load</span><span class="command-hub-chevron" aria-hidden="true">+</span></summary><div class="command-park-kings-body" data-command-crown-content>${pendingHtml("Park crowns")}</div></details></div>
+    <section class="command-management-stack" data-command-management>${pendingHtml("Team management")}</section>`;
+  bindControls(view);
+  state.la28CountdownMount = mountLa28Countdown(view.querySelector("[data-la28-countdown]"), isCurrent);
+  const crownTarget = view.querySelector("[data-command-crown-content]");
+  const paintCrowns = () => {
+    if (!isCurrent() || parkKings === null) return;
+    const holder = view.querySelector("[data-command-crowns]");
+    const open = Boolean(holder.querySelector("details")?.open);
+    holder.innerHTML = commandParkKingsAccordionHtml(commandData?.scheduleRows || [], parkKings);
+    const details = holder.querySelector("details");
+    if (details) {
+      details.open = open;
+      let skipInitialOpen = open;
+      details.addEventListener("toggle", () => {
+        if (details.open && !skipInitialOpen && isCurrent()) void refreshCommandParkKings();
+        skipInitialOpen = false;
       });
-    },
-  }) || null;
-  if (!state.coachOtherLandedQueue && landedHost) landedHost.innerHTML = '<section class="panel"><h2>Other Things Landed</h2><p>Refresh the app to load your trick reviews.</p></section>';
-  document.querySelector("#coach-calendar-form")?.addEventListener("submit", saveCoachCalendarEvent);
-  document.querySelector("#coach-broadcast-form")?.addEventListener("submit", sendCoachBroadcast);
-  document.querySelector("#coach-broadcast-target")?.addEventListener("change", (event) => {
-    const individual = event.currentTarget.value === "athlete";
-    const riderField = document.querySelector("#coach-broadcast-rider-field");
-    const riderSelect = document.querySelector("#coach-broadcast-rider");
-    if (riderField) riderField.hidden = !individual;
-    if (riderSelect) riderSelect.disabled = !individual;
+    }
+    bindControls(holder);
+  };
+  const loadCrowns = runPanel("crowns", crownTarget, "Park crowns", () => getAllParkKings(), rows => { parkKings = rows; paintCrowns(); });
+  view.querySelector("#command-park-kings").addEventListener("toggle", event => { if (event.currentTarget.open && parkKings === null) void loadCrowns(); });
+  const eventsTarget = view.querySelector("[data-command-events]");
+  const loadEvents = runPanel("events", eventsTarget, "Events", getSharedUpcomingEventData, data => {
+    sharedEventData = data; eventsTarget.innerHTML = coachSharedEventsSummaryHtml(data.events, data.attendance);
+    view.querySelector("[data-command-event-count]").textContent = `${data.events.length} upcoming`;
+    bindControls(eventsTarget); paintMetrics();
   });
-  document.querySelector("#weekly-notification-settings-form")?.addEventListener("submit", saveWeeklyNotificationSettings);
-  document.querySelector("#command-park-king-filter")?.addEventListener("change", renderCommandParkKingSelection);
-  document.querySelector("#generate-weekly-previews")?.addEventListener("click", async () => {
-    const button = document.querySelector("#generate-weekly-previews");
-    const restore = setButtonBusy(button, "Loading weekly progress…");
-    try {
-      const fullRoster = await getCoachRoster();
-      const fullData = await getCoachCommandData(fullRoster);
-      if (isCurrent()) await generateWeeklyNotificationPreviews(fullRoster, fullData);
-    } catch (error) { notify(messageFrom(error), "error"); }
-    finally { restore(); }
+  const showRanking = () => {
+    const revision = ++rankingRevision;
+    const target = view.querySelector("[data-command-leaderboard]");
+    const run = runPanel("ranking", target, "Weekly rankings", () => getLeaderboard({ allowFallback: false }), rows => {
+      if (revision !== rankingRevision) return;
+      target.innerHTML = commandLeaderboardPreviewHtml(leaderboardWithBenchmark(rows, "weekly_points"), "weekly_points"); bindControls(target);
+    });
+    return run();
+  };
+  const loadRoster = runPanel("roster", view.querySelector("[data-command-roster-status]"), "Riders", () => getCoachRoster({ summary: true }), rows => {
+    roster = rows; state.coachRosterIds = new Set(rows.map(rider => rider.id));
+    view.querySelector("[data-command-roster-status]").textContent = rows.length ? "" : "No students are linked yet. Open Riders to add your first student.";
+    paintMetrics();
+    if (!rows.length) {
+      view.querySelector("[data-command-tasks]").textContent = "Add students to see your coaching priorities.";
+      view.querySelector("[data-command-management]").textContent = "Open Riders to add students and manage their lists.";
+      view.querySelector("[data-command-message-body]").textContent = "Add students before sending a crew message.";
+      return;
+    }
+    const tasksTarget = view.querySelector("[data-command-tasks]"), management = view.querySelector("[data-command-management]");
+    const loadOperations = runPanel("operations", tasksTarget, "Priority tasks and team management", () => getCoachCommandData(rows, { overview: true }), data => {
+      commandData = data;
+      const groupedCalendar = groupCoachCalendarItems(combinedCoachCalendarItems(data), rows);
+      tasksTarget.innerHTML = highPriorityTodoHtml(highPriorityTasks(rows, data, groupedCalendar)); bindControls(tasksTarget);
+      const recent = (data.eventRunPlans || []).filter(run => new Date(run.created_at) >= new Date(weekStartIso()));
+      const sections = [
+        commandAccordionSection("run-reviews-section", "Run Reviews", "Competition runs ready for your review", coachRunReviewQueueHtml(data.reviewRunPlans, rows)),
+        commandAccordionSection("list-requests-section", "List Requests", "Complete weekly lists waiting for your approval", coachListRequestsHtml(data.sheetProposals, rows)),
+        commandAccordionSection("trick-requests-section", "Next Week Trick Requests", "Rider requests waiting for coach approval", coachTrickRequestsHtml(data, rows)),
+        commandAccordionSection("event-runs-section", "New Event Run Plans", "Private rider runs created this week", coachEventRunPlansHtml(recent, rows)),
+        commandAccordionSection("coach-calendar-note-section", "Coach Calendar Note", "Add a private session or reminder note", coachCalendarForm(rows)),
+        commandAccordionSection("parent-updates-section", "Parent Updates", "Weekly progress summaries and parent messages", `${weeklyNotificationControlsHtml(data)}<div class="settings-divider"></div><div class="empty compact-empty">Parent accounts and links are managed under More → Parents.</div>`),
+      ].join("");
+      const count = (data.sheetProposals?.length || 0) + (data.trickRequests?.length || 0);
+      management.innerHTML = commandHubAccordion("team-management-hub", "01", "Team Management", "Requests, events and parent updates", `${count} request${count === 1 ? "" : "s"}`, sections);
+      bindControls(management); paintMetrics(); paintCrowns();
+    }, () => { management.innerHTML = '<section class="panel compact-panel"><p>Team management could not load. Use Retry in Priority tasks above.</p></section>'; });
+    defer(loadOperations, 500);
+    const messageTarget = view.querySelector("[data-command-message-body]");
+    // Sending a new message only needs the verified roster. A slow or failed
+    // history read must never replace the form or discard its unsent text.
+    messageTarget.innerHTML = coachBroadcastComposerHtml(rows, []);
+    const historyDetails = messageTarget.querySelector(".coach-broadcast-history");
+    const historyTarget = historyDetails?.querySelector("div");
+    if (historyDetails) historyDetails.querySelector("summary span").textContent = "—";
+    if (historyTarget) historyTarget.innerHTML = '<p role="status">Recent messages load when you open Message the Crew.</p>';
+    bindControls(messageTarget);
+    const loadMessages = runPanel("messages", historyTarget, "Recent messages", async () => {
+      const [result] = await readCoachDashboardQueries([() => client.from("coach_broadcasts").select("id, target_label, message, recipient_count, push_count, sent_at").eq("coach_id", viewerId).order("sent_at", { ascending: false }).limit(5)]);
+      return result.data || [];
+    }, history => {
+      const fragment = document.createElement("div");
+      fragment.innerHTML = coachBroadcastComposerHtml(rows, history);
+      historyTarget.innerHTML = fragment.querySelector(".coach-broadcast-history > div")?.innerHTML || "";
+      if (historyDetails) historyDetails.querySelector("summary span").textContent = String(history.length);
+      view.querySelector("[data-command-message-count]").textContent = history.length ? `${history.length} recent` : "Compose";
+    });
+    const messages = view.querySelector("[data-command-messages]");
+    let messagesLoaded = false;
+    messages.addEventListener("toggle", () => { if (messages.open && !messagesLoaded) { messagesLoaded = true; void loadMessages(); } });
+    if (messages.open) { messagesLoaded = true; void loadMessages(); }
+    defer(async () => { if (isCurrent()) await loadCommandUciLeaderboard(view.querySelector("[data-command-uci]"), rows, isCurrent); }, 900);
+    defer(() => {
+      const landedHost = view.querySelector("[data-command-other-landed]");
+      state.coachOtherLandedQueue = window.JKCrewOtherThingsLanded?.mountCoachQueue?.({ element: landedHost, client, roster: rows, isCurrent, onChanged: result => {
+        if (!isCurrent() || result?.kind !== "review") return;
+        ["leaderboard", "tricktionary:", "coach-command:", "points-receipt:"].forEach(cacheClear);
+        rankingRevision++;
+        const pending = [...(state.inFlight?.entries() || [])].filter(([key]) => key.startsWith("leaderboard")).map(([, request]) => request);
+        void Promise.allSettled(pending).then(() => { if (isCurrent()) { cacheClear("leaderboard"); void showRanking(); } });
+      } }) || null;
+      if (!state.coachOtherLandedQueue && landedHost) landedHost.innerHTML = '<section class="panel"><h2>Other Things Landed</h2><p>Refresh the app to load your trick reviews.</p></section>';
+    }, 1100);
   });
-  document.querySelectorAll("[data-dismiss-task]").forEach((button) => button.addEventListener("click", dismissCoachTask));
-  document.querySelectorAll("[data-request-accept]").forEach((button) => button.addEventListener("click", acceptTrickRequest));
-  document.querySelectorAll("[data-request-decline]").forEach((button) => button.addEventListener("click", declineTrickRequest));
-  document.querySelectorAll("[data-proposal-review]").forEach((form) => form.addEventListener("submit", reviewRiderSheetProposal));
-  document.querySelectorAll("[data-proposal-edit], [data-proposal-edit-cancel]").forEach((button) => button.addEventListener("click", setCoachProposalEditMode));
-  document.querySelectorAll('[data-proposal-editor] input[name^="proposalItems."]').forEach((input) => input.addEventListener("input", (event) => updateCoachProposalCounts(event.currentTarget.closest("[data-proposal-review]"))));
-  document.querySelectorAll("#view [data-view]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
-  document.querySelectorAll("#view [data-public-athlete]").forEach((button) => button.addEventListener("click", () => {
-    state.publicAthleteId = button.dataset.publicAthlete;
-    navigate("publicProfile");
-  }));
-  document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
-    state.selectedAthleteId = button.dataset.openStudent;
-    navigate("student");
-  }));
-  document.querySelectorAll("[data-command-scroll]").forEach((button) => button.addEventListener("click", () => {
-    const target = document.querySelector(`#${button.dataset.commandScroll}`);
-    if (!target) return notify("Could not find that command section.", "error");
-    const parentHub = target.closest(".command-hub-accordion");
-    if (parentHub) parentHub.open = true;
-    target.open = true;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-  }));
+  void loadRoster();
+  defer(showRanking, 700);
+  defer(loadEvents, 1600);
 }
 
 function sessionViewerSnapshotHtml(schedules = []) {
@@ -15454,19 +15550,26 @@ async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
     state.coachRosterIds = new Set(cached.map((athlete) => athlete.id));
     return cached;
   }
-  const { data: links, error } = await client.from("coach_athletes").select("athlete_id, group_name").eq("coach_id", state.user.id);
+  const pending = state.inFlight.get(cacheKey);
+  if (pending) return pending;
+  const request = (async () => {
+  const [{ data: links, error }] = await readCoachDashboardQueries([
+    () => client.from("coach_athletes").select("athlete_id, group_name").eq("coach_id", cacheScope.userId),
+  ]);
   if (error) throw error;
-  const ids = links.map((link) => link.athlete_id);
+  if (state.user?.id !== cacheScope.userId || (state.sessionSetupVersion || 0) !== cacheScope.generation) throw new Error("Your account access changed. Reopen your riders.");
+  const ids = (links || []).map((link) => link.athlete_id);
   if (!ids.length) {
     const roster = cacheSet(cacheKey, [], cacheScope);
     state.coachRosterIds = new Set();
     return roster;
   }
-  const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await Promise.all([
-    client.from("profiles").select(summary ? "id,display_name,country_code,level,last_app_opened_at,uci_id" : PROFILE_SELECT).in("id", ids).order("display_name"),
-    summary ? { data: [], error: null } : client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
-    client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
+  const [{ data: athletes, error: athleteError }, { data: sessions, error: sessionError }, { data: groupLinks, error: groupError }] = await readCoachDashboardQueries([
+    () => client.from("profiles").select(summary ? "id,display_name,country_code,level,last_app_opened_at,uci_id" : PROFILE_SELECT).in("id", ids).order("display_name"),
+    () => summary ? { data: [], error: null } : client.from("training_sessions").select("*").in("athlete_id", ids).gte("started_at", weekStartIso()),
+    () => client.from("coach_athlete_groups").select("athlete_id, group_name, membership_type").eq("coach_id", state.user.id).in("athlete_id", ids),
   ]);
+  if (state.user?.id !== cacheScope.userId || (state.sessionSetupVersion || 0) !== cacheScope.generation) throw new Error("Your account access changed. Reopen your riders.");
   if (athleteError) throw athleteError;
   if (sessionError) throw sessionError;
   if (groupError) throw groupError;
@@ -15485,6 +15588,9 @@ async function getCoachRoster({ summary = false, maxAgeMs = 10000 } = {}) {
   cacheSet(cacheKey, roster, cacheScope);
   state.coachRosterIds = new Set(roster.map((athlete) => athlete.id));
   return roster;
+  })().finally(() => { if (state.inFlight.get(cacheKey) === request) state.inFlight.delete(cacheKey); });
+  state.inFlight.set(cacheKey, request);
+  return request;
 }
 
 async function getCoachLiveActivity(roster = []) {

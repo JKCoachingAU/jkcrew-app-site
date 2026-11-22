@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.206";
+const version = "2.14.207";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1452,8 +1452,8 @@ for (const selector of [".shared-events-panel", ".contest-event-card", ".contest
 }
 const coachCommandBody = functionBody("renderCoachCommand");
 const commandLeaderboardPreviewBody = functionBody("commandLeaderboardPreviewHtml");
-assert(coachCommandBody.includes("getSharedUpcomingEventData()"), "Coach Command must load the same upcoming-event catalogue riders see");
-assert(coachCommandBody.includes('commandMetricCard("Upcoming", upcoming, "Events to manage", { view: "contests" })'), "The coach Upcoming metric must open the event manager");
+assert(coachCommandBody.includes("getSharedUpcomingEventData"), "Coach Command must load the same upcoming-event catalogue riders see");
+assert(/commandMetricCard\("Upcoming",[^;]*?\{ view: "contests" \}/.test(coachCommandBody), "The coach Upcoming metric must open the event manager while its count loads independently");
 assert(commandLeaderboardPreviewBody.includes("rows.slice(0, 5)"), "Coach Command leaderboard preview must always stop at five riders");
 assert(!commandLeaderboardPreviewBody.includes("matchMedia"), "Desktop Coach Command must not expand the leaderboard beyond five riders");
 assert(coachCommandBody.includes('id="upcoming-events-section"'), "Coach Command must show its upcoming event panel directly on the dashboard");

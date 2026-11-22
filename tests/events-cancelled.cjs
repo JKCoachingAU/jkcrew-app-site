@@ -37,8 +37,8 @@ const client = {
     return { data: [{ event_id: 'future', athlete_id: 'rider', display_name: 'Rider' }], error: null };
   },
 };
-const context = vm.createContext({ client });
-vm.runInContext(['contestEventEndsAt', 'contestEventIsUpcoming', 'getSharedUpcomingEventData', 'combinedCoachCalendarItems'].map(extract).join('\n'), context);
+const context = vm.createContext({ client, state:{user:{id:'coach'},inFlight:new Map()}, setTimeout, clearTimeout });
+vm.runInContext(['contestEventEndsAt', 'contestEventIsUpcoming', 'withTimeout', 'readCoachDashboardQueries', 'getSharedUpcomingEventData', 'combinedCoachCalendarItems'].map(extract).join('\n'), context);
 let checks = 0;
 const eq = (actual, expected, label) => { assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, label); checks++; };
 (async () => {

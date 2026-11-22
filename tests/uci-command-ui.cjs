@@ -202,7 +202,7 @@ const ok = (actual, label) => { assert(actual, label); checks++; };
   eq(await page.evaluate(() => qa.databaseCalls), [], 'The summary reuses the loaded coach roster without extra database reads');
   const command = extract('renderCoachCommand');
   ok(command.includes('data-command-uci'), 'Actual Coach Command includes the ranking panel');
-  ok(command.indexOf('coachSharedEventsSummaryHtml') < command.indexOf('data-command-uci') && command.indexOf('data-command-uci') < command.indexOf('commandParkKingsAccordionHtml'), 'Rankings are placed directly after Upcoming Events and before Park Kings');
+  ok(command.indexOf('id="upcoming-events-section"') < command.indexOf('data-command-uci aria-labelledby') && command.indexOf('data-command-uci aria-labelledby') < command.indexOf('data-command-crowns><details'), 'Initial dashboard markup places UCI rankings after Upcoming Events and before the deferred Park Kings panel');
   ok(command.includes('loadCommandUciLeaderboard'), 'Actual Coach Command loads the ranking summary');
   ok(command.includes('state.sessionSetupVersion === setupVersion'), 'Actual dashboard validity guard includes the authenticated session generation');
   ok(extract('getCoachRoster').includes('uci_id'), 'Coach roster summary carries the exact UCI identity');
