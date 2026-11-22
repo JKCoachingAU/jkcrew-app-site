@@ -30,7 +30,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.207";
+const RELEASE_VERSION = "2.14.208";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -67,6 +67,7 @@ const state = {
   sessionViewerClock: null,
   sessionViewerRosterCache: [],
   sessionViewerActiveSessionCache: null,
+  sessionViewerVerifiedNullSession: null,
   runBuilder: null,
   runPlaybackTimer: null,
   runPlayback: null,
@@ -460,6 +461,7 @@ function canManageCoachTeamRecord(coachId) {
 }
 
 function invalidateSessionViewerData() {
+  state.sessionViewerVerifiedNullSession = null;
   state.sessionViewerDataVersion += 1;
   cacheClear("coach-live:");
 }
@@ -1711,6 +1713,7 @@ async function handleSession(session) {
     state.coachRosterIds = null;
     state.sessionViewerRosterCache = null;
     state.sessionViewerActiveSessionCache = null;
+    state.sessionViewerVerifiedNullSession = null;
     state.sessionViewerDataCache = null;
     state.sessionViewerDataVersion += 1;
     state.commandParkKingRows = [];
@@ -13614,8 +13617,26 @@ function sessionViewerRiderCardHtml(entry, activeGroupSession) {
   </article>`;
 }
 
+function rememberSessionViewerVerifiedNullSession(checkedAt, scope) {
+  if (!Number.isFinite(checkedAt) || state.user?.id !== scope.userId || state.sessionSetupVersion !== scope.setupVersion
+    || state.loadingOverlayToken !== scope.navigationToken || state.sessionViewerDataVersion !== scope.dataVersion) return;
+  state.sessionViewerVerifiedNullSession = { ...scope, checkedAt, group: state.sessionViewerGroup, venue: state.sessionViewerVenue };
+}
+
+function canReuseSessionViewerVerifiedNullSession() {
+  const verified = state.sessionViewerVerifiedNullSession;
+  const age = verified ? Date.now() - verified.checkedAt : Infinity;
+  return Boolean(verified && state.sessionViewerActiveSessionCache === null && age >= 0 && age < 12000
+    && state.user?.id === verified.userId && state.sessionSetupVersion === verified.setupVersion
+    && state.loadingOverlayToken === verified.navigationToken && state.sessionViewerDataVersion === verified.dataVersion
+    && state.sessionViewerGroup === verified.group && state.sessionViewerVenue === verified.venue);
+}
+
 async function renderSessionViewer({ forceParkKing = false } = {}) {
   const renderVersion = ++state.sessionViewerRenderVersion;
+  const activeReadScope = { userId: state.user?.id, setupVersion: state.sessionSetupVersion,
+    navigationToken: state.loadingOverlayToken, dataVersion: state.sessionViewerDataVersion };
+  let activeReadCheckedAt = null;
   if (state.sessionViewerTimer) {
     clearInterval(state.sessionViewerTimer);
     state.sessionViewerTimer = null;
@@ -13626,7 +13647,7 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   }
   const [roster, activeGroupSession, battleResult, coachVenues] = await Promise.all([
     getSessionViewerRoster(),
-    getActiveCoachGroupSession(),
+    getActiveCoachGroupSession().then(session => { activeReadCheckedAt = Date.now(); return session; }),
     client.rpc("get_coach_rider_battles_v2", { p_limit: 100 }),
     // Saved locations can be empty while the coach builds their first daily list.
     // A location read failure must not prevent access to existing rider lists.
@@ -13682,6 +13703,8 @@ async function renderSessionViewer({ forceParkKing = false } = {}) {
   const requestedVenue = state.sessionViewerVenue;
   const requestedVenueKey = venueIdentityKey(requestedVenue);
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || venueIdentityKey(state.sessionViewerVenue) !== requestedVenueKey) return;
+  if (activeGroupSession === null) rememberSessionViewerVerifiedNullSession(activeReadCheckedAt, activeReadScope);
+  else state.sessionViewerVerifiedNullSession = null;
   const started = Boolean(activeGroupSession);
   const cards = schedules.length ? schedules.map((entry) => sessionViewerRiderCardHtml(entry, activeGroupSession)).join("") : `<div class="empty compact-empty">No riders match this group/search.</div>`;
   const availableExtras = started ? roster.filter((athlete) => !activeParticipantIds.has(athlete.id)) : [];
@@ -14284,7 +14307,7 @@ async function openSessionViewerCounter(event) {
   const search = state.sessionViewerSearch;
   state.sessionViewerOpenAthleteId = athleteId;
   state.sessionViewerActiveList = listId;
-  const refresh = refreshSessionViewerLight();
+  const refresh = refreshSessionViewerLight({ displayOnly: true });
   const renderVersion = state.sessionViewerRenderVersion;
   const selectionIsCurrent = () => state.view === "sessionViewer" && state.sessionViewerRenderVersion === renderVersion
     && state.sessionViewerOpenAthleteId === athleteId && state.sessionViewerActiveList === listId
@@ -14308,7 +14331,7 @@ async function openSessionViewerCounter(event) {
 function selectViewerListTab(event) {
   const selectedList = event.currentTarget.dataset.viewerListTab || "";
   state.sessionViewerActiveList = state.sessionViewerActiveList === selectedList ? "" : selectedList;
-  refreshSessionViewerLight();
+  refreshSessionViewerLight({ displayOnly: true });
 }
 
 async function saveSessionViewerAssignments(event) {
@@ -14395,7 +14418,7 @@ async function toggleViewerRunPoint(event) {
   await refreshSessionViewerLight();
 }
 
-async function refreshSessionViewerLight({ force = false, forceParkKing = false } = {}) {
+async function refreshSessionViewerLight({ force = false, forceParkKing = false, displayOnly = false } = {}) {
   if (state.view !== "sessionViewer") return;
   const rosterGrid = document.querySelector(".viewer-rider-grid");
   if (!rosterGrid) return renderSessionViewer();
@@ -14404,7 +14427,11 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
   const requestedVenue = state.sessionViewerVenue;
   const requestedSearch = state.sessionViewerSearch;
   const roster = state.sessionViewerRosterCache.length ? state.sessionViewerRosterCache : await getCoachRoster();
-  const activeGroupSession = state.sessionViewerActiveSessionCache || await getActiveCoachGroupSession();
+  const activeReadScope = { userId: state.user?.id, setupVersion: state.sessionSetupVersion,
+    navigationToken: state.loadingOverlayToken, dataVersion: state.sessionViewerDataVersion };
+  const reuseVerifiedNull = displayOnly && !force && !forceParkKing && canReuseSessionViewerVerifiedNullSession();
+  let activeReadCheckedAt = null;
+  const activeGroupSession = state.sessionViewerActiveSessionCache || (reuseVerifiedNull ? null : await getActiveCoachGroupSession().then(session => { activeReadCheckedAt = Date.now(); return session; }));
   const search = state.sessionViewerSearch.toLowerCase().trim();
   const activeParticipantIds = new Set((activeGroupSession?.coach_group_session_participants || []).map((row) => row.athlete_id));
   const filteredRoster = roster
@@ -14417,6 +14444,8 @@ async function refreshSessionViewerLight({ force = false, forceParkKing = false 
   if (state.view !== "sessionViewer" || renderVersion !== state.sessionViewerRenderVersion || !rosterGrid.isConnected
     || state.sessionViewerGroup !== requestedGroup || state.sessionViewerVenue !== requestedVenue || state.sessionViewerSearch !== requestedSearch) return;
   state.sessionViewerActiveSessionCache = activeGroupSession;
+  if (activeGroupSession === null && activeReadCheckedAt !== null) rememberSessionViewerVerifiedNullSession(activeReadCheckedAt, activeReadScope);
+  else if (activeGroupSession) state.sessionViewerVerifiedNullSession = null;
   const schedules = filteredRoster.map((athlete) => {
     const allAssignments = (assignmentsByAthlete.get(athlete.id) || []).map((assignment) => {
       const contextualAssignment = { ...assignment, athlete_country_code: athlete.country_code || "AU" };
