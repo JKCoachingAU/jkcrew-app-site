@@ -59,6 +59,9 @@ const names = ['coachReviewWorkspaceHtml', 'videoReviewTimeLabel', 'activeCoachR
         return new File(chunks,[colour==='red'?'rider':'reference','.webm'].join(''),{type:'video/webm'});
       }
       [qa.riderFile,qa.referenceFile]=await Promise.all([makeClip('red'),makeClip('blue')]);
+      // Use the same deterministic software codec for source and composite clips.
+      const supportsRecordingType = MediaRecorder.isTypeSupported.bind(MediaRecorder);
+      MediaRecorder.isTypeSupported = type => type === "video/webm;codecs=vp8,opus" && supportsRecordingType(type);
       qa.riderUrl=URL.createObjectURL(qa.riderFile);
       state.videoReviewMedia.set('review',{video_playback_url:qa.riderUrl});
       qa.audioContext=new AudioContext();qa.audioDestination=qa.audioContext.createMediaStreamDestination();
@@ -94,8 +97,12 @@ const names = ['coachReviewWorkspaceHtml', 'videoReviewTimeLabel', 'activeCoachR
     await page.waitForTimeout(350);
     times=await page.evaluate(()=>({r:document.querySelector('#coach-review-video').currentTime,s:document.querySelector('#coach-review-reference-video').currentTime}));
     assert(times.r>.45 && Math.abs(times.s-times.r-.5)<.18,`Real linked playback advances and keeps the alignment offset: ${JSON.stringify({times,status:await page.evaluate(()=>({r:document.querySelector('#coach-review-video').duration,s:document.querySelector('#coach-review-reference-video').duration,notices:qa.notices}))})}`);
-    await page.evaluate(()=>document.querySelector('#coach-review-reference-video').dispatchEvent(new Event('waiting')));
-    assert(await page.evaluate(()=>document.querySelector('#coach-review-video').paused && document.querySelector('#coach-review-reference-video').paused),'Buffering either view holds both clips');
+    assert(await page.evaluate(() => {
+      const rider = document.querySelector('#coach-review-video');
+      const reference = document.querySelector('#coach-review-reference-video');
+      reference.dispatchEvent(new Event('waiting'));
+      return rider.paused && reference.paused;
+    }), 'Buffering either view holds both clips');
     await page.evaluate(()=>document.querySelector('#coach-review-reference-video').dispatchEvent(new Event('canplay')));
     await page.waitForFunction(()=>!document.querySelector('#coach-review-video').paused);
     await page.evaluate(()=>pauseCoachReviewVideos());
@@ -110,14 +117,42 @@ const names = ['coachReviewWorkspaceHtml', 'videoReviewTimeLabel', 'activeCoachR
     for(const width of [320,390,768,1440]) for(const theme of ['dark','light']) {
       await page.setViewportSize({width,height:1000});await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`No comparison overflow at ${width}px ${theme}`);
-      const boxes=await page.locator('#coach-review-stage,#coach-review-reference-stage').evaluateAll(els=>els.map(el=>el.getBoundingClientRect().width));
-      assert(boxes[0]>70 && Math.abs(boxes[0]-boxes[1])<2,'Both comparison panels remain equal and visible');
+      const boxes = await page.locator('#coach-review-stage,#coach-review-reference-stage').evaluateAll(els => els.map(el => el.getBoundingClientRect().toJSON()));
+      assert(boxes[0].width > 70 && Math.abs(boxes[0].width - boxes[1].width) < 2, "Both comparison panels remain equal and visible");
+      if (width <= 640) assert(boxes[1].top >= boxes[0].bottom, "Portrait phone stacks the clips");
+      else assert(boxes[1].left >= boxes[0].right && Math.abs(boxes[1].top - boxes[0].top) < 2, "Wider screen puts both clips side by side");
+      assert(await page.locator("[data-review-play]").evaluate(button => button.getBoundingClientRect().height >= 44), "Play stays large enough to tap");
       if(process.env.JKCREW_SCREENSHOT_DIR && width===390){fs.mkdirSync(process.env.JKCREW_SCREENSHOT_DIR,{recursive:true});await page.locator('.coach-review-editor').screenshot({path:path.join(process.env.JKCREW_SCREENSHOT_DIR,`trick-review-comparison-390-${theme}.png`)});}
     }
+    await page.setViewportSize({width:700,height:390});
+    const [left, right] = await page.locator('#coach-review-stage,#coach-review-reference-stage').evaluateAll(els => els.map(el => el.getBoundingClientRect().toJSON()));
+    assert(right.left >= left.right, "Landscape phone puts the clips side by side");
+    await page.evaluate(() => {
+      document.querySelector("#coach-review-player").requestFullscreen = async () => { throw new Error("Test native fullscreen refusal"); };
+    });
+    await page.locator("[data-review-fullscreen]").click();
+    await page.waitForSelector("#coach-review-player.is-expanded");
+    assert.equal(await page.locator("#coach-review-player.is-expanded [data-review-play]").isVisible(), true);
+    assert.equal(await page.locator("#coach-review-player.is-expanded #coach-review-reference-stage").isVisible(), true);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("[data-review-fullscreen]").getAttribute("aria-expanded"), "false", "Escape restores the regular workspace");
+
     await page.setViewportSize({width:1024,height:1000});
+    await page.locator("[data-review-draw-toggle]").click();
+    await page.locator('[data-review-draw-tool="line"]').click();
+    for (const id of ["coach-review-canvas", "coach-review-reference-canvas"]) {
+      const layer = page.locator("#" + id);
+      await layer.scrollIntoViewIfNeeded();
+      const box = await layer.boundingBox();
+      assert(box && box.width > 100 && box.height > 60, "Each drawing layer fits the actual footage");
+      await page.mouse.move(box.x + box.width * .1, box.y + box.height * .1);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * .8, box.y + box.height * .6, { steps: 5 });
+      await page.mouse.up();
+    }
+    assert.deepEqual(await page.evaluate(() => activeCoachReviewDrawings().map(drawing => drawing.view)), ["rider", "reference"]);
     await page.evaluate(async()=>{
       seekCoachReviewVideos(.3);await new Promise(resolve=>setTimeout(resolve,120));
-      state.videoReviewDrawings.set('review',[{tool:'line',color:'#20e3c3',points:[{x:.1,y:.1},{x:.8,y:.6}]}]);
       await startCoachReviewRecording('review');
     });
     assert(await page.evaluate(()=>Boolean(state.videoReviewRecording?.referenceVideo)),'Actual recorder includes the reference source');
@@ -131,15 +166,22 @@ const names = ['coachReviewWorkspaceHtml', 'videoReviewTimeLabel', 'activeCoachR
       v.currentTime=.15;await new Promise(resolve=>v.addEventListener('seeked',resolve,{once:true}));
       const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);
       const pixel=(x,y)=>Array.from(c.getContext('2d').getImageData(x,y,1,1).data);
-      const drawPixels=c.getContext('2d').getImageData(280,295,30,30).data;
-      let green=0;for(let i=0;i<drawPixels.length;i+=4)if(drawPixels[i]<130 && drawPixels[i+1]>120 && drawPixels[i+2]>70)green++;
-      return {width:v.videoWidth,height:v.videoHeight,left:pixel(170,500),right:pixel(950,500),green,size:reply.file.size,mime:reply.file.type,
+      const drawingPixels = x => {
+        const data = c.getContext('2d').getImageData(x, 290, 40, 40).data;
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] < 130 && data[i + 1] > 120 && data[i + 2] > 70) count++;
+        }
+        return count;
+      };
+      return {width:v.videoWidth,height:v.videoHeight,left:pixel(170,500),right:pixel(950,500),
+        riderInk:drawingPixels(275),referenceInk:drawingPixels(909),size:reply.file.size,mime:reply.file.type,
         selected:selectCoachReplyVideoFile(null,reply)===reply.file,trackStopped:qa.audioDestination.stream.getTracks().every(t=>t.readyState==='ended')};
     });
     assert.equal(output.width,1280);assert.equal(output.height,720);
     assert(output.left[0]>150 && output.left[2]<70,'Decoded private reply contains the red rider view');
     assert(output.right[2]>150 && output.right[0]<70,'Decoded private reply contains the blue second view');
-    assert(output.green>4,'Decoded private reply retains the coach’s drawing in the rider view');
+    assert(output.riderInk > 4 && output.referenceInk > 4, "Decoded private reply retains the coach’s drawings on both clips");
     assert(output.size>0 && output.selected && output.trackStopped,'Recording is sendable via existing reply selector and microphone stream is released');
     await page.evaluate(()=>{clearCoachRecordedReply('review');setCoachReviewRecordingControlsLocked(false);});
     const referenceUrl=await page.evaluate(()=>activeCoachReviewComparison().url);
@@ -147,6 +189,7 @@ const names = ['coachReviewWorkspaceHtml', 'videoReviewTimeLabel', 'activeCoachR
     assert.equal(await page.locator('#coach-review-reference-stage').isVisible(),false);
     assert(await page.evaluate(url=>qa.revoked.includes(url),referenceUrl),'Removing a second clip revokes its local URL');
     assert.equal(await page.evaluate(()=>state.videoReviewComparisons.size),0);
+    assert.deepEqual(await page.evaluate(() => activeCoachReviewDrawings().map(drawing => drawing.view)), ["rider"], "Removing a comparison clears that clip’s ink and keeps the rider’s");
     await page.evaluate(()=>{
       const transfer=new DataTransfer();transfer.items.add(new File(['not video'],'example.txt',{type:'text/plain'}));
       const input=document.querySelector('#coach-review-reference-file');input.files=transfer.files;input.dispatchEvent(new Event('change'));

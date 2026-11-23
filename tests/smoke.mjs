@@ -52,7 +52,7 @@ const tricktionaryRenameMigration = readdirSync(join(root, "supabase/migrations"
   .filter((name) => name.endsWith(".sql") && name > "20260903085841_harden_tricktionary_compatibility.sql")
   .map((name) => ({ name, contents: read(`supabase/migrations/${name}`) }))
   .find(({ contents }) => contents.includes("create or replace function public.rename_tricktionary_entry")) || null;
-const version = "2.14.210";
+const version = "2.14.211";
 
 function functionBody(name) {
   const start = app.indexOf(`function ${name}`);
@@ -1308,13 +1308,12 @@ assert(functionBody("currentRunFormState").includes("coursePhotoLoaded: Boolean(
 assert(functionBody("currentRunFormState").includes("stage: runBuilderStage()"), "The active Run Builder step must survive local editor refreshes");
 assert(functionBody("setRunBuilderPhoto").includes("coursePhotoLoaded: false"), "Choosing a different private photo must clear the event-course label");
 const runBuilderMarkup = functionBody("runBuilderPanel");
-for (const control of ['id="run-photo"', 'id="run-map"', "runBuilderStepsHtml(stage, points.length)", "runBuilderRouteEditorHtml", "runBuilderTrickEditorHtml", "runBuilderPlaybackEditorHtml", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "SAVE RUN TO CONTESTS", 'id="close-run-builder-top"']) {
+for (const control of ['id="run-photo"', 'id="run-map"', "runBuilderStepsHtml(stage, points.length)", "runBuilderRouteEditorHtml", "runBuilderTrickEditorHtml", "runBuilderPlaybackEditorHtml", 'id="finish-run-builder"', "runPlaybackControlsHtml(points", "Save run plan", 'id="close-run-builder-top"']) {
   assert(runBuilderMarkup.includes(control), `Run Builder is missing ${control}`);
 }
-assert(functionBody("runBuilderStepsHtml").includes('"route", "01", "Draw route"'), "Run Builder must begin with drawing the route");
-assert(functionBody("runBuilderStepsHtml").includes('"tricks", "02", "Add tricks"'), "Adding trick names must be the second step");
-assert(functionBody("runBuilderStepsHtml").includes('"playback", "03", "Watch it back"'), "Playback must be the final planning step");
-assert(functionBody("runBuilderStepsHtml").includes("index > activeIndex"), "Future Run Builder steps must stay locked until the current step is finished");
+const runPlannerTools = functionBody("runBuilderStepsHtml");
+assert(/\["route", "Route", 0\][\s\S]*\["tricks", "Tricks", 1\][\s\S]*\["playback", "Watch", 2\]/.test(runPlannerTools), "Run Planner tools follow the Route, Tricks and Watch sequence");
+assert(runPlannerTools.includes("pointCount < minimumPoints"), "Tricks and Watch wait for enough route dots");
 assert(functionBody("runBuilderRouteEditorHtml").includes("Add all tricks after the route is finished"), "Route drawing must stay separate from trick entry");
 assert(functionBody("runBuilderTrickEditorHtml").includes("data-run-trick-index"), "The trick step must expose a numbered input for every dot");
 assert(functionBody("runBuilderTrickEditorHtml").includes('enterkeyhint="${index === points.length - 1 ? "done" : "next"}"'), "iPad keyboards must offer Next while naming route dots and Done on the final dot");
@@ -1325,7 +1324,7 @@ for (const removedControl of ['id="run-venue"', 'id="run-type"', 'id="use-demo-r
 assert(!runBuilderMarkup.includes("selected-run-note"), "Run Builder should not show a per-dot Run note field");
 assert(runBuilderMarkup.includes('builder.coursePhotoLoaded ? "Event course loaded"'), "The Run Builder must confirm when it reused the event course");
 assert(!runBuilderMarkup.toLowerCase().includes("obstacle"), "The visual Run Planner must not waste space on an obstacle selector");
-assert(runBuilderMarkup.includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
+assert(runBuilderMarkup.toLowerCase().includes("finish on any number"), "The Run Planner must explain that any final dot can finish the run");
 assert(runBuilderMarkup.includes("options.showRunList === false"), "The inline Run Builder must support a separate saved-run library");
 assert(runBuilderMarkup.includes('points.length < 2 ? "disabled"'), "Saving requires a route with at least two dots");
 assert(!runBuilderMarkup.includes("COMPLETE 3 STEPS TO SAVE") && !runBuilderMarkup.includes('id="run-notes"'), "Remove the redundant circled bottom section");
@@ -1629,7 +1628,8 @@ assert(loadedCoachReview.includes('id="coach-review-video"'), "Loaded rider medi
 assert(loadedCoachReview.includes('id="coach-review-canvas"'), "Loaded rider media must retain the drawing canvas");
 assert(loadedCoachReview.includes(">Original</a>"), "Loaded rider media must offer a browser fallback for phone MOV files");
 assert(loadedCoachReview.includes("Record voice + drawings"), "Loaded rider media must explain the combined review recording");
-assert(loadedCoachReview.includes('class="coach-review-flow"'), "The review workspace must show the Watch, Coach and Send workflow");
+assert(loadedCoachReview.includes('id="coach-review-player"'), "The review player must contain both views and transport");
+assert(loadedCoachReview.includes('id="coach-review-reference-canvas"'), "The reference clip must have its own drawing layer");
 assert(loadedCoachReview.includes('class="coach-review-tool-deck"'), "Playback speed and drawing controls must be grouped into a focused tool deck");
 coachReviewTestState.videoReviewRecordedReplies.set("review-1", { file: { size: 2048 }, url: "blob:review", durationSeconds: 8 });
 const recordedCoachReview = renderCoachReviewWorkspace(coachReviewRequest);

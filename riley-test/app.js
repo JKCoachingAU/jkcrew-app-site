@@ -68,7 +68,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.210";
+const RELEASE_VERSION = "2.14.211";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -143,6 +143,7 @@ const state = {
   videoReviewRecording: null,
   videoReviewRecordingStarting: null,
   videoReviewActiveRequestId: "",
+  runVideoReviewReturn: null,
   videoReviewDrawings: new Map(),
   videoReviewDraftDrawing: null,
   videoReviewDrawTool: "pen",
@@ -3068,6 +3069,7 @@ async function navigate(view, options = {}) {
       [...state.videoReviewRecordedReplies.keys()].forEach(clearCoachRecordedReply);
     }
     [...state.videoReviewMedia.keys()].forEach(releaseVideoReviewMedia);
+    state.runVideoReviewReturn = null;
   }
   window.JKCRiderHealth?.cleanup();
   state.recoveryMount?.destroy();
@@ -16151,12 +16153,14 @@ function runBuilderStage(builder = state.runBuilder) {
 
 function runBuilderStepsHtml(stage = "route", pointCount = 0) {
   const stages = [
-    ["route", "01", "Draw route", "Tap and drag dots"],
-    ["tricks", "02", "Add tricks", "Name the tricks"],
-    ["playback", "03", "Watch it back", "Check the full run"],
+    ["route", "Route", 0],
+    ["tricks", "Tricks", 1],
+    ["playback", "Watch", 2],
   ];
-  const activeIndex = Math.max(0, stages.findIndex(([id]) => id === stage));
-  return `<nav class="run-builder-steps" aria-label="Run builder steps">${stages.map(([id, number, title, detail], index) => { const unavailable = index > activeIndex || (id !== "route" && !pointCount); return `<button class="${id === stage ? "active" : ""} ${index < activeIndex ? "complete" : ""}" type="button" data-run-builder-stage="${id}" ${unavailable ? "disabled" : ""} ${id === stage ? `aria-current="step"` : ""}><b>${number}</b><span><strong>${title}</strong><small>${detail}</small></span></button>`; }).join("")}</nav>`;
+  return `<nav class="run-mode-tabs" aria-label="Run planner tools">${stages.map(([id, label, minimumPoints]) => {
+    const active = id === stage;
+    return `<button class="${active ? "active" : ""}" type="button" data-run-mode="${id}" aria-pressed="${active}" ${pointCount < minimumPoints ? "disabled" : ""}>${label}</button>`;
+  }).join("")}</nav>`;
 }
 
 function runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points = []) {
@@ -16197,47 +16201,46 @@ function runBuilderPanel(runs = [], options = {}) {
   if (builder.loadingCourse || builder.courseLoadError) return runBuilderLoadingHtml(builder);
   const points = builder.points || [];
   const needsPhoto = !builder.imageDataUrl;
+  const plannerWorkspace = !liveRun && !needsPhoto;
   const stage = runBuilderStage(builder);
   const selectedIndex = points.length ? Math.max(0, Math.min(points.length - 1, Number(builder.selectedPointIndex ?? points.length - 1))) : -1;
   const selectedPoint = selectedIndex >= 0 ? points[selectedIndex] : null;
   const submitLabel = builder.id ? "Save run changes" : "Save run plan";
-  const stageCopy = {
-    route: "Step 1 of 3 · Draw the complete route first. Tap empty space, drag any dot to move it, and finish on any number.",
-    tricks: "Step 2 of 3 · Add optional trick names and timing. Blank dots show NO TRICK in playback.",
-    playback: "Step 3 of 3 · Watch the finished route and tricks back before saving.",
-  }[stage];
   const builderImageSource = options.preserveExistingImage
     ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
     : builder.imageDataUrl;
   const liveTools = `<div data-live-run-bar>${liveRunBarHtml()}</div><div data-live-run-workspace>${liveRunWorkspaceHtml()}</div>`;
   const setupFirst = needsPhoto && !liveRun;
-  let body = `${state.profile?.role === "athlete" ? `<div class="actions"><button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs · yours + coach’s</button></div>` : ""}${setupFirst ? "" : liveTools}<form id="run-builder-form" class="run-builder-form">
+  const savedRuns = state.profile?.role === "athlete" ? `<button type="button" class="secondary-btn compact-btn" data-rider-saved-runs="all">Saved runs</button>` : "";
+  let body = `${savedRuns && (!plannerWorkspace || options.collapsed) ? `<div class="actions">${savedRuns}</div>` : ""}${setupFirst ? "" : liveTools}<form id="run-builder-form" class="run-builder-form">
       ${needsPhoto ? runBuilderPhotoSetupHtml(builder) : `
-      ${stage === "tricks" ? runTimeBudgetHtml(points) : ""}
-      <nav class="run-mode-tabs" aria-label="Run mode"><button type="button" data-run-mode="route" class="${stage !== "playback" ? "active" : ""}">Build</button><button type="button" data-run-mode="playback" class="${stage === "playback" ? "active" : ""}" ${points.length < 2 ? "disabled" : ""}>Watch</button></nav>
-      ${stage !== "playback" ? runBuilderStepsHtml(stage, points.length) : ""}
-      <div class="run-save-actions"><p class="run-save-feedback" data-run-save-feedback role="status" hidden></p><button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${builder.id ? submitLabel : "SAVE RUN TO CONTESTS"}</button></div>
-      <div class="run-edit-toolbar"><button type="button" data-run-history="undo" ${runUndoStack.length ? "" : "disabled"}>↶ Undo</button><button type="button" data-run-history="redo" ${runRedoStack.length ? "" : "disabled"}>↷ Redo</button><button type="button" data-run-copy>Duplicate run</button></div>
-      <div class="run-builder-details">
-        <div class="field"><label for="run-title">Run title</label><input id="run-title" name="title" value="${escapeHtml(builder.title || "")}" placeholder="Untitled run — tap to rename"></div>
+      <div class="run-planner-namebar">
+        <div class="field"><label class="sr-only" for="run-title">Run title</label><input id="run-title" name="title" value="${escapeHtml(builder.title || "")}" placeholder="Name your run"></div>
+        <div class="run-save-actions"><button class="primary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${submitLabel}</button></div>
+        <p class="run-save-feedback" data-run-save-feedback role="status" hidden></p>
       </div>
       <div class="visual-run-builder">
-        <div class="run-map-stage">
+        <div class="run-map-stage" role="region" aria-label="Course preview">
+          <div class="run-planner-canvas-toolbar">
+            ${runBuilderStepsHtml(stage, points.length)}
+            ${stage === "playback" ? "" : `<div class="run-edit-toolbar"><button type="button" data-run-history="undo" aria-label="Undo last edit" ${runUndoStack.length ? "" : "disabled"}>↶</button><button type="button" data-run-history="redo" aria-label="Redo last edit" ${runRedoStack.length ? "" : "disabled"}>↷</button></div>`}
+          </div>
           <div id="run-map" class="run-map run-map-${stage}">${runMapHtml(builderImageSource, points, "Run builder map", stage === "route", stage === "playback", builder.view || points[0]?.view, stage !== "playback")}</div>
           ${stage !== "playback" ? runSegmentEditorHtml(points, builder.selectedSegmentIndex) : ""}
-          <div class="run-map-status"><div><strong>${points.length} numbered ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length > 1 ? `Tap a line to curve it or change its time · drag dots to move` : points.length ? "Add the next point to set your finish" : "Your run can finish at any number") : stage === "tricks" ? "Tap a line for curve & timing · add tricks beside the map" : "Route and tricks ready to play"}</span></div><div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div></div>
+          ${stage === "playback" ? "" : `<div class="run-map-status"><div><strong>${points.length} ${points.length === 1 ? "dot" : "dots"}</strong><span>${stage === "route" ? (points.length ? "Drag dots to move them. Finish on any number." : "Tap the map to add your start dot.") : "Tap a line to adjust its curve or travel time."}</span></div>${points.length > 5 ? `<div class="run-colour-key"><span style="--key-color:#20e3c3">1–5</span><span style="--key-color:#8e56ff">6–10</span><span style="--key-color:#f7d154">11–15</span><span style="--key-color:#ff6658">16–20</span></div>` : ""}</div>`}
           ${stage === "route" && selectedPoint && selectedIndex > 0 ? `<label class="run-bend-control run-bend-control-mobile"><span>Bend line into dot ${selectedIndex + 1}</span><div><input type="range" min="-100" max="100" step="1" value="${Math.max(-100, Math.min(100, Number(selectedPoint.bend || 0)))}" data-selected-run-bend data-run-bend-index="${selectedIndex}" aria-label="Bend line into dot ${selectedIndex + 1}"><output data-selected-run-bend-output data-run-bend-output-index="${selectedIndex}">${Number(selectedPoint.bend || 0)}</output></div></label>` : ""}
-          ${stage === "playback" && points.length ? `<p class="run-watch-total">${runPlaybackDefaultSeconds(points)} seconds planned · ${Math.abs(Math.round(((Number(points[0]?.timeLimitSeconds) || 60) - runPlaybackDefaultSeconds(points))*10)/10)} seconds ${runPlaybackDefaultSeconds(points) > (Number(points[0]?.timeLimitSeconds) || 60) ? "over limit" : "remaining"}</p>${runPlaybackControlsHtml(points, "builder")}` : ""}
+          ${stage === "playback" && points.length ? `${runPlaybackControlsHtml(points, "builder")}${runTimeBudgetHtml(points)}` : ""}
         </div>
-        <aside class="run-builder-sidebar">
-          <div class="run-sidebar-section"><div class="eyebrow">${builder.coursePhotoLoaded ? "Event course loaded" : "Park photo"}</div><label class="secondary-btn run-photo-button" for="run-photo">${builder.imageDataUrl ? "CHANGE PARK PHOTO" : "CHOOSE PARK PHOTO"}</label>${builder.imageDataUrl ? `<button class="secondary-btn" type="button" id="crop-run-image">CROP IMAGE</button>` : ""}<input id="run-photo" name="photo" type="file" accept="image/*" hidden></div>
-          <div class="run-sidebar-divider"></div>
-          ${stage === "route" ? runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points) : stage === "tricks" ? runBuilderTrickEditorHtml(points) : runBuilderPlaybackEditorHtml(points)}
-          <div class="run-sidebar-divider"></div>
-          ${stage === "route" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>CLEAR ALL DOTS</button><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length ? "" : "disabled"}>ROUTE DONE · ADD TRICKS →</button></div>` : stage === "tricks" ? `<div class="run-sidebar-section run-finish-actions"><button class="secondary-btn" type="button" data-run-builder-stage="route">← EDIT ROUTE</button><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>TRICKS DONE · WATCH RUN →</button><p class="run-save-feedback" data-run-save-feedback role="status" hidden></p><button class="secondary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${submitLabel}</button></div>` : ""}
-        </aside>
+        ${stage === "playback" ? "" : `<aside class="run-builder-sidebar" aria-label="${stage === "route" ? "Route tools" : "Tricks and timing"}">
+          ${stage === "route" ? runBuilderRouteEditorHtml(selectedPoint, selectedIndex, points) : `${runTimeBudgetHtml(points)}${runBuilderTrickEditorHtml(points)}${runTimingEditorHtml(points)}`}
+          ${stage === "route" ? `<div class="run-sidebar-section run-finish-actions"><button class="primary-btn" type="button" data-run-builder-stage="tricks" ${points.length ? "" : "disabled"}>Add tricks</button><button class="secondary-btn" id="clear-run-builder" type="button" ${points.length ? "" : "disabled"}>Clear route</button></div>` : `<div class="run-sidebar-section run-finish-actions"><button class="primary-btn" id="finish-run-builder" type="button" ${points.length ? "" : "disabled"}>Watch run</button><p class="run-save-feedback" data-run-save-feedback role="status" hidden></p><button class="secondary-btn" type="submit" ${points.length < 2 ? "disabled" : ""}>${submitLabel}</button></div>`}
+          <details class="run-planner-course-settings">
+            <summary>${builder.coursePhotoLoaded ? "Event course loaded" : "Park photo"}</summary>
+            <div class="run-planner-course-actions"><button class="secondary-btn" type="button" id="choose-run-photo">Change photo</button><button class="secondary-btn" type="button" id="crop-run-image">Crop photo</button><input id="run-photo" name="photo" type="file" accept="image/*" hidden></div>
+          </details>
+          <button class="secondary-btn" type="button" data-run-copy>Duplicate run</button>
+        </aside>`}
       </div>
-      ${stage === "tricks" ? runTimingEditorHtml(points) : ""}
       `}
     </form>
     ${setupFirst ? liveTools : ""}
@@ -16282,7 +16285,11 @@ function runBuilderPanel(runs = [], options = {}) {
   if (options.collapsed) {
     return closedPanelAccordion("Contest Run Planner", "The same visual dot-and-curve planner used by riders", body, "run-builder-panel");
   }
-  return `<section class="panel run-builder-live ${liveRun && !needsPhoto ? "run-coaching-workspace" : ""} ${needsPhoto ? "run-builder-setup" : `run-builder-stage-${stage}`}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">${liveRun ? "Live Run Builder" : "Run Builder"}</div>${needsPhoto || liveRun ? "" : `<div class="panel-meta">${stageCopy}</div>`}</div>${options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : ""}</div>
+  const close = options.live ? `<button class="secondary-btn compact-btn" id="close-run-builder-top" type="button">Close</button>` : "";
+  const plannerAction = !liveRun && isCoachRole(state.profile?.role)
+    ? `<button type="button" class="secondary-btn compact-btn" data-run-open-video-analysis>Video analysis</button>`
+    : plannerWorkspace ? savedRuns : "";
+  return `<section class="panel run-builder-live ${needsPhoto ? "run-builder-setup" : `${liveRun ? "run-coaching-workspace" : "run-planner-workspace"} run-builder-stage-${stage}`}" id="run-builder-live"><div class="panel-head"><div><div class="eyebrow">${builder.athleteName ? `Private plan for ${escapeHtml(builder.athleteName)}` : "Build mode"}</div><div class="panel-title">${liveRun ? "Live Run Builder" : plannerWorkspace ? "Run Planner" : "Run Builder"}</div></div>${plannerAction ? `<div class="run-planner-heading-actions">${plannerAction}${close}</div>` : close}</div>
     ${body}
   </section>`;
 }
@@ -18417,6 +18424,16 @@ async function copyParentUpdate() {
 
 function bindRunBuilderActions(root = document) {
   bindRiderSavedRuns(root);
+  root.querySelector("[data-run-open-video-analysis]")?.addEventListener("click", () => {
+    const builder = state.runBuilder;
+    if (!builder || liveRun || !isCoachRole(state.profile?.role)) return;
+    Object.assign(builder, currentRunFormState());
+    state.runVideoReviewReturn = { view: state.view, builder };
+    state.videoReviewRider = builder.athleteId || "all";
+    state.videoReviewStatus = "all";
+    state.videoReviewSearch = "";
+    void navigate("videoReviews");
+  });
   root.querySelector("#retry-run-course")?.addEventListener("click", () => loadRunBuilderCourse());
   root.querySelector("#skip-run-course")?.addEventListener("click", skipRunBuilderCourse);
   root.querySelectorAll("[data-run-history]").forEach(button => button.addEventListener("click", restoreRunEdit));
@@ -19499,61 +19516,82 @@ function coachReviewWorkspaceHtml(request) {
   const reviewed = status === "reviewed";
   const coachVideoUrl = media.coach_video_url || media.coach_video_data_url || "";
   const hasSavedReply = Boolean(request.coach_comment || request.coach_video_storage_path || coachVideoUrl || ["replied", "reviewed"].includes(status));
-  const responseStarted = Boolean(recordedReply || String(request.coach_comment || "").trim());
   const saveName = `${athlete.display_name || "rider"}-${dateLabel(request.created_at)}-trick-video`;
   const sourceExtension = String(request.video_file_name || "").split(".").pop();
   const videoFormat = sourceExtension && sourceExtension !== request.video_file_name ? sourceExtension.toUpperCase() : "VIDEO";
   const recorderPanel = riderVideoUrl ? `<section class="coach-review-recorder ${recordedReply ? "has-recording" : ""}" aria-label="Record voice and drawing review">
       <div class="coach-review-recorder-head">
-        <div><span class="eyebrow">02 · Coach the moment</span><strong>Record voice + drawings</strong><small>Play the clip while you talk and mark the frame. Max ${COACH_REVIEW_RECORDING_MAX_SECONDS} seconds.</small></div>
+        <div><strong>Record voice + drawings</strong><small>Up to ${COACH_REVIEW_RECORDING_MAX_SECONDS} seconds.</small></div>
         <button class="coach-review-record-button" type="button" data-review-record-toggle data-review-request="${request.id}">${recordedReply ? "Record again" : "● Record review"}</button>
       </div>
-      <div class="coach-review-record-status" aria-live="polite"><span class="coach-review-record-dot" aria-hidden="true"></span><strong data-review-record-status>${recordedReply ? "Recording ready to send" : "Ready when you are"}</strong><time data-review-record-time>${recordedReply ? videoReviewTimeLabel(recordedReply.durationSeconds) : "0:00"}</time></div>
+      <div class="coach-review-record-status" aria-live="polite"><span class="coach-review-record-dot" aria-hidden="true"></span><strong data-review-record-status>${recordedReply ? "Recording ready to send" : "Ready to record"}</strong><time data-review-record-time>${recordedReply ? videoReviewTimeLabel(recordedReply.durationSeconds) : "0:00"}</time></div>
       ${recordedReply ? `<div class="coach-review-recorded-preview"><video src="${escapeHtml(recordedReply.url)}" controls playsinline preload="metadata"></video><div><strong>Saved review preview</strong><small>${videoReviewTimeLabel(recordedReply.durationSeconds)} · ${videoSizeLabel(recordedReply.file?.size)} · private until you send it</small><button class="secondary-btn compact-btn" type="button" data-review-record-remove="${request.id}">Remove recording</button></div></div>` : ""}
     </section>` : "";
-  const player = riderVideoUrl ? `<section class="coach-review-compare-tools" aria-label="Second video view">
-      <div class="coach-review-compare-head"><div><strong>Compare two views</strong><small>Align the same moment, then link playback.</small></div><label class="secondary-btn compact-btn coach-review-reference-upload">${comparison ? "Replace clip" : "+ Add second view"}<input id="coach-review-reference-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" aria-label="Choose second video view"></label></div>
-      <p class="coach-review-compare-private">Second clips stay in this review until you leave. Record your comparison to send both views to the rider.</p>
-      <div class="coach-review-reference-controls" ${comparison ? "" : "hidden"}>
-        <div class="coach-review-reference-name"><span data-review-reference-name>${escapeHtml(comparison?.name || "Second view")}</span><button type="button" class="secondary-btn compact-btn" data-review-reference-remove>Remove</button></div>
-        <label for="coach-review-reference-scrubber">Second-view position <output id="coach-review-reference-time">0:00.00</output></label>
-        <input id="coach-review-reference-scrubber" type="range" min="0" max="1000" value="0" aria-label="Second view timeline for alignment">
-        <div class="coach-review-reference-buttons"><button type="button" data-review-reference-step="-1" aria-label="Previous frame in second view">← Frame</button><button type="button" data-review-reference-play>Play second view</button><button type="button" data-review-reference-step="1" aria-label="Next frame in second view">Frame →</button></div>
-        <div class="coach-review-link-row"><button type="button" class="secondary-btn compact-btn" data-review-link aria-pressed="${Boolean(comparison?.linked)}">${comparison?.linked ? "Unlink views" : "Link at these frames"}</button><span data-review-link-status role="status">${comparison?.linked ? "Views linked" : "Pause each clip on the same moment, then link."}</span></div>
+  const player = riderVideoUrl ? `<section id="coach-review-player" class="coach-review-player" aria-label="Video analysis player">
+    <header class="coach-review-player-head">
+      <h3 data-review-player-title>${comparison ? "Compare clips" : "Video analysis"}</h3>
+      <div class="coach-review-player-actions">
+        <label class="secondary-btn compact-btn coach-review-reference-upload"><span data-review-reference-upload-label>${comparison ? "Replace clip" : "+ Add second clip"}</span><input id="coach-review-reference-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" aria-label="Choose second video clip"></label>
+        <button class="secondary-btn compact-btn coach-review-reference-remove" type="button" data-review-reference-remove aria-label="Remove reference clip" ${comparison ? "" : "hidden"}>Remove</button>
+        <button class="secondary-btn compact-btn" type="button" data-review-fullscreen aria-expanded="false" aria-controls="coach-review-player">Expand</button>
       </div>
-    </section>
-    <div class="coach-review-views ${comparison ? "has-reference" : ""}" id="coach-review-views"><div class="coach-review-stage" id="coach-review-stage">
-      <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" crossorigin="anonymous" playsinline preload="auto"></video>
-      <canvas id="coach-review-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Video drawing layer"></canvas>
-      <div class="coach-review-stage-label"><span>01 · Rider clip</span><strong id="coach-review-speed-label">1×</strong></div>
-    </div><div class="coach-review-stage coach-review-reference-stage" id="coach-review-reference-stage" ${comparison ? "" : "hidden"}><video id="coach-review-reference-video" ${comparison ? `src="${escapeHtml(comparison.url)}"` : ""} muted playsinline preload="metadata"></video><div class="coach-review-stage-label"><span>02 · Second view</span></div></div></div>
-    <div class="coach-review-playback" aria-label="Video playback controls">
-      <button type="button" data-review-step="-1" aria-label="Previous frame">← Frame</button>
-      <button class="coach-review-play" type="button" data-review-play>▶ Play</button>
-      <button type="button" data-review-step="1" aria-label="Next frame">Frame →</button>
-      <span id="coach-review-time">0:00 / 0:00</span>
-      <input id="coach-review-scrubber" type="range" min="0" max="1000" value="0" aria-label="Video timeline">
-      <button type="button" data-review-fullscreen aria-label="Open video full screen">⛶ Expand</button>
+    </header>
+    <div class="coach-review-views ${comparison ? "has-reference" : ""}" id="coach-review-views">
+      <div class="coach-review-stage" id="coach-review-stage">
+        <video id="coach-review-video" src="${escapeHtml(riderVideoUrl)}" crossorigin="anonymous" playsinline preload="auto" aria-label="Rider clip"></video>
+        <canvas id="coach-review-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Video drawing layer"></canvas>
+        <div class="coach-review-stage-label"><span>Rider clip</span><strong id="coach-review-speed-label">1×</strong></div>
+      </div>
+      <div class="coach-review-stage coach-review-reference-stage" id="coach-review-reference-stage" ${comparison ? "" : "hidden"}>
+        <video id="coach-review-reference-video" ${comparison ? `src="${escapeHtml(comparison.url)}"` : ""} muted playsinline preload="metadata" aria-label="Reference clip"></video>
+        <canvas id="coach-review-reference-canvas" class="coach-review-canvas ${state.videoReviewDrawEnabled ? "drawing" : ""}" aria-label="Reference clip drawing layer"></canvas>
+        <div class="coach-review-stage-label"><span>Reference clip</span></div>
+      </div>
     </div>
+    <div class="coach-review-playback" aria-label="Video playback controls">
+      <div class="coach-review-timeline">
+        <input id="coach-review-scrubber" type="range" min="0" max="1000" value="0" aria-label="Video timeline">
+        <time id="coach-review-time">0:00.00 / 0:00</time>
+      </div>
+      <div class="coach-review-transport">
+        <div class="coach-review-frame-steps" role="group" aria-label="Play and step through frames">
+          <button type="button" data-review-step="-1" aria-label="Previous frame">‹ Frame</button>
+          <button class="coach-review-play" type="button" data-review-play>Play</button>
+          <button type="button" data-review-step="1" aria-label="Next frame">Frame ›</button>
+        </div>
+        <div class="coach-review-speed-row" role="group" aria-label="Playback speed">${[1, 0.5, 0.25, 0.125].map((speed) => `<button class="${speed === 1 ? "active" : ""}" type="button" data-review-speed="${speed}" aria-pressed="${speed === 1}" aria-label="${speed} times speed">${speed === 1 ? "1×" : speed === 0.5 ? "½×" : speed === 0.25 ? "¼×" : "⅛×"}</button>`).join("")}</div>
+        <label class="coach-review-frame-rate">Frame rate<select id="coach-review-frame-rate" aria-label="Frame step rate">${[24, 25, 30, 50, 60, 120].map(fps => `<option value="${fps}" ${fps === (comparison?.frameRate || 30) ? "selected" : ""}>${fps} fps</option>`).join("")}</select></label>
+      </div>
+      <div class="coach-review-link-row" ${comparison ? "" : "hidden"}>
+        <button type="button" class="secondary-btn compact-btn" data-review-link aria-pressed="${Boolean(comparison?.linked)}">${comparison?.linked ? "Unlink clips" : "Link frames"}</button>
+        <span data-review-link-status role="status">${comparison?.linked ? "Linked playback" : "Pause both clips on the same moment."}</span>
+      </div>
+    </div>
+    <details class="coach-review-reference-controls" ${comparison ? (comparison.linked ? "" : "open") : "hidden"}>
+      <summary>Align reference clip</summary>
+      <div class="coach-review-reference-body">
+        <span class="coach-review-reference-name" data-review-reference-name>${escapeHtml(comparison?.name || "Reference clip")}</span>
+        <label for="coach-review-reference-scrubber">Reference position <output id="coach-review-reference-time">0:00.00</output></label>
+        <input id="coach-review-reference-scrubber" type="range" min="0" max="1000" value="0" aria-label="Reference clip timeline for alignment">
+        <div class="coach-review-reference-buttons"><button type="button" data-review-reference-step="-1" aria-label="Previous frame in reference clip">‹ Frame</button><button type="button" data-review-reference-play>Play reference</button><button type="button" data-review-reference-step="1" aria-label="Next frame in reference clip">Frame ›</button></div>
+        <p class="coach-review-compare-private">The reference clip stays on this device. Record your review to send both views.</p>
+      </div>
+    </details>
     <div class="coach-review-tool-deck">
-      <section class="coach-review-tool-group"><div class="coach-review-tool-label"><strong>Speed</strong><small>Slow it down</small></div><div class="coach-review-speed-row">${[1, 0.5, 0.25, 0.125].map((speed) => `<button class="${speed === 1 ? "active" : ""}" type="button" data-review-speed="${speed}">${speed === 1 ? "1×" : speed === 0.5 ? "½×" : speed === 0.25 ? "¼×" : "⅛×"}</button>`).join("")}</div></section>
-      <section class="coach-review-tool-group"><div class="coach-review-tool-label"><strong>Mark-up</strong><small>Draw on frame</small></div><div class="coach-review-analysis-tools" aria-label="On-screen drawing tools">
-        <button class="coach-review-draw-toggle ${state.videoReviewDrawEnabled ? "active" : ""}" type="button" data-review-draw-toggle>${state.videoReviewDrawEnabled ? "Drawing on" : "Draw"}</button>
-        <button class="${state.videoReviewDrawTool === "pen" ? "active" : ""}" type="button" data-review-draw-tool="pen">Pen</button>
-        <button class="${state.videoReviewDrawTool === "line" ? "active" : ""}" type="button" data-review-draw-tool="line">Line</button>
-        <button class="${state.videoReviewDrawTool === "arrow" ? "active" : ""}" type="button" data-review-draw-tool="arrow">Arrow</button>
-        <label class="coach-review-colour" aria-label="Drawing colour"><input type="color" value="${escapeHtml(state.videoReviewDrawColor)}" data-review-draw-colour></label>
+      <div class="coach-review-analysis-tools" role="group" aria-label="On-screen drawing tools">
+        <button class="coach-review-draw-toggle ${state.videoReviewDrawEnabled ? "active" : ""}" type="button" data-review-draw-toggle aria-pressed="${state.videoReviewDrawEnabled}">${state.videoReviewDrawEnabled ? "Drawing on" : "Draw"}</button>
+        <button class="${state.videoReviewDrawTool === "pen" ? "active" : ""}" type="button" data-review-draw-tool="pen" aria-pressed="${state.videoReviewDrawTool === "pen"}">Pen</button>
+        <button class="${state.videoReviewDrawTool === "line" ? "active" : ""}" type="button" data-review-draw-tool="line" aria-pressed="${state.videoReviewDrawTool === "line"}">Line</button>
+        <button class="${state.videoReviewDrawTool === "arrow" ? "active" : ""}" type="button" data-review-draw-tool="arrow" aria-pressed="${state.videoReviewDrawTool === "arrow"}">Arrow</button>
+        <label class="coach-review-colour"><input type="color" value="${escapeHtml(state.videoReviewDrawColor)}" aria-label="Drawing colour" data-review-draw-colour></label>
         <button type="button" data-review-draw-undo>Undo</button>
         <button type="button" data-review-draw-clear>Clear</button>
-      </div></section>
+      </div>
     </div>
-    <label class="coach-review-frame-rate">Frame steps<select id="coach-review-frame-rate" aria-label="Frame step rate">${[24, 25, 30, 50, 60, 120].map(fps => `<option value="${fps}" ${fps === (comparison?.frameRate || 30) ? "selected" : ""}>${fps} fps</option>`).join("")}</select><small>Match your clip’s frame rate.</small></label>
+    </section>
     ${recorderPanel}` : `<div class="coach-review-load-stage">
-      <div class="coach-review-load-icon" aria-hidden="true">▶</div>
-      <span>01 · Watch</span>
-      <strong>Load ${escapeHtml(athleteFirstName)}'s clip</strong>
-      <p>Private video stays inside the studio. Open it to unlock slow motion, drawing and recording.</p>
-      <button class="primary-btn" type="button" data-load-help-video="${request.id}" data-coach-analysis="1">Open review player →</button>
+      <strong>Load ${escapeHtml(athleteFirstName)}’s clip</strong>
+      <button class="primary-btn" type="button" data-load-help-video="${request.id}" data-coach-analysis="1">Open review player</button>
     </div>`;
   const savedReply = hasSavedReply ? `<div class="coach-review-saved-reply"><strong>Feedback already sent</strong>${request.coach_comment ? `<p>${escapeHtml(request.coach_comment)}</p>` : ""}${coachVideoUrl ? `<video class="help-video" src="${escapeHtml(coachVideoUrl)}" controls playsinline preload="metadata"></video>` : ""}</div>` : "";
   return `<section class="coach-review-workspace" aria-label="Rider video analysis workspace">
@@ -19561,22 +19599,14 @@ function coachReviewWorkspaceHtml(request) {
       <div class="person">${avatarHtml(athlete)}<div class="person-name"><div class="eyebrow">Private rider review</div><strong>${escapeHtml(athlete.display_name)}</strong><small>Submitted ${dateLabel(request.created_at)} · ${videoSizeLabel(request.video_size_bytes)} ${escapeHtml(videoFormat)}</small></div></div>
       <div class="coach-review-head-actions"><span class="coach-review-status status-${escapeHtml(status)}">${escapeHtml(status === "open" ? "New review" : status)}</span><button class="secondary-btn compact-btn" type="button" data-open-student="${escapeHtml(request.athlete_id)}">Open rider</button></div>
     </header>
-    <div class="coach-review-flow" aria-label="Review workflow">
-      <div class="${riderVideoUrl ? "done" : "active"}"><b>01</b><span><strong>Watch</strong><small>Find the moment</small></span></div>
-      <i aria-hidden="true"></i>
-      <div class="${recordedReply || hasSavedReply ? "done" : riderVideoUrl ? "active" : ""}"><b>02</b><span><strong>Coach</strong><small>Talk + draw</small></span></div>
-      <i aria-hidden="true"></i>
-      <div class="${hasSavedReply ? "done" : responseStarted ? "active" : ""}"><b>03</b><span><strong>Send</strong><small>One clear cue</small></span></div>
-    </div>
-    <div class="coach-review-question"><span>“</span><div><small>Rider wants help with</small><strong>${escapeHtml(request.question || "Please review this attempt.")}</strong></div></div>
+    <div class="coach-review-question"><div><small>Rider question</small><strong>${escapeHtml(request.question || "Please review this attempt.")}</strong></div></div>
     <div class="coach-review-workspace-grid">
       <div class="coach-review-editor">
         ${player}
         <div class="coach-review-editor-footer"><span>Private · only you and ${escapeHtml(athleteFirstName)}</span><div class="video-actions">${originalRiderVideoUrl ? `<a class="secondary-btn compact-btn" href="${escapeHtml(originalRiderVideoUrl)}" target="_blank" rel="noopener">Original</a>` : ""}<button class="secondary-btn compact-btn" type="button" data-save-help-video="${request.id}" data-save-name="${escapeHtml(saveName)}">Download</button></div></div>
       </div>
       <aside class="coach-review-feedback">
-        <div><div class="eyebrow">03 · Send it back</div><h3>Give ${escapeHtml(athleteFirstName)} one clear win</h3><p>Short feedback lands harder. Keep it focused and rideable.</p></div>
-        <div class="coach-review-cue-strip"><span>1 correction</span><span>1 cue</span><span>1 confidence boost</span></div>
+        <h3>Feedback for ${escapeHtml(athleteFirstName)}</h3>
         ${savedReply}
         <form class="reply-form" data-help-reply="${request.id}">
           <div class="field"><label for="central-reply-${request.id}">Your coaching note</label><textarea id="central-reply-${request.id}" name="comment" placeholder="Try this next run: eyes through the turn, then drive the outside shoulder...">${escapeHtml(request.coach_comment || "")}</textarea></div>
@@ -19597,6 +19627,11 @@ function clearCoachReviewComparison(requestId) {
   const comparison = state.videoReviewComparisons?.get(requestId);
   if (comparison?.url) URL.revokeObjectURL(comparison.url);
   state.videoReviewComparisons?.delete(requestId);
+  const drawings = state.videoReviewDrawings.get(requestId);
+  if (drawings) state.videoReviewDrawings.set(requestId, drawings.filter(drawing => drawing.view !== "reference"));
+  if (state.videoReviewActiveRequestId === requestId && state.videoReviewDraftDrawing?.view === "reference") {
+    state.videoReviewDraftDrawing = null;
+  }
 }
 
 function coachReviewFrameTime(seconds = 0) {
@@ -19688,14 +19723,19 @@ function updateCoachReviewComparisonUi() {
   const reference = document.querySelector("#coach-review-reference-video");
   const link = document.querySelector("[data-review-link]");
   const status = document.querySelector("[data-review-link-status]");
-  if (link) { link.textContent = comparison?.linked ? "Unlink views" : "Link at these frames"; link.setAttribute("aria-pressed", String(Boolean(comparison?.linked))); }
-  if (status) status.textContent = comparison?.buffering ? "Loading both views… playback resumes when ready" : comparison?.linked ? "Views linked · play, scrub or step both together" : "Pause each clip on the same moment, then link.";
+  const linked = Boolean(comparison?.linked);
+  if (link && link.getAttribute("aria-pressed") !== String(linked)) {
+    link.textContent = linked ? "Unlink clips" : "Link frames";
+    link.setAttribute("aria-pressed", String(linked));
+  }
+  const statusText = comparison?.buffering ? "Buffering both clips…" : linked ? "Linked playback" : "Pause both clips on the same moment.";
+  if (status && status.textContent !== statusText) status.textContent = statusText;
   const time = document.querySelector("#coach-review-reference-time");
   if (time && reference) time.textContent = coachReviewFrameTime(reference.currentTime);
   const scrubber = document.querySelector("#coach-review-reference-scrubber");
   if (scrubber && reference) scrubber.value = String(reference.duration ? Math.round(reference.currentTime / reference.duration * 1000) : 0);
   const play = document.querySelector("[data-review-reference-play]");
-  if (play && reference) play.textContent = reference.paused ? "Play second view" : "Pause second view";
+  if (play && reference) play.textContent = reference.paused ? "Play reference" : "Pause reference";
 }
 
 function bindCoachReviewComparison(refreshCanvas) {
@@ -19709,6 +19749,19 @@ function bindCoachReviewComparison(refreshCanvas) {
   const locked = () => Boolean(state.videoReviewRecording || state.videoReviewRecordingStarting);
   const frameRate = () => Number(document.querySelector("#coach-review-frame-rate")?.value || 30);
   const refresh = () => { updateCoachReviewComparisonUi(); refreshCanvas(); };
+  const alignment = document.querySelector(".coach-review-reference-controls");
+  const showReference = (comparison) => {
+    const shown = Boolean(comparison);
+    document.querySelector("#coach-review-reference-stage").hidden = !shown;
+    document.querySelector("#coach-review-views").classList.toggle("has-reference", shown);
+    document.querySelector(".coach-review-link-row").hidden = !shown;
+    document.querySelector("[data-review-reference-remove]").hidden = !shown;
+    document.querySelector("[data-review-player-title]").textContent = shown ? "Compare clips" : "Video analysis";
+    document.querySelector("[data-review-reference-upload-label]").textContent = shown ? "Replace clip" : "+ Add second clip";
+    document.querySelector("[data-review-reference-name]").textContent = comparison?.name || "Reference clip";
+    alignment.hidden = !shown;
+    alignment.open = shown && !comparison.linked;
+  };
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (!file || !current() || locked()) return;
@@ -19723,25 +19776,16 @@ function bindCoachReviewComparison(refreshCanvas) {
     state.videoReviewComparisons.set(requestId, comparison);
     reference.src = comparison.url;
     reference.muted = true;
-    document.querySelector("#coach-review-reference-stage").hidden = false;
-    document.querySelector("#coach-review-views").classList.add("has-reference");
-    document.querySelector(".coach-review-reference-controls").hidden = false;
-    document.querySelector("[data-review-reference-name]").textContent = file.name;
-    const uploadLabel = fileInput.closest("label");
-    if (uploadLabel?.firstChild) uploadLabel.firstChild.textContent = "Replace clip";
+    showReference(comparison);
     fileInput.value = "";
     refresh();
   });
   document.querySelector("[data-review-reference-remove]")?.addEventListener("click", () => {
-    if (locked()) return;
+    if (!current() || locked()) return;
     pauseCoachReviewVideos();
     clearCoachReviewComparison(requestId);
     reference.removeAttribute("src"); reference.load();
-    document.querySelector("#coach-review-reference-stage").hidden = true;
-    document.querySelector("#coach-review-views").classList.remove("has-reference");
-    document.querySelector(".coach-review-reference-controls").hidden = true;
-    const uploadLabel = fileInput.closest("label");
-    if (uploadLabel?.firstChild) uploadLabel.firstChild.textContent = "+ Add second view";
+    showReference(null);
     refresh();
   });
   document.querySelector("[data-review-link]")?.addEventListener("click", () => {
@@ -19752,6 +19796,7 @@ function bindCoachReviewComparison(refreshCanvas) {
     if (!comparison.linked && (video.readyState < 2 || reference.readyState < 2)) return notify("Wait for both clips to load before linking frames.", "error");
     comparison.linked = !comparison.linked;
     if (comparison.linked) { comparison.riderAnchor = video.currentTime; comparison.referenceAnchor = reference.currentTime; }
+    alignment.open = !comparison.linked;
     updateCoachReviewComparisonUi();
   });
   document.querySelector("#coach-review-reference-scrubber")?.addEventListener("input", event => seekCoachReviewVideos(Number(event.currentTarget.value) / 1000 * (reference.duration || 0), true));
@@ -19880,6 +19925,7 @@ function resetVideoReviewPrivateState() {
   [...state.videoReviewRecordedReplies.keys()].forEach(clearCoachRecordedReply);
   [...(state.videoReviewComparisons?.keys() || [])].forEach(clearCoachReviewComparison);
   state.videoReviewDrawings.clear();
+  state.runVideoReviewReturn = null;
   state.videoReviewActiveRequestId = "";
   state.videoReviewStatus = "all";
   state.videoReviewRider = "all";
@@ -19992,7 +20038,7 @@ function paintCoachReviewRecordingFrame(session) {
   }
   context.fillStyle = "#000";
   context.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
-  let riderRect = { x: 0, y: 0, width: outputCanvas.width, height: outputCanvas.height };
+  const clipRects = { rider: { x: 0, y: 0, width: outputCanvas.width, height: outputCanvas.height } };
   if (referenceVideo) {
     const gap = 12, half = (outputCanvas.width - gap * 3) / 2;
     const contain = (video, left) => {
@@ -20002,19 +20048,22 @@ function paintCoachReviewRecordingFrame(session) {
       context.drawImage(video, rect.x, rect.y, width, height);
       return rect;
     };
-    riderRect = contain(sourceVideo, gap);
-    contain(referenceVideo, gap * 2 + half);
+    clipRects.rider = contain(sourceVideo, gap);
+    clipRects.reference = contain(referenceVideo, gap * 2 + half);
     context.fillStyle = "#eaf4f8"; context.font = "600 20px sans-serif"; context.textBaseline = "top";
     context.fillText("Rider clip", gap + 8, 16);
     context.fillText("Second view", gap * 2 + half + 8, 16);
   } else if (sourceVideo.readyState >= 2) context.drawImage(sourceVideo, 0, 0, outputCanvas.width, outputCanvas.height);
   const drawings = state.videoReviewDrawings.get(requestId) || [];
-  context.save();
-  context.translate(riderRect.x, riderRect.y);
-  [...drawings, state.videoReviewActiveRequestId === requestId ? state.videoReviewDraftDrawing : null]
-    .filter(Boolean)
-    .forEach((drawing) => drawCoachReviewShape(context, drawing, riderRect.width, riderRect.height));
-  context.restore();
+  const draft = state.videoReviewActiveRequestId === requestId ? state.videoReviewDraftDrawing : null;
+  for (const [view, rect] of Object.entries(clipRects)) {
+    context.save();
+    context.translate(rect.x, rect.y);
+    for (const drawing of [...drawings, draft]) {
+      if (drawing && (drawing.view || "rider") === view) drawCoachReviewShape(context, drawing, rect.width, rect.height);
+    }
+    context.restore();
+  }
   session.rafId = window.requestAnimationFrame(() => paintCoachReviewRecordingFrame(session));
 }
 
@@ -20301,21 +20350,26 @@ async function startCoachReviewRecording(requestId) {
 }
 
 function redrawCoachReviewCanvas() {
-  const canvas = document.querySelector("#coach-review-canvas");
-  if (!canvas) return;
-  const context = canvas.getContext("2d");
-  const rect = canvas.getBoundingClientRect();
-  if (!context || !rect.width || !rect.height) return;
-  const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
-  const expectedWidth = Math.round(rect.width * pixelRatio);
-  const expectedHeight = Math.round(rect.height * pixelRatio);
-  if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
-    canvas.width = expectedWidth;
-    canvas.height = expectedHeight;
+  const drawings = [...activeCoachReviewDrawings(), state.videoReviewDraftDrawing];
+  for (const [view, id] of [["rider", "coach-review-canvas"], ["reference", "coach-review-reference-canvas"]]) {
+    const canvas = document.getElementById(id);
+    const rect = canvas?.getBoundingClientRect();
+    if (!rect?.width || !rect.height) continue;
+    const context = canvas.getContext("2d");
+    if (!context) continue;
+    const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+    const expectedWidth = Math.round(rect.width * pixelRatio);
+    const expectedHeight = Math.round(rect.height * pixelRatio);
+    if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
+      canvas.width = expectedWidth;
+      canvas.height = expectedHeight;
+    }
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, rect.width, rect.height);
+    for (const drawing of drawings) {
+      if (drawing && (drawing.view || "rider") === view) drawCoachReviewShape(context, drawing, rect.width, rect.height);
+    }
   }
-  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-  context.clearRect(0, 0, rect.width, rect.height);
-  [...activeCoachReviewDrawings(), state.videoReviewDraftDrawing].filter(Boolean).forEach((drawing) => drawCoachReviewShape(context, drawing, rect.width, rect.height));
 }
 
 function updateCoachReviewPlayerUi() {
@@ -20334,34 +20388,55 @@ function bindCoachVideoReviewEditor() {
   const video = document.querySelector("#coach-review-video");
   const canvas = document.querySelector("#coach-review-canvas");
   if (!video || !canvas) return;
-  const stage = document.querySelector("#coach-review-stage");
+  const player = document.querySelector("#coach-review-player");
+  const expand = document.querySelector("[data-review-fullscreen]");
+  const fullscreen = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const panes = [
+    { view: "rider", video, canvas, stage: document.querySelector("#coach-review-stage") },
+    { view: "reference", video: document.querySelector("#coach-review-reference-video"),
+      canvas: document.querySelector("#coach-review-reference-canvas"), stage: document.querySelector("#coach-review-reference-stage") },
+  ].filter(pane => pane.video && pane.canvas && pane.stage);
   const refreshCanvas = () => window.requestAnimationFrame(() => {
-    if (stage && video.videoWidth && video.videoHeight) {
-      const views = document.querySelector("#coach-review-views");
-      const hasComparison = Boolean(activeCoachReviewComparison());
-      const isFullscreen = document.fullscreenElement === stage || document.webkitFullscreenElement === stage || document.fullscreenElement === views || document.webkitFullscreenElement === views;
-      if (!isFullscreen) {
-        const mediaRatio = video.videoWidth / video.videoHeight;
-        const maxHeight = Math.min(window.innerHeight * 0.68, 760);
-        const availableWidth = stage.parentElement?.clientWidth || stage.clientWidth || 720;
-        stage.style.width = hasComparison ? "100%" : `${Math.min(availableWidth, maxHeight * mediaRatio)}px`;
-        stage.style.aspectRatio = hasComparison ? "4 / 3" : `${video.videoWidth} / ${video.videoHeight}`;
-      }
-      const stageRect = stage.getBoundingClientRect();
+    if (!video.isConnected) return;
+    const hasComparison = Boolean(activeCoachReviewComparison());
+    const expanded = Boolean(fullscreen() || player?.classList.contains("is-expanded"));
+    for (const pane of panes) {
+      const { stage, video, canvas, view } = pane;
+      if (stage.hidden || !video.videoWidth || !video.videoHeight) continue;
       const mediaRatio = video.videoWidth / video.videoHeight;
-      const stageRatio = stageRect.width / Math.max(1, stageRect.height);
-      const displayWidth = stageRatio > mediaRatio ? stageRect.height * mediaRatio : stageRect.width;
-      const displayHeight = stageRatio > mediaRatio ? stageRect.height : stageRect.width / mediaRatio;
+      if (view === "rider") {
+        if (hasComparison || expanded) {
+          stage.style.removeProperty("width");
+          stage.style.removeProperty("aspect-ratio");
+        } else {
+          const maxHeight = Math.min(window.innerHeight * 0.68, 760);
+          const availableWidth = stage.parentElement?.clientWidth || stage.clientWidth || 720;
+          stage.style.width = `${Math.min(availableWidth, maxHeight * mediaRatio)}px`;
+          stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }
+      }
+      const { clientWidth, clientHeight } = stage;
+      const displayWidth = Math.min(clientWidth, clientHeight * mediaRatio);
+      const displayHeight = displayWidth / mediaRatio;
       canvas.style.inset = "auto";
-      canvas.style.left = `${(stageRect.width - displayWidth) / 2}px`;
-      canvas.style.top = `${(stageRect.height - displayHeight) / 2}px`;
+      canvas.style.left = `${(clientWidth - displayWidth) / 2}px`;
+      canvas.style.top = `${(clientHeight - displayHeight) / 2}px`;
       canvas.style.width = `${displayWidth}px`;
       canvas.style.height = `${displayHeight}px`;
     }
     redrawCoachReviewCanvas();
   });
+  const updateExpand = () => {
+    const expanded = Boolean(player && (fullscreen() === player || player.classList.contains("is-expanded")));
+    if (expand) {
+      expand.textContent = expanded ? "Exit expanded view" : "⛶ Expand";
+      expand.setAttribute("aria-expanded", String(expanded));
+      expand.setAttribute("aria-label", expanded ? "Exit expanded view" : "Expand analysis player");
+    }
+    refreshCanvas();
+  };
   state.videoReviewResizeHandler = refreshCanvas;
-  state.videoReviewFullscreenHandler = refreshCanvas;
+  state.videoReviewFullscreenHandler = updateExpand;
   window.addEventListener("resize", state.videoReviewResizeHandler);
   document.addEventListener("fullscreenchange", state.videoReviewFullscreenHandler);
   document.addEventListener("webkitfullscreenchange", state.videoReviewFullscreenHandler);
@@ -20413,67 +20488,101 @@ function bindCoachVideoReviewEditor() {
     } catch (error) {
       notify("This browser cannot use that slow-motion speed.", "error");
     }
-    document.querySelectorAll("[data-review-speed]").forEach((entry) => entry.classList.toggle("active", entry === button));
+    document.querySelectorAll("[data-review-speed]").forEach(entry => {
+      const active = Number(entry.dataset.reviewSpeed) === video.playbackRate;
+      entry.classList.toggle("active", active);
+      entry.setAttribute("aria-pressed", String(active));
+    });
     const label = document.querySelector("#coach-review-speed-label");
     if (label) label.textContent = video.playbackRate === requestedSpeed ? button.textContent : `${video.playbackRate}×`;
   }));
-  document.querySelector("[data-review-fullscreen]")?.addEventListener("click", () => {
-    const stage = document.querySelector(activeCoachReviewComparison() ? "#coach-review-views" : "#coach-review-stage");
-    if (stage?.requestFullscreen) stage.requestFullscreen().catch(() => {
-      if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-      else notify("Full screen is not available in this browser.", "error");
-    });
-    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-    else notify("Full screen is not available in this browser.", "error");
+  expand?.addEventListener("click", async () => {
+    if (!player || state.videoReviewRecording || state.videoReviewRecordingStarting) return;
+    if (fullscreen() === player) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      await exit?.call(document);
+      return;
+    }
+    if (player.classList.contains("is-expanded")) {
+      player.classList.remove("is-expanded");
+      updateExpand();
+      return;
+    }
+    try {
+      if (player.requestFullscreen) {
+        await player.requestFullscreen();
+        return;
+      }
+    } catch (_) {
+      // Keep both clips and their controls available where native fullscreen is blocked.
+    }
+    if (!player.isConnected) return;
+    player.classList.add("is-expanded");
+    updateExpand();
+  });
+  player?.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !player.classList.contains("is-expanded")) return;
+    event.preventDefault();
+    player.classList.remove("is-expanded");
+    updateExpand();
+    expand?.focus();
   });
   document.querySelector("[data-review-draw-toggle]")?.addEventListener("click", (event) => {
     state.videoReviewDrawEnabled = !state.videoReviewDrawEnabled;
-    canvas.classList.toggle("drawing", state.videoReviewDrawEnabled);
+    for (const pane of panes) pane.canvas.classList.toggle("drawing", state.videoReviewDrawEnabled);
     event.currentTarget.classList.toggle("active", state.videoReviewDrawEnabled);
-    event.currentTarget.textContent = state.videoReviewDrawEnabled ? "Drawing on" : "Draw on video";
+    event.currentTarget.setAttribute("aria-pressed", String(state.videoReviewDrawEnabled));
+    event.currentTarget.textContent = state.videoReviewDrawEnabled ? "Drawing on" : "Draw";
     if (state.videoReviewDrawEnabled) pauseCoachReviewVideos();
   });
   document.querySelectorAll("[data-review-draw-tool]").forEach((button) => button.addEventListener("click", () => {
     state.videoReviewDrawTool = button.dataset.reviewDrawTool;
-    document.querySelectorAll("[data-review-draw-tool]").forEach((entry) => entry.classList.toggle("active", entry === button));
+    document.querySelectorAll("[data-review-draw-tool]").forEach(entry => {
+      entry.classList.toggle("active", entry === button);
+      entry.setAttribute("aria-pressed", String(entry === button));
+    });
   }));
   document.querySelector("[data-review-draw-colour]")?.addEventListener("input", (event) => { state.videoReviewDrawColor = event.target.value; });
   document.querySelector("[data-review-draw-undo]")?.addEventListener("click", () => { activeCoachReviewDrawings().pop(); redrawCoachReviewCanvas(); });
   document.querySelector("[data-review-draw-clear]")?.addEventListener("click", () => { state.videoReviewDrawings.set(state.videoReviewActiveRequestId, []); redrawCoachReviewCanvas(); });
   let activePointerId = null;
-  const finishDrawing = (event) => {
-    if (!state.videoReviewDraftDrawing) return;
-    if (activePointerId !== null && event?.pointerId !== activePointerId) return;
-    if (event?.pointerId !== undefined && canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    activeCoachReviewDrawings().push(state.videoReviewDraftDrawing);
-    state.videoReviewDraftDrawing = null;
-    activePointerId = null;
-    redrawCoachReviewCanvas();
-  };
-  canvas.addEventListener("pointerdown", (event) => {
-    if (!state.videoReviewDrawEnabled || event.isPrimary === false || activePointerId !== null) return;
-    event.preventDefault();
-    activePointerId = event.pointerId;
-    canvas.setPointerCapture?.(event.pointerId);
-    state.videoReviewDraftDrawing = { tool: state.videoReviewDrawTool, color: state.videoReviewDrawColor, points: [coachReviewCanvasPoint(canvas, event)] };
-    redrawCoachReviewCanvas();
-  });
-  canvas.addEventListener("pointermove", (event) => {
-    const drawing = state.videoReviewDraftDrawing;
-    if (!drawing || event.pointerId !== activePointerId) return;
-    event.preventDefault();
-    const next = coachReviewCanvasPoint(canvas, event);
-    if (drawing.tool === "pen") drawing.points.push(next);
-    else drawing.points = [drawing.points[0], next];
-    redrawCoachReviewCanvas();
-  });
-  canvas.addEventListener("pointerup", finishDrawing);
-  canvas.addEventListener("pointercancel", (event) => {
-    if (activePointerId !== null && event.pointerId !== activePointerId) return;
-    state.videoReviewDraftDrawing = null;
-    activePointerId = null;
-    redrawCoachReviewCanvas();
-  });
+  for (const { canvas, view } of panes) {
+    const matchesPointer = event => activePointerId === event.pointerId && state.videoReviewDraftDrawing?.view === view;
+    canvas.addEventListener("pointerdown", event => {
+      if (!state.videoReviewDrawEnabled || event.isPrimary === false || activePointerId !== null) return;
+      event.preventDefault();
+      pauseCoachReviewVideos();
+      activePointerId = event.pointerId;
+      canvas.setPointerCapture?.(event.pointerId);
+      state.videoReviewDraftDrawing = { view, tool: state.videoReviewDrawTool, color: state.videoReviewDrawColor, points: [coachReviewCanvasPoint(canvas, event)] };
+      redrawCoachReviewCanvas();
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (!matchesPointer(event)) return;
+      event.preventDefault();
+      const drawing = state.videoReviewDraftDrawing;
+      const next = coachReviewCanvasPoint(canvas, event);
+      if (drawing.tool === "pen") drawing.points.push(next);
+      else drawing.points = [drawing.points[0], next];
+      redrawCoachReviewCanvas();
+    });
+    canvas.addEventListener("pointerup", event => {
+      if (!matchesPointer(event)) return;
+      activeCoachReviewDrawings().push(state.videoReviewDraftDrawing);
+      state.videoReviewDraftDrawing = null;
+      activePointerId = null;
+      if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      redrawCoachReviewCanvas();
+    });
+    const cancelDrawing = event => {
+      if (activePointerId !== event.pointerId) return;
+      activePointerId = null;
+      state.videoReviewDraftDrawing = null;
+      redrawCoachReviewCanvas();
+    };
+    canvas.addEventListener("pointercancel", cancelDrawing);
+    canvas.addEventListener("lostpointercapture", cancelDrawing);
+  }
   bindCoachReviewComparison(refreshCanvas);
   refreshCanvas();
   updateCoachReviewPlayerUi();
@@ -20548,22 +20657,30 @@ async function renderVideoReviews() {
   }
   if (previousActiveRequestId && previousActiveRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousActiveRequestId);
   const activeRequest = filtered.find((request) => request.id === state.videoReviewActiveRequestId) || null;
+  const runReturn = state.runVideoReviewReturn;
+  const canReturnToRun = runReturn && state.runBuilder === runReturn.builder;
   const activeReviewHtml = activeRequest
     ? coachReviewWorkspaceHtml(activeRequest)
     : `<div class="empty compact-empty">No videos match those filters.</div>`;
   document.querySelector("#view").innerHTML = `
     <header class="video-review-hero">
-      <div><div class="eyebrow">JKC private coaching</div><h1>Review <span>Cockpit</span></h1><p>One rider. One moment. One clear cue.</p></div>
-      <div class="video-review-summary" aria-label="Video review totals">
-        <span class="is-live"><b>${newCount}</b><small>Need reply</small></span>
-        <span><b>${requests.length}</b><small>Total clips</small></span>
-        <span><b>${new Set(requests.map((request) => request.athlete_id)).size}</b><small>Riders</small></span>
+      <div><h1>Video <span>analysis</span></h1><p>${newCount} ${newCount === 1 ? "clip needs" : "clips need"} a reply</p></div>
+      <div class="video-review-header-actions">
+        ${canReturnToRun ? '<button class="secondary-btn compact-btn" type="button" data-review-return-run>← Back to run</button>' : ""}
+        <a class="secondary-btn compact-btn video-review-queue-link" href="#video-review-queue">Choose clip</a>
       </div>
     </header>
     <section class="coach-review-console">
-      <aside class="coach-review-queue panel"><div class="coach-review-queue-head"><div><span>Incoming clips</span><strong>Choose a rider</strong></div><b>${filtered.length}</b></div>${videoReviewFilterHtml(roster)}<div class="coach-review-queue-list">${filtered.length ? filtered.map(coachReviewQueueItemHtml).join("") : `<div class="empty compact-empty">Nothing waiting.</div>`}</div></aside>
+      <aside class="coach-review-queue panel" id="video-review-queue"><div class="coach-review-queue-head"><div><span>Incoming clips</span><strong>Choose a rider</strong></div><b>${filtered.length}</b></div>${videoReviewFilterHtml(roster)}<div class="coach-review-queue-list">${filtered.length ? filtered.map(coachReviewQueueItemHtml).join("") : `<div class="empty compact-empty">Nothing waiting.</div>`}</div></aside>
       <div class="coach-review-active">${activeReviewHtml}</div>
     </section>`;
+  document.querySelector("[data-review-return-run]")?.addEventListener("click", async () => {
+    if (state.runVideoReviewReturn !== runReturn || state.runBuilder !== runReturn.builder) return;
+    await navigate(runReturn.view);
+    if (state.view === runReturn.view && state.runBuilder === runReturn.builder) {
+      document.querySelector("#run-builder-live")?.scrollIntoView({ block: "start" });
+    }
+  });
   document.querySelector("#video-review-status")?.addEventListener("change", (event) => {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before changing the queue.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before changing the queue.", "error");
@@ -20590,12 +20707,18 @@ async function renderVideoReviews() {
     if (state.videoReviewRecording || state.videoReviewRecordingStarting) return notify("Stop and save the recording before opening another rider.", "error");
     if (state.videoReviewRecordedReplies.has(state.videoReviewActiveRequestId)) return notify("Send or remove the recorded review before opening another rider.", "error");
     const previousRequestId = state.videoReviewActiveRequestId;
+    const requestId = button.dataset.openVideoReview;
+    const userId = state.user?.id;
     disableStaleCoachReviewRecordButton();
-    state.videoReviewActiveRequestId = button.dataset.openVideoReview;
-    if (previousRequestId && previousRequestId !== state.videoReviewActiveRequestId) releaseVideoReviewMedia(previousRequestId);
+    state.videoReviewActiveRequestId = requestId;
+    if (previousRequestId && previousRequestId !== requestId) releaseVideoReviewMedia(previousRequestId);
     state.videoReviewDrawEnabled = false;
     state.videoReviewDraftDrawing = null;
     await renderVideoReviews();
+    if (state.view === "videoReviews" && state.user?.id === userId && state.videoReviewActiveRequestId === requestId
+        && window.matchMedia("(max-width: 780px)").matches) {
+      document.querySelector(".coach-review-active")?.scrollIntoView({ block: "start" });
+    }
   }));
   document.querySelectorAll("[data-open-student]").forEach((button) => button.addEventListener("click", () => {
     state.selectedAthleteId = button.dataset.openStudent;
