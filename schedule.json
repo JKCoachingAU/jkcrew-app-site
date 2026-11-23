@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "year": 2027,
-  "checkedAt": "2026-11-16T04:59:36.679Z",
-  "lastSuccessfulCalendarCheckAt": "2026-11-16T04:59:36.679Z",
+  "checkedAt": "2026-11-23T05:58:45.877Z",
+  "lastSuccessfulCalendarCheckAt": "2026-11-23T05:58:45.877Z",
   "refreshStatus": "ok",
-  "calendarEventCount": 38,
+  "calendarEventCount": 40,
   "events": [
     {
       "id": "uci-bfr-2027-80618",
@@ -50,12 +50,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80618",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -101,12 +101,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80246",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -153,12 +153,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80619",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -204,12 +204,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80624",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -256,12 +256,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81205",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -308,12 +308,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80616",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -360,12 +360,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81204",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -407,14 +407,14 @@
       "sourceUrl": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
       "sourceTitle": "Official organiser announcement",
       "matchUciName": "FISE.*Montpellier|Montpellier.*FISE",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "sources": [
         {
           "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
           "title": "Official organiser announcement",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
       "changes": []
@@ -458,16 +458,68 @@
       "sourceUrl": "https://sportpiraten.com/",
       "sourceTitle": "Official organiser announcement",
       "matchUciName": "Butcher Jam",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "sources": [
         {
           "url": "https://sportpiraten.com/",
           "title": "Official organiser announcement",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
+      "changes": []
+    },
+    {
+      "id": "uci-bfr-2027-81412",
+      "uciId": "81412",
+      "name": "Pannonian Challenge",
+      "startDate": "2027-05-28",
+      "endDate": "2027-05-29",
+      "venue": "Osijek",
+      "country": "Croatia",
+      "countryCode": "CRO",
+      "discipline": "Park",
+      "classification": "C1",
+      "classificationStatus": "confirmed",
+      "status": "confirmed",
+      "dateStatus": "calendar_dates",
+      "eligibilityStatus": "conditional",
+      "eligibleNationalities": [
+        "GER",
+        "AUS"
+      ],
+      "categories": [
+        "Men Elite",
+        "Women Elite"
+      ],
+      "eligibilityNote": "German and Australian sporting nationalities may enter, subject to the organiser’s licence, age, entry and capacity conditions. Entry is not guaranteed.",
+      "registration": {
+        "status": "pending",
+        "url": "https://pannonian.hr/",
+        "email": "sport@pannonian.org",
+        "deadline": null,
+        "note": "Entry form, deadline and the final 2027 technical guide have not been verified. The link/contact is the organiser listed by UCI."
+      },
+      "rankingPoints": {
+        "status": "uci_listed",
+        "note": "Listed on the UCI international calendar. Ranking points depend on the applicable UCI rules, eligible category and result; this is not confirmation of Olympic qualification points."
+      },
+      "olympicQualification": {
+        "status": "pending_rules",
+        "note": "Do not treat general UCI world-ranking points as direct LA28 qualification points. The revised BMX Freestyle pathway remains to be checked against the official rules."
+      },
+      "sourceUrl": "https://www.uci.org/competition-details/2027/BFR/81412",
+      "sources": [
+        {
+          "url": "https://www.uci.org/competition-details/2027/BFR/81412",
+          "title": "UCI event listing",
+          "checkedAt": "2026-11-23T05:58:45.877Z"
+        }
+      ],
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -514,12 +566,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80615",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -566,12 +618,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80620",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -618,12 +670,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81306",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -670,12 +722,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81294",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -721,12 +773,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81297",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": [
         {
           "field": "name",
@@ -828,12 +880,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81206",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -880,12 +932,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81295",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -932,17 +984,17 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/79863",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         },
         {
           "url": "https://www.hautesavoie2027.com/sites/default/files/2026-09/calendrier_2209_2026_en.pdf",
           "title": "Official organiser Park programme",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": [],
       "dateNote": "Park: 2–4 September; 5 September is the weather contingency day. UCI’s broader combined registration window also includes Flatland."
     },
@@ -990,12 +1042,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81293",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -1042,12 +1094,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/80617",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -1094,12 +1146,12 @@
         {
           "url": "https://www.uci.org/competition-details/2027/BFR/81296",
           "title": "UCI event listing",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "changes": []
     },
     {
@@ -1141,14 +1193,14 @@
       "sourceUrl": "https://www.bmxseries.com/",
       "sourceTitle": "Official organiser announcement",
       "matchUciName": "^BMX Freestyle European Series$",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastCheckedAt": "2026-11-16T04:59:36.679Z",
-      "lastVerifiedAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastCheckedAt": "2026-11-23T05:58:45.877Z",
+      "lastVerifiedAt": "2026-11-23T05:58:45.877Z",
       "sources": [
         {
           "url": "https://www.bmxseries.com/",
           "title": "Official organiser announcement",
-          "checkedAt": "2026-11-16T04:59:36.679Z"
+          "checkedAt": "2026-11-23T05:58:45.877Z"
         }
       ],
       "changes": []
@@ -1174,7 +1226,7 @@
         "title": "Official LA28 documents"
       }
     ],
-    "checkedAt": "2026-11-16T04:59:36.679Z"
+    "checkedAt": "2026-11-23T05:58:45.877Z"
   },
   "announcements": [
     {
@@ -1257,7 +1309,7 @@
       "title": "Vulkan BMX official organiser",
       "kind": "organiser_discovery",
       "contentHash": "20bf9209f182e44059bc29aaee7c357a2ed330a15a4fa86db72c5655ec4139dd",
-      "detectedAt": "2026-10-26T03:28:32.255Z",
+      "detectedAt": "2026-11-23T05:58:45.877Z",
       "status": "pending",
       "reason": "Official source content changed; the meaning and deadlines need verification."
     },
@@ -1390,6 +1442,56 @@
       "detectedAt": "2026-11-16T04:59:36.679Z",
       "status": "pending",
       "reason": "Official source content changed; the meaning and deadlines need verification."
+    },
+    {
+      "id": "source-d206ad70371c6de4346d5b0021fc40f4",
+      "url": "https://bmx-meisterschaft.de/",
+      "title": "German National Championships — Park official announcement",
+      "kind": "organiser_announcement",
+      "contentHash": "e3d0df5cfc35d60b2606c02395d877e0c0b75be49350724e63c7a620bf63adb7",
+      "detectedAt": "2026-11-23T05:58:45.877Z",
+      "status": "pending",
+      "reason": "Official source content changed; the meaning and deadlines need verification."
+    },
+    {
+      "id": "source-5d7788a75c1955be2914a79af1cc12d4",
+      "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
+      "title": "FISE Montpellier official announcement",
+      "kind": "organiser_announcement",
+      "contentHash": "fd5fbd87bf9696825d610d4d014b366f5c116ff5297e36e3232f93afb2234a07",
+      "detectedAt": "2026-11-23T05:58:45.877Z",
+      "status": "pending",
+      "reason": "Official source content changed; the meaning and deadlines need verification."
+    },
+    {
+      "id": "source-fe7695971e91c9ccd8e1a38ad4820d4b",
+      "url": "https://auscycling.org.au/events",
+      "title": "AusCycling events",
+      "kind": "organiser_discovery",
+      "contentHash": "bde698927ba68414dbee438517ead7d1e31009b8608ecbb1f79427aef9b095de",
+      "detectedAt": "2026-11-23T05:58:45.877Z",
+      "status": "pending",
+      "reason": "Official source content changed; the meaning and deadlines need verification."
+    },
+    {
+      "id": "source-f17fdc41fbfa803c1818e767b68588ea",
+      "url": "https://www.fecoci.net/",
+      "title": "Costa Rica Cycling Federation",
+      "kind": "organiser_discovery",
+      "contentHash": "05216cc53397209f72fe839f939c4e09af46f208ee6fb6b119b7921ea477f65d",
+      "detectedAt": "2026-11-23T05:58:45.877Z",
+      "status": "pending",
+      "reason": "Official source content changed; the meaning and deadlines need verification."
+    },
+    {
+      "id": "source-b2545c6fe51fef22cbd4a14599c0346b",
+      "url": "https://fvciclismo.net/",
+      "title": "Venezuela Cycling Federation",
+      "kind": "organiser_discovery",
+      "contentHash": "04ea62de209c3beb2c6331752fe4a5d3c32b10bdee79d74222badbb2244e9992",
+      "detectedAt": "2026-11-23T05:58:45.877Z",
+      "status": "pending",
+      "reason": "Official source content changed; the meaning and deadlines need verification."
     }
   ],
   "sourceChecks": [
@@ -1398,26 +1500,26 @@
       "title": "https://www.uci.org/api/calendar/upcoming?discipline=BFR&year=2027",
       "kind": "calendar",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "43f35d1bc76a1b9f996bbcf62a5a67423a5258e97958a5b935d46f66460f47e7"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "a17e0651547a2c82817d0c4f5a1edd84e17febdf33212cdeeb7774c53fe5dcb5"
     },
     {
       "url": "https://www.uci.org/api/calendar/past?discipline=BFR&year=2027",
       "title": "https://www.uci.org/api/calendar/past?discipline=BFR&year=2027",
       "kind": "calendar",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "729466affa75e41862e3fa40c87bddd3c3bc3037d119710994824c1a88fbdcbb"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "d1419efebfb16021313bfc41856157e5b8ce5a60688734f12c6ac49130b5c1e1"
     },
     {
       "url": "https://www.uci.org/competition-details/2027/BFR/80618",
       "title": "https://www.uci.org/competition-details/2027/BFR/80618",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1425,8 +1527,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80246",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1434,8 +1536,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80619",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1443,8 +1545,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80621",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1452,8 +1554,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80249",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1461,8 +1563,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80616",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1470,8 +1572,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80624",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1479,8 +1581,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81205",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1488,8 +1590,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80241",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1497,8 +1599,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81204",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1506,8 +1608,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80236",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1515,8 +1617,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80620",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1524,8 +1626,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80237",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1533,8 +1635,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80239",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1542,8 +1644,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80615",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1551,8 +1653,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80240",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1560,8 +1662,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80234",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1569,8 +1671,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80248",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1578,8 +1680,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80245",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1587,8 +1689,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81206",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1596,8 +1698,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80247",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1605,8 +1707,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80242",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1614,8 +1716,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80625",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1623,8 +1725,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/79863",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1632,8 +1734,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80244",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1641,8 +1743,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80617",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1650,8 +1752,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80622",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1659,8 +1761,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80235",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1668,8 +1770,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80250",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1677,8 +1779,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80243",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1686,8 +1788,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80238",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1695,8 +1797,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/80623",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1704,8 +1806,8 @@
       "title": "2026 UCI Urban Cycling World Championships: sporting consequences of the event not taking place",
       "kind": "qualification_news",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "fa85ff8237525b4bc8b3b56c1525b9db1b9e3f987281b6f6d4da5d4c8228a680"
     },
     {
@@ -1713,8 +1815,8 @@
       "title": "The UCI and Saudi Cycling Federation confirm that the 2026 UCI Urban Cycling World Championships will not proceed",
       "kind": "qualification_news",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "8e95368eb72e1e0e3eddb6e1a8e682152948d988b3d597a414634010f63aa60d"
     },
     {
@@ -1722,8 +1824,8 @@
       "title": "UCI LA28 official documents",
       "kind": "qualification_hub",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "167c088289a71c92e62d74e0f4d4d8bb59c9dd83b9a6047f6fbc6b3f6edee2bc"
     },
     {
@@ -1731,8 +1833,8 @@
       "title": "2028 Q-Series - Qualification System (Version 10.08.2026)",
       "kind": "qualification_document",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "6b0335769862aa0a33b36ec36e691e161b8d8862324bc06274fe45a1a4ea2548"
     },
     {
@@ -1740,8 +1842,8 @@
       "title": "Official BMX Freestyle / LA28 document",
       "kind": "qualification_document",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "2374322d295051c920af46b8d7d4d43b36e8e43f02eb0703e30b774d35001538"
     },
     {
@@ -1749,8 +1851,8 @@
       "title": "Haute-Savoie 2027 competition programme",
       "kind": "organiser_programme",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "d1d057e4d265e779a6a495766602a085a390316ebeacd2af8ec11a54b99fec43"
     },
     {
@@ -1758,26 +1860,26 @@
       "title": "German National Championships — Park official announcement",
       "kind": "organiser_announcement",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "d2bcea0a49e0f8803742c533ae35bdb9ef4bf742cdd688519eda34ded00bfff2"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "e3d0df5cfc35d60b2606c02395d877e0c0b75be49350724e63c7a620bf63adb7"
     },
     {
       "url": "https://www.montpellier-tourisme.fr/decouvrir/festive/les-evenements-incontournables-a-montpellier/fise/",
       "title": "FISE Montpellier official announcement",
       "kind": "organiser_announcement",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "3974065c2372d41e344a8929990ee701c84b599567113d814d208aa93393e2fd"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "fd5fbd87bf9696825d610d4d014b366f5c116ff5297e36e3232f93afb2234a07"
     },
     {
       "url": "https://sportpiraten.com/",
       "title": "Butcher Jam official announcement",
       "kind": "organiser_announcement",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "5a465c5e8868fd452f73b94d265218ddf6b19052dc6d487272f182a1153255dd"
     },
     {
@@ -1785,8 +1887,8 @@
       "title": "BMX Freestyle European Series official announcement",
       "kind": "organiser_announcement",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "8c20e9cbce07555c007371b7af68d18326f44707eeda4f3280c7419ab97e67d9"
     },
     {
@@ -1794,8 +1896,8 @@
       "title": "FISE official announcements",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "28cecc92d03434ec92949c122b65b5226b873a925bb9f151924e5aef50a661dd"
     },
     {
@@ -1803,17 +1905,17 @@
       "title": "AusCycling events",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "9d5ea54a63bbdd3a50908c3cda9526c731f0e76a39bb024c45a0b7c14e87249a"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "bde698927ba68414dbee438517ead7d1e31009b8608ecbb1f79427aef9b095de"
     },
     {
       "url": "https://www.uec.ch/en/",
       "title": "UEC official announcements",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1821,8 +1923,8 @@
       "title": "Banga Ramp Park official organiser",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "9bfbbd92e3e127efc3e45da1ee73fc50a843f91d82f52bd1e438e70e1f20b0a5"
     },
     {
@@ -1830,8 +1932,8 @@
       "title": "Oceania Cycling Confederation",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "2dc7b52257f9edc83f38a621ac538cf5fe419580ee6273dae2d9d9c7e79e8bb0"
     },
     {
@@ -1839,35 +1941,35 @@
       "title": "Costa Rica Cycling Federation",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "fb0c412593dc500132681f8fe2f9bec2c0c3fe5b36bbbb07a7fabf7ecc9c8e96"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "05216cc53397209f72fe839f939c4e09af46f208ee6fb6b119b7921ea477f65d"
     },
     {
       "url": "https://fvciclismo.net/",
       "title": "Venezuela Cycling Federation",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "aa750814d8d59a0b9ce5c40116da256c503416ac51fb55bb81e2f910bb3cf846"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "04ea62de209c3beb2c6331752fe4a5d3c32b10bdee79d74222badbb2244e9992"
     },
     {
       "url": "https://www.woodstyle-bmx.de/",
       "title": "Vulkan BMX official organiser",
       "kind": "organiser_discovery",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "1c1091a442ffb00b6595e8c452bfd04c6a1485c43f3a6082877aa80f6ec119c3"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "20bf9209f182e44059bc29aaee7c357a2ed330a15a4fa86db72c5655ec4139dd"
     },
     {
       "url": "https://www.uci.org/regulations/3MyLDDrwJCJJ0BGGOFzOat",
       "title": "Official UCI regulations and amendments",
       "kind": "rules_hub",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "1c50abe114abb96e5f33fd956e1f6f31768c33c210bbaaf5fcecf1376bcec68d"
     },
     {
@@ -1875,44 +1977,44 @@
       "title": "https://www.uci.org/api/news/listing?pageIndex=0&pageSize=50",
       "kind": "news_index",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "05c4d99bc5dc0aa113a4ffc42d186045cc18439a52a841aa7cfab9d8b0e7b742"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "378c384a65ba79bb99f735ac77d977e2ef40fa702fecc92ec525d9df2ce0b216"
     },
     {
       "url": "https://www.uci.org/api/news/listing?pageIndex=1&pageSize=50",
       "title": "https://www.uci.org/api/news/listing?pageIndex=1&pageSize=50",
       "kind": "news_index",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "05c4d99bc5dc0aa113a4ffc42d186045cc18439a52a841aa7cfab9d8b0e7b742"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "378c384a65ba79bb99f735ac77d977e2ef40fa702fecc92ec525d9df2ce0b216"
     },
     {
       "url": "https://www.uci.org/api/news/listing?pageIndex=2&pageSize=50",
       "title": "https://www.uci.org/api/news/listing?pageIndex=2&pageSize=50",
       "kind": "news_index",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "cc99f55135e3d3efd506ce725fc2fe25b38ed881b16fd6c9a5874eeb97f84b2f"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "f1464a283393ad29825b00bfc9ab89cca4f36b8f4f9cf8e984a51466e6d4785f"
     },
     {
       "url": "https://www.uci.org/api/news/listing?pageIndex=3&pageSize=50",
       "title": "https://www.uci.org/api/news/listing?pageIndex=3&pageSize=50",
       "kind": "news_index",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
-      "contentHash": "9cbde505d5df5e6dfe71753eaaae72470bd76e7d36cd613fd8e75e9eb310868d"
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "db1081dffd6828e0fbd1c2f0fb6f72ec046760feec1e422e76d78d71ead9e416"
     },
     {
       "url": "https://assets.ctfassets.net/761l7gh5x5an/3VR4HXhjyqVBEzL53UEeYN/1b5877f49f399d4c9ed3eeb82ca02ed2/BMX_Freestyle_Rule_changes_2027-ENG_Upcoming_amendments.pdf",
       "title": "Official BMX Freestyle / LA28 document",
       "kind": "qualification_document",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "324d90cffdda825086c41d6da8dabbd9964451de9f3b06d0ed3db17a257bef1b"
     },
     {
@@ -1920,8 +2022,8 @@
       "title": "Official BMX Freestyle / LA28 document",
       "kind": "qualification_document",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "39e4452c890afb9adbc60e51cfa1989d6386b984a0e753afcd05813bc5654f03"
     },
     {
@@ -1929,8 +2031,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81306",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1938,8 +2040,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81294",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1947,8 +2049,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81297",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1956,8 +2058,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81295",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1965,8 +2067,8 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81293",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     },
     {
@@ -1974,8 +2076,26 @@
       "title": "https://www.uci.org/competition-details/2027/BFR/81296",
       "kind": "event",
       "status": "ok",
-      "checkedAt": "2026-11-16T04:59:36.679Z",
-      "lastSuccessfulCheckAt": "2026-11-16T04:59:36.679Z",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/81365",
+      "title": "https://www.uci.org/competition-details/2027/BFR/81365",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
+      "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "url": "https://www.uci.org/competition-details/2027/BFR/81412",
+      "title": "https://www.uci.org/competition-details/2027/BFR/81412",
+      "kind": "event",
+      "status": "ok",
+      "checkedAt": "2026-11-23T05:58:45.877Z",
+      "lastSuccessfulCheckAt": "2026-11-23T05:58:45.877Z",
       "contentHash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
     }
   ],
