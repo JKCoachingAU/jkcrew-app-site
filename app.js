@@ -68,7 +68,7 @@ const TUS_CLIENT_URL = "https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tu
 const TUS_CLIENT_INTEGRITY = "sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1";
 const PUSH_VAPID_PUBLIC_KEY = "BJ4cnRsbZ7s-UD1Rtt7FvefTTSj29BIgPIoL09V_YrDGCmL3WIxGC483NOUGNsICJaAGa_ocvz1SMUZs46HwwS8";
 const NOTIFICATION_SOUND_KEY = "jkcrew-notification-sound:v1";
-const RELEASE_VERSION = "2.14.211";
+const RELEASE_VERSION = "2.14.212";
 const WHATS_NEW_RELEASE_ID = "2026-08-notification-centre";
 const PROFILE_SELECT = "id,display_name,role,avatar,created_at,updated_at,last_app_opened_at,stance,age,sponsors,achievements,goals,social_links,spin_direction,favourite_trick,rider_extra_tricks,daily_trick_order,email,phone,country_code,country_name,is_platform_owner,manual_tricktionary,daily_pb_seconds,daily_pb_updated_at,app_theme,tricktionary_meta,ghost_mode,home_skatepark,onboarding_completed_at,uci_id";
 const state = {
@@ -129,6 +129,7 @@ const state = {
   boardLeaderboardView: "weekly",
   boardRenderVersion: 0,
   boardRankingsRenderVersion: 0,
+  leaderboardVersion: 0,
   boardUciSearch: "",
   boardUciLimit: 50,
   leaderboardFallbackNotified: false,
@@ -426,6 +427,10 @@ async function toggleRiderFeatureAccess(event) {
         row?.querySelector(".student-chip span")?.append(label);
       }
     });
+    cacheClear("leaderboard:");
+    cacheClear("leaderboard-home:");
+    state.leaderboardVersion = (state.leaderboardVersion || 0) + 1;
+    invalidateLeaderboardUciLinks();
     notify(disable ? "Features disabled. This rider can still view their dashboard." : "Feature access restored.");
   } catch (error) {
     restores.forEach(restore => restore());
@@ -3486,7 +3491,7 @@ function scheduleRealtimeRefresh(reason = "sync") {
 
 async function getLeaderboard({ allowFallback = true, summary = false } = {}) {
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
-  const cacheKey = `leaderboard:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}${allowFallback ? "" : ":verified"}${summary ? ":summary" : ""}`;
+  const cacheKey = `leaderboard:${state.leaderboardVersion || 0}:weekly:${state.user?.id || "anon"}:${state.profile?.role || "guest"}:${state.profile?.ghost_mode ? "ghost" : "public"}${allowFallback ? "" : ":verified"}${summary ? ":summary" : ""}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
   const existingRequest = state.inFlight.get(cacheKey);
@@ -3527,7 +3532,7 @@ async function getLeaderboard({ allowFallback = true, summary = false } = {}) {
 
 async function getAthleteHomeLeaderboard() {
   const cacheScope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
-  const cacheKey = `leaderboard-home:weekly:${state.user?.id || "anon"}`;
+  const cacheKey = `leaderboard-home:${state.leaderboardVersion || 0}:weekly:${state.user?.id || "anon"}`;
   const cached = cacheGet(cacheKey, 7000);
   if (cached) return cached;
   const existingRequest = state.inFlight.get(cacheKey);
@@ -3555,20 +3560,29 @@ async function getAthleteHomeLeaderboard() {
 }
 
 async function getLeaderboardFallback(cause) {
-  const { data: profiles, error } = await client
-    .from("profiles")
-    .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, ghost_mode")
-    .eq("role", "athlete")
-    .order("display_name", { ascending: true });
+  const [{ data: profiles, error }, { data: disabledRiders, error: disabledError }] = await Promise.all([
+    client
+      .from("profiles")
+      .select("id, display_name, role, avatar_url, avatar, country_code, country_name, daily_pb_seconds, ghost_mode")
+      .eq("role", "athlete")
+      .order("display_name", { ascending: true }),
+    client.rpc("get_disabled_leaderboard_rider_ids"),
+  ]);
   if (error) {
     console.error("Leaderboard fallback failed", error);
     notify(messageFrom(cause || error), "error");
     return [];
   }
+  if (disabledError) {
+    console.error("Disabled rider status could not be verified for leaderboard fallback", disabledError);
+    notify("Leaderboard is temporarily unavailable while rider access is checked.", "error");
+    return [];
+  }
 
   const isCoach = isCoachRole(state.profile?.role);
+  const disabledIds = new Set((disabledRiders || []).map(row => row.athlete_id).filter(Boolean));
   const rows = (profiles || [])
-    .filter((profile) => !profile.ghost_mode || profile.id === state.user?.id || isCoach)
+    .filter((profile) => !disabledIds.has(profile.id) && (!profile.ghost_mode || profile.id === state.user?.id || isCoach))
     .map((profile, index) => ({
     athlete_id: profile.id,
     display_name: profile.display_name || "Athlete",
@@ -8206,7 +8220,7 @@ async function getAthleteHomeVerifiedLeaderboard({ force = false } = {}) {
   // Home, the sheet and point feedback need only IDs and scores. The full
   // leaderboard's photos and profile extras belong on the Board screen.
   const scope = { userId: state.user?.id || null, generation: state.sessionSetupVersion || 0 };
-  const key = `leaderboard:summary:${scope.userId || "anon"}:verified`;
+  const key = `leaderboard:summary:${state.leaderboardVersion || 0}:${scope.userId || "anon"}:verified`;
   const cached = !force && cacheGet(key, 7000);
   if (cached) return cached;
   const existing = !force && state.inFlight.get(key);
